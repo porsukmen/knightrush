@@ -169,8 +169,11 @@ function resize(){
   viewX=(cvs.width-VW*viewScale)/2; viewY=(cvs.height-VH*viewScale)/2;
   PAD_TOP=PAD_BOT=Math.max(0,viewY/viewScale); PAD_TOT=PAD_TOP+PAD_BOT;
   /* the HUD tucks just below the notch / dynamic island, up in the extended sky —
-     plus a small pad so nothing clips into the phone's rounded corners */
-  const safeL=(safeEl?safeEl.offsetHeight:0)*dpr/viewScale;
+     plus a small pad so nothing clips into the phone's rounded corners. Some
+     wrappers report a 0 safe-area inset even under an island, so phone layouts
+     (PAD_TOP>0) always get a minimum clearance for the centered stage bar. */
+  let safeL=(safeEl?safeEl.offsetHeight:0)*dpr/viewScale;
+  if(PAD_TOP>0) safeL=Math.max(safeL,54);
   const cornerPad=(PAD_TOP>0||safeL>0)?14:0;
   uiTop=-PAD_TOP+clamp(safeL+cornerPad,0,PAD_TOP+96);
   g.imageSmoothingEnabled=false;
