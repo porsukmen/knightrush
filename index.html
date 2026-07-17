@@ -143,7 +143,10 @@ function sRnd(seed){ let s=Math.sin(seed*127.1+311.7)*43758.5453; return s-Math.
 const VW=480, VH=800;
 const HORIZON_Y=286, PLAYER_Y=648, GROUND_Y=PLAYER_Y-14;
 const cvs=document.getElementById('game');
-const g=cvs.getContext('2d');
+/* opaque context: skips per-frame alpha compositing with the page — measurably
+   cheaper on older phones. `let`, so draw helpers can retarget g at offscreen
+   cache layers (identical output, drawn once instead of every frame). */
+let g=cvs.getContext('2d',{alpha:false});
 /* phone browsers run canvas shadow-glow effects dreadfully slowly (dropped frames,
    flickering animation). On touch devices glow becomes a no-op — art stays, lag goes. */
 const LOW_FX=(typeof matchMedia==='function')&&matchMedia('(pointer:coarse)').matches;
@@ -1316,6 +1319,7 @@ const BIOMES={
     bg:dt=>{ drawSwampBg(dt); drawSwampRoad(); },
     arena:dt=>drawSwampLair(dt),
     scenery:(x,y,s,v)=>drawCypress(x,y,s,v),
+    ground:(x,y,s,v)=>drawSwampPond(x,y,s,v),
     atmos:dt=>drawSwampAtmos(dt),
     mouth:{rock:'#12180f',band:['#182013','#1c2617','#141b10'],rim:'#2c3a22',moss:'#2e4c2b',mossL:'#3d6136',glow:'#59e8c8'},
     reasons:{root:'A mangrove root dragged you into the mire',
@@ -1362,23 +1366,24 @@ let oakUsed=false;                      // the oaken charm forgives one crash pe
    sheet is the world's floor out there, never something glued onto the lair. */
 function drawMereBeyond(z){
   const lairZ=clamp(z,0.35,CFG.Z_FAR), gy=proj(lairZ).y;
-  /* an endless drowned river: flat black water from the horizon to the mere's shore */
-  g.fillStyle='#0c1318';
+  /* an endless MORNING water sheet from the horizon to the mere's shore */
+  g.fillStyle='#46604a';
   g.fillRect(0,HORIZON_Y-2,VW,Math.max(4,gy-HORIZON_Y+6));
-  for(let i=0;i<8;i++){                                    // sheen rows in true WORLD perspective
+  for(let i=0;i<8;i++){                                    // sun-sheen rows in WORLD perspective
     const zr=lairZ+2+i*3.1; if(zr>CFG.Z_FAR) break;
     const pr=proj(zr), sd=sRnd(i*29+3);
     const x=((perfNow*(6+sd*10)+i*120)%(VW+200))-100;
-    g.globalAlpha=0.10+sd*0.05; g.fillStyle='#93a2b2';
+    g.globalAlpha=0.14+sd*0.06; g.fillStyle='#cdd8ac';
     g.fillRect(x,pr.y,(40+sd*50)*pr.s+8,Math.max(1,2.4*pr.s));
   }
   g.globalAlpha=1;
-  for(let i=0;i<5;i++){                                    // wisplights far out on the water
-    const zr=lairZ+4+i*4.7; if(zr>CFG.Z_FAR) break;
+  for(let i=0;i<6;i++){                                    // far lily rafts and sun sparkles
+    const zr=lairZ+3+i*4.2; if(zr>CFG.Z_FAR) break;
     const pr=proj(zr), sd=sRnd(i*41+6);
-    g.globalAlpha=(0.25+Math.sin(perfNow*1.8+i*2.2)*0.15);
-    g.fillStyle='#a9d8cf'; g.fillRect(sd*VW,pr.y-3*pr.s,2.6,2.6);
-    g.globalAlpha=1;
+    if(i%2){ g.fillStyle='#54803f';
+      g.beginPath(); g.ellipse(sd*VW,pr.y,7*pr.s+2,2.6*pr.s+0.8,0,0,TAU); g.fill(); }
+    else { g.globalAlpha=(0.3+Math.sin(perfNow*1.8+i*2.2)*0.18);
+      g.fillStyle='#f0eec6'; g.fillRect(sd*VW,pr.y-1,3.2,1.6); g.globalAlpha=1; }
   }
 }
 function drawLavaBeyond(z){
@@ -1411,24 +1416,43 @@ function drawMereApproach(z){
   const p=proj(clamp(z>CFG.Z_FAR?CFG.Z_FAR-6*(1-raw):z,0.35,CFG.Z_FAR)), t=clamp(p.t,0,1);
   const cx=VW/2, gy=p.y;
   const pw=lerp(34,430,t*t)*grow, ph=pw*0.26;
-  /* the mere itself, swallowing the road */
-  g.strokeStyle='#31502e'; g.lineWidth=Math.max(1.4,2.6*p.s);
+  /* THE GREAT MERE: a gigantic lake-pond, its rim thick with growth */
+  g.strokeStyle='#5d7d3c'; g.lineWidth=Math.max(1.4,2.6*p.s);       // hummock-grass rim
   g.beginPath(); g.ellipse(cx,gy,pw,ph,0,0,TAU); g.stroke();
-  g.fillStyle='#060d0a';
+  g.fillStyle='#33513f';
   g.beginPath(); g.ellipse(cx,gy,pw*0.94,ph*0.94,0,0,TAU); g.fill();
-  /* the moon lying on it + ripple rings */
-  g.globalAlpha=0.14; g.fillStyle='#c9d8c0';
-  g.beginPath(); g.ellipse(cx-pw*0.16,gy-ph*0.2,pw*0.26,ph*0.2,0,0,TAU); g.fill(); g.globalAlpha=1;
+  g.fillStyle='#2a4335';                                            // deeper heart of the lake
+  g.beginPath(); g.ellipse(cx,gy+ph*0.06,pw*0.6,ph*0.55,0,0,TAU); g.fill();
+  /* the morning sun lying on it + slow ripple rings */
+  g.globalAlpha=0.22; g.fillStyle='#f0eec6';
+  g.beginPath(); g.ellipse(cx-pw*0.18,gy-ph*0.22,pw*0.26,ph*0.2,0,0,TAU); g.fill(); g.globalAlpha=1;
   for(let i=0;i<3;i++){ const phs=(perfNow*0.4+i*0.45)%1;
-    g.globalAlpha=(1-phs)*0.3; g.strokeStyle='#2c463a'; g.lineWidth=Math.max(1,1.3*p.s);
+    g.globalAlpha=(1-phs)*0.3; g.strokeStyle='#7d9b6a'; g.lineWidth=Math.max(1,1.3*p.s);
     g.beginPath(); g.ellipse(cx+(sRnd(i*7+2)-0.5)*pw,gy+(sRnd(i*7+3)-0.5)*ph*0.8,
       (4+phs*22)*p.s+1,((4+phs*22)*0.3)*p.s+0.5,0,0,TAU); g.stroke(); }
   g.globalAlpha=1;
-  /* THE HYDRA ITSELF waits half-sunk in the mere, visible from afar */
+  /* PLANTS ALL OVER IT: lily rafts, algae drifts, reed clumps standing in it */
+  for(let i=0;i<8;i++){ const sd=sRnd(i*19+4), sd3=sRnd(i*19+5);
+    const lx2=cx+(sd-0.5)*pw*1.6, ly2=gy+(sd3-0.5)*ph*1.3;
+    if(i%3===2){ g.fillStyle='#3e5c35';                             // an algae drift
+      g.fillRect(lx2-8*p.s,ly2,16*p.s+3,Math.max(1,1.6*p.s)); }
+    else{ g.fillStyle=i%2?'#5d8a45':'#6d9a50';                      // lily pads (notched)
+      g.beginPath(); g.ellipse(lx2,ly2,(4.5+sd*4)*p.s+1.4,(1.8+sd*1.6)*p.s+0.6,0,0,TAU); g.fill();
+      g.fillStyle='#33513f'; g.fillRect(lx2,ly2-(1.8+sd*1.6)*p.s,2.2*p.s,(1.8+sd*1.6)*p.s);
+      if(sd3>0.72){ g.fillStyle='#e8d8e0';                          // a white lily bloom
+        g.fillRect(lx2-1.2*p.s,ly2-1.6*p.s,2.4*p.s+0.8,1.6*p.s+0.6); } }
+  }
+  for(let i=0;i<5;i++){ const sd=sRnd(i*31+8);                      // reed clumps in the shallows
+    const rx2=cx+(sd-0.5)*pw*1.7, ry3=gy+ph*(0.5+sRnd(i*31+9)*0.5);
+    g.fillStyle=i%2?'#4b6b33':'#40602e';
+    g.fillRect(rx2,ry3-7*p.s,1.5*p.s+0.8,7*p.s+1);
+    g.fillRect(rx2+2*p.s,ry3-9*p.s,1.4*p.s+0.8,9*p.s+1);
+    if(sd>0.6){ g.fillStyle='#7a5a2e'; g.fillRect(rx2+1.8*p.s,ry3-10.6*p.s,2*p.s+0.8,2.2*p.s+0.8); } }
+  /* THE HYDRA ITSELF waits half-sunk among the lilies, visible from afar */
   drawHydra(cx,gy+ph*0.15,Math.max(0.14,t*1.05)*grow,'run',0,false);
-  /* wisps over the water */
+  /* morning midges glinting over the water */
   for(let i=0;i<3;i++){ g.globalAlpha=0.3+Math.sin(perfNow*2.2+i*2)*0.18;
-    g.fillStyle='#9fe8c0'; g.shadowColor='#9fe8c0'; g.shadowBlur=7;
+    g.fillStyle='#eef2c2'; g.shadowColor='#eef2c2'; g.shadowBlur=6;
     g.fillRect(cx+Math.sin(perfNow*0.6+i*2.4)*pw*0.5,gy-ph*(0.8+i*0.3),2.4,2.4); g.shadowBlur=0; }
   g.globalAlpha=1;
 }
@@ -1525,118 +1549,117 @@ function drawCaveMouth(z){
 }
 /* ============================== THE SWAMP (loop 2, 5, 8...) ============================== */
 function drawSwampBg(dt){
-  /* a drowned sky: haze, a sickly gauzed moon, dead trees standing in water */
-  g.fillStyle='#0a0e13'; g.fillRect(0,-PAD_TOP,VW,HORIZON_Y+60+PAD_TOP);
-  const mx=VW*0.44, my=124;
-  /* the moon behind bog-haze: dimmer, greener, no crisp opening */
-  g.globalAlpha=0.85;
-  const sky=g.createRadialGradient(mx,my,8,mx,my,150);
-  sky.addColorStop(0,'#28323e'); sky.addColorStop(.5,'#151d26'); sky.addColorStop(1,'#0a0e13');
-  g.fillStyle=sky; g.fillRect(mx-150,my-120,300,240);
-  g.fillStyle='#d8dde4'; g.beginPath(); g.arc(mx,my,30,0,TAU); g.fill();
-  g.fillStyle='#a8b2c0'; g.fillRect(mx-14,my-8,8,7); g.fillRect(mx+4,my+7,9,6); g.fillRect(mx-4,my-18,6,5);
-  g.globalAlpha=0.5; g.fillStyle='#151d26';                       // gauze bands across the moon
-  g.fillRect(mx-40,my-10,80,6); g.fillRect(mx-34,my+6,68,5); g.fillRect(mx-38,my+18,58,4);
+  /* SWAMP MORNING: a low pale sun behind drifting mist-gauze, everything steeped
+     in greens — bright enough to read, hazy enough to stay heavy and wet */
+  const sky=g.createLinearGradient(0,-PAD_TOP,0,HORIZON_Y+40);
+  sky.addColorStop(0,'#6d8480'); sky.addColorStop(.45,'#90a48c'); sky.addColorStop(1,'#c3c99e');
+  g.fillStyle=sky; g.fillRect(0,-PAD_TOP,VW,HORIZON_Y+40+PAD_TOP);
+  const mx=VW*0.4, my=104;
+  /* the SUN, veiled: a soft halo, a pale disc, mist bands dragging across it */
+  const halo=g.createRadialGradient(mx,my,6,mx,my,130);
+  halo.addColorStop(0,'rgba(253,246,214,0.85)'); halo.addColorStop(.45,'rgba(240,232,180,0.30)');
+  halo.addColorStop(1,'rgba(240,232,180,0)');
+  g.fillStyle=halo; g.fillRect(mx-130,my-130,260,260);
+  g.fillStyle='#f6eec6'; g.beginPath(); g.arc(mx,my,23,0,TAU); g.fill();
+  g.fillStyle='#efe3ac'; g.fillRect(mx-11,my-5,8,5); g.fillRect(mx+2,my+6,9,4);
+  g.globalAlpha=0.45; g.fillStyle='#a9bda0';                      // gauze across the sun
+  g.fillRect(mx-44,my-8,88,6); g.fillRect(mx-36,my+7,72,5); g.fillRect(mx-40,my+18,60,4);
   g.globalAlpha=1;
-  /* the moon lies broken on the far water: a shivering reflection path */
-  for(let i=0;i<7;i++){
-    g.globalAlpha=0.22-i*0.02;
-    g.fillStyle='#d8dde4';
-    const rw=26-i*2.4+Math.sin(perfNow*1.8+i)*3;
-    g.fillRect(mx-rw/2+Math.sin(perfNow*1.2+i*2)*3,HORIZON_Y+8+i*3.4,rw,2);
+  /* far treelines in three depths of green haze */
+  for(let L2=0;L2<3;L2++){
+    g.fillStyle=['#8b9c85','#6d8567','#527052'][L2];
+    const base=HORIZON_Y-26+L2*11, hh=26-L2*4;
+    g.beginPath(); g.moveTo(0,base+hh);
+    for(let i=0;i<=16;i++){ const x=i/16*VW, sd=sRnd(i*13+L2*41);
+      g.lineTo(x,base-sd*hh-((i+L2)%3)*4); }
+    g.lineTo(VW,base+hh+60); g.lineTo(0,base+hh+60); g.closePath(); g.fill();
   }
-  g.globalAlpha=1;
-  /* a far treeline of drowned crowns behind the dead trunks */
-  g.fillStyle='#0b110c';
-  for(let i=0;i<10;i++){ const cx2=sRnd(i*41+9)*VW*1.1-VW*0.05, cw=40+sRnd(i*41+10)*60;
-    g.beginPath(); g.ellipse(cx2,HORIZON_Y-8-sRnd(i*41+11)*20,cw,14+sRnd(i*41+12)*10,0,0,TAU); g.fill(); }
-  /* dead trees standing in the far water: bare trunks + snapped limbs */
-  for(let i=0;i<9;i++){
-    const sd=sRnd(i*23+2), tx=(sd*1.16-0.08)*VW, th=34+sRnd(i*23+3)*44;
+  /* dead snags wading out of the haze */
+  for(let i=0;i<8;i++){
+    const sd=sRnd(i*23+2), tx=(sd*1.16-0.08)*VW, th=26+sRnd(i*23+3)*38;
     const drift=((dist*0.06*(0.5+sd*0.5))%40)-20;
-    g.fillStyle=i%2?'#0d1118':'#0b0e14';
-    g.fillRect(tx+drift-2.5,HORIZON_Y+12-th,5,th);
-    g.fillRect(tx+drift-2.5+(sd<0.5?-8:5),HORIZON_Y+12-th*0.72,8,3);   // snapped limb
-    if(i%3===0) g.fillRect(tx+drift+(sd<0.5?4:-9),HORIZON_Y+12-th*0.5,6,2.4);
+    g.fillStyle=i%2?'#43593f':'#3a4f38';
+    g.fillRect(tx+drift-2.2,HORIZON_Y+8-th,4.4,th);
+    g.fillRect(tx+drift-2.2+(sd<0.5?-7:4),HORIZON_Y+8-th*0.72,7,2.6);   // snapped limb
   }
-  /* far water sheen under the dead wood */
-  g.globalAlpha=0.35; g.fillStyle='#1c2830';
-  g.fillRect(0,HORIZON_Y+6,VW,10); g.globalAlpha=1;
-  /* mist banks rolling across the horizon — thinned so the water shows through */
+  /* morning mist banks rolling low across the horizon */
   for(let b=0;b<3;b++){
     const off=((perfNow*(6+b*4))%(VW+220))-110;
-    g.globalAlpha=0.05+b*0.02; g.fillStyle='#93a2b2';
-    g.beginPath(); g.ellipse(off+b*160,HORIZON_Y+8+b*12,150,16+b*5,0,0,TAU); g.fill();
+    g.globalAlpha=0.10+b*0.03; g.fillStyle='#d9e2c2';
+    g.beginPath(); g.ellipse(off+b*160,HORIZON_Y+6+b*11,150,15+b*5,0,0,TAU); g.fill();
   }
   g.globalAlpha=1;
-  /* a heron, still as death, on a snag off the causeway */
+  /* the heron stays — hunched on its snag, silhouetted in the mist */
   const hx3=VW*0.15, hy3=HORIZON_Y+2;
-  g.fillStyle='#0b0e14';
+  g.fillStyle='#33463a';
   g.fillRect(hx3-2,hy3-14,4,16);                                   // the snag
   g.fillRect(hx3-3,hy3-30,6,12);                                   // hunched body
   g.fillRect(hx3-1,hy3-40,2.6,12);                                 // neck
   g.fillRect(hx3-1,hy3-42,7,2.6);                                  // beak
   g.fillRect(hx3,hy3-18,2,6);                                      // one stick leg
-  /* sodden ground plane */
+  /* DRY MUD ground plane the flanks build on — deep dark packed dirt */
   const ground=g.createLinearGradient(0,HORIZON_Y,0,VH);
-  ground.addColorStop(0,'#12171d'); ground.addColorStop(.4,'#141a20'); ground.addColorStop(1,'#0a0d12');
+  ground.addColorStop(0,'#46402c'); ground.addColorStop(.4,'#37321f'); ground.addColorStop(1,'#221e13');
   g.fillStyle=ground; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
 }
 function drawSwampRoad(){
-  /* a raised MUD CAUSEWAY threading through open bog-water on both sides */
+  /* a trodden MUD-AND-MOSS path through real swamp ground: the flanks are a
+     living patchwork — side pools with lily pads, mud flats, moss beds, root
+     tangles and creeping vines — never one flat sheet of anything */
   const p0=proj(CFG.Z_FAR), pB=proj(-2.6);
   const hw=t=>lerp(34,218,t);
-  /* the water: dark, still — but unmistakably WATER: sheen bands + moon glints */
-  g.fillStyle='#0c1318';
-  g.fillRect(0,HORIZON_Y+14,VW,VH-HORIZON_Y+PAD_BOT);
-  for(let b=0;b<5;b++){                                            // sheen bands ROLL slowly shoreward
-    const by2=HORIZON_Y+40+b*86+Math.sin(perfNow*0.7+b)*5;
-    g.globalAlpha=0.06+((b%2)?0.03:0); g.fillStyle='#93a2b2';
-    for(let k=0;k<6;k++)
-      g.fillRect(k*(VW/6)+Math.sin(perfNow*1.1+b+k)*10,by2+Math.sin(perfNow*1.6+b*2+k*1.2)*3,VW/6*0.86,7+b*2);
-  }
-  g.globalAlpha=1;
-  for(let i=0;i<26;i++){                                         // ripples drift slowly
-    const z=((i*2.31 - dist*0.35)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
-    const p=proj(z), sd=sRnd(i*19+Math.floor((dist*0.35+i*2.31)/(CFG.Z_FAR+3))*7);
-    const side=sd<0.5?-1:1, x=VW/2+side*(hw(p.t)+30+sd*130);
-    /* each ripple is a little travelling WAVE: segments bob out of phase */
-    const L2=(14+sd*16)*p.s+2, seg=L2/4;
-    g.globalAlpha=0.6; g.fillStyle=i%2?'#31505c':'#1e3038';
-    for(let k=0;k<4;k++)
-      g.fillRect(x+k*seg+Math.sin(perfNow*1.8+i*2.1)*2*p.s,
-                 p.y+Math.sin(perfNow*2.7+i+k*1.5)*1.5*p.s,seg*0.78,1.5*p.s+0.7);
-    if(sd>0.75){ g.globalAlpha=0.5; g.fillStyle='#d8dde4';          // a moon glint rides the wave
-      g.fillRect(x+seg+Math.sin(perfNow*2.7+i+1.5)*1.5*p.s,p.y,3*p.s+1,1*p.s+0.6); }
-    g.globalAlpha=1;
-  }
-  /* rimmed side-ponds pooling beside the treeline — pale edges, wisplight in them */
-  for(let i=0;i<6;i++){
-    const z=((i*9.7 - dist*0.35)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
-    const p=proj(z), sd=sRnd(i*47+8);
-    const side=i%2?-1:1, x=VW/2+side*(hw(p.t)+60+sd*120);
-    const pw=(22+sd*20)*p.s+3, ph=pw*0.32;
-    g.strokeStyle='#3a4a3c'; g.lineWidth=Math.max(1,1.6*p.s);       // hummock-grass rim
-    g.beginPath(); g.ellipse(x,p.y,pw,ph,0,0,TAU); g.stroke();
-    g.fillStyle='#151d26';
-    g.beginPath(); g.ellipse(x,p.y,pw*0.88,ph*0.88,0,0,TAU); g.fill();
-    const gl2=0.35+Math.sin(perfNow*1.5+i*2.4)*0.2;
-    g.globalAlpha=gl2; g.fillStyle='#a9d8cf';                       // wisplight caught in the pool
-    g.fillRect(x-pw*0.3,p.y-ph*0.2,4*p.s+1,1.6*p.s+0.8);
-    g.globalAlpha=gl2*0.6; g.fillRect(x+pw*0.2,p.y+ph*0.25,3*p.s+1,1.2*p.s+0.6);
-    g.globalAlpha=1;
-  }
-  for(let i=0;i<9;i++){                                          // lilypads + scum
-    const z=((i*6.3 - dist*0.35)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
-    const p=proj(z), sd=sRnd(i*31+5);
-    const side=i%2?-1:1, x=VW/2+side*(hw(p.t)+36+sd*110);
-    g.fillStyle='#26382e'; g.beginPath(); g.ellipse(x,p.y,7*p.s+1,2.6*p.s+0.6,0,0,TAU); g.fill();
-    g.fillStyle='#0c1318'; g.fillRect(x,p.y-2.6*p.s,3*p.s,2.6*p.s);      // the notch
-    if(i%3===0){ g.fillStyle='#49604a'; g.fillRect(x-2*p.s,p.y-1.4*p.s,2.4*p.s,1.4*p.s); }
-  }
-  /* the causeway: packed mud, chewed edges, half-drowned at the rim */
   const notch=(z,seed)=>Math.floor(sRnd(Math.floor((z+dist)/4.2)*7+seed)*3)*4.5-4.5;
-  g.fillStyle='#241f16';
+  /* ---- THE FLANKS: DRY broken ground with WET SPOTS — a mixed, mottled floor,
+          never a sheet of water, never a flat plain ---- */
+  /* dense base speckle: dry clods, dusty patches, grass tufts, moss scraps, pebbles */
+  for(let i=0;i<46;i++){
+    const z=((i*1.32 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
+    const p=proj(z), sd=sRnd(i*13+Math.floor((dist+i*1.32)/(CFG.Z_FAR+3))*7);
+    const side=sd<0.5?-1:1, off=hw(p.t)+16+sd*150;
+    const x=VW/2+side*off;
+    if(sd<0.22){ g.fillStyle='#635a3d'; g.fillRect(x,p.y,(5+sd*8)*p.s+1.5,2.2*p.s+1); }      // dry dust
+    else if(sd<0.45){ g.fillStyle='#3b3523'; g.fillRect(x,p.y,(4+sd*6)*p.s+1.5,2.4*p.s+1); } // darker clod
+    else if(sd<0.7){ g.fillStyle=(i%2)?'#54703a':'#496233';                                  // grass tuft
+      g.fillRect(x,p.y-3*p.s,1.6*p.s+0.8,3*p.s+1); g.fillRect(x+2.2*p.s,p.y-4.2*p.s,1.5*p.s+0.8,4.2*p.s+1); }
+    else if(sd<0.88){ g.fillStyle='#4c6a34'; g.fillRect(x,p.y,(4+sd*5)*p.s+1,2*p.s+1); }     // moss scrap
+    else { g.fillStyle='#5c5745'; g.fillRect(x,p.y-1.4*p.s,3*p.s+1,1.8*p.s+1); }             // a pebble
+  }
+  /* (side ponds are SCENERY now — drawSwampPond, spawned and rendered with the
+     trees so they move in the exact same perspective. The flanks here stay
+     straight dark textured mud.) */
+  /* WET SPOTS: small flat dark patches soaked into the dirt, a sliver of sky on
+     the biggest — low, irregular, part of the ground (no pond shapes, no rims) */
+  for(let i=0;i<20;i++){
+    const z=((i*3.1 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
+    const p=proj(z), sd=sRnd(i*17+Math.floor((dist+i*3.1)/(CFG.Z_FAR+3))*13);
+    const sd2=sRnd(i*29+Math.floor((dist+i*3.1)/(CFG.Z_FAR+3))*7);
+    const side=i%2?-1:1, x=VW/2+side*(hw(p.t)+24+sd*146);
+    if(sd2<0.3){             /* a soaked dark patch, edges ragged */
+      g.fillStyle='#352c1c';
+      g.fillRect(x-7*p.s,p.y,(11+sd*8)*p.s+2,2.6*p.s+1);
+      g.fillRect(x-3*p.s,p.y+2.4*p.s,(6+sd*5)*p.s+1,1.6*p.s+0.8);
+      g.fillRect(x+2*p.s,p.y-1.4*p.s,(4+sd*4)*p.s+1,1.4*p.s+0.7);
+      if(sd>0.45){ g.globalAlpha=0.5; g.fillStyle='#9aa888';         // wet sheen on the big ones
+        g.fillRect(x-2*p.s,p.y+0.6*p.s,(5+sd*5)*p.s+1,Math.max(1,1.1*p.s)); g.globalAlpha=1; }
+    } else if(sd2<0.72){     /* a MOSS BED heaped around a damp middle */
+      g.fillStyle='#4c6a34';
+      g.fillRect(x-8*p.s,p.y-1*p.s,(14+sd*8)*p.s+2,3*p.s+1);
+      g.fillStyle='#5d8045'; g.fillRect(x-4*p.s,p.y-2.2*p.s,(7+sd*5)*p.s+1,1.8*p.s+0.8);
+      g.fillStyle='#3a3222'; g.fillRect(x-1*p.s,p.y+0.6*p.s,3.4*p.s+1,1.2*p.s+0.6);
+    } else {                 /* a ROOT TANGLE with a creeping vine */
+      g.fillStyle='#33281a';
+      g.fillRect(x-8*p.s,p.y-1.6*p.s,16*p.s+2,2.4*p.s+1);
+      g.fillRect(x-2*p.s,p.y-4*p.s,3*p.s+1,4*p.s+1);
+      g.fillRect(x+5*p.s,p.y-3*p.s,2.4*p.s+1,3*p.s+1);
+      g.fillStyle='#443620'; g.fillRect(x-8*p.s,p.y-1.6*p.s,16*p.s+2,1*p.s);
+      g.fillStyle='#4e7a35';
+      g.fillRect(x-6*p.s,p.y-2.6*p.s,3.4*p.s+1,1.2*p.s+0.6);
+      g.fillRect(x-1*p.s,p.y-4.6*p.s,3*p.s+1,1.2*p.s+0.6);
+      g.fillRect(x+4*p.s,p.y-2.2*p.s,3*p.s+1,1.2*p.s+0.6);
+    }
+  }
+  /* ---- THE PATH: packed wet mud, moss chewing its edges ---- */
+  g.fillStyle='#5a4b33';
   g.beginPath(); g.moveTo(VW/2-hw(p0.t),p0.y);
   for(let i=0;i<=22;i++){ const t=i/22, z=lerp(CFG.Z_FAR,-2.6,t), p=proj(z);
     g.lineTo(VW/2+hw(p.t)+notch(z,1)*p.t, p.y); }
@@ -1644,34 +1667,106 @@ function drawSwampRoad(){
   for(let i=22;i>=0;i--){ const t=i/22, z=lerp(CFG.Z_FAR,-2.6,t), p=proj(z);
     g.lineTo(VW/2-hw(p.t)-notch(z,5)*p.t, p.y); }
   g.closePath(); g.fill();
-  /* waterline lapping the causeway edge */
-  g.fillStyle='#101a20';
+  /* moss eating in from both edges */
+  g.fillStyle='#516c37';
   for(let i=0;i<18;i++){ const z=lerp(CFG.Z_FAR*0.9,-2.2,i/18), p=proj(z);
-    g.fillRect(VW/2+hw(p.t)+notch(z,1)*p.t-7*p.s,p.y,6*p.s+1,2.6*p.s+1);
-    g.fillRect(VW/2-hw(p.t)-notch(z,5)*p.t+1*p.s,p.y,6*p.s+1,2.6*p.s+1); }
-  /* wet mud sheen + puddle glints + sunk planks */
-  for(let i=0;i<26;i++){
+    g.fillRect(VW/2+hw(p.t)+notch(z,1)*p.t-7*p.s,p.y,6*p.s+1,2.8*p.s+1);
+    g.fillRect(VW/2-hw(p.t)-notch(z,5)*p.t+1*p.s,p.y,6*p.s+1,2.8*p.s+1); }
+  /* path texture: sky-puddles, dark wet mud, moss islands, twigs, a sunk plank */
+  for(let i=0;i<28;i++){
     const z=((i*2.17 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
     const p=proj(z), sd=sRnd(i*11+Math.floor((dist+i*2.17)/(CFG.Z_FAR+3))*9);
     const x=VW/2+(sd-0.5)*2*(hw(p.t)-16*p.t-6);
-    if(sd<0.3){ g.globalAlpha=0.55; g.fillStyle='#3a444c';            // puddle glint
-      g.fillRect(x,p.y,(6+sd*10)*p.s+1,1.8*p.s+0.8); g.globalAlpha=1; }
-    else if(sd<0.62){ g.fillStyle='#1b170f'; g.fillRect(x,p.y,(5+sd*7)*p.s+1,(2+sd*2)*p.s+1); }
-    else if(sd<0.72){ g.fillStyle='#33291c';                          // a sunk plank
+    if(sd<0.26){ g.globalAlpha=0.6; g.fillStyle='#9aa98c';            // a puddle holding the sky
+      g.fillRect(x,p.y,(6+sd*10)*p.s+1,1.9*p.s+0.8); g.globalAlpha=1; }
+    else if(sd<0.5){ g.fillStyle='#4a3c27'; g.fillRect(x,p.y,(5+sd*7)*p.s+1,(2+sd*2)*p.s+1); }
+    else if(sd<0.68){ g.fillStyle='#5b7440';                          // a moss island on the path
+      g.fillRect(x,p.y,(5+sd*6)*p.s+1,2.2*p.s+1);
+      g.fillStyle='#6d8a4c'; g.fillRect(x+1*p.s,p.y,2.4*p.s+1,1.1*p.s+0.5); }
+    else if(sd<0.76){ g.fillStyle='#6a5638';                          // a sunk plank
       g.fillRect(x,p.y,15*p.s+2,3*p.s+1);
-      g.fillStyle='#241c12'; g.fillRect(x+3*p.s,p.y,1.4*p.s,3*p.s+1); g.fillRect(x+9*p.s,p.y,1.4*p.s,3*p.s+1); }
-    else { g.fillStyle='#2c2618'; g.fillRect(x,p.y,(4+sd*5)*p.s+1,2*p.s+1); }
+      g.fillStyle='#514128'; g.fillRect(x+3*p.s,p.y,1.4*p.s,3*p.s+1); g.fillRect(x+9*p.s,p.y,1.4*p.s,3*p.s+1); }
+    else { g.fillStyle='#3f321f'; g.fillRect(x,p.y,(4+sd*5)*p.s+1,1.8*p.s+1); }   // twigs
   }
-  /* reeds crowding both rims */
-  for(let i=0;i<30;i++){
+  /* two trodden ruts of pressed dark mud */
+  g.fillStyle='#4b3d28';
+  for(let ln=0;ln<2;ln++){
+    for(let i=0;i<14;i++){
+      const z=((i*4.6 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
+      const p=proj(z), x=(laneX(ln,p.t)+laneX(ln+1,p.t))/2;
+      g.fillRect(x-2.2*p.s,p.y,4.4*p.s,9*p.s);
+    }
+  }
+  /* fat roots fingering ACROSS the path edges from the flanks */
+  for(let i=0;i<10;i++){
+    const z=((i*5.8 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
+    const p=proj(z), sd=sRnd(i*37+Math.floor((dist+i*5.8)/(CFG.Z_FAR+3))*5);
+    const side=i%2?-1:1, ex=VW/2+side*(hw(p.t)-2);
+    g.fillStyle='#33281a';
+    g.fillRect(side>0?ex-11*p.s:ex,p.y-1.4*p.s,11*p.s,2.2*p.s+1);
+    g.fillRect(side>0?ex-7*p.s:ex+4*p.s,p.y-3*p.s,3*p.s,3*p.s);
+    if(sd>0.5){ g.fillStyle='#443620';
+      g.fillRect(side>0?ex-11*p.s:ex,p.y-1.4*p.s,11*p.s,0.9*p.s); }
+  }
+  /* reeds and cattails crowding both rims */
+  for(let i=0;i<24;i++){
     const z=((i*1.93 - dist)%(CFG.Z_FAR+3)+(CFG.Z_FAR+3))%(CFG.Z_FAR+3)-3;
     const p=proj(z), sd=sRnd(i*29+Math.floor((dist+i*1.93)/(CFG.Z_FAR+3))*3);
     const side=i%2?-1:1, x=VW/2+side*(hw(p.t)-4-sd*12);
-    g.fillStyle=sd<0.5?'#33402e':'#2a3628';
+    g.fillStyle=sd<0.5?'#4b6b33':'#40602e';
     g.fillRect(x,p.y-6*p.s,1.5*p.s+0.8,6*p.s+1);
     g.fillRect(x+2.2*p.s,p.y-8.4*p.s,1.4*p.s+0.8,8.4*p.s+1);
-    if(sd>0.62){ g.fillStyle='#5a4c2a'; g.fillRect(x+2*p.s,p.y-10*p.s,2*p.s+0.8,2.4*p.s+0.8); } // cattail head
+    if(sd>0.62){ g.fillStyle='#7a5a2e'; g.fillRect(x+2*p.s,p.y-10*p.s,2*p.s+0.8,2.4*p.s+0.8); } // cattail head
   }
+}
+/* the swamp's GROUND scenery: small ponds lying flat in the mud — spawned and
+   rendered through the TREE pipeline, so they ride the exact same perspective
+   (grow in from the horizon, slide past, never distort). Four dressings. */
+function drawSwampPond(x,y,s,v){
+  g.save(); g.translate(x,y); g.scale(s,s);
+  const R=k=>sRnd(v*547.9+k*7.13);
+  const vr=(v*4|0)%4;
+  /* SHAPE variants: some ponds run long (up the road), some wide, some round */
+  const shp=(v*7|0)%3, sxF=shp===1?1.42:shp===2?0.68:1, syF=shp===1?0.68:shp===2?1.6:1;
+  g.save(); g.scale(sxF,syF);
+  /* the soaked mud bed it sits in — lobed, no clean rim */
+  g.fillStyle='#2e2718';
+  g.beginPath(); g.ellipse(0,-2,34,13,0,0,TAU); g.fill();
+  g.beginPath(); g.ellipse(20*(R(1)-0.5),3,24,10,0,0,TAU); g.fill();
+  /* the water: an irregular union of lobes */
+  g.fillStyle='#37503e';
+  g.beginPath(); g.ellipse(0,-2,28,10,0,0,TAU); g.fill();
+  g.beginPath(); g.ellipse(24*(R(2)-0.5),2,18,8,0,0,TAU); g.fill();
+  g.beginPath(); g.ellipse(-14*R(3),-6,14,6,0,0,TAU); g.fill();
+  g.fillStyle='#2b4033'; g.beginPath(); g.ellipse(4,-1,14,5.5,0,0,TAU); g.fill();
+  g.restore();                                   // dressings keep their TRUE shape
+  const pad=(px2,py2,s2)=>{ g.fillStyle='#5d8a45';
+    g.beginPath(); g.ellipse(px2,py2,s2,s2*0.42,0,0,TAU); g.fill();
+    g.fillStyle='#37503e'; g.fillRect(px2,py2-s2*0.42,s2*0.44,s2*0.42);   // the notch
+    g.fillStyle='#6d9a50'; g.fillRect(px2-s2*0.5,py2-s2*0.12,s2*0.5,s2*0.22); };
+  if(vr===0){                        /* lily pads, one with a pink bloom */
+    pad(-9*sxF,-1*syF,7); pad(10*sxF,-5*syF,5.5); pad(4*sxF,4*syF,4.5);
+    g.fillStyle='#d888a8'; g.fillRect(-11*sxF,-4*syF,5,4);
+    g.fillStyle='#f2c6d6'; g.fillRect(-11*sxF+1.4,-4*syF+1,2,2);
+  } else if(vr===1){                 /* spots of algae */
+    g.fillStyle='#4e7a3a';
+    g.fillRect(-16*sxF,-4*syF,14,2.6); g.fillRect(-6*sxF,1*syF,16,2.4); g.fillRect(6*sxF,-6*syF,10,2.2);
+    g.fillStyle='#5d8a45'; g.fillRect(-12*sxF,-2.4*syF,8,1.6); g.fillRect(2*sxF,2.6*syF,9,1.4);
+  } else if(vr===2){                 /* scummed film with gaps, reeds at the edge */
+    g.globalAlpha=0.85*worldA; g.fillStyle='#5f7d44';
+    g.beginPath(); g.ellipse(0,-1*syF,24*sxF,8.6*syF,0,0,TAU); g.fill(); g.globalAlpha=worldA;
+    g.fillStyle='#37503e'; g.fillRect(-8*sxF,-4*syF,8,2.4); g.fillRect(4*sxF,2*syF,8,2);
+    g.fillStyle='#4b6b33';
+    g.fillRect(-26*sxF,-14,2,14); g.fillRect(-26*sxF+4,-18,2,18);
+    g.fillStyle='#7a5a2e'; g.fillRect(-26*sxF+3.6,-20.6,3,3.4);    // cattail head
+  } else {                           /* open water: a sheen, one pad, a stone */
+    g.globalAlpha=0.5*worldA; g.fillStyle='#a8b694';
+    g.fillRect(-12*sxF,-5*syF,12*sxF,1.8); g.globalAlpha=worldA;
+    pad(12*sxF,0,5.5);
+    g.fillStyle='#5c5745'; g.fillRect(-24*sxF,-3,6,4);
+    g.fillStyle='#6a6553'; g.fillRect(-24*sxF,-3,6,1.6);
+  }
+  g.restore();
 }
 /* FIVE drowned-forest silhouettes: cypress, dead giant, mangrove cluster,
    weeping willow, hollow fungus-lit bole — every swamp tree its own ghost */
@@ -1692,7 +1787,7 @@ function drawCypress(x,y,s,v){
   };
   const knees=()=>{ g.fillStyle=bark;
     g.fillRect(-44,-5,8,10); g.fillRect(38,-8,7,13); g.fillRect(-52,-3,5,8); g.fillRect(48,-4,5,9); };
-  const waterStain=w=>{ g.globalAlpha=0.5*worldA; g.fillStyle='#101a20'; g.fillRect(-w,0,w*2,5); g.globalAlpha=worldA; };
+  const waterStain=w=>{ g.globalAlpha=0.5*worldA; g.fillStyle='#2e3d2c'; g.fillRect(-w,0,w*2,5); g.globalAlpha=worldA; };
   if(vr===0){        /* --- great bald cypress: flared buttress, high thin crown --- */
     g.fillStyle=bark;
     g.beginPath(); g.moveTo(-36,5); g.lineTo(-13,-38); g.lineTo(-13,-50); g.lineTo(13,-50);
@@ -1782,29 +1877,36 @@ function drawCypress(x,y,s,v){
 }
 function drawSwampAtmos(dt){
   if(env==='cave') return;
-  /* will-o-wisps: slow green ghost-lights instead of fireflies */
+  /* morning marsh air: sunlit midges circling, mist motes climbing off the pools */
   for(const a of ambient){
     if(a.kind==='fly'){
-      a.ph+=dt*a.sp*0.6; const fx=a.x+Math.sin(a.ph)*34, fy=a.y+Math.cos(a.ph*0.8)*18;
-      g.globalAlpha=0.30+Math.sin(a.ph*2.2)*0.22;
-      g.fillStyle='#a9d8cf'; g.shadowColor='#a9d8cf'; g.shadowBlur=11;
-      g.fillRect(fx,fy,3,3); g.fillRect(fx+1,fy-2,1.6,1.6);
+      a.ph+=dt*a.sp*0.8; const fx=a.x+Math.sin(a.ph)*30, fy=a.y+Math.cos(a.ph*0.8)*16;
+      g.globalAlpha=0.30+Math.sin(a.ph*2.6)*0.2;
+      g.fillStyle='#eef2c2'; g.shadowColor='#eef2c2'; g.shadowBlur=8;
+      g.fillRect(fx,fy,2.6,2.6); g.fillRect(fx+2,fy-2,1.4,1.4);
       g.shadowBlur=0;
     } else {
-      /* rising marsh bubbles + drifting gnat specks */
-      a.y-=dt*(14+a.sp*16); a.x+=Math.sin(a.ph+=dt*2)*8*dt;
-      if(a.y<HORIZON_Y+30){ a.y=rnd(VH*0.72,VH); a.x=rnd(VW); }
-      g.globalAlpha=0.4;
-      g.fillStyle='#93a2b2'; g.fillRect(a.x|0,a.y|0,2,2);
+      /* mist motes rising slowly off the wet ground */
+      a.y-=dt*(10+a.sp*12); a.x+=Math.sin(a.ph+=dt*1.6)*8*dt;
+      if(a.y<HORIZON_Y+24){ a.y=rnd(VH*0.7,VH+PAD_BOT); a.x=rnd(VW); }
+      g.globalAlpha=0.3;
+      g.fillStyle='#d9e2c2'; g.fillRect(a.x|0,a.y|0,2.4,2.4);
       if(a.sp>0.7) g.fillRect((a.x+3)|0,(a.y-4)|0,1.6,1.6);
     }
   }
   g.globalAlpha=1;
-  /* a breath of low fog over the water — thin enough to see through */
-  const fog=g.createLinearGradient(0,HORIZON_Y-16,0,HORIZON_Y+110);
-  fog.addColorStop(0,'rgba(147,162,178,0)'); fog.addColorStop(.5,'rgba(147,162,178,0.11)');
-  fog.addColorStop(1,'rgba(147,162,178,0)');
-  g.fillStyle=fog; g.fillRect(0,HORIZON_Y-16,VW,130);
+  /* THE MIST AURA: a noticeable but gentle veil lying over the whole marsh */
+  const fog=g.createLinearGradient(0,HORIZON_Y-24,0,HORIZON_Y+130);
+  fog.addColorStop(0,'rgba(217,226,194,0)'); fog.addColorStop(.5,'rgba(217,226,194,0.20)');
+  fog.addColorStop(1,'rgba(217,226,194,0)');
+  g.fillStyle=fog; g.fillRect(0,HORIZON_Y-24,VW,154);
+  /* two slow mist banks drifting low across the road */
+  for(let b=0;b<2;b++){
+    const off=((perfNow*(9+b*5))%(VW+260))-130;
+    g.globalAlpha=0.08+b*0.03; g.fillStyle='#e2e8cc';
+    g.beginPath(); g.ellipse(off+b*200,HORIZON_Y+150+b*120,170,22+b*8,0,0,TAU); g.fill();
+  }
+  g.globalAlpha=1;
 }
 /* ============================== THE VOLCANO (loop 3, 6, 9...) ============================== */
 function drawVolcanoBg(dt){
@@ -2063,17 +2165,17 @@ function drawSwampLair(dt){
   /* THE MERE ITSELF: water wall-to-wall — no road, no shore but yours */
   const top=HORIZON_Y+20;
   const wat=g.createLinearGradient(0,top,0,VH);
-  wat.addColorStop(0,'#101a20'); wat.addColorStop(.5,'#0c1318'); wat.addColorStop(1,'#070c10');
+  wat.addColorStop(0,'#4a6650'); wat.addColorStop(.5,'#3a5443'); wat.addColorStop(1,'#293d31');
   g.fillStyle=wat; g.fillRect(0,top,VW,VH-top+PAD_BOT);
   /* the far rim: hummock grass where the water meets the treeline */
-  g.fillStyle='#3a4a3c';
+  g.fillStyle='#5d7d3c';
   for(let i=0;i<24;i++){ const hx2=i*(VW/24)+sRnd(i*7+2)*8;
     g.fillRect(hx2,top-3+sRnd(i*7+3)*4,VW/24*0.7,3.4); }
-  /* the moon lies broken across the whole mere */
+  /* the morning sun lies broken across the whole mere */
   for(let i=0;i<9;i++){
-    g.globalAlpha=0.16-i*0.013; g.fillStyle='#d8dde4';
+    g.globalAlpha=0.20-i*0.016; g.fillStyle='#f0eec6';
     const rw=48-i*3.4+Math.sin(perfNow*1.7+i)*4;
-    g.fillRect(VW*0.44-rw/2+Math.sin(perfNow*1.1+i*1.8)*4,top+10+i*7,rw,2.4);
+    g.fillRect(VW*0.4-rw/2+Math.sin(perfNow*1.1+i*1.8)*4,top+10+i*7,rw,2.4);
   }
   g.globalAlpha=1;
   /* living water: wavy ripple trains rolling across at three depths */
@@ -2081,66 +2183,74 @@ function drawSwampLair(dt){
     const sd=sRnd(i*19+4), ry2=top+14+sd*(PLAYER_Y-70-top-30);
     const x=((perfNow*(8+sd*14)+i*97)%(VW+140))-70;
     const L2=26+sd*30, seg=L2/4;
-    g.globalAlpha=0.34; g.fillStyle=i%2?'#31505c':'#1e3038';
+    g.globalAlpha=0.34; g.fillStyle=i%2?'#6a8f74':'#43604d';
     for(let k=0;k<4;k++)
       g.fillRect(x+k*seg,ry2+Math.sin(perfNow*2.5+i+k*1.4)*1.8,seg*0.76,1.9);
-    if(sd>0.72){ g.globalAlpha=0.4; g.fillStyle='#d8dde4';
+    if(sd>0.72){ g.globalAlpha=0.4; g.fillStyle='#f0eec6';
       g.fillRect(x+seg,ry2-0.6,4,1.2); }
   }
   g.globalAlpha=1;
+  /* LILY RAFTS drifting on the arena water, blooms among them */
+  for(let i=0;i<9;i++){ const sd=sRnd(i*43+2), sd3=sRnd(i*43+3);
+    const lx2=sd*VW+Math.sin(perfNow*0.3+i)*4, ly2=top+16+sd3*(PLAYER_Y-110-top);
+    g.fillStyle=i%2?'#5d8a45':'#6d9a50';
+    g.beginPath(); g.ellipse(lx2,ly2,6+sd*5,2.3+sd*1.6,0,0,TAU); g.fill();
+    g.fillStyle='#3a5443'; g.fillRect(lx2,ly2-2.3-sd*1.6,2.6,2.3+sd*1.6);   // the notch
+    if(sd3>0.7){ g.fillStyle='#e8d8e0'; g.fillRect(lx2-1.4,ly2-2,2.8,1.8); } // a white bloom
+  }
   /* ripple rings: things move under the surface */
   for(let i=0;i<6;i++){
     const ph=(perfNow*0.4+i*0.55)%1, sd=sRnd(i*31+2);
-    g.globalAlpha=(1-ph)*0.3; g.strokeStyle='#31505c'; g.lineWidth=1.5;
+    g.globalAlpha=(1-ph)*0.3; g.strokeStyle='#7d9b6a'; g.lineWidth=1.5;
     g.beginPath(); g.ellipse(sd*VW,top+30+sRnd(i*31+3)*80,6+ph*36,(6+ph*36)*0.28,0,0,TAU); g.stroke();
   }
   g.globalAlpha=1;
-  /* the drowned dead: ribs, a statue head, a snag with a lantern-wisp */
-  g.fillStyle='#9aab90';
+  /* the drowned dead: ribs, a statue head, a snag */
+  g.fillStyle='#c3c9a8';
   for(let i=0;i<4;i++) g.fillRect(VW*0.2+i*9,top+52-Math.abs(i-1.5)*2,3.4,9-Math.abs(i-1.5)*2);
-  g.fillStyle='#6a7568'; g.fillRect(VW*0.8-10,top+40,20,13);
-  g.fillStyle='#3a4a3c'; g.fillRect(VW*0.8-10,top+40,20,3.4);
-  g.fillStyle='#070c10'; g.fillRect(VW*0.8-6,top+46,4,3.4); g.fillRect(VW*0.8+2,top+46,4,3.4);
-  g.fillStyle='#0d1118'; g.fillRect(VW*0.62-2,top+18,4,26); g.fillRect(VW*0.62-6,top+22,5,3);
+  g.fillStyle='#8a927a'; g.fillRect(VW*0.8-10,top+40,20,13);
+  g.fillStyle='#5d7d3c'; g.fillRect(VW*0.8-10,top+40,20,3.4);
+  g.fillStyle='#293d31'; g.fillRect(VW*0.8-6,top+46,4,3.4); g.fillRect(VW*0.8+2,top+46,4,3.4);
+  g.fillStyle='#3a4f38'; g.fillRect(VW*0.62-2,top+18,4,26); g.fillRect(VW*0.62-6,top+22,5,3);
   /* THE SHORE: no road out here — just the wet mud bar you stand on, the mere beyond */
   const shoreY=PLAYER_Y-70;
   const mud=g.createLinearGradient(0,shoreY,0,VH);
-  mud.addColorStop(0,'#221c12'); mud.addColorStop(.35,'#1c1811'); mud.addColorStop(1,'#0f0c08');
+  mud.addColorStop(0,'#5a4b33'); mud.addColorStop(.35,'#4b3f2a'); mud.addColorStop(1,'#33291b');
   g.fillStyle=mud; g.fillRect(0,shoreY,VW,VH-shoreY+PAD_BOT);
   /* the WATERLINE: a living lapping edge running the whole width of the mere */
   for(let k=0;k<24;k++){
     const wx3=k*(VW/24), lap=Math.sin(perfNow*2.1+k*0.9)*3;
-    g.fillStyle='#101a20'; g.fillRect(wx3,shoreY-6+lap,VW/24+1,7);
-    g.globalAlpha=0.5; g.fillStyle='#93a2b2';
+    g.fillStyle='#3a5443'; g.fillRect(wx3,shoreY-6+lap,VW/24+1,7);
+    g.globalAlpha=0.5; g.fillStyle='#bccaa4';
     g.fillRect(wx3+2,shoreY+lap,VW/24*0.6,1.6); g.globalAlpha=1;
   }
-  g.globalAlpha=0.25; g.fillStyle='#101a20'; g.fillRect(0,shoreY+4,VW,6); g.globalAlpha=1;
-  /* shore texture: mottle, sunken stones, puddles catching the wisplight */
+  g.globalAlpha=0.25; g.fillStyle='#3a5443'; g.fillRect(0,shoreY+4,VW,6); g.globalAlpha=1;
+  /* shore texture: mottle, stones, moss patches, puddles holding the sky */
   for(let i=0;i<26;i++){ const sd=sRnd(i*23+5), sx2=sd*VW, sy2=shoreY+10+sRnd(i*23+6)*(VH-shoreY-16);
-    if(sd<0.3){ g.fillStyle='#181410'; g.fillRect(sx2,sy2,6+sd*10,2.6); }
-    else if(sd<0.5){ g.fillStyle='#2a2418'; g.fillRect(sx2,sy2,4+sd*7,3); }
-    else if(sd<0.62){ g.globalAlpha=0.5; g.fillStyle='#31505c';
-      g.beginPath(); g.ellipse(sx2,sy2,7,2.4,0,0,TAU); g.fill();
-      g.globalAlpha=0.4+Math.sin(perfNow*1.6+i)*0.2; g.fillStyle='#a9d8cf';
-      g.fillRect(sx2-2,sy2-0.6,3,1.2); g.globalAlpha=1; }
-    else { g.fillStyle='#141108'; g.fillRect(sx2,sy2,3+sd*4,2); }
+    if(sd<0.3){ g.fillStyle='#493a24'; g.fillRect(sx2,sy2,6+sd*10,2.6); }
+    else if(sd<0.5){ g.fillStyle='#6e5a3c'; g.fillRect(sx2,sy2,4+sd*7,3); }
+    else if(sd<0.62){ g.globalAlpha=0.55; g.fillStyle='#9aa98c';
+      g.beginPath(); g.ellipse(sx2,sy2,7,2.4,0,0,TAU); g.fill(); g.globalAlpha=1; }
+    else if(sd<0.8){ g.fillStyle='#57763b'; g.fillRect(sx2,sy2,4+sd*5,2.6);
+      g.fillStyle='#6b8a48'; g.fillRect(sx2+1,sy2,2,1.2); }
+    else { g.fillStyle='#3f321f'; g.fillRect(sx2,sy2,3+sd*4,2); }
   }
   /* reeds standing in the shallows along the whole waterline */
   for(let i=0;i<12;i++){ const sd=sRnd(i*31+7), rx2=sd*VW;
-    g.fillStyle=i%2?'#33402e':'#2a3628';
+    g.fillStyle=i%2?'#4b6b33':'#40602e';
     g.fillRect(rx2,shoreY-11-sd*5,2,11+sd*5);
     g.fillRect(rx2+3,shoreY-15-sd*4,1.8,15+sd*4);
-    if(sd>0.7){ g.fillStyle='#5a4c2a'; g.fillRect(rx2+2.6,shoreY-17-sd*4,2.4,3); } }
+    if(sd>0.7){ g.fillStyle='#7a5a2e'; g.fillRect(rx2+2.6,shoreY-17-sd*4,2.4,3); } }
   for(let i=0;i<6;i++){
     const wx2=VW*0.5+Math.sin(perfNow*0.5+i*2.1)*(90+i*44);
     const wy=top+16+((i*53)%70)-((perfNow*7)% (60+i*8));
     g.globalAlpha=0.25+Math.sin(perfNow*2.4+i)*0.15;
-    g.fillStyle='#a9d8cf'; g.shadowColor='#a9d8cf'; g.shadowBlur=8;
+    g.fillStyle='#eef2c2'; g.shadowColor='#eef2c2'; g.shadowBlur=8;
     g.fillRect(wx2,Math.max(top+6,wy),2.6,2.6); g.shadowBlur=0;
   }
   g.globalAlpha=1;
   if(Math.random()<dt*2.4){
-    particles.push({x:rnd(30,VW-30),y:top+rnd(10,120),vx:0,vy:-6,life:.7,maxLife:.7,size:2.2,col:'#93a2b2',grav:-30});
+    particles.push({x:rnd(30,VW-30),y:top+rnd(10,120),vx:0,vy:-6,life:.7,maxLife:.7,size:2.2,col:'#d9e2c2',grav:-30});
   }
 }
 /* ============================== THE LAVA POND (snapper arena: a boiling caldera) ============================== */
@@ -2415,12 +2525,22 @@ function drawBackground(dt){
   ground.addColorStop(0,'#131e17'); ground.addColorStop(.4,'#152218'); ground.addColorStop(1,'#0a130d');
   g.fillStyle=ground; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
 }
+let canopyCache=null, canopyCachePad=-1;       // rebuilt only when the pads change
 function drawCanopy(mx,my){
   /* the forest is CLAD in darkness: a solid leaf-mass ceiling covers the WHOLE sky
      (however tall the screen), parted only by one ragged clearing where the full
      moon and its stars look through. */
   const skyB=HORIZON_Y-46;                       // canopy reaches down to the treeline tops
   const rx=112, ry=84;                           // the moon clearing (kept tight)
+  /* the ceiling is fully STATIC — build it once into an offscreen layer and blit
+     it every frame (a big win on older phones); only the swaying fringe is live */
+  const capTop=-4-PAD_TOP;
+  if(!canopyCache||canopyCachePad!==PAD_TOP){
+    canopyCachePad=PAD_TOP;
+    canopyCache=document.createElement('canvas');
+    canopyCache.width=VW; canopyCache.height=Math.ceil(skyB+42-capTop);
+    const gMain=g; g=canopyCache.getContext('2d');
+    g.translate(0,-capTop);
   g.save();
   g.beginPath();
   g.rect(0,-4-PAD_TOP,VW,skyB+8+PAD_TOP);
@@ -2469,6 +2589,9 @@ function drawCanopy(mx,my){
   g.beginPath(); g.arc(chX+13,chY+14,21,0,TAU); g.fill();  // anchored back into the rim
   for(let k=0;k<6;k++){ const a=sRnd(k*9+2)*TAU;           // pixel clumps on its edge
     g.fillRect(chX+Math.cos(a)*23-3,chY+Math.sin(a)*23-3,7,7); }
+    g=gMain;                                   // cache built — back to the screen
+  }
+  g.drawImage(canopyCache,0,capTop);           // the whole static ceiling in ONE blit
   /* darker hanging fringe along the very top (hangs from the true screen top) */
   g.fillStyle='#060b08';
   for(let x=0;x<VW;x+=12){
@@ -2689,7 +2812,7 @@ function drawVignette(){
 
 /* ============================== 9. ENTITIES & SPAWNER ============================== */
 let obstacles=[], pickups=[], trees=[], projectiles=[], hazards=[];
-let nextSpawnAt=0, nextTreeAt=0;
+let nextSpawnAt=0, nextTreeAt=0, nextPondAt=0;   // nextPondAt paces the swamp's ground ponds
 
 /* the guaranteed arsenal: fixed weapon positions rolled at loop start */
 let guaranteed=[];
@@ -2729,6 +2852,17 @@ function spawnLoopEntities(){
     const rootAt=s=>obstacles.some(o=>o.kind==='root'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
     if(rootAt(side)){ if(!rootAt(-side)) side=-side; else off=rnd(3.6,4.4); }
     trees.push({z:tz, off:side*off, v:Math.random()});
+    /* a SECOND, sparser line of trees far out on each flank — background texture
+       for the emptier biomes. Same projection as every tree (no distortion), and
+       they slide off-screen while still mid-distance, so they come and go cheaply */
+    if(Math.random()<0.5)
+      trees.push({z:tz+rnd(0.5,1.6), off:(Math.random()<.5?-1:1)*rnd(4.6,6.6), v:Math.random()});
+    /* the swamp scatters small GROUND PONDS between the trees — PACED, so they
+       arrive one at a time and never in clumps */
+    if(biome==='swamp'&&nextTreeAt>=nextPondAt){
+      trees.push({z:tz+rnd(0.3,1.0), off:(Math.random()<.5?-1:1)*rnd(1.6,6.0), v:Math.random(), gnd:true});
+      nextPondAt=nextTreeAt+rnd(5,9);
+    }
     nextTreeAt+=rnd(1.7,3.4);
   }
   const stageEnd=CFG.LOOP_DIST, wolfAtDist=stageEnd*CFG.MINIBOSS_AT;
@@ -3300,6 +3434,10 @@ function startMiniboss(lane){
   /* but the forest stays: fill the treeline so the duel doesn't happen in a void */
   for(let tz=5;tz<CFG.Z_FAR;tz+=rnd(1.7,3.2))
     if(!trees.some(t=>Math.abs(t.z-tz)<1.4)) trees.push({z:tz,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()});
+  for(let tz=6;tz<CFG.Z_FAR;tz+=rnd(3.5,6))  // the sparse outer flank line too
+    trees.push({z:tz,off:(Math.random()<.5?-1:1)*rnd(4.6,6.6),v:Math.random()});
+  if(biome==='swamp') for(let tz=5;tz<CFG.Z_FAR;tz+=rnd(5,9))       // and the ground ponds, paced
+    trees.push({z:tz,off:(Math.random()<.5?-1:1)*rnd(1.6,6.0),v:Math.random(),gnd:true});
   setMode('miniboss'); SFX.howl(); shake(6,.4);
 }
 /* a landed counter against the wolf: no HP — three of these and it yields */
@@ -3668,7 +3806,7 @@ function shopTap(pt){
   if(pt.x>VW/2-95&&pt.x<VW/2+95&&pt.y>688&&pt.y<740){ nextLoop(); }   // RIDE ON
 }
 function nextLoop(){
-  loop++; dist=0; nextSpawnAt=30; nextTreeAt=6;
+  loop++; dist=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
   arrows=0; lances=0;                        // weapons reset every loop — all were spent on the boss
   obstacles=[]; pickups=[]; trees=[]; hazards=[]; projectiles=[];
   wolfSpawned=false; buildGuaranteed();
@@ -3706,7 +3844,7 @@ function resetRun(){
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; wolfLeap=null; wolfSpawned=false; wolfFight=null; boss=null;
   obstacles=[]; pickups=[]; trees=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0;
-  nextSpawnAt=40; nextTreeAt=6; buildGuaranteed();
+  nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,invuln:0});
 }
 /* --- riders: pick your knight before the run --- */
@@ -3729,7 +3867,7 @@ function startRun(i){
     loop=debugLoop; biome=biomeOf(loop); oakUsed=false;
     relics=[null,null,null,null,null];
     let k=0; for(const key in debugSel){ if(debugSel[key]&&k<5) relics[k++]={type:key,charged:true}; }
-    nextSpawnAt=40; nextTreeAt=6; buildGuaranteed();
+    nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
     floater(VW/2,300,'⚙ DEBUG — STAGE '+loop+(godMode?' · GOD MODE':''),'#5c8fa0',18);
   }
   setMode('run'); SFX.relic();
@@ -4121,8 +4259,10 @@ const CHANGELOGS=[
   '  ONE AT A TIME (no stacking, order always clear);',
   '  far water SHIMMERS so it reads from a distance',
   '· sky gap: jagged leaf texture hugs the whole rim',
-  '· new leap-pose jump (smooth, no wobble) and a',
-  '  low-pressed crouch',
+  '· new jump & crouch animations (smooth, no wobble)',
+  '· SWAMP REVAMP: a misty green MORNING — veiled sun,',
+  '  muddy mossy path, flanks of pools, mud, moss beds,',
+  '  roots & vines, and a lily-strewn mere at the end',
   'FIXES',
   '· the score ticks up FAST, one by one; menu buttons',
   '  more readable; select-screen text fits its cards',
@@ -4130,13 +4270,12 @@ const CHANGELOGS=[
   '  never in mid-air on top of it',
   '· fixed the moss/grass flicker under the rider',
   '  (roadside decor changed identity mid-travel)',
-  '· leaves & ash no longer bunch at the screen top',
-  '· the road now reaches the very bottom edge',
+  '· the road reaches the bottom edge; particles no',
+  '  longer bunch at the screen top',
   '· mobile: no longer stuck on the pause screen',
   'MOBILE',
-  '· tall screens: sky and ground EXTEND into the',
-  '  empty bars — game centered and untouched; the',
-  '  HUD tucks below the dynamic island',
+  '· tall screens: sky & ground extend into the bars;',
+  '  the HUD tucks below the dynamic island',
   'RIDERS',
   '· UMUTCAN joins: the game\'s biggest shareholder —',
   '  hairy, bald, riding his monkey',
@@ -4470,6 +4609,11 @@ function update(dt){
       /* keep spawning scenery trees so the safe ride still looks alive */
       while(dist+SPAWN_FAR > nextTreeAt){
         trees.push({z:nextTreeAt-dist, off:(Math.random()<.5?-1:1)*rnd(2.6,3.8), v:Math.random()});
+        if(Math.random()<0.5)                       // the sparse outer flank line
+          trees.push({z:nextTreeAt-dist+rnd(0.5,1.6), off:(Math.random()<.5?-1:1)*rnd(4.6,6.6), v:Math.random()});
+        if(biome==='swamp'&&nextTreeAt>=nextPondAt){ // ground ponds in the marsh, paced
+          trees.push({z:nextTreeAt-dist+rnd(0.3,1.0), off:(Math.random()<.5?-1:1)*rnd(1.6,6.0), v:Math.random(), gnd:true});
+          nextPondAt=nextTreeAt+rnd(5,9); }
         nextTreeAt+=rnd(1.7,3.4);
       }
     }
@@ -4500,7 +4644,11 @@ function update(dt){
     if(mode==='miniboss'){                       // new trees keep marching in — the duel never empties the wood
       let far=0; for(const t of trees) far=Math.max(far,t.z);
       while(far<CFG.Z_FAR-2){ far+=rnd(1.7,3.2);
-        trees.push({z:far,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()}); }
+        trees.push({z:far,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()});
+        if(Math.random()<0.4)                    // sparse outer flank line
+          trees.push({z:far+0.6,off:(Math.random()<.5?-1:1)*rnd(4.6,6.6),v:Math.random()});
+        if(biome==='swamp'&&Math.random()<0.22)  // ground ponds keep coming too, sparse
+          trees.push({z:far+0.3,off:(Math.random()<.5?-1:1)*rnd(1.6,6.0),v:Math.random(),gnd:true}); }
     }
   }
 }
@@ -4535,7 +4683,9 @@ function render(){
        1/(f+z) ratio (position converging on the vanishing point); inside it rides
        the normal projection. The two meet exactly at the horizon — no phasing,
        no stand-in silhouettes, background and foreground are the same tree. */
-    worldA=clamp((SPAWN_FAR-t.z)/26,0,1);
+    /* ground ponds use the obstacles' SHORT far window — they surface near the
+       horizon one by one instead of piling up tiny at the vanishing point */
+    worldA=t.gnd?clamp((78-t.z)/10,0,1):clamp((SPAWN_FAR-t.z)/26,0,1);
     if(worldA<=0){ worldA=1; return; }
     /* soft horizon, same mapping as the obstacles: tempered growth (no hill-rise)
        plus a gentle drift down the last sliver below the line — a root's mother
@@ -4546,8 +4696,14 @@ function render(){
     /* once PAST the knight, trees swing outward so no canopy edge can flash up
        the screen as they leave (the source of the green-streak bug) */
     const slide=1+Math.max(0,p.t-1)*0.6;
+    const sc=linS(p.t)*3.2*grow;
+    const xx=VW/2+t.off*lerp(24,150,p.t)*1.2*grow*slide;
+    /* cull: a tree entirely OFF-SCREEN costs dozens of draw calls for nothing —
+       skip it (110 covers the widest crown in local sprite units) */
+    if(xx+110*sc<0||xx-110*sc>VW){ worldA=1; return; }
     g.globalAlpha=worldA;
-    BIO().scenery(VW/2+t.off*lerp(24,150,p.t)*1.2*grow*slide,p.y+6,linS(p.t)*3.2*grow,t.v);
+    if(t.gnd){ if(BIO().ground) BIO().ground(xx,p.y+6,sc*0.55,t.v); }  // flat ground scenery (ponds)
+    else BIO().scenery(xx,p.y+6,sc,t.v);
     worldA=1; g.globalAlpha=1;
   }});
   const frontObs=[];                     // arches the knight is riding UNDER draw over him
