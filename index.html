@@ -97,24 +97,26 @@ const CFG = {
   /* --- stage boss: the bear --- */
   BOSS_HP_BASE    : 135,   // loop-1 HP: full arsenal + good counters beats it WITHOUT the wolf;
                            // miss a couple of pickups and the wolf's 60 becomes your lifeline
-  BOSS_HP_PER_LOOP: 35,    // +HP each loop (the curve tightens fast — upgrades & the wolf keep pace)
-  BOSS_HP_TIER_ADD: 40,    // extra +HP every 3 loops
+  BOSS_HP_PER_LOOP: 28,    // steady late-game growth without turning high stages into damage walls
+  BOSS_HP_TIER_ADD: 24,    // smaller tier bump; weapons/upgrades can still keep pace
   BOSS_Z          : 14,    // where the boss stands in world depth
   BOSS_DODGE_ATKS : 4,     // the dodge phase lasts exactly this many boss attacks...
-  BOSS_ATKS_TIER  : 1,     // ...plus this many more every 3 loops
-  ATK_HASTE_LOOP  : 0.07,  // idle gaps between attacks shrink per loop...
-  ATK_HASTE_MIN   : 0.55,  // ...but never below this fraction (stays fair)
-  COMBO_BASE      : 0.15,  // chance an attack chains instantly into another (telegraphs stay full)
-  COMBO_LOOP      : 0.06,  // combo chance grows per loop...
-  COMBO_MAX       : 0.55,  // ...capped here
-  TELE_MIN_MULT   : 0.62,  // telegraphs shrink with loops but never below this fraction
-  TELE_LOOP_MULT  : 0.05,  // telegraph shrink per loop
-  PERFECT_WIN     : 0.30,  // seconds before impact that count as a "perfect dodge"
+  BOSS_ATKS_TIER  : 1,     // ...plus this many more every 6 stages
+  ATK_HASTE_LOOP  : 0.0115,// one biome-agnostic curve now keeps tightening through stage 25
+  ATK_HASTE_MIN   : 0.72,  // meaningful breathing room remains even at stage 27+
+  COMBO_BASE      : 0.12,  // chance an attack chains instantly into another
+  COMBO_LOOP      : 0.0095,// combo pressure also reaches its cap near stage 25, not stage 10
+  COMBO_MAX       : 0.35,  // prevents relentless chains from dominating the fight
+  TELE_MIN_MULT   : 0.78,  // readable high-stage tells; movement-aware minimums apply below
+  TELE_LOOP_MULT  : 0.0275,// shared boss tell speed reaches its safe floor around stage 25
+  PERFECT_WIN     : 0.18,  // small last-moment input window that awards a counter
+  FIGHT_HIT_HALF  : 62,    // screen px from a marked lane centre: matches the paw/body footprint
+  IMPACT_HOLD     : 0.10,  // keep the contact pose visible after the damage frame
 
   /* --- miniboss: the grey wolf (a counter duel — no HP, no ally) --- */
   MINIBOSS_AT     : 0.60,  // fraction of loop distance where the wolf waits
-  WOLF_DODGE_ATKS : 5,     // the wolf attacks this many times...
-  WOLF_COUNTERS   : 3,     // ...counter it this many times and it falls (and joins you)
+  WOLF_DODGE_ATKS : 3,     // early minibosses are short duels; later stages add turns
+  WOLF_COUNTERS   : 2,     // early taming asks for two clean counters, then scales upward
                            // fewer counters = it simply flees; you lose nothing (a hit still kills)
 
   /* --- score --- */
@@ -127,6 +129,7 @@ const CFG = {
 
 /* ============================== 2. UTILS ============================== */
 const TAU = Math.PI*2;
+const ALL_LANES=Object.freeze([0,1,2]);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
 const easeOut=t=>1-Math.pow(1-t,3);
@@ -142,6 +145,9 @@ function sRnd(seed){ let s=Math.sin(seed*127.1+311.7)*43758.5453; return s-Math.
    picture — sky, road, sprites, UI — is pixel-identical to the desktop version. */
 const VW=480, VH=800;
 const HORIZON_Y=286, PLAYER_Y=648, GROUND_Y=PLAYER_Y-14;
+const ATTACK_GROUND_Y=PLAYER_Y+6; // centreline of the red lane warning and every ground-contact model
+const BODY_ATTACK_Y=PLAYER_Y-60;  // rider/horse body contact for bites and lane strikes
+const DUCK_ATTACK_Y=PLAYER_Y-108; // above the crouched profile, through the standing head/shoulders
 const cvs=document.getElementById('game');
 /* opaque context: skips per-frame alpha compositing with the page — measurably
    cheaper on older phones. `let`, so draw helpers can retarget g at offscreen
@@ -151,6 +157,11 @@ let g=cvs.getContext('2d',{alpha:false});
    flickering animation). On touch devices glow becomes a no-op — art stays, lag goes. */
 const LOW_FX=(typeof matchMedia==='function')&&matchMedia('(pointer:coarse)').matches;
 if(LOW_FX){ try{ Object.defineProperty(g,'shadowBlur',{get:()=>0,set:()=>{}}); }catch(e){} }
+/* Old phones lose far more time filling 3x canvases than they gain in sharpness.
+   Use the browser's coarse hardware hints only to cap genuinely constrained devices. */
+const LOW_POWER=((navigator.deviceMemory||8)<=4||(navigator.hardwareConcurrency||8)<=4);
+const RENDER_DPR_CAP=LOW_POWER?2:3;
+const renderDpr=()=>Math.min(window.devicePixelRatio||1,RENDER_DPR_CAP);
 const safeEl=document.getElementById('safe');
 let viewScale=1, viewX=0, viewY=0;    // letterbox transform
 let uiTop=0;                          // HUD offset that keeps it clear of phone notches
@@ -160,7 +171,7 @@ let uiTop=0;                          // HUD offset that keeps it clear of phone
 let PAD_TOP=0, PAD_BOT=0, PAD_TOT=0;
 let lastCW=0,lastCH=0,lastDpr=0;
 function resize(){
-  const dpr=Math.min(window.devicePixelRatio||1,3);   // full native sharpness on phones
+  const dpr=renderDpr();                              // adaptive sharpness on older phones
   /* reallocating the canvas blanks it for a frame — mobile viewport events fire
      constantly while scrolling/gesturing, so only realloc when size TRULY changed
      (this was the source of the random texture flashes) */
@@ -186,7 +197,7 @@ addEventListener('orientationchange',()=>{ setTimeout(resize,300); });
 if(window.visualViewport) visualViewport.addEventListener('resize',resize);
 /* convert a client (touch/mouse) point into logical game coordinates */
 function toGame(cx,cy){
-  const dpr=Math.min(window.devicePixelRatio||1,3);
+  const dpr=renderDpr();
   return { x:(cx*dpr-viewX)/viewScale, y:(cy*dpr-viewY)/viewScale };
 }
 
@@ -298,7 +309,7 @@ function handleAction(a,pt){
      && pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop){
     paused=true; return;
   }
-  if(a==='tap' && pt && debugRun && boss && mode==='boss'
+  if(a==='tap' && pt && debugRun && boss && !boss._moveLab && mode==='boss'
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
   if(a==='tap') return;                          // gameplay uses swipes/keys only
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a);
@@ -571,12 +582,21 @@ function drawBear(x,y,scale,state,t,hurtFlash){
     else { const c=(t-0.4)/0.6;
       g.rotate(easeOut(c)*0.9); g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*40); }
   }
-  g.translate(-16*U,-42*U);                          // origin: feet center
+  g.translate(-16*U,-42*U);                            // origin: feet center
   const fur=hurtFlash?'#ffffff':'#4a3524', furD=hurtFlash?'#e8e8e8':'#31220f',
         furL=hurtFlash?'#ffffff':'#63492f', claw='#d8d3c4';
   /* pose parameters per state */
-  let armL=0.5, armR=0.5, crouch=0, headY=0, jaw=0;  // arm angles (rad, 0=down), body crouch
-  if(state==='tele_swipe'){ armR=-2.0-Math.sin(t*22)*0.06; }                 // wind up right claw high
+  let armL=0.5, armR=0.5, crouch=0, headY=0, jaw=0, twist=0;
+  if(state==='tele_claw'){ armR=-2.2-Math.sin(t*24)*0.08; headY=-easeOut(t)*2; }
+  else if(state==='tele_rake'){ armL=-1.85; armR=-1.85; crouch=easeOut(t)*3; }
+  else if(state==='tele_spin'){ crouch=easeOut(t)*9; armL=-1.15; armR=-1.15; }
+  else if(state==='tele_upperbite'){ headY=-easeOut(t)*9; armL=-0.8; armR=-0.8; jaw=easeOut(t); }
+  else if(state==='strike_claw'){ const s=easeOut(t); armR=-2.2+s*4.8; armL=0.5+s*0.7; crouch=s*2; }
+  else if(state==='strike_rake'){ const s=easeOut(t); armL=-1.9+s*4.4; armR=-1.9+s*4.4; crouch=s*3; }
+  else if(state==='strike_spin'){ twist=t*TAU*0.9; armL=-1.2; armR=-1.2; crouch=6; }
+  else if(state==='strike_upperbite'){ const s=easeOut(t); headY=-9+s*15; jaw=1-s*0.25; armL=-0.8+s*1.1; armR=-0.8+s*1.1; }
+  else if(state==='strike_pounce'){ const s=easeOut(t); crouch=-s*5; headY=s*3; jaw=0.75; }
+  else if(state==='tele_swipe'){ armR=-2.0-Math.sin(t*22)*0.06; }                 // old animation aliases
   else if(state==='tele_double'){ armL=-2.0; armR=-2.0; }                    // both claws high
   else if(state==='tele_sweep'){ crouch=easeOut(t)*8; armL=0.9; armR=0.9; }  // crouch low
   else if(state==='tele_lunge'){ headY=-easeOut(t)*6; armL=-0.6; armR=-0.6; jaw=t; } // rear up, jaws wide
@@ -584,6 +604,7 @@ function drawBear(x,y,scale,state,t,hurtFlash){
   else if(state==='howl'||state==='tele_combo'){ headY=-easeOut(Math.min(t*2,1))*8; jaw=1; }
   else if(state==='strike'){ const s=easeOut(t); armL=0.5+s*2.6; armR=0.5+s*2.6; crouch=s*3; }
   else if(state==='hit'){ headY=2; crouch=-2; }
+  g.translate(16*U,42*U); g.rotate(twist); g.translate(-16*U,-42*U);
   /* legs (digitigrade) with heavy haunches */
   px(4.6,26-crouch,8,8,fur); px(19.4,26-crouch,8,8,fur);     // thigh mass
   px(5.4,27-crouch,2,5,furL);                                 // moonlit thigh edge
@@ -607,6 +628,12 @@ function drawBear(x,y,scale,state,t,hurtFlash){
   /* arms: rotated rects with claws */
   drawWolfArm(6*U,(16-crouch)*U,armL,fur,claw,-1);
   drawWolfArm(26*U,(16-crouch)*U,armR,fur,claw,1);
+  if(state==='strike_claw'||state==='strike_rake'){
+    g.globalAlpha=0.45+0.55*Math.sin(Math.min(t,0.8)/0.8*Math.PI);
+    g.fillStyle='#e8e2d0';
+    for(let i=0;i<3;i++) g.fillRect((17+i*2.8)*U,(18+i*1.8-crouch)*U,9*U,1.1*U);
+    g.globalAlpha=1;
+  }
   /* head */
   const hy=6+headY-crouch;
   px(10,hy,12,8,fur); px(9,hy+2,3,4,fur); px(20,hy+2,3,4,fur);
@@ -635,11 +662,278 @@ function drawWolfArm(sx,sy,ang,fur,claw,dir){
   g.restore();
 }
 
+/* ---- THE CAVE BEAR V2: a heavier, articulated block-model built for held attacks ---- */
+function drawBearV2(x,y,scale,state,t,hurtFlash){
+  g.save(); g.translate(x,y); g.scale(scale,scale);
+  const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U),Math.round(b*U),Math.round(w*U),Math.round(h*U)); };
+  let crouch=0, bodyY=0, lean=0, headY=0, jaw=0, pawR=0.52, pawL=-0.52, snarl=0;
+  const hold=Math.sin(t*28)*0.035;
+  if(state==='tele_paw_right'){ crouch=easeOut(t)*3; pawR=-2.34+hold; pawL=-0.15; headY=-2; snarl=t; }
+  else if(state==='tele_paw_left'){ crouch=easeOut(t)*3; pawL=2.34-hold; pawR=0.15; headY=-2; snarl=t; }
+  else if(state==='strike_paw_right'){ const k=easeOut(t); pawR=-2.34+k*4.75; lean=-0.10+k*0.22; bodyY=k*2; snarl=1; }
+  else if(state==='strike_paw_left'){ const k=easeOut(t); pawL=2.34-k*4.75; lean=0.10-k*0.22; bodyY=k*2; snarl=1; }
+  else if(state==='tele_double_paw'){ crouch=easeOut(t)*5; pawR=-2.42+hold; pawL=2.42-hold; headY=-2; snarl=t; }
+  else if(state==='strike_double_paw'){ const k=easeOut(t); pawR=-2.42+k*3.05; pawL=2.42-k*3.05; crouch=5-k*8; bodyY=k*4; snarl=1; }
+  else if(state==='tele_bite'){ crouch=easeOut(t)*7; headY=-easeOut(t)*4; jaw=easeOut(t); snarl=1; }
+  else if(state==='strike_bite'){ const k=easeOut(t); crouch=-k*4; bodyY=k*5; headY=-4+k*10; jaw=1-k*0.25; lean=Math.sin(k*Math.PI)*0.08; snarl=1; }
+  else if(state==='tele_slam'){ crouch=easeOut(t)*9; pawR=-2.7+hold; pawL=2.7-hold; headY=2; snarl=t; }
+  else if(state==='strike_slam'){ const k=easeOut(t); crouch=9-k*13; bodyY=k*6; pawR=-2.7+k*3.25; pawL=2.7-k*3.25; snarl=1; }
+  else if(state==='tele_high_sweep'){ crouch=easeOut(t)*3; pawR=-1.45+hold; pawL=1.45-hold; headY=-5; jaw=0.7; snarl=1; }
+  else if(state==='strike_high_sweep'){ const k=easeOut(t); pawR=-1.45+k*2.9; pawL=1.45-k*2.9; headY=-5+k*3; jaw=0.8; lean=Math.sin(k*Math.PI)*0.15; snarl=1; }
+  else if(state==='finisher'){
+    if(t<0.55){ const k=easeOut(t/0.55); crouch=k*8; pawR=-2.65+hold; pawL=2.65-hold; headY=-k*7; jaw=k; snarl=1; }
+    else { const k=easeOut((t-0.55)/0.45); crouch=8-k*16; bodyY=k*11; pawR=-2.65+k*3.2; pawL=2.65-k*3.2; headY=-7+k*15; jaw=1; snarl=1; }
+  }
+  else if(state==='volley'){ crouch=2; jaw=0.35; }
+  else if(state==='recover'){ crouch=-2; headY=2; }
+  else { bodyY=Math.sin(perfNow*1.8)*0.45; jaw=0.08+Math.max(0,Math.sin(perfNow*1.3))*0.08; }
+  if(state==='dying'){
+    if(t<0.42) g.translate(rnd(-3,3)*t*8,0);
+    else { const k=(t-0.42)/0.58; g.rotate(easeOut(k)*0.82); g.translate(0,easeOut(k)*34); g.globalAlpha=1-k*k; }
+  }
+  g.rotate(lean); g.translate(-20*U,(-56+bodyY)*U);
+  const fur=hurtFlash?'#fff7ed':'#3a281d', deep=hurtFlash?'#eee8e2':'#1d1411',
+        mid=hurtFlash?'#ffffff':'#52392a', light=hurtFlash?'#ffffff':'#75513a',
+        rim=hurtFlash?'#ffffff':'#9a7453', muzzle='#241719', blood='#7a2028', bone='#e2d8c5';
+
+  /* ground shadow and rear feet make the mass feel planted before the upper body moves */
+  g.globalAlpha=0.48; g.fillStyle='#050405'; g.beginPath(); g.ellipse(20*U,55*U,18*U,3.2*U,0,0,TAU); g.fill(); g.globalAlpha=1;
+  P(6,40-crouch,9,12+crouch,deep); P(25,40-crouch,9,12+crouch,deep);
+  P(5,50,11,4,fur); P(24,50,11,4,fur); P(5,50,11,1.2,light); P(24,50,11,1.2,light);
+  for(let i=0;i<3;i++){ P(6+i*2.8,53,1.7,2.4,bone); P(25+i*2.8,53,1.7,2.4,bone); }
+
+  /* broad haunches, layered chest and block facets: intentionally denser than runner art */
+  P(5,17-crouch,30,27,fur); P(7,13-crouch,26,10,mid); P(11,10-crouch,18,5,light);
+  P(2,19-crouch,8,19,mid); P(30,19-crouch,8,19,deep);
+  P(8,21-crouch,5,20,light); P(13,18-crouch,15,25,mid); P(20,21-crouch,9,21,deep);
+  P(9,17-crouch,4,3,rim); P(14,14-crouch,6,3,light); P(23,15-crouch,6,3,deep);
+  for(let i=0;i<6;i++) P(7+i*4.7,41-crouch+(i%2),3.2,2.4,i%2?deep:mid);
+  P(9,27-crouch,12,1.3,'#6b3033'); P(11,30-crouch,11,1.2,'#5a252a'); P(14,33-crouch,9,1.1,'#4b2024');
+  for(let i=0;i<7;i++) P(6+i*4.5,10-crouch-(i%2)*1.5,3,4,i%2?deep:fur);
+
+  const arm=(sx,sy,ang,side)=>{
+    g.save(); g.translate(sx*U,sy*U); g.rotate(ang);
+    P(-2.7,-1,6,14,side<0?light:mid); P(-1,-1,2.3,13,rim);
+    g.translate(0,12*U); g.rotate(side*0.13);
+    P(-3.5,0,7,11,fur); P(-3.5,0,1.8,10,light); P(-4,9,8,5,deep); P(-4,9,8,1.6,mid);
+    for(let i=0;i<4;i++) P(-3.7+i*2.25,13,1.15,3.7,bone);
+    g.restore();
+  };
+  /* bear-right is screen-left while it faces the rider */
+  arm(7,21-crouch,pawR,-1); arm(33,21-crouch,pawL,1);
+
+  /* neck block and an asymmetric, scarred head */
+  const hy=1+headY-crouch;
+  P(11,hy+7,18,12,deep); P(10,hy,20,14,fur); P(13,hy-2,14,5,light);
+  P(8,hy-3,5,5,deep); P(27,hy-3,5,5,deep); P(9,hy-2,3,3,mid); P(28,hy-2,2.5,2.5,mid);
+  P(29,hy-4,1.8,2,deep); P(31,hy-2,1.5,2,deep); // small torn ears, not mascot circles
+  P(10,hy+3,9,2.4,deep); P(21,hy+3,9,2.4,deep); // long predatory brow shelf
+  g.fillStyle='#ff2738'; g.shadowColor='#ff2738'; g.shadowBlur=9*scale;
+  g.fillRect(13*U,(hy+4)*U,2.4*U,1.8*U); g.fillRect(23*U,(hy+4)*U,2.4*U,1.8*U); g.shadowBlur=0;
+  P(11,hy+5,2,1,'#f27b6e'); P(22,hy+5,2,1,'#f27b6e');
+  P(11,hy+7,18,7,muzzle); P(13,hy+6,14,3.2,mid); P(16,hy+9,8,2.4,'#0a0708');
+  P(12,hy+13+jaw*3,16,4.5,deep); P(13,hy+13+jaw*3,14,1.4,blood);
+  if(jaw>0.18||snarl>0.35){
+    P(12,hy+12.3,2,3.4,bone); P(26,hy+12.3,2,3.4,bone); P(16,hy+12.3,1.5,2.2,bone); P(22.5,hy+12.3,1.5,2.2,bone);
+    if(jaw>0.45){ P(15,hy+15+jaw*2,1.4,2.8,bone); P(24,hy+15+jaw*2,1.4,2.8,bone); P(19,hy+15+jaw*2,3,1.2,blood); }
+  }
+  P(25,hy+1,1.4,8,'#8a3438'); P(27,hy+2,1.2,6,'#6b272d'); // face scars
+  P(12,hy+1,3,1,rim); P(9,hy+9,3,1,light); P(27,hy+8,2,1,deep);
+
+  /* impact accents belong to the body motion, not a detached warning effect */
+  if(state==='strike_paw_right'||state==='strike_paw_left'){
+    const dir=state==='strike_paw_right'?1:-1, k=Math.sin(Math.min(t,1)*Math.PI);
+    g.globalAlpha=0.35+k*0.55; g.fillStyle=bone;
+    for(let i=0;i<4;i++) P(19+dir*(2+i*2),18+i*2,dir*10,1.2,bone);
+    g.globalAlpha=1;
+  }
+  if(state==='strike_slam'&&t>0.55){
+    g.globalAlpha=(1-t)*0.8; P(1,47,36,2,'#9b8060'); P(5,44,5,2,'#70563e'); P(29,43,4,2,'#70563e'); g.globalAlpha=1;
+  }
+  g.restore();
+}
+
+/* ---- THE CAVE BEAR NATURAL: low, humped brown-bear anatomy; no humanoid chest ---- */
+function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs){
+  g.save(); g.translate(x,y); g.scale(scale,scale);
+  const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U),Math.round(b*U),Math.round(w*U),Math.round(h*U)); };
+  /* Convert the red screen-space lane marks back into sprite coordinates. At full
+     strike extension each paw therefore lands on the exact centre of its mark. */
+  const contactLocal=(contactXs||[]).map(tx=>22+(tx-x)/(Math.max(.001,scale)*U));
+  const rightContact=contactLocal.length?contactLocal[0]:4.2;
+  const leftContact=contactLocal.length>1?contactLocal[contactLocal.length-1]:(contactLocal.length?contactLocal[0]:39.8);
+  /* The red lane hue is centred at PLAYER_Y+6. This is the authoritative road
+     plane for attack art as well as collision feedback. */
+  const groundContactY=55+(ATTACK_GROUND_Y-y)/(Math.max(.001,scale)*U);
+  const highContactY=55+(DUCK_ATTACK_Y-y)/(Math.max(.001,scale)*U);
+  const biteContactY=55+(BODY_ATTACK_Y-y)/(Math.max(.001,scale)*U);
+  let crouch=0, lean=0, headY=0, headOut=0, jaw=0, snarl=0;
+  let rightLift=0, leftLift=0, rightSlam=0, leftSlam=0, highThrust=0;
+  let rightTargetY=groundContactY,leftTargetY=groundContactY;
+  const heldLift=clamp(easeOut(t)+Math.sin(t*27)*.018,0,1);
+  if(state==='tele_paw_right'){ crouch=easeOut(t)*2; rightLift=heldLift; headY=-1; snarl=t; }
+  else if(state==='tele_paw_left'){ crouch=easeOut(t)*2; leftLift=heldLift; headY=-1; snarl=t; }
+  else if(state==='strike_paw_right'){ const k=clamp(t,0,1); rightLift=1; rightSlam=k; crouch=2-k*3; lean=-.08+k*.13; headOut=k*2; snarl=1; }
+  else if(state==='strike_paw_left'){ const k=clamp(t,0,1); leftLift=1; leftSlam=k; crouch=2-k*3; lean=.08-k*.13; headOut=k*2; snarl=1; }
+  else if(state==='tele_double_paw'){ crouch=easeOut(t)*5; rightLift=leftLift=heldLift; headY=-2; snarl=t; }
+  else if(state==='strike_double_paw'){ const k=clamp(t,0,1); rightLift=leftLift=1; rightSlam=leftSlam=k; crouch=5-k*7; headOut=k*2; snarl=1; }
+  else if(state==='tele_bite'){ crouch=easeOut(t)*5; headY=-easeOut(t)*3; jaw=easeOut(t); snarl=1; }
+  else if(state==='strike_bite'){
+    const k=easeOut(t); crouch=-k*3; headOut=k*3; jaw=1-k*.22;
+    headY=lerp(-3,biteContactY-20+crouch,k); lean=Math.sin(k*Math.PI)*.06; snarl=1;
+  }
+  else if(state==='tele_slam'){ crouch=easeOut(t)*7; rightLift=leftLift=heldLift; headY=-2; snarl=t; }
+  else if(state==='strike_slam'){ const k=clamp(t,0,1); crouch=7-k*11; rightLift=leftLift=1; rightSlam=leftSlam=k; headOut=k*2; snarl=1; }
+  else if(state==='tele_bear_low_rtl'){
+    const k=easeOut(t); crouch=k*3; leftLift=k*.55; leftSlam=k*.90; snarl=t;
+  }
+  else if(state==='strike_bear_low_rtl'){
+    const k=clamp(t,0,1); leftLift=.55; leftSlam=.90+k*.10; crouch=3-k*4; snarl=1;
+  }
+  else if(state==='tele_bear_low_ltr'){
+    const k=easeOut(t); crouch=k*3; rightLift=k*.55; rightSlam=k*.90; snarl=t;
+  }
+  else if(state==='strike_bear_low_ltr'){
+    const k=clamp(t,0,1); rightLift=.55; rightSlam=.90+k*.10; crouch=3-k*4; snarl=1;
+  }
+  else if(state==='tele_bear_high_rtl'){
+    const k=easeOut(t); leftLift=k*.55; leftSlam=k*.90; leftTargetY=highContactY; headY=-3; jaw=.45; snarl=t;
+  }
+  else if(state==='strike_bear_high_rtl'){
+    const k=clamp(t,0,1); leftLift=.55; leftSlam=.90+k*.10; leftTargetY=highContactY; headY=-3+k*2; snarl=1;
+  }
+  else if(state==='tele_bear_high_ltr'){
+    const k=easeOut(t); rightLift=k*.55; rightSlam=k*.90; rightTargetY=highContactY; headY=-3; jaw=.45; snarl=t;
+  }
+  else if(state==='strike_bear_high_ltr'){
+    const k=clamp(t,0,1); rightLift=.55; rightSlam=.90+k*.10; rightTargetY=highContactY; headY=-3+k*2; snarl=1;
+  }
+  else if(state==='tele_high_sweep'){ crouch=easeOut(t)*2; rightLift=leftLift=heldLift*.72; headY=-4; jaw=.6; snarl=1; }
+  else if(state==='strike_high_sweep'){ const k=clamp(t,0,1); rightLift=leftLift=.72; highThrust=easeOut(k); headY=-4+k*2; lean=Math.sin(k*Math.PI)*.06; jaw=.7; snarl=1; }
+  else if(state==='finisher'){
+    if(t<.55){ const k=easeOut(t/.55); crouch=k*8; rightLift=leftLift=k; headY=-k*5; jaw=k; snarl=1; }
+    else { const k=clamp((t-.55)/.45,0,1); crouch=8-easeOut(k)*13; rightLift=leftLift=1; rightSlam=leftSlam=k; headY=-5+k*11; headOut=k*10; jaw=1; snarl=1; }
+  } else if(state==='recover'){ crouch=-1; headY=2; }
+  else if(state==='volley'){ crouch=2; jaw=.2; }
+  else { headY=Math.sin(perfNow*1.4)*.35; }
+  if(state==='dying'){
+    if(t<.42) g.translate(rnd(-2,2)*t*8,0);
+    else { const k=(t-.42)/.58; g.rotate(easeOut(k)*.68); g.translate(0,easeOut(k)*34); g.globalAlpha=1-k*k; }
+  }
+  g.rotate(lean); g.translate(-22*U,(-55)*U);
+  const fur=hurtFlash?'#fff8ef':'#4a3020', dark=hurtFlash?'#eee7df':'#20150f',
+        shadeC=hurtFlash?'#fff':'#302015', mid=hurtFlash?'#fff':'#68452d',
+        sun=hurtFlash?'#fff':'#936645', muzzle=hurtFlash?'#eee':'#9b795b',
+        nose='#171112', mouth='#301418', scar='#6c292c', claw='#ddd4c2';
+
+  /* A shoulder-heavy wild bear: broad hump, pulled-in waist, narrow skull. */
+  g.globalAlpha=.42; g.fillStyle='#050405'; g.beginPath(); g.ellipse(22*U,53*U,19*U,3*U,0,0,TAU); g.fill(); g.globalAlpha=1;
+  P(4,34-crouch,10,13+crouch,dark); P(30,34-crouch,10,13+crouch,dark);
+  P(3,43,13,5,fur); P(28,43,13,5,fur); P(4,47,11,3,shadeC); P(29,47,11,3,shadeC);
+  for(let i=0;i<3;i++){ P(5+i*3,48,1.45,2.6,claw); P(30+i*3,48,1.45,2.6,claw); }
+  /* Huge withers instead of a round teddy-bear torso; the belly narrows below them. */
+  P(7,15-crouch,30,16,fur); P(9,11-crouch,26,11,mid); P(13,8-crouch,18,5,sun);
+  P(5,19-crouch,7,17,mid); P(32,19-crouch,7,17,shadeC);
+  P(10,27-crouch,24,12,fur); P(14,31-crouch,16,10,mid); P(19,30-crouch,11,11,shadeC);
+  P(8,24-crouch,4,13,sun); P(12,37-crouch,18,3,shadeC);
+  for(let i=0;i<6;i++) P(8+i*5.1,12-crouch-(i%2)*1.3,3,4,i%2?dark:fur);
+  for(let i=0;i<5;i++) P(12+i*4.4,39-crouch+(i%2),3,2.1,i%2?shadeC:mid);
+  P(13,28-crouch,10,1.1,scar); P(15,31-crouch,8,1,'#592329');
+
+  /* Two-bone forelegs. The elbow folds during the tell; the paw then falls toward
+     the camera and grows with perspective. Nothing rotates through the torso. */
+  const limb=(ax,ay,bx,by,w,base,lit)=>{
+    const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy);
+    g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2);
+    P(-w*.5,0,w,len,base); P(-w*.5,0,w*.28,len,lit); P(w*.22,1,w*.18,len-2,dark);
+    g.restore();
+  };
+  const foreleg=(sx,sy,side,lift,slam,thrust,targetX,targetY,swipeDir=0,groundedSwipe=false)=>{
+    const rise=clamp(lift,0,1), drop=clamp(slam,0,1); // drop² gives the slam visible weight
+    const fall=drop*drop, punch=clamp(thrust,0,1);
+    const depth=swipeDir?1+fall*.24:1+fall*.62+punch*.82;
+    const restElbow=[sx+side*1.2,sy+10.5], raisedElbow=[sx+side*7.5,sy-8.5];
+    const restPaw=[sx+side*2.2,48], raisedPaw=[sx+side*2.8,sy-19];
+    let ex=lerp(restElbow[0],raisedElbow[0],rise), ey=lerp(restElbow[1],raisedElbow[1],rise);
+    let px2=lerp(restPaw[0],raisedPaw[0],rise), py2=lerp(restPaw[1],raisedPaw[1],rise);
+    /* The elbow comes in first; the paw accelerates past it and lands in front. */
+    if(swipeDir){
+      const swipeY=targetY-(groundedSwipe?5.2*depth+.35:0);
+      px2=lerp(px2,targetX,fall); py2=lerp(py2,swipeY,fall);
+      const bendX=lerp(sx,px2,.48)-swipeDir*2.2;
+      const bendY=lerp(sy,py2,.46)-4.5;
+      ex=lerp(ex,bendX,fall); ey=lerp(ey,bendY,fall);
+    } else {
+      ex=lerp(ex,sx+side*2.2,fall); ey=lerp(ey,sy+9+fall*8,fall);
+      px2=lerp(px2,targetX,fall); py2=lerp(py2,targetY,fall);
+    }
+    /* The old high spin is now a straight two-paw shove over the player's head. */
+    ex=lerp(ex,sx+side*3, punch); ey=lerp(ey,sy+3,punch);
+    px2=lerp(px2,sx+side*2, punch); py2=lerp(py2,sy+18,punch);
+    limb(sx,sy,ex,ey,5.8,side<0?sun:mid,side<0?mid:sun);
+    P(ex-3.2,ey-2.8,6.4,5.6,fur); P(ex-2.5,ey-2,2,4.2,side<0?sun:mid);
+    limb(ex,ey,px2,py2,swipeDir?6.8:6.2+fall*2.4+punch*2.8,fur,side<0?sun:mid);
+    g.save(); g.translate(px2*U,py2*U);
+    if(swipeDir) g.rotate(-swipeDir*Math.PI/2);
+    g.scale(depth,depth);
+    P(-4.5,-3.1,9,6.2,dark); P(-5.2,-1,10.4,5.8,fur); P(-4.3,-1,2.2,4.8,side<0?sun:mid);
+    P(-5.2,3.2,10.4,2.3,shadeC);
+    for(let i=0;i<4;i++) P(-4.7+i*2.7,4.6,1.15,3.5,claw);
+    g.restore();
+  };
+  const rightSwipe=(state.includes('bear_low_ltr')||state.includes('bear_high_ltr'))?1:0;
+  const leftSwipe=(state.includes('bear_low_rtl')||state.includes('bear_high_rtl'))?-1:0;
+  foreleg(9,22-crouch,-1,rightLift,rightSlam,highThrust,rightContact,rightTargetY,rightSwipe,state.includes('bear_low_ltr'));
+  foreleg(35,22-crouch,1,leftLift,leftSlam,highThrust,leftContact,leftTargetY,leftSwipe,state.includes('bear_low_rtl'));
+
+  /* A true bear skull: tiny ears, a narrow brow, then a long tapering muzzle. */
+  const hy=-1+headY-crouch, snoutY=hy+9+headOut*.25;
+  P(15,hy+7,14,12,shadeC);                 // thick neck under the small head
+  P(15,hy+1,14,10,fur); P(17,hy-2,10,4,mid); P(19,hy-3,6,2,sun);
+  P(14,hy,3,3,dark); P(27,hy,3,3,dark);    // small, high-set ears
+  P(14.7,hy+.5,1.5,1.3,mid); P(27.8,hy+.5,1.4,1.3,mid);
+  P(16,hy+5,5,2,dark); P(23,hy+5,5,2,dark);
+  g.fillStyle='#ff3b35'; g.shadowColor='#ff2638'; g.shadowBlur=6*scale;
+  g.fillRect(18*U,(hy+6)*U,1.2*U,1.1*U); g.fillRect(25*U,(hy+6)*U,1.2*U,1.1*U); g.shadowBlur=0;
+  /* The snout is intentionally only eight pixels wide and reaches far down the chest. */
+  P(18,snoutY,8,10,muzzle); P(19,snoutY-1,6,3,sun); P(19.5,snoutY+3,5,6,'#80604a');
+  P(19,snoutY+7,6,2.8,nose); P(20,snoutY+6,4,1,'#241819');
+  P(18,snoutY+10+jaw*3,8,4.4,dark); P(19,snoutY+10+jaw*3,6,1.2,mouth);
+  if(jaw>.16||snarl>.35){
+    P(18,snoutY+9.5,1.15,3.1,claw); P(24.85,snoutY+9.5,1.15,3.1,claw);
+    P(20.3,snoutY+9.5,1.05,2.1,claw); P(22.65,snoutY+9.5,1.05,2.1,claw);
+    if(jaw>.45){ P(19.4,snoutY+12+jaw*2,1.05,2.5,claw); P(23.55,snoutY+12+jaw*2,1.05,2.5,claw); }
+  }
+  P(26.8,hy+2,1,6,scar); P(28.2,hy+4,1,4,'#572126'); P(16,hy+3,2,1,sun);
+
+  if((state==='strike_paw_right'||state==='strike_paw_left'||state==='strike_double_paw'||state==='strike_slam'||
+      state==='strike_bear_low_rtl'||state==='strike_bear_low_ltr'||state==='finisher')&&t>.48){
+    const impact=clamp((t-.48)/.52,0,1), fade=1-impact;
+    const hitRight=state==='strike_paw_right'||state==='strike_double_paw'||state==='strike_slam'||state==='finisher';
+    const hitLeft=state==='strike_paw_left'||state==='strike_double_paw'||state==='strike_slam'||state==='finisher';
+    g.globalAlpha=fade*.9;
+    const groundBurst=(cx,dir)=>{
+      P(cx-7,groundContactY,14,2,'#8d7051'); P(cx-4-dir*impact*7,groundContactY-3-impact*4,3,2,'#66503a');
+      P(cx+2+dir*impact*6,groundContactY-2-impact*6,2.5,2,'#9b8060');
+      P(cx,groundContactY+1,1.2+impact*8,1,dark); P(cx-1,groundContactY+1,-1.2-impact*6,1,dark);
+    };
+    if(hitRight||state==='strike_bear_low_ltr') groundBurst(rightContact,-1);
+    if(hitLeft||state==='strike_bear_low_rtl') groundBurst(leftContact,1);
+    g.globalAlpha=1;
+  }
+  g.restore();
+}
+
 /* ---- THE HYDRA: three necks out of one drowned bulk (the original design) ---- */
-function drawHydra(x,y,scale,state,t,hurtFlash){
+function drawHydra(x,y,scale,state,t,hurtFlash,contactXs){
   g.save(); g.translate(x,y); g.scale(scale,scale);
   const breathe=Math.sin(perfNow*1.7)*0.02;
   g.scale(1+breathe,1-breathe);
+  const hitScale=Math.max(.001,scale*(1+breathe));
+  const contactLocal=(contactXs||[]).map(tx=>16+(tx-x)/(hitScale*U));
+  const biteY=42+(BODY_ATTACK_Y-y)/(hitScale*U);
+  const groundY=42+(ATTACK_GROUND_Y-y)/(hitScale*U);
+  const highY=42+(DUCK_ATTACK_Y-y)/(hitScale*U);
   if(state==='dying'){
     if(t<0.4){ g.translate(rnd(-3,3)*t*10,0); }
     else { const c=(t-0.4)/0.6; g.rotate(easeOut(c)*0.5); g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*48); }
@@ -650,12 +944,33 @@ function drawHydra(x,y,scale,state,t,hurtFlash){
   /* neck poses per state: [lean(px), rise(px), jaw] for left / mid / right heads */
   let P=[[ -3,0,0],[0,2,0],[3,0,0]];
   const sway=i=>Math.sin(perfNow*1.6+i*2.1)*1.6;
-  if(state==='tele_swipe')      P=[[-2,0,0],[1,2,0],[7,9,0.5]];          // right head rears
-  else if(state==='tele_double')P=[[-7,9,0.5],[0,1,0],[7,9,0.5]];        // both outer heads rear
-  else if(state==='tele_sweep') P=[[-5,-7,0.2],[0,-8,0.2],[5,-7,0.2]];   // all coil LOW
-  else if(state==='tele_lunge') P=[[-4,-2,0],[0,12,1],[4,-2,0]];         // center towers, jaws wide
-  else if(state==='tele_pounce')P=[[-6,-9,0.3],[0,-10,0.6],[6,-9,0.3]];  // deep coil
-  else if(state==='howl'||state==='tele_combo') P=[[-5,10,1],[0,13,1],[5,10,1]]; // all scream
+  if(state==='tele_hydra_left') P=[[-8,11,.9],[0,1,0],[3,0,0]];
+  else if(state==='strike_hydra_left'){ const k=easeOut(t); P=[[-8-k*7,11-k*16,1],[0,1,0],[3,0,0]]; }
+  else if(state==='tele_hydra_right') P=[[-3,0,0],[0,1,0],[8,11,.9]];
+  else if(state==='strike_hydra_right'){ const k=easeOut(t); P=[[-3,0,0],[0,1,0],[8+k*7,11-k*16,1]]; }
+  else if(state==='tele_hydra_center') P=[[-3,0,0],[0,14,1],[3,0,0]];
+  else if(state==='strike_hydra_center'){ const k=easeOut(t); P=[[-3,0,0],[0,14-k*19,1],[3,0,0]]; }
+  else if(state==='tele_hydra_twin') P=[[-8,10,.85],[0,0,0],[8,10,.85]];
+  else if(state==='strike_hydra_twin'){ const k=easeOut(t); P=[[-8-k*6,10-k*15,1],[0,0,0],[8+k*6,10-k*15,1]]; }
+  else if(state==='tele_hydra_wave') P=[[-5,-8,.15],[0,-10,.2],[5,-8,.15]];
+  else if(state==='strike_hydra_wave'){ const k=easeOut(t); P=[[-5,-8+k*7,.5],[0,-10+k*8,.7],[5,-8+k*7,.5]]; }
+  else if(state==='tele_hydra_high_rtl') P=[[-3,0,0],[0,1,0],[10,15,1]];
+  else if(state==='strike_hydra_high_rtl'){ const k=easeOut(t); P=[[-3,0,0],[0,1,0],[10-k*8,15-k*9,1]]; }
+  else if(state==='tele_hydra_high_ltr') P=[[-10,15,1],[0,1,0],[3,0,0]];
+  else if(state==='strike_hydra_high_ltr'){ const k=easeOut(t); P=[[-10+k*8,15-k*9,1],[0,1,0],[3,0,0]]; }
+  else if(state==='tele_hydra_spit') P=[[-6,13,1],[0,17,1],[6,13,1]];
+  else if(state==='strike_hydra_spit'){ const k=easeOut(t); P=[[-6-k*3,13-k*8,1],[0,17-k*11,1],[6+k*3,13-k*8,1]]; }
+  else if(state==='tele_swipe')      P=[[-2,0,0],[1,2,0],[7,9,0.5]];
+  else if(state==='tele_double')P=[[-7,9,0.5],[0,1,0],[7,9,0.5]];
+  else if(state==='tele_sweep') P=[[-5,-7,0.2],[0,-8,0.2],[5,-7,0.2]];
+  else if(state==='tele_lunge') P=[[-4,-2,0],[0,12,1],[4,-2,0]];
+  else if(state==='tele_pounce')P=[[-6,-9,0.3],[0,-10,0.6],[6,-9,0.3]];
+  else if(state==='howl'||state==='tele_combo') P=[[-5,10,1],[0,13,1],[5,10,1]];
+  /* Failed volley: every neck rises, then all three bite at the actual lanes. */
+  else if(state==='finisher'){
+    if(t<.52){ const k=easeOut(t/.52); P=[[-7,9+k*5,1],[0,14+k*6,1],[7,9+k*5,1]]; }
+    else { const k=easeOut((t-.52)/.48); P=[[-7-k*8,14-k*22,1],[0,20-k*28,1],[7+k*8,14-k*22,1]]; }
+  }
   else if(state==='strike'){ const k=easeOut(t); P=[[-3-k*4,-k*6,1],[0,2-k*10,1],[3+k*4,-k*6,1]]; }
   else if(state==='hit')        P=[[-5,-3,0.4],[0,-4,0.4],[5,-3,0.4]];
   /* the drowned bulk: a scaled mound half out of the water */
@@ -670,7 +985,21 @@ function drawHydra(x,y,scale,state,t,hurtFlash){
   const bases=[[8,25],[16,23],[24,25]];
   for(let n=0;n<3;n++){
     const [bx,by]=bases[n], [ln,rise,jaw]=P[n];
-    const topX=bx+ln+sway(n)*0.6, topY=6-rise;
+    let topX=bx+ln+sway(n)*0.6, topY=6-rise;
+    /* At the contact frame the attacking head reaches the real lane marker, so
+       its segmented neck bends into the bite instead of swiping off-screen. */
+    const biteK=easeOut(clamp(t,0,1));
+    const aim=(tx,ty,k=biteK)=>{ if(tx!==undefined){ topX=lerp(topX,tx,k); topY=lerp(topY,ty,k); } };
+    const mouthAimY=yTarget=>yTarget-2.6;
+    if(state==='strike_hydra_left'&&n===0) aim(contactLocal[0],mouthAimY(biteY));
+    else if(state==='strike_hydra_right'&&n===2) aim(contactLocal[0],mouthAimY(biteY));
+    else if(state==='strike_hydra_center'&&n===1) aim(contactLocal[0],mouthAimY(biteY));
+    else if(state==='strike_hydra_twin'&&(n===0||n===2)) aim(n===0?contactLocal[0]:contactLocal[contactLocal.length-1],mouthAimY(biteY));
+    else if(state==='strike_hydra_wave') aim(contactLocal[n],groundY-6.2);
+    else if(state==='strike_hydra_high_rtl'&&n===2) aim(contactLocal[0],mouthAimY(highY));
+    else if(state==='strike_hydra_high_ltr'&&n===0) aim(contactLocal[0],mouthAimY(highY));
+    else if(state==='strike_hydra_spit') aim(contactLocal[n]===undefined?16:contactLocal[n],mouthAimY(highY));
+    else if(state==='finisher'&&t>.52) aim(contactLocal[n],mouthAimY(biteY),easeOut((t-.52)/.48));
     for(let k2=0;k2<5;k2++){
       const f=k2/4, nx=lerp(bx,topX,f)+Math.sin(f*Math.PI)*ln*0.35;
       const ny=lerp(by,topY,f);
@@ -695,13 +1024,23 @@ function drawHydra(x,y,scale,state,t,hurtFlash){
     g.fillRect((hx2-2)*U,(hy2+1.4)*U,1.5*U,1.5*U); g.fillRect((hx2+0.6)*U,(hy2+1.4)*U,1.5*U,1.5*U);
     g.shadowBlur=0;
   }
+  if((state==='strike_hydra_wave'||state==='strike_hydra_spit')&&t>.45){
+    const a=(1-t)*.7; g.globalAlpha=a;
+    if(state==='strike_hydra_wave'){ px(1,39,30,2,'#8aa87a'); px(5,36,22,1.3,'#457a5a'); }
+    else { g.fillStyle='#9ee8cf'; g.fillRect(3*U,8*U,26*U,2*U); }
+    g.globalAlpha=1;
+  }
   g.restore();
 }
 /* ---- THE MOLTEN SNAPPER: it faces YOU across the lava — shell like a furnace door ---- */
-function drawLavaTurtle(x,y,scale,state,t,hurtFlash){
+function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   g.save(); g.translate(x,y); g.scale(scale,scale);
   const breathe=Math.sin(perfNow*1.5)*0.012;
   g.scale(1+breathe,1-breathe);
+  const hitScale=Math.max(.001,scale*(1+breathe));
+  const contactLocal=(contactXs||[]).map(tx=>16+(tx-x)/(hitScale*U));
+  const biteY=42+(BODY_ATTACK_Y-y)/(hitScale*U);
+  const steamY=42+(DUCK_ATTACK_Y-y)/(hitScale*U);
   if(state==='dying'){
     if(t<0.4){ g.translate(rnd(-3,3)*t*10,0); }
     else { const c=(t-0.4)/0.6; g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*28); g.scale(1,1-c*0.3); }
@@ -712,26 +1051,66 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash){
   const seam='#ff6a2a', seamHot='#ffd23a';
   const glow=(state==='dying'?Math.max(0.1,0.6-t*0.5):0.62)+Math.sin(perfNow*3.1)*0.18;
   /* pose: headOut (0=in the shell, 1=out, 2=SNAPPED at your face), squash, tilt, legs, jaw */
-  let headOut=0.4, squash=0, tilt=0, legL=0, legR=0, jaw=0.2, rear=0;
-  if(state==='tele_swipe'){ tilt=0.07; legR=easeOut(t)*6; headOut=0.5; jaw=0.4; }     // one claw rises — SIDESTEP
+  let headOut=0.4, squash=0, tilt=0, legL=0, legR=0, jaw=0.2, rear=0, shellSpin=0, shellBack=false;
+  if(state==='tele_turtle_bite_left'){ tilt=-.035; headOut=.42-easeOut(t)*.36; jaw=0; rear=easeOut(t)*2; }
+  else if(state==='strike_turtle_bite_left'){ headOut=.08+easeOut(t)*2.25; jaw=1; rear=2-easeOut(t)*2.5; }
+  else if(state==='tele_turtle_bite_right'){ tilt=.035; headOut=.42-easeOut(t)*.36; jaw=0; rear=easeOut(t)*2; }
+  else if(state==='strike_turtle_bite_right'){ headOut=.08+easeOut(t)*2.25; jaw=1; rear=2-easeOut(t)*2.5; }
+  else if(state==='tele_turtle_spin'){ headOut=.02; jaw=0; squash=easeOut(t)*.12; legL=legR=-easeOut(t)*4; rear=easeOut(t)*2; }
+  else if(state==='strike_turtle_spin'){ headOut=.02; jaw=0; squash=.10; legL=legR=-4; shellSpin=easeOut(t); }
+  else if(state==='tele_turtle_left'){ tilt=-.06; legL=easeOut(t)*9; headOut=.45; jaw=.35; }
+  else if(state==='strike_turtle_left'){ const k=easeOut(t); tilt=-.06+k*.12; legL=9-k*14; headOut=.55; jaw=.7; }
+  else if(state==='tele_turtle_right'){ tilt=.06; legR=easeOut(t)*9; headOut=.45; jaw=.35; }
+  else if(state==='strike_turtle_right'){ const k=easeOut(t); tilt=.06-k*.12; legR=9-k*14; headOut=.55; jaw=.7; }
+  else if(state==='tele_turtle_double'){ rear=easeOut(t)*5; legL=legR=easeOut(t)*8; jaw=.5; }
+  else if(state==='strike_turtle_double'){ const k=easeOut(t); rear=5-k*7; legL=legR=8-k*14; jaw=.8; }
+  else if(state==='tele_turtle_bite'){ headOut=.45-easeOut(t)*.38; jaw=0; rear=easeOut(t)*3; }
+  else if(state==='strike_turtle_bite'){ const k=easeOut(t); headOut=.1+k*2.15; jaw=1; rear=3-k*4; }
+  else if(state==='tele_turtle_quake'){ squash=easeOut(t)*.16; rear=easeOut(t)*5; legL=legR=easeOut(t)*7; }
+  else if(state==='strike_turtle_quake'){ const k=easeOut(t); squash=.16-k*.16; rear=5-k*8; legL=legR=7-k*13; jaw=.55; }
+  else if(state==='tele_turtle_steam'){ headOut=.12; jaw=0; rear=easeOut(t)*4; }
+  else if(state==='strike_turtle_steam'){ headOut=.35; jaw=.95; rear=2; }
+  else if(state==='tele_swipe'){ tilt=0.07; legR=easeOut(t)*6; headOut=0.5; jaw=0.4; }     // one claw rises — SIDESTEP
   else if(state==='tele_double'){ rear=easeOut(t)*6; legL=legR=easeOut(t)*5; jaw=0.5; } // it REARS the whole shell
   else if(state==='tele_sweep'){ squash=easeOut(t)*0.16; headOut=0.55; jaw=0.3; }     // FLATTENS to rake low — JUMP
   else if(state==='tele_lunge'){ headOut=0.4-easeOut(t)*0.4; jaw=0; rear=easeOut(t)*2; } // head VANISHES inside — DUCK the snap
   else if(state==='tele_pounce'){ headOut=0.4-easeOut(t)*0.35; legL=legR=-easeOut(t)*2; squash=easeOut(t)*0.08; }
   else if(state==='howl'||state==='tele_combo'){ headOut=0.8; jaw=1; rear=easeOut(Math.min(t*2,1))*3; }
+  /* Failed volley: it rears with both claws, then drives its burning head into you. */
+  else if(state==='finisher'){
+    if(t<.52){ const k=easeOut(t/.52); rear=k*7; legL=legR=k*10; headOut=.1; jaw=0; }
+    else { const k=easeOut((t-.52)/.48); rear=7-k*10; legL=legR=10-k*16; headOut=.1+k*2.5; jaw=1; }
+  }
   else if(state==='strike'){ const k=Math.sin(Math.PI*Math.min(t*1.15,1)); headOut=0.4+k*1.6; jaw=1; }
   else if(state==='hit'){ headOut=0.15; tilt=-0.04; }
   g.rotate(tilt);
+  if(shellSpin>0){
+    /* A yaw turn, not a flat pinwheel: the dome narrows edge-on and its armoured
+       back replaces the face every half-turn, like a sideways shell tackle. */
+    const yaw=Math.cos(shellSpin*TAU*2);
+    shellBack=yaw<0;
+    g.translate(16*U,27*U);
+    g.scale(Math.max(.16,Math.abs(yaw)),1);
+    g.translate(-16*U,-27*U);
+  }
   const sy=v=>v*(1-squash)-rear;                             // dome squashes / rears as one
   /* STUMP LEGS splayed toward you, molten claws gripping the shore */
+  const limbSeg=(ax,ay,bx,by,w,col,hi)=>{
+    const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+    g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2);
+    px(-w*.5,0,w,len,col); px(-w*.5,0,w*.28,len,hi); g.restore();
+  };
   const leg=(lx,raise,dir)=>{
-    px(lx,sy(29)-raise,7.5,11+raise*0.3,rock);
-    px(lx,sy(29)-raise,2.2,11,rockL);
-    px(lx+1,sy(33)-raise,5.5,1.2,rockD);                     // knee crease
+    const hx=lx+3.8, hy=sy(28), kneeX=hx+dir*(1.5+raise*.20), kneeY=hy+5-raise*.55;
+    const footX=hx+dir*(1.2+raise*.08), footY=39-raise*.42;
+    limbSeg(hx,hy,kneeX,kneeY,6.8,rock,rockL);
+    limbSeg(kneeX,kneeY,footX,footY,6.1,rock,rockL);
+    px(kneeX-2.7,kneeY-1.8,5.4,3.6,rockD);
+    px(footX-3.6,footY-1.2,7.2,3.8,rockD);
     g.fillStyle=seam;
-    for(let i=0;i<3;i++) g.fillRect((lx+0.8+i*2.3)*U,(39.2-raise*0.4)*U,1.4*U,2*U);
+    for(let i=0;i<3;i++) g.fillRect((footX-2.8+i*2.3)*U,(footY+1.4)*U,1.4*U,2*U);
     g.globalAlpha=glow*0.5; g.fillStyle=seamHot;
-    g.fillRect((lx+3.1)*U,(39.4-raise*0.4)*U,0.9*U,1.4*U); g.globalAlpha=1;
+    g.fillRect((footX-0.45)*U,(footY+1.6)*U,0.9*U,1.4*U); g.globalAlpha=1;
   };
   leg(2,legL,-1); leg(22.5,legR,1);
   /* the spiked TAIL tip peeks past the shell's edge */
@@ -757,6 +1136,17 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash){
   px(5.4,sy(18.4),4,3.4,rockD); px(22.4,sy(18.8),4,3.2,rockD); px(12,sy(24.6),4,3.6,rockD);
   px(12,sy(10.4),3,2,rockD); px(22,sy(12),2.6,2,rockD);
   px(6.4,sy(12.4),2,1.6,rockL); px(24,sy(14.6),2,1.4,rockL);
+  if(shellBack){
+    /* Rear-facing frame: a heavier concentric carapace and central lava fault
+       make each half revolution readable even at the small mobile resolution. */
+    g.globalAlpha=.92; px(5.2,sy(13),21.6,15.4,rockD);
+    px(8,sy(15),16,11.4,rock); px(11,sy(17),10,7.2,rockD);
+    g.globalAlpha=glow; px(15.1,sy(11),1.8,18,seam);
+    px(7,sy(19),18,1.3,seam); px(10,sy(25),12,1.1,seamHot);
+    g.globalAlpha=1;
+    px(6.2,sy(12),3,3,rockL); px(22.8,sy(12.5),3,3,rockL);
+    px(14.2,sy(7),3.6,4.5,rockD);
+  }
   /* SPIKED RIM: a jaw of stone teeth along the shell's lower lip */
   g.fillStyle=rockD;
   for(let i=0;i<8;i++){ const sx=2.8+i*3.6;
@@ -768,12 +1158,41 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash){
   /* THE HEAD — under the rim, looking straight at you; it can vanish, or SNAP OUT */
   const hs=0.72+Math.max(0,headOut)*0.62;                    // it GROWS as it comes at the camera
   const hyB=sy(30)+Math.max(0,headOut)*3.2;
-  if(headOut<=0.06){                                          // fully withdrawn: a glowing socket
+  const isSnap=state==='strike_turtle_bite'||state==='strike_turtle_bite_left'||state==='strike_turtle_bite_right';
+  let neckK=isSnap?easeOut(clamp(t,0,1)):0, neckTarget=contactLocal.length?contactLocal[0]:16;
+  if(state==='finisher'&&t>.52&&contactLocal.length){
+    /* Three deliberate executions: left bite, right bite, then a held centre snap. */
+    if(t<.68){ const q=clamp((t-.52)/.16,0,1); neckTarget=contactLocal[0]; neckK=Math.sin(q*Math.PI); }
+    else if(t<.84){ const q=clamp((t-.68)/.16,0,1); neckTarget=contactLocal[contactLocal.length-1]; neckK=Math.sin(q*Math.PI); }
+    else { neckTarget=contactLocal[Math.min(1,contactLocal.length-1)]; neckK=easeOut(clamp((t-.84)/.16,0,1)); }
+  }
+  const headX=lerp(16,neckTarget,neckK);
+  const snapHeadScale=0.72+Math.max(0,headOut)*0.62;
+  const headY=lerp(hyB,biteY-5.2*snapHeadScale,neckK);
+  if(neckK>0.02){
+    /* A snapping turtle drives a heavy muscular neck, not a cord. Build it as
+       overlapping tapered armour sections, broad at the shell and head. */
+    px(12.2,sy(26.5),7.6,4.8,rockD);
+    for(let i=0;i<5;i++){
+      const a=i/5,b=(i+1)/5, ax=lerp(16,headX,a), ay=lerp(sy(28),headY,a), bx=lerp(16,headX,b), by=lerp(sy(28),headY,b);
+      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+      const neckW=lerp(7.8,6.2,(i+.5)/5);
+      g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2);
+      px(-neckW*.5,0,neckW,len,rock); px(-neckW*.5,0,neckW*.28,len,rockL);
+      px(neckW*.20,1,neckW*.18,Math.max(1,len-2),rockD);
+      g.globalAlpha=glow*.45; px(neckW*.08,0,1,len,seam); g.globalAlpha=1; g.restore();
+    }
+  }
+  if(shellBack){
+    /* The head is on the far side; only the rear ridge/tail is visible. */
+    px(14,sy(27),4,3.2,rockD);
+    g.globalAlpha=glow*.65; px(15.2,sy(27.4),1.6,2.2,seam); g.globalAlpha=1;
+  } else if(headOut<=0.06){                                   // fully withdrawn: a glowing socket
     px(12.4,sy(28.4),7.2,3.4,'#0c080a');
     g.globalAlpha=glow*0.8; g.fillStyle=seam; px(14,sy(29.4),4,1.4,seam);
     g.globalAlpha=glow*0.5; px(15,sy(29.7),2,0.8,seamHot); g.globalAlpha=1;
   } else {
-    g.save(); g.translate(16*U,hyB*U); g.scale(hs,hs); g.translate(-16*U,-30*U);
+    g.save(); g.translate(headX*U,headY*U); g.scale(hs,hs); g.translate(-16*U,-30*U);
     px(12,26,8,3,rock); px(12,26,8,1,rockL);                  // thick neck collar
     g.globalAlpha=glow*0.6; px(12.4,27.8,7.2,0.9,seam); g.globalAlpha=1;
     px(10.6,29,10.8,7,rock); px(10.6,29,10.8,1.8,rockL);      // the broad skull, facing you
@@ -798,14 +1217,31 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash){
     }
     g.restore();
   }
+  /* The boiler attack comes from the snapper's mouth and reaches the real
+     head-height contact points across the road, instead of being only a cue. */
+  if(state==='strike_turtle_steam'&&contactLocal.length){
+    const k=easeOut(clamp(t,0,1)), mouthX=headX, mouthY=headY+5*hs;
+    g.save(); g.globalAlpha=.22+.58*k; g.strokeStyle='#ffd6a0'; g.shadowColor='#ff8a38'; g.shadowBlur=10*scale;
+    g.lineWidth=Math.max(1,1.7*U);
+    for(let i=0;i<contactLocal.length;i++){
+      const tx=lerp(mouthX,contactLocal[i],k), ty=lerp(mouthY,steamY,k);
+      g.beginPath(); g.moveTo(mouthX*U,mouthY*U);
+      g.quadraticCurveTo(lerp(mouthX,tx,.5)*U,(ty+Math.sin(perfNow*20+i*2)*2.2)*U,tx*U,ty*U); g.stroke();
+    }
+    g.restore();
+  }
   /* embers shed from the seams */
   if(Math.random()<0.35){ g.globalAlpha=glow; g.fillStyle=Math.random()<0.5?seam:seamHot;
     g.fillRect(rnd(4,28)*U,rnd(sy(10),sy(30))*U,1.6,1.6); g.globalAlpha=1; }
   g.restore();
 }
 /* ---- Grey wolf (miniboss + later ally), front-facing ---- */
-function drawWolf(x,y,scale,state,t,hurtFlash){
+function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
   g.save(); g.translate(x,y); g.scale(scale,scale);
+  const hitScale=Math.max(.001,scale);
+  const contactLocal=(contactXs||[]).map(tx=>11+(tx-x)/(hitScale*U));
+  const groundContactY=24+(ATTACK_GROUND_Y-y)/(hitScale*U);
+  const highContactY=24+(DUCK_ATTACK_Y-y)/(hitScale*U);
   if(state==='dying'){                               // staged kill anim: shudder → slump → dissolve
     if(t<0.45){ g.translate(rnd(-2,2)*t*8,0); }
     else { const c=(t-0.45)/0.55; g.rotate(easeOut(c)*.7); g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*22); }
@@ -813,17 +1249,83 @@ function drawWolf(x,y,scale,state,t,hurtFlash){
   if(state==='flee'){ g.translate(easeOut(t)*180, -easeOut(t)*30); g.globalAlpha=1-t; }
   g.translate(-11*U,-24*U);
   const fur=hurtFlash?'#fff':'#8b8fa0', furD=hurtFlash?'#eee':'#5d6070', furL=hurtFlash?'#fff':'#aeb2c2';
-  let crouch=0, jaw=0, headY=0;
-  if(state==='tele_bite'){ crouch=easeOut(t)*5; jaw=t; }
+  let crouch=0, jaw=0, headY=0, pawL=0, pawR=0, pawLX=0, pawRX=0, twist=0, biteAim=0, bodyDrop=0;
+  let jointLiftL=0,jointLiftR=0,jointSlamL=0,jointSlamR=0;
+  let legTargetL=null,legTargetR=null,legAimL=0,legAimR=0;
+  if(state==='tele_wolf_bite'){ crouch=easeOut(t)*5; jaw=easeOut(t); headY=-easeOut(t)*3; }
+  else if(state==='strike_wolf_bite'){ const s=easeOut(t); crouch=-s*3; headY=s*8; jaw=1-s*.22; }
+  else if(state==='tele_wolf_slide_mid'){ crouch=easeOut(t)*5; jaw=.35+easeOut(t)*.55; headY=-easeOut(t)*2; }
+  else if(state==='strike_wolf_slide_mid'){ const s=easeOut(t); crouch=2-s*4; jaw=1; biteAim=s; }
+  else if(state==='tele_wolf_slide_low'){ crouch=easeOut(t)*8; jaw=.25+easeOut(t)*.55; headY=easeOut(t)*3; }
+  else if(state==='strike_wolf_slide_low'){
+    const s=easeOut(t); crouch=5-s*7; jaw=1; biteAim=s;
+    if(contactLocal.length){
+      /* Dive the shoulders toward the ground and ask only the last short piece
+         of reach from the neck. The old version stretched the head by itself. */
+      const desired=groundContactY-8+crouch, shortReach=Math.min(desired,14);
+      headY=lerp(3,shortReach,s);
+      bodyDrop=Math.min(10,Math.max(0,desired-shortReach))*s;
+    }
+  }
+  else if(state==='tele_wolf_slide_high'){ crouch=easeOut(t)*3; jaw=.25+easeOut(t)*.55; headY=-easeOut(t)*5; }
+  else if(state==='strike_wolf_slide_high'){
+    const s=easeOut(t); crouch=-s*2; jaw=1; biteAim=s;
+    if(contactLocal.length) headY=lerp(-5,highContactY-8+crouch,s);
+  }
+  else if(state==='tele_wolf_claw_left'){ crouch=easeOut(t)*2; jointLiftL=easeOut(t); jaw=.25; }
+  else if(state==='strike_wolf_claw_left'){ jointLiftL=1; jointSlamL=clamp(t,0,1); crouch=2-t*3; }
+  else if(state==='tele_wolf_claw_right'){ crouch=easeOut(t)*2; jointLiftR=easeOut(t); jaw=.25; }
+  else if(state==='strike_wolf_claw_right'){ jointLiftR=1; jointSlamR=clamp(t,0,1); crouch=2-t*3; }
+  else if(state==='tele_wolf_rake'){ crouch=easeOut(t)*6; jointLiftL=jointLiftR=easeOut(t)*.8; }
+  else if(state==='strike_wolf_rake'){
+    const s=clamp(t,0,1); crouch=6-s*8; jointLiftL=jointLiftR=1; jointSlamL=jointSlamR=s; legAimL=legAimR=easeOut(s);
+    if(contactLocal.length){ legTargetL=[contactLocal[0],groundContactY]; legTargetR=[contactLocal[contactLocal.length-1],groundContactY]; }
+  }
+  else if(state==='tele_wolf_leap'){ crouch=easeOut(t)*8; headY=2; jaw=.3; }
+  else if(state==='strike_wolf_leap'){
+    const s=easeOut(t); crouch=-s*4; headY=s*8; jaw=1-s*.18; jointLiftL=jointLiftR=1; legAimL=legAimR=s;
+    if(contactLocal.length){ legTargetL=[contactLocal[0],highContactY]; legTargetR=[contactLocal[contactLocal.length-1],highContactY]; }
+  }
+  else if(state==='tele_bite'){ crouch=easeOut(t)*5; jaw=easeOut(t); headY=-easeOut(t)*2; }
+  else if(state==='tele_claw'){ crouch=easeOut(t)*2; pawR=easeOut(t)*8; pawRX=easeOut(t)*2; }
+  else if(state==='tele_spin'){ crouch=easeOut(t)*6; pawL=2; pawR=2; }
+  else if(state==='tele_upperbite'){ crouch=easeOut(t)*2; headY=-easeOut(t)*7; jaw=easeOut(t); }
+  else if(state==='strike_bite'){ const s=easeOut(t); crouch=-s*3; headY=s*4; jaw=1-s*0.25; }
+  else if(state==='strike_claw'){ const s=easeOut(t); pawR=8-s*12; pawRX=2+s*5; crouch=s*2; }
+  else if(state==='strike_spin'){ crouch=5; pawL=3; pawR=3; }
+  else if(state==='strike_upperbite'){ const s=easeOut(t); headY=-7+s*13; jaw=1-s*0.2; crouch=-s*2; }
   else if(state==='tele_leap'){ crouch=easeOut(t)*7; headY=3+Math.sin(t*22)*0.5; jaw=0.2; }  // coils DEEP — it will fly HIGH
   else if(state==='tele_sweep'){ crouch=easeOut(t)*7; }
   else if(state==='tele_double'){ headY=-easeOut(t)*3; jaw=t*0.6; }
   else if(state==='howl'){ headY=-easeOut(Math.min(t*2,1))*6; jaw=1; }
   else if(state==='strike'){ crouch=-easeOut(t)*3; jaw=1-t; }
   else if(state==='run'){ crouch=Math.sin(perfNow*14)*1.5; }
+  if(bodyDrop>0) g.translate(0,bodyDrop*U);
+  g.translate(11*U,24*U); g.rotate(twist); g.translate(-11*U,-24*U);
   /* front legs — bony, too thin */
-  px(4,16-crouch,2.6,8+crouch,furD); px(5,20-crouch,2,1.4,'#3d4050');       // knuckle joints
-  px(15,16-crouch,2.6,8+crouch,furD); px(16,20-crouch,2,1.4,'#3d4050');
+  const wolfSeg=(ax,ay,bx,by,w,col)=>{ const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+    g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2); px(-w*.5,0,w,len,col); px(-w*.5,0,w*.25,len,furL); g.restore(); };
+  const wolfLeg=(sx,lift,slam,dir,target,aim)=>{
+    const rise=clamp(lift,0,1), fall=clamp(slam,0,1)*clamp(slam,0,1), sy=16-crouch;
+    let ex=lerp(sx,sx+dir*3.5,rise), ey=lerp(sy+4,sy-5,rise);
+    let fx=lerp(sx,sx+dir*1.4,rise), fy=lerp(24,sy-11,rise);
+    ex=lerp(ex,sx+dir*1.2,fall); ey=lerp(ey,sy+8,fall);
+    fx=lerp(fx,sx+dir*2.4,fall); fy=lerp(fy,25,fall);
+    if(target&&aim>0){
+      ex=lerp(ex,lerp(sx,target[0],.5),aim); ey=lerp(ey,lerp(sy,target[1],.48),aim);
+      fx=lerp(fx,target[0],aim); fy=lerp(fy,target[1],aim);
+    }
+    wolfSeg(sx,sy,ex,ey,2.8,furD); wolfSeg(ex,ey,fx,fy,2.6,furD);
+    px(ex-1.6,ey-1.4,3.2,2.8,fur); px(fx-2,fy-1,4,2.8,furD);
+    for(let i=0;i<2;i++) px(fx-1.6+i*1.7,fy+1.5,.8,1.8,'#d8d3c4');
+  };
+  wolfLeg(5.3+pawLX,jointLiftL,jointSlamL,-1,legTargetL,legAimL);
+  wolfLeg(16.3+pawRX,jointLiftR,jointSlamR,1,legTargetR,legAimR);
+  if(state==='strike_claw'){
+    g.globalAlpha=0.45+0.55*Math.sin(Math.min(t,0.8)/0.8*Math.PI); g.fillStyle='#e8e2d0';
+    for(let i=0;i<3;i++) g.fillRect((17+pawRX+i*1.6)*U,(17+i*1.6-crouch)*U,5*U,0.8*U);
+    g.globalAlpha=1;
+  }
   /* gaunt body: fur, then RIBS showing through */
   px(3,8-crouch*0.5,16,10,fur); px(5,7-crouch*0.5,12,3,furL);
   for(let i=0;i<3;i++) px(6+i*3.4,11-crouch*0.5,1.4,5,furD);               // rib shadows
@@ -831,6 +1333,13 @@ function drawWolf(x,y,scale,state,t,hurtFlash){
   px(4,6.4-crouch*0.5,2,2,furD); px(8,5.8-crouch*0.5,2,2.4,furD); px(12,6.2-crouch*0.5,2,2,furD);
   /* old scar raked across the flank */
   px(13,10-crouch*0.5,4.4,1,'#4a3438'); px(14,12-crouch*0.5,3.6,1,'#4a3438');
+  if(biteAim>0){
+    /* The neck bridges the body to the actual collision-height mouth. It keeps
+       low/high running bites attached to the animal instead of floating. */
+    const neckTop=10-crouch*.5, neckBottom=1+headY-crouch+5;
+    px(7,Math.min(neckTop,neckBottom),8,Math.max(3,Math.abs(neckBottom-neckTop)),furD);
+    px(8,Math.min(neckTop,neckBottom),2,Math.max(3,Math.abs(neckBottom-neckTop)),furL);
+  }
   /* head */
   const hy=1+headY-crouch;
   px(6,hy,10,7,fur); px(7,hy-3,2,4,furD); px(13,hy-3,2,4,furD);   // ears (one torn)
@@ -1282,10 +1791,21 @@ initAmbient();
 /* the world cycles every loop: forest → swamp → volcano → forest ... — one full
    cycle per difficulty tier. every biome brings its own boss, arena, miniboss,
    pack member, scenery, road, sky and death-words. */
-function biomeOf(l){ return ['forest','swamp','volcano'][(l-1)%3]; }
+class StageDefinition{
+  constructor(id,pool,data){ this.id=id; this.pool=pool; Object.assign(this,data); Object.freeze(this); }
+}
+/* Future random chains draw IDs from these pools. Keeping selection deterministic
+   for now preserves the released forest -> swamp -> volcano order exactly. */
+const STAGE_POOLS=Object.freeze({
+  beginner:Object.freeze(['forest']),
+  intermediate:Object.freeze(['swamp']),
+  final:Object.freeze(['volcano']),
+});
+const RELEASED_STAGE_ORDER=Object.freeze(['forest','swamp','volcano']);
+function biomeOf(l){ return RELEASED_STAGE_ORDER[(l-1)%RELEASED_STAGE_ORDER.length]; }
 let biome='forest';
 const BIOMES={
-  forest:{
+  forest:new StageDefinition('forest','beginner',{
     enterLine:'THE FOREST DEEPENS',
     bossName:'MIGHTY BEAR',   bossHit:"The bear's claws found you",
     arenaLine:"THE BEAR'S CAVE SWALLOWS YOU",
@@ -1294,18 +1814,18 @@ const BIOMES={
     yieldLine:'THE WOLF YIELDS', byeLine:'the wolf melts back into the wood — its debt is paid',
     introFlavor:'a grey shadow peels from the treeline, hackles up',
     ally:'wolf',
-    bossDraw:(...a)=>drawBear(...a),   miniDraw:(...a)=>drawWolf(...a),
-    mouthDraw:z=>drawCaveMouth(z),
+    bossDraw:drawBearNatural, miniDraw:drawWolf,
+    mouthDraw:drawCaveMouth,
     bg:dt=>{ drawBackground(dt); drawRoad(); },
-    arena:dt=>drawCave(dt),
-    scenery:(x,y,s,v)=>drawTree(x,y,s,v),
-    atmos:dt=>drawAtmosphere(dt),
+    arena:drawCave,
+    scenery:drawTree,
+    atmos:drawAtmosphere,
     mouth:{rock:'#101014',band:['#17171d','#1b1a21','#141419'],rim:'#26262e',moss:'#233d21',mossL:'#31502e',glow:null},
     reasons:{root:'A rogue root swept you from the saddle',
              pond:'Your horse balked at the black water',
              boulder:'You crashed into a moss-grown boulder'},
-  },
-  swamp:{
+  }),
+  swamp:new StageDefinition('swamp','intermediate',{
     enterLine:'THE MARSH DROWNS THE TRAIL',
     bossName:'THE HYDRA',     bossHit:"The hydra's fangs found you",
     arenaLine:'THE HYDRA RISES FROM THE BLACK MERE',
@@ -1314,19 +1834,19 @@ const BIOMES={
     yieldLine:'THE SERPENT YIELDS', byeLine:'the serpent slides back into the mere — its debt is paid',
     introFlavor:'the mire itself knots up into coils before you',
     ally:'serpent', rises:true,
-    bossDraw:(...a)=>drawHydra(...a),  miniDraw:(...a)=>drawSerpent(...a),
-    mouthDraw:z=>drawMereApproach(z), beyondDraw:z=>drawMereBeyond(z),
+    bossDraw:drawHydra, miniDraw:drawSerpent,
+    mouthDraw:drawMereApproach, beyondDraw:drawMereBeyond,
     bg:dt=>{ drawSwampBg(dt); drawSwampRoad(); },
-    arena:dt=>drawSwampLair(dt),
-    scenery:(x,y,s,v)=>drawCypress(x,y,s,v),
-    ground:(x,y,s,v)=>drawSwampPond(x,y,s,v),
-    atmos:dt=>drawSwampAtmos(dt),
+    arena:drawSwampLair,
+    scenery:drawCypress,
+    ground:drawSwampPond,
+    atmos:drawSwampAtmos,
     mouth:{rock:'#12180f',band:['#182013','#1c2617','#141b10'],rim:'#2c3a22',moss:'#2e4c2b',mossL:'#3d6136',glow:'#59e8c8'},
     reasons:{root:'A mangrove root dragged you into the mire',
              pond:'The bog swallowed horse and rider whole',
              boulder:'You crashed into a slime-slick stone'},
-  },
-  volcano:{
+  }),
+  volcano:new StageDefinition('volcano','final',{
     enterLine:'THE ASHLANDS BURN AHEAD',
     bossName:'THE MOLTEN SNAPPER', bossHit:"The snapper's jaws found you",
     arenaLine:'THE LAVA POND SEETHES — SOMETHING WAKES',
@@ -1335,22 +1855,20 @@ const BIOMES={
     yieldLine:'THE IMP YIELDS', byeLine:'the imp gutters out into the ash — its debt is paid',
     introFlavor:'a spark skitters up out of the fissures, laughing',
     ally:'imp', rises:true,
-    bossDraw:(...a)=>drawLavaTurtle(...a), miniDraw:(...a)=>drawImp(...a),
-    mouthDraw:z=>drawLavaPondApproach(z), beyondDraw:z=>drawLavaBeyond(z),
+    bossDraw:drawLavaTurtle, miniDraw:drawImp,
+    mouthDraw:drawLavaPondApproach, beyondDraw:drawLavaBeyond,
     bg:dt=>{ drawVolcanoBg(dt); drawVolcanoRoad(); },
-    arena:dt=>drawMagmaChamber(dt),
-    scenery:(x,y,s,v)=>drawBasalt(x,y,s,v),
-    atmos:dt=>drawVolcanoAtmos(dt),
+    arena:drawMagmaChamber,
+    scenery:drawBasalt,
+    atmos:drawVolcanoAtmos,
     mouth:{rock:'#141012',band:['#1b1517','#221a1c','#161113'],rim:'#3a2426',moss:'#3a1c14',mossL:'#5a2a1a',glow:'#ff6a2a'},
     reasons:{root:'A basalt arch swept you from the saddle',
              pond:'The lava pool took horse and rider',
              boulder:'You crashed into a volcanic slab'},
-  },
+  }),
 };
 const BIO=()=>BIOMES[biome];
-const ALLY_BACK={ wolf:(x,y,s,t,sp)=>drawWolfBack(x,y,s,t,sp),
-                  serpent:(x,y,s,t,sp)=>drawSerpentBack(x,y,s,t,sp),
-                  imp:(x,y,s,t,sp)=>drawImpBack(x,y,s,t,sp) };
+const ALLY_BACK={wolf:drawWolfBack,serpent:drawSerpentBack,imp:drawImpBack};
 const ALLY_FRONT={ wolf:(x,y,s)=>drawWolf(x,y,s,'run',0,false),
                    serpent:(x,y,s)=>drawSerpent(x,y,s,'run',0,false),
                    imp:(x,y,s)=>drawImp(x,y,s,'run',0,false) };
@@ -1588,6 +2106,7 @@ function drawSwampBg(dt){
   g.fillStyle=ground; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
 }
 function drawSwampRoad(){
+  const dist=roadScroll; // visual texture scroll; combat can keep this moving without advancing the stage
   /* a trodden MUD-AND-MOSS path through real swamp ground: the flanks are a
      living patchwork — side pools with lily pads, mud flats, moss beds, root
      tangles and creeping vines — never one flat sheet of anything */
@@ -1990,6 +2509,7 @@ function drawVolcanoBg(dt){
   g.fillStyle=ground; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
 }
 function drawVolcanoRoad(){
+  const dist=roadScroll; // visual texture scroll; combat can keep this moving without advancing the stage
   /* a cracked BASALT causeway — the fissures between the slabs glow with magma */
   const p0=proj(CFG.Z_FAR), pB=proj(-2.6);
   const hw=t=>lerp(34,218,t);
@@ -2641,6 +3161,7 @@ function drawRidge(baseY,h,col,scroll){
   g.lineTo(VW,baseY); g.closePath(); g.fill();
 }
 function drawRoad(){
+  const dist=roadScroll; // visual texture scroll; combat can keep this moving without advancing the stage
   /* not a road — a worn dirt track threading THROUGH the forest floor.
      ragged grass edges, hoof-worn ruts, pebbles; it belongs to the woods. */
   const p0=proj(CFG.Z_FAR), p1=proj(0);
@@ -2845,6 +3366,27 @@ function drawVignette(){
 let obstacles=[], pickups=[], trees=[], projectiles=[], hazards=[];
 let nextSpawnAt=0, nextTreeAt=0, nextPondAt=0;   // nextPondAt paces the swamp's ground ponds
 
+/* One compact obstacle representation keeps collision/render contracts consistent.
+   New obstacle art only needs a kind + lane requirements; the runner stays unchanged. */
+class ObstacleEntity{
+  constructor(kind,z,req=null,side=null){
+    this.kind=kind; this.z=z; this.req=req; this.side=side;
+    this.seed=(Math.random()*999)|0; this.resolved=false;
+  }
+}
+function cullBehind(items,minZ){
+  let write=0;
+  for(let read=0;read<items.length;read++) if(items[read].z>minZ) items[write++]=items[read];
+  items.length=write;
+}
+function cullObstacles(){
+  let write=0;
+  for(let read=0;read<obstacles.length;read++){
+    const o=obstacles[read]; if(o.z>(o.kind==='root'?-10.4:-8)) obstacles[write++]=o;
+  }
+  obstacles.length=write;
+}
+
 /* the guaranteed arsenal: fixed weapon positions rolled at loop start */
 let guaranteed=[];
 function buildGuaranteed(){
@@ -2909,7 +3451,8 @@ function spawnLoopEntities(){
   /* the waiting miniboss wolf (spawned once per loop) */
   if(!wolfSpawned && dist+CFG.Z_FAR > wolfAtDist){
     wolfSpawned=true;
-    obstacles.push({kind:'wolfgate', lane:(Math.random()*3)|0, z:wolfAtDist-dist, t:0});
+    const gate=new ObstacleEntity('wolfgate',wolfAtDist-dist);
+    gate.lane=(Math.random()*3)|0; gate.t=0; obstacles.push(gate);
     floater(VW/2,150,'A howl echoes ahead...','#aeb2c2',16); SFX.howl();
   }
 }
@@ -2967,7 +3510,7 @@ function spawnObstacle(z){
   for(let l=0;l<3;l++) if(req[l]&&pickupNear(l)) req[l]=null;
   if(!req[0]&&!req[1]&&!req[2]) return [];    // everything conflicted — skip this one
   lastObsFull=!!(req[0]&&req[1]&&req[2]);
-  const ob={kind,req,side:variant,z,seed:(Math.random()*999)|0,resolved:false};
+  const ob=new ObstacleEntity(kind,z,req,variant);
   if(kind==='root'){
     ob.treeV=Math.random();                   // the mother tree: a random sprite of this biome
     const ss=side==='L'?-1:1;                 // clear its standing room — never two trees in one
@@ -3078,13 +3621,14 @@ function dmgOf(kind){
 function counterDmg(){ return CFG.COUNTER_DMG+upg.counter*CFG.UPG_COUNTER_INC+(hasRelic('drum')?Math.round(3*relicPower()):0); }
 
 /* ============================== damage / death / shield ============================== */
-let debugRun=false, godMode=false, debugLoop=1, debugSel={};
-function damagePlayer(reason){
+let debugRun=false, godMode=false, debugBossStart=false, debugMiniStart=false,
+    debugBossMoves=false, debugMiniMoves=false, debugLoop=1, debugSel={};
+function damagePlayer(reason,unstoppable=false){
   if(godMode){ flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
     hazards=[]; return; }
   chainStacks=0;                             // pain breaks the chain
-  if(player.invuln>0) return;
-  if(consumeShield()){                       // shield relic eats exactly one hit
+  if(!unstoppable&&player.invuln>0) return;
+  if(!unstoppable&&consumeShield()){         // execution finishers bypass shields
     player.invuln=1.2; SFX.shield(); flash('#9ecbff',.5); shake(8,.3); stopTime(.09);
     burst(laneX(player.x,1),PLAYER_Y-40,22,['#9ecbff','#ffffff'],220,120,4,.8);
     floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE!','#9ecbff',20);
@@ -3105,17 +3649,60 @@ function damagePlayer(reason){
 function spawnHazard(lanes,height,travel,src){
   hazards.push({lanes,height,born:perfNow,impact:perfNow+travel,done:false,src});
 }
+function spawnSweepHazard(sweep,height,travel,src){
+  hazards.push({kind:'sweep',lanes:[0,1,2],height,born:perfNow,impact:perfNow+travel,
+    duration:travel,from:sweep.from,to:sweep.to,hitHalf:sweep.hitHalf||34,
+    perfectHalf:sweep.perfectHalf||70,done:false,src});
+}
+function sweepProgress(h,elapsed=perfNow-h.born){ return easeInOut(clamp(elapsed/h.duration,0,1)); }
+function sweepScreenX(h,elapsed=perfNow-h.born){ return laneX(lerp(h.from,h.to,sweepProgress(h,elapsed)),1); }
+function attackImpactY(height){
+  return height==='high'?DUCK_ATTACK_Y:height==='low'?ATTACK_GROUND_Y:BODY_ATTACK_Y;
+}
+function resolveSweepHazard(h){
+  const elapsed=perfNow-h.born, raw=clamp(elapsed/h.duration,0,1), hitX=sweepScreenX(h,elapsed);
+  if(debugMoveLabActive()){ if(raw>=1) h.done=true; return; }
+  /* Test the full distance crossed since the previous frame. This prevents a
+     fast paw/head tunnelling through the knight on an older low-FPS device. */
+  const previousX=h.lastX===undefined?hitX:h.lastX, playerX=laneX(player.x,1);
+  h.lastX=hitX;
+  const sweepMin=Math.min(previousX,hitX), sweepMax=Math.max(previousX,hitX);
+  const dx=playerX<sweepMin?sweepMin-playerX:playerX>sweepMax?playerX-sweepMax:0;
+  const W=perfectWin()+(h.src==='wolf' ? .09 : 0);
+  const postureSafe=h.height==='low'?isAirborne():h.height==='high'?isDucking():false;
+  const collides=dx<=h.hitHalf&&(h.height==='mid'||!postureSafe);
+  const recent=h.height==='low'?perfNow-player.lastJump<=W:
+               h.height==='high'?perfNow-player.lastDuck<=W:perfNow-player.lastLaneChange<=W;
+  const postureAttack=h.height==='low'||h.height==='high';
+  const perfect=recent&&(postureAttack
+    ? postureSafe&&dx<=h.perfectHalf
+    : dx>h.hitHalf&&dx<=h.perfectHalf);
+  if(collides||perfect){
+    h.done=true; const iy=attackImpactY(h.height);
+    burst(hitX,iy,10,[h.src==='wolf'?'#cfd4e2':'#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
+    spawnSlash(hitX,iy-9,h.to>h.from ? .25 : -.25,h.src==='wolf'?'#cfd4e2':'#e8e2d0');
+    SFX.slash(); shake(4,.18);
+    if(collides){ damagePlayer(h.src==='wolf'?BIO().miniHit:BIO().bossHit); return; }
+    floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
+    burst(laneX(player.x,1),PLAYER_Y-jumpHeight()-50,10,['#ffe37a','#fff'],160,80,3,.6);
+    doCounter(h.src);
+  } else if(raw>=1) h.done=true;
+}
 function updateHazards(){
   for(const h of hazards){
+    if(h.kind==='sweep'){ if(!h.done) resolveSweepHazard(h); continue; }
     if(h.done||perfNow<h.impact) continue;
     h.done=true; resolveHazard(h);
   }
   for(let i=hazards.length-1;i>=0;i--) if(hazards[i].done&&perfNow>hazards[i].impact+0.35) hazards.splice(i,1);
 }
 function resolveHazard(h){
-  const inLane=h.lanes.includes(Math.round(player.x));
+  /* Combat uses the same screen-space footprint as the red lane mark. This makes
+     a grazing body/paw contact a hit and lets an eased lane change clear it visibly. */
+  const playerCX=laneX(player.x,1);
+  const inLane=h.lanes.some(ln=>Math.abs(playerCX-laneX(ln,1))<=CFG.FIGHT_HIT_HALF);
   let hit=false, perfect=false;
-  const W=perfectWin();
+  const W=perfectWin()+(h.src==='wolf'?0.09:0); // miniboss counters begin a little earlier than the visual impact
   if(h.height==='all'){ hit=true; }
   else if(h.height==='mid'){
     hit=inLane;
@@ -3123,19 +3710,22 @@ function resolveHazard(h){
     if(!hit && h.lanes.includes(player.laneFrom) && perfNow-player.lastLaneChange<=W) perfect=true;
   } else if(h.height==='low'){
     hit=inLane&&!isAirborne();
-    if(inLane&&!hit&&perfNow-player.lastJump<=W+0.12) perfect=true;
+    if(inLane&&!hit&&perfNow-player.lastJump<=W) perfect=true;
   } else if(h.height==='high'){
     hit=inLane&&!isDucking();
     if(inLane&&!hit&&perfNow-player.lastDuck<=W) perfect=true;
   }
   /* impact: torn earth + claw rakes — a physical strike, not an energy beam */
   for(const ln of h.lanes){
-    const x=laneX(ln,1), iy=h.height==='high'?PLAYER_Y-86:PLAYER_Y-6;
-    burst(x,iy,9,['#6a5a40','#8a744f','#4a3b28'],170,150,4,.5);           // dirt & sod
+    const x=laneX(ln,1), iy=attackImpactY(h.height);
+    const impactCols=h.height==='low'?['#6a5a40','#8a744f','#4a3b28']:
+      h.height==='high'?['#e8e2d0','#cfd4e2','#ff9a3a']:['#e8e2d0','#ff4d3a','#8a744f'];
+    burst(x,iy,9,impactCols,170,150,4,.5);
     spawnSlash(x,iy-10,h.height==='high'?0.35:-0.4,h.src==='wolf'?'#cfd4e2':'#e8e2d0');
-    if(h.height!=='high') burst(x,iy,4,['#243a22'],110,90,3,.45);         // torn grass
+    if(h.height==='low') burst(x,iy,4,['#243a22'],110,90,3,.45);
   }
   SFX.slash(); shake(4,.18);
+  if(debugMoveLabActive()) return;            // move labs demonstrate timing and contact without ending the preview
   if(hit){ damagePlayer(h.src==='wolf'?BIO().miniHit:BIO().bossHit); return; }
   if(perfect){
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
@@ -3165,6 +3755,33 @@ function doCounter(src){
 
 /* ============================== WEREWOLF STAGE BOSS ============================== */
 let boss=null;
+/* Bosses and minibosses share this hot state container and weighted attack picker.
+   Species-specific rules (HP volley vs counter duel) remain small encounter hooks. */
+class EncounterActor{
+  constructor(spec={}){
+    /* Safe shared defaults matter as more species are added: an intro actor must
+       be renderable before it has selected its first attack. */
+    Object.assign(this,{state:'idle',stateT:0,hurtT:0,lastIds:[],hazardLanes:[]},spec);
+  }
+  enter(state){ this.state=state; this.stateT=0; }
+  tick(dt){ this.stateT+=dt; this.hurtT=Math.max(0,(this.hurtT||0)-dt); }
+  choose(attacks){
+    let total=0, fallback=null;
+    for(let i=0;i<attacks.length;i++){
+      const a=attacks[i]; let repeats=0;
+      for(let j=0;j<this.lastIds.length;j++) if(this.lastIds[j]===a.id) repeats++;
+      if(repeats<2){ total+=a.w; if(!fallback) fallback=a; }
+    }
+    let roll=Math.random()*total, selected=fallback||attacks[0];
+    for(let i=0;i<attacks.length;i++){
+      const a=attacks[i]; let repeats=0;
+      for(let j=0;j<this.lastIds.length;j++) if(this.lastIds[j]===a.id) repeats++;
+      if(repeats<2 && (roll-=a.w)<=0){ selected=a; break; }
+    }
+    this.lastIds.push(selected.id); if(this.lastIds.length>3)this.lastIds.shift();
+    return selected;
+  }
+}
 /* attack table — pick() chooses target lanes at telegraph start.
    Each entry: weight, telegraph secs, travel (strike→impact), recover, height, anim key */
 const BOSS_ATTACKS=[
@@ -3182,12 +3799,213 @@ const BOSS_ATTACKS=[
   {id:'combo',  w:9,  tele:1.25, travel:0.55, rec:1.0, height:'seq',  anim:'tele_combo',  lunge:3,
    pick:()=>[0,1,2]},                                                 // howl: ground rake THEN high rake
 ];
-function teleMult(){ return Math.max(CFG.TELE_MIN_MULT, 1-Math.floor((loop-1)/3)*0.12); } // a step faster every 3 stages
-function dodgeAttackCount(){ return CFG.BOSS_DODGE_ATKS + Math.floor((loop-1)/3)*CFG.BOSS_ATKS_TIER; }
+/* Shared attack IDs keep every biome compatible; forest maps them to bespoke poses. */
+const BEAR_ATTACK_POSES=Object.freeze({swipe:'claw',double:'rake',sweep:'spin',lunge:'upperbite',pounce:'pounce',combo:'combo'});
+const WOLF_ATTACK_POSES=Object.freeze({bite:'bite',sweep:'spin',double:'claw',leap:'upperbite'});
+/* Forest bear patterns are authored as held, readable steps. Later forest tiers
+   unlock longer strings, while one pattern still counts as one boss turn. */
+const BEAR_DUEL_ATTACKS=[
+  {id:'left_maul',w:24,minTier:1,rec:0.72,steps:[
+    {lanes:[0],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6}
+  ]},
+  {id:'right_maul',w:24,minTier:1,rec:0.72,steps:[
+    {lanes:[2],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:6}
+  ]},
+  {id:'center_bite',w:20,minTier:1,rec:0.82,steps:[
+    {lanes:[1],height:'mid',tele:0.92,travel:0.30,anim:'tele_bite',strike:'strike_bite',x:1,lunge:8}
+  ]},
+  {id:'earthbreaker_rtl',w:8,minTier:1,rec:0.98,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodyOffset:.12,sweep:{from:2,to:0,hitHalf:38}}
+  ]},
+  {id:'earthbreaker_ltr',w:8,minTier:1,rec:0.98,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodyOffset:-.12,sweep:{from:0,to:2,hitHalf:38}}
+  ]},
+  {id:'high_reaper_rtl',w:7,minTier:1,rec:1.0,steps:[
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodyOffset:.12,sweep:{from:2,to:0,hitHalf:38}}
+  ]},
+  {id:'high_reaper_ltr',w:7,minTier:1,rec:1.0,steps:[
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',bodyLunge:10.5,bodySweep:true,bodyOffset:-.12,sweep:{from:0,to:2,hitHalf:38}}
+  ]},
+  {id:'cross_execution',w:18,minTier:2,rec:1.0,steps:[
+    {lanes:[0],height:'mid',tele:0.88,travel:0.30,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6},
+    {lanes:[2],height:'mid',tele:0.48,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:6},
+    {lanes:[1],height:'mid',tele:0.58,travel:0.28,anim:'tele_bite',strike:'strike_bite',x:1,lunge:9}
+  ]},
+  {id:'twin_crush',w:17,minTier:2,rec:0.92,steps:[
+    {lanes:[0,2],height:'mid',tele:1.02,travel:0.34,anim:'tele_double_paw',strike:'strike_double_paw',x:1,lunge:6}
+  ]},
+  {id:'closing_walls',w:15,minTier:2,rec:1.02,steps:[
+    {lanes:[0,1],height:'mid',tele:0.76,travel:0.29,anim:'tele_double_paw',strike:'strike_double_paw',x:0.5,lunge:6},
+    {lanes:[1,2],height:'mid',tele:0.48,travel:0.27,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:6}
+  ]},
+  {id:'red_hunt',w:14,minTier:3,rec:1.08,steps:[
+    {lanes:[2],height:'mid',tele:0.70,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:7},
+    {lanes:[1],height:'mid',tele:0.42,travel:0.25,anim:'tele_bite',strike:'strike_bite',x:1,lunge:8},
+    {lanes:[0],height:'mid',tele:0.42,travel:0.25,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:7},
+    {lanes:[0,1,2],height:'low',tele:.64,travel:.62,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodyOffset:.12,sweep:{from:2,to:0,hitHalf:38}}
+  ]},
+  {id:'black_fury',w:13,minTier:3,rec:1.12,steps:[
+    {lanes:[0,1],height:'mid',tele:0.66,travel:0.27,anim:'tele_double_paw',strike:'strike_double_paw',x:0.5,lunge:7},
+    {lanes:[1,2],height:'mid',tele:0.42,travel:0.25,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:7},
+    {lanes:[1],height:'mid',tele:0.40,travel:0.24,anim:'tele_bite',strike:'strike_bite',x:1,lunge:9},
+    {lanes:[0,1,2],height:'high',tele:.60,travel:.60,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',bodyLunge:10.5,bodySweep:true,bodyOffset:-.12,sweep:{from:0,to:2,hitHalf:38}}
+  ]},
+  {id:'cave_king',w:12,minTier:4,rec:1.2,steps:[
+    {lanes:[0,2],height:'mid',tele:0.58,travel:0.26,anim:'tele_double_paw',strike:'strike_double_paw',x:1,lunge:7},
+    {lanes:[0,1],height:'mid',tele:0.38,travel:0.23,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:8},
+    {lanes:[1,2],height:'mid',tele:0.36,travel:0.23,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:8},
+    {lanes:[1],height:'mid',tele:0.34,travel:0.22,anim:'tele_bite',strike:'strike_bite',x:1,lunge:10},
+    {lanes:[0,1,2],height:'low',tele:.54,travel:.56,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodyOffset:-.12,sweep:{from:0,to:2,hitHalf:38}},
+    {lanes:[0,1,2],height:'high',tele:.52,travel:.55,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodyOffset:.12,sweep:{from:2,to:0,hitHalf:38}}
+  ]},
+];
+/* The swamp fight is a neck-and-head duel: each head visibly owns a lane, while
+   the shared body creates the full-road water pressure attacks. */
+const HYDRA_DUEL_ATTACKS=[
+  {id:'left_fang',w:24,minTier:1,rec:.78,steps:[
+    {lanes:[0],height:'mid',tele:.96,travel:.34,anim:'tele_hydra_left',strike:'strike_hydra_left',x:0,lunge:6}
+  ]},
+  {id:'right_fang',w:24,minTier:1,rec:.78,steps:[
+    {lanes:[2],height:'mid',tele:.96,travel:.34,anim:'tele_hydra_right',strike:'strike_hydra_right',x:2,lunge:6}
+  ]},
+  {id:'mire_wave',w:20,minTier:1,rec:.92,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.08,travel:.38,anim:'tele_hydra_wave',strike:'strike_hydra_wave',x:1,lunge:4}
+  ]},
+  {id:'split_jaws',w:18,minTier:1,rec:.88,steps:[
+    {lanes:[0,2],height:'mid',tele:1.02,travel:.36,anim:'tele_hydra_twin',strike:'strike_hydra_twin',x:1,lunge:6}
+  ]},
+  {id:'marsh_waltz',w:20,minTier:2,rec:1.02,steps:[
+    {lanes:[0],height:'mid',tele:.70,travel:.29,anim:'tele_hydra_left',strike:'strike_hydra_left',x:0,lunge:7},
+    {lanes:[2],height:'mid',tele:.46,travel:.27,anim:'tele_hydra_right',strike:'strike_hydra_right',x:2,lunge:7},
+    {lanes:[0,1,2],height:'low',tele:.62,travel:.32,anim:'tele_hydra_wave',strike:'strike_hydra_wave',x:1,lunge:4}
+  ]},
+  {id:'acid_canopy',w:18,minTier:2,rec:1.04,steps:[
+    {lanes:[0,1,2],height:'high',tele:.86,travel:.70,anim:'tele_hydra_high_rtl',strike:'strike_hydra_high_rtl',bodyLunge:4,bodySweep:true,bodyOffset:.08,sweep:{from:2,to:0,hitHalf:42,perfectHalf:78}},
+    {lanes:[1],height:'mid',tele:.48,travel:.28,anim:'tele_hydra_center',strike:'strike_hydra_center',x:1,lunge:8}
+  ]},
+  {id:'threefold_drown',w:16,minTier:3,rec:1.14,steps:[
+    {lanes:[0,2],height:'mid',tele:.64,travel:.28,anim:'tele_hydra_twin',strike:'strike_hydra_twin',x:1,lunge:7},
+    {lanes:[0,1,2],height:'high',tele:.58,travel:.62,anim:'tele_hydra_high_ltr',strike:'strike_hydra_high_ltr',bodyLunge:4,bodySweep:true,bodyOffset:-.08,sweep:{from:0,to:2,hitHalf:42,perfectHalf:78}},
+    {lanes:[1],height:'mid',tele:.44,travel:.25,anim:'tele_hydra_center',strike:'strike_hydra_center',x:1,lunge:9},
+    {lanes:[0,1,2],height:'low',tele:.58,travel:.31,anim:'tele_hydra_wave',strike:'strike_hydra_wave',x:1,lunge:4}
+  ]},
+  {id:'flooded_throne',w:15,minTier:3,rec:1.16,steps:[
+    {lanes:[0,1],height:'mid',tele:.64,travel:.28,anim:'tele_hydra_twin',strike:'strike_hydra_twin',x:.5,lunge:7},
+    {lanes:[1,2],height:'mid',tele:.44,travel:.25,anim:'tele_hydra_twin',strike:'strike_hydra_twin',x:1.5,lunge:7},
+    {lanes:[1],height:'mid',tele:.40,travel:.24,anim:'tele_hydra_center',strike:'strike_hydra_center',x:1,lunge:9},
+    {lanes:[0,1,2],height:'high',tele:.58,travel:.60,anim:'tele_hydra_high_ltr',strike:'strike_hydra_high_ltr',bodyLunge:4,bodySweep:true,bodyOffset:-.08,sweep:{from:0,to:2,hitHalf:42,perfectHalf:78}},
+    {lanes:[0,1,2],height:'low',tele:.54,travel:.32,anim:'tele_hydra_wave',strike:'strike_hydra_wave',x:1,lunge:4}
+  ]},
+  {id:'drowned_crown',w:16,minTier:4,rec:1.20,steps:[
+    {lanes:[0,2],height:'mid',tele:.58,travel:.26,anim:'tele_hydra_twin',strike:'strike_hydra_twin',x:1,lunge:7},
+    {lanes:[0],height:'mid',tele:.38,travel:.23,anim:'tele_hydra_left',strike:'strike_hydra_left',x:0,lunge:8},
+    {lanes:[2],height:'mid',tele:.36,travel:.23,anim:'tele_hydra_right',strike:'strike_hydra_right',x:2,lunge:8},
+    {lanes:[1],height:'mid',tele:.34,travel:.22,anim:'tele_hydra_center',strike:'strike_hydra_center',x:1,lunge:9},
+    {lanes:[0,1,2],height:'high',tele:.54,travel:.56,anim:'tele_hydra_high_rtl',strike:'strike_hydra_high_rtl',bodyLunge:4,bodySweep:true,bodyOffset:.08,sweep:{from:2,to:0,hitHalf:42,perfectHalf:78}},
+    {lanes:[0,1,2],height:'low',tele:.52,travel:.31,anim:'tele_hydra_wave',strike:'strike_hydra_wave',x:1,lunge:4}
+  ]},
+];
+/* Tier-three boss: the snapper is durable and uses deliberate shell/limb patterns,
+   never faster tells. Its difficulty is the sequence choice, not unreadable speed. */
+const TURTLE_DUEL_ATTACKS=[
+  {id:'left_snap',w:22,minTier:1,rec:.82,steps:[
+    {lanes:[0],height:'mid',tele:1.02,travel:.36,anim:'tele_turtle_bite_left',strike:'strike_turtle_bite_left',x:1,bodyLunge:4.2}
+  ]},
+  {id:'right_snap',w:22,minTier:1,rec:.82,steps:[
+    {lanes:[2],height:'mid',tele:1.02,travel:.36,anim:'tele_turtle_bite_right',strike:'strike_turtle_bite_right',x:1,bodyLunge:4.2}
+  ]},
+  {id:'furnace_snap',w:21,minTier:1,rec:.96,steps:[
+    {lanes:[1],height:'mid',tele:1.00,travel:.34,anim:'tele_turtle_bite',strike:'strike_turtle_bite',x:1,bodyLunge:3.5}
+  ]},
+  {id:'shell_wheel',w:18,minTier:1,rec:1.08,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.18,travel:.42,anim:'tele_turtle_spin',strike:'strike_turtle_spin',x:1,bodyLunge:12}
+  ]},
+  {id:'boiler_vent',w:17,minTier:1,rec:1.04,steps:[
+    {lanes:[0,1,2],height:'high',tele:1.02,travel:.38,anim:'tele_turtle_steam',strike:'strike_turtle_steam',x:1,bodyLunge:4}
+  ]},
+  {id:'outer_crush',w:19,minTier:2,rec:1.02,steps:[
+    {lanes:[0,2],height:'mid',tele:.88,travel:.34,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1,lunge:7}
+  ]},
+  {id:'basalt_gates',w:18,minTier:2,rec:1.10,steps:[
+    {lanes:[0,1],height:'mid',tele:.78,travel:.31,anim:'tele_turtle_double',strike:'strike_turtle_double',x:.5,lunge:7},
+    {lanes:[1,2],height:'mid',tele:.58,travel:.29,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1.5,lunge:7}
+  ]},
+  {id:'molten_judgement',w:17,minTier:3,rec:1.20,steps:[
+    {lanes:[0,2],height:'mid',tele:.76,travel:.30,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1,lunge:8},
+    {lanes:[0],height:'mid',tele:.56,travel:.28,anim:'tele_turtle_bite_left',strike:'strike_turtle_bite_left',x:1,bodyLunge:4.4},
+    {lanes:[2],height:'mid',tele:.48,travel:.27,anim:'tele_turtle_bite_right',strike:'strike_turtle_bite_right',x:1,bodyLunge:4.4},
+    {lanes:[0,1,2],height:'high',tele:.66,travel:.32,anim:'tele_turtle_steam',strike:'strike_turtle_steam',x:1,bodyLunge:4},
+    {lanes:[0,1,2],height:'low',tele:.64,travel:.36,anim:'tele_turtle_spin',strike:'strike_turtle_spin',x:1,bodyLunge:12}
+  ]},
+  {id:'obsidian_maw',w:16,minTier:3,rec:1.18,steps:[
+    {lanes:[0,1],height:'mid',tele:.66,travel:.28,anim:'tele_turtle_double',strike:'strike_turtle_double',x:.5,lunge:8},
+    {lanes:[1,2],height:'mid',tele:.44,travel:.25,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1.5,lunge:8},
+    {lanes:[0],height:'mid',tele:.40,travel:.24,anim:'tele_turtle_bite_left',strike:'strike_turtle_bite_left',x:1,bodyLunge:4.4},
+    {lanes:[2],height:'mid',tele:.38,travel:.24,anim:'tele_turtle_bite_right',strike:'strike_turtle_bite_right',x:1,bodyLunge:4.4},
+    {lanes:[0,1,2],height:'high',tele:.56,travel:.32,anim:'tele_turtle_steam',strike:'strike_turtle_steam',x:1,bodyLunge:4},
+    {lanes:[0,1,2],height:'low',tele:.54,travel:.36,anim:'tele_turtle_spin',strike:'strike_turtle_spin',x:1,bodyLunge:12}
+  ]},
+  {id:'caldera_tyrant',w:16,minTier:4,rec:1.20,steps:[
+    {lanes:[0,2],height:'mid',tele:.58,travel:.26,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1,lunge:8},
+    {lanes:[0,1],height:'mid',tele:.38,travel:.23,anim:'tele_turtle_double',strike:'strike_turtle_double',x:.5,lunge:8},
+    {lanes:[1,2],height:'mid',tele:.36,travel:.23,anim:'tele_turtle_double',strike:'strike_turtle_double',x:1.5,lunge:8},
+    {lanes:[0],height:'mid',tele:.34,travel:.22,anim:'tele_turtle_bite_left',strike:'strike_turtle_bite_left',x:1,bodyLunge:4.4},
+    {lanes:[2],height:'mid',tele:.34,travel:.22,anim:'tele_turtle_bite_right',strike:'strike_turtle_bite_right',x:1,bodyLunge:4.4},
+    {lanes:[0,1,2],height:'high',tele:.54,travel:.32,anim:'tele_turtle_steam',strike:'strike_turtle_steam',x:1,bodyLunge:4},
+    {lanes:[0,1,2],height:'low',tele:.52,travel:.36,anim:'tele_turtle_spin',strike:'strike_turtle_spin',x:1,bodyLunge:12}
+  ]},
+];
+function currentBossMove(){
+  if(!boss||!boss.attack) return null;
+  return boss.attack.steps?boss.attack.steps[boss.sequenceIndex||0]:boss.attack;
+}
+function moveContactXs(actor,move,lanes){
+  const out=actor?(actor._contactXs||(actor._contactXs=[])):[];
+  out.length=0;
+  if(actor&&move&&move.sweep&&actor.state==='strike'){
+    const k=easeInOut(clamp(actor.stateT/move.travel,0,1));
+    out.push(laneX(lerp(move.sweep.from,move.sweep.to,k),1));
+    return out;
+  }
+  for(const ln of lanes||ALL_LANES) out.push(laneX(ln,1));
+  return out;
+}
+function sweepBodyLane(move,k){
+  return lerp(move.sweep.from,move.sweep.to,k)+(move.bodyOffset||0);
+}
+function cueBossMove(){
+  const move=currentBossMove(); if(!move) return;
+  boss.hazardLanes=move.lanes||move.pick();
+  boss.xTarget=move.sweep&&move.bodySweep?move.sweep.from+(move.bodyOffset||0):
+    move.x!==undefined?move.x:(move.height==='mid'?boss.hazardLanes[0]:1);
+  boss.teleTime=attackTeleTime(move,boss.hazardLanes);
+}
+function teleMult(){ return Math.max(CFG.TELE_MIN_MULT,1-Math.floor((loop-1)/3)*CFG.TELE_LOOP_MULT); }
+/* A tell may scale down, but never below the physical time needed to reach safety.
+   Two-lane traps grant longer than one-lane dodges; jump/duck retain a firm floor. */
+function attackTeleTime(move,lanes){
+  const scaled=move.tele*teleMult();
+  if(move.height==='mid'){
+    const from=clamp(Math.round(player.x),0,2);
+    let steps=3, safeCount=0;
+    for(const ln of ALL_LANES) if(!lanes.includes(ln)){
+      safeCount++; steps=Math.min(steps,Math.abs(ln-from));
+    }
+    if(!safeCount) return Math.max(scaled,.42);
+    return Math.max(scaled,.28+steps*.10);
+  }
+  if(move.height==='low') return Math.max(scaled,.36);
+  if(move.height==='high') return Math.max(scaled,.32);
+  if(move.height==='seq') return Math.max(scaled,.52);
+  return Math.max(scaled,.32);
+}
+function dodgeAttackCount(){ return CFG.BOSS_DODGE_ATKS + Math.floor((loop-1)/6)*CFG.BOSS_ATKS_TIER; }
 function bossMaxHp(){
   const tier=Math.floor((loop-1)/3);
-  return CFG.BOSS_HP_BASE+(loop-1)*CFG.BOSS_HP_PER_LOOP+tier*CFG.BOSS_HP_TIER_ADD;
+  const base=CFG.BOSS_HP_BASE+(loop-1)*CFG.BOSS_HP_PER_LOOP+tier*CFG.BOSS_HP_TIER_ADD;
+  return biome==='volcano'?Math.round(base*1.18+25):base;
 }
+function bossAttackCount(){ return dodgeAttackCount()+(biome==='volcano'?1:0); }
 function packLeapDmg(){
   const base=CFG.PACK_LEAP_DMG+upg.fang*CFG.UPG_FANG_INC;
   /* the follower's fangs ride the CHAIN like your weapons do, and the horn empowers them */
@@ -3196,16 +4014,16 @@ function packLeapDmg(){
 function startBoss(){
   /* the bear stalks in from the treeline; pond bosses RISE from the water */
   const side=BIO().rises?1:(Math.random()<.5?-3.1:5.1);
-  boss={
+  boss=new EncounterActor({
     hp:bossMaxHp(),
     z:CFG.BOSS_Z, x:side, xTarget:1, entering:!BIO().rises,
     state:'intro', stateT:0, attack:null, hazardLanes:[],
     lastIds:[], hurtT:0, atkTimer:1.4, comboStep:0,
     poisonT:0, burnT:0, dotAcc:0, rise:BIO().rises?0:1,
     /* fight structure: exactly N attacks of dodging, THEN the knight's volley */
-    phase:'dodge', attacksLeft:dodgeAttackCount(),
+    phase:'dodge', attacksLeft:bossAttackCount(),
     volleyTimer:0, packLeapt:0, dealt:0,
-  };
+  });
   boss.maxhp=boss.hp;
   obstacles=[]; pickups=[]; trees=[];       // full focus on the fight
   env='cave';                               // you rode in under the arch — now it has you
@@ -3213,11 +4031,14 @@ function startBoss(){
   floater(VW/2,300,BIO().arenaLine,'#e8e2d0',19);
   setMode('bossintro'); SFX.roar(); shake(10,.6);
 }
+function activeBossAttackSet(){ return biome==='forest'?BEAR_DUEL_ATTACKS:biome==='swamp'?HYDRA_DUEL_ATTACKS:TURTLE_DUEL_ATTACKS; }
+/* Hydra/turtle sprites use a smaller 32px base silhouette than the 44px bear.
+   Species scale compensates for source-art dimensions so all three occupy the
+   same intimidating screen footprint without altering combat speed. */
+function bossSpeciesScale(){ return biome==='forest'?3.65:biome==='swamp'?4.72:4.88; }
 function chooseBossAttack(){
-  let pool=BOSS_ATTACKS.filter(a=>boss.lastIds.filter(x=>x===a.id).length<2); // no cheap triple-repeats
-  let tot=pool.reduce((s,a)=>s+a.w,0), r=Math.random()*tot;
-  for(const a of pool){ if((r-=a.w)<=0){ boss.lastIds.push(a.id); if(boss.lastIds.length>3)boss.lastIds.shift(); return a; } }
-  return pool[0];
+  const tier=Math.floor((loop-1)/3)+1;
+  return boss.choose(activeBossAttackSet().filter(a=>a.minTier<=tier));
 }
 function hurtBoss(dmg,fromCounter){
   if(!boss||boss.state==='dying'||boss.state==='finisher') return;
@@ -3246,12 +4067,12 @@ function resolveVolley(){
     boss.state='dying'; boss.stateT=0; boss._stg=0; hazards=[];   // now the kill animation plays
   } else {
     floater(VW/2,300,'NOT ENOUGH DAMAGE...','#ff4d3a',24); SFX.roar();
-    boss.state='finisher'; boss.stateT=0; hazards=[];             // the bear answers. it does not miss.
+    boss.state='finisher'; boss.stateT=0; boss.xTarget=1; boss._fin=false; boss._finRoar=false; boss._finStage=0; hazards=[];
   }
 }
 function updateBoss(dt){
   if(!boss) return;
-  boss.stateT+=dt; boss.hurtT=Math.max(0,boss.hurtT-dt);
+  boss.tick(dt);
   if(boss.rise<1) boss.rise=Math.min(1,boss.rise+dt/1.3);          // pond bosses breach the surface
   /* poison & burn gnaw at it — relic damage, sharpened by RELIC POWER */
   if(boss.state!=='dying'&&boss.state!=='finisher'){
@@ -3292,8 +4113,22 @@ function updateBoss(dt){
     return;
   }
   if(st==='finisher'){                       /* volley failed → one undodgeable claw. shield may eat it. */
-    if(T>=1.15&&!boss._fin){ boss._fin=true; spawnHazard([0,1,2],'all',0.45,'boss'); }
-    if(T>=2.4){ boss.state='finisher'; boss.stateT=0; boss._fin=false; } // repeats if a shield absorbed it
+    if(T>=0.45&&!boss._finRoar){ boss._finRoar=true; SFX.roar(); shake(7,.35); }
+    if(biome==='volcano'){
+      const marks=[1.29,1.63,2.05], lanes=[0,2,1];
+      while(boss._finStage<marks.length&&T>=marks[boss._finStage]){
+        const ln=lanes[boss._finStage++], x=laneX(ln,1);
+        SFX.thud(); shake(8,.18); stopTime(.045);
+        burst(x,PLAYER_Y-48,16,['#ff6a2a','#ffd23a','#e8e2d0'],190,120,4,.55);
+        spawnSlash(x,PLAYER_Y-58,-.35,'#ffd23a');
+      }
+    }
+    if(T>=2.15&&!boss._fin){
+      boss._fin=true; flash('#ff2638',.9); shake(18,.7); stopTime(.28);
+      const cause=biome==='forest'?'The cave bear executed you':
+        biome==='swamp'?'The hydra devoured you':'The molten snapper crushed you';
+      damagePlayer(cause,true);
+    }
     return;
   }
   if(st==='volley'){                         /* --- PC's TURN: unleash every collected weapon --- */
@@ -3320,7 +4155,12 @@ function updateBoss(dt){
     return;
   }
   if(st==='idle'){
-    if(boss.phase==='dodge'&&boss.attacksLeft<=0&&hazards.length===0){
+    if(boss._moveLab&&boss._moveLab.index>=boss._moveLab.moves.length&&hazards.length===0){
+      if(boss._moveLab.doneT===0) floater(VW/2,270,'BOSS MOVE LAB COMPLETE','#c0f79a',20);
+      boss._moveLab.doneT+=dt; if(boss._moveLab.doneT>1.35) finishMoveLab();
+      return;
+    }
+    if(!boss._moveLab&&boss.phase==='dodge'&&boss.attacksLeft<=0&&hazards.length===0){
       boss.phase='volley'; boss.state='volley'; boss.stateT=0; boss.volleyTimer=0.6;
       const total=arrows+lances+pack;
       floater(VW/2,280,total>0?'YOUR TURN — UNLEASH!':'YOUR TURN... BUT YOU CARRY NOTHING','#c0f79a',22);
@@ -3330,29 +4170,42 @@ function updateBoss(dt){
     boss.atkTimer-=dt;
     if(boss.atkTimer<=0&&boss.attacksLeft>0){
       boss.attacksLeft--;
-      boss.attack=chooseBossAttack(); boss.state='tele'; boss.stateT=0;
-      boss.hazardLanes=boss.attack.pick();
-      boss.xTarget=boss.attack.height==='mid'?boss.hazardLanes[0]:1;  // faces its target
+      if(boss._moveLab){
+        boss.attack=boss._moveLab.moves[boss._moveLab.index++];
+        floater(VW/2,230,boss._moveLab.index+'/'+boss._moveLab.moves.length+' · '+boss.attack._labName,'#ff9a3a',15);
+      } else boss.attack=chooseBossAttack();
+      boss.state='tele'; boss.stateT=0;
+      boss.sequenceIndex=0; cueBossMove();
       SFX.roar();
     }
   } else if(st==='tele'){
-    if(T>=boss.attack.tele*teleMult()){
+    const a=currentBossMove();
+    if(a&&T>=boss.teleTime){
       boss.state='strike'; boss.stateT=0; SFX.slash();
-      const a=boss.attack;
-      if(a.height==='seq'){                  // howl combo: ground wave, THEN a high sweep
+      if(a.sweep) spawnSweepHazard(a.sweep,a.height,a.travel,'boss');
+      else if(!boss.attack.steps&&a.height==='seq'){ // legacy biome combo
         spawnHazard([0,1,2],'low',a.travel,'boss');
         spawnHazard([0,1,2],'high',a.travel+0.95,'boss');
       } else spawnHazard(boss.hazardLanes,a.height,a.travel,'boss');
     }
   } else if(st==='strike'){
-    if(T>=boss.attack.travel+(boss.attack.height==='seq'?1.05:0)){ boss.state='recover'; boss.stateT=0; }
+    const a=currentBossMove();
+    /* Damage resolves at a.travel; this short extra beat leaves the paw/muzzle
+       visibly planted on the knight's plane instead of cutting straight to recover. */
+    if(a&&T>=a.travel+CFG.IMPACT_HOLD+(!boss.attack.steps&&a.height==='seq'?1.05:0)){
+      if(a.sweep&&a.bodySweep){ boss.x=a.sweep.to+(a.bodyOffset||0); boss.xTarget=boss.x; }
+      if(boss.attack.steps&&boss.sequenceIndex<boss.attack.steps.length-1){
+        boss.sequenceIndex++; boss.state='tele'; boss.stateT=0; cueBossMove();
+      } else { boss.state='recover'; boss.stateT=0; }
+    }
   } else if(st==='recover'){
     if(T>=boss.attack.rec){
       boss.state='idle'; boss.stateT=0;
+      if(boss._moveLab){ boss.atkTimer=.85; return; }
       const haste=Math.max(CFG.ATK_HASTE_MIN,1-(loop-1)*CFG.ATK_HASTE_LOOP);
       const comboCh=Math.min(CFG.COMBO_MAX,CFG.COMBO_BASE+(loop-1)*CFG.COMBO_LOOP);
       if(boss.attacksLeft>0&&Math.random()<comboCh){
-        boss.atkTimer=0.12;                                // COMBO: it flows straight into the next
+        boss.atkTimer=0.28;                                // brief reset before another authored tell
         floater(laneX(boss.x,proj(boss.z).t),proj(boss.z).y-170*proj(boss.z).s,'COMBO!','#ff9a3a',15);
       } else boss.atkTimer=rnd(0.5,1.1)*haste;
     }
@@ -3447,20 +4300,157 @@ const WOLF_ATTACKS=[
   {id:'leap',   w:16, tele:0.85, travel:0.5,  rec:0.8, height:'high', anim:'tele_leap', lunge:5,
    pick:()=>[0,1,2]},                                   // leaps over — duck under it
 ];
-function startMiniboss(lane){
-  wolfFight={
-    z:10, x:lane, xTarget:1,
-    state:'intro', stateT:0, attack:null, hurtT:0, atkTimer:2.2, lastIds:[],
+const WOLF_DUEL_ATTACKS=[
+  {id:'wolf_bite',w:26,rec:.70,steps:[
+    {lanes:()=>[Math.round(player.x)],height:'mid',tele:.86,travel:.32,anim:'tele_wolf_bite',strike:'strike_wolf_bite',lunge:7}
+  ]},
+  {id:'wolf_slide_left',w:20,rec:.80,steps:[
+    {lanes:[0,1],height:'mid',tele:.96,travel:.54,anim:'tele_wolf_slide_mid',strike:'strike_wolf_slide_mid',bodyLunge:6,bodySweep:true,sweep:{from:0,to:1,hitHalf:31,perfectHalf:66}}
+  ]},
+  {id:'wolf_slide_right',w:20,rec:.80,steps:[
+    {lanes:[1,2],height:'mid',tele:.96,travel:.54,anim:'tele_wolf_slide_mid',strike:'strike_wolf_slide_mid',bodyLunge:6,bodySweep:true,sweep:{from:2,to:1,hitHalf:31,perfectHalf:66}}
+  ]},
+  {id:'wolf_ground_fang',w:18,rec:.86,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.04,travel:.68,anim:'tele_wolf_slide_low',strike:'strike_wolf_slide_low',bodyLunge:8.4,bodySweep:true,sweep:{from:0,to:2,hitHalf:31,perfectHalf:68}}
+  ]},
+  {id:'wolf_high_fang',w:17,rec:.88,steps:[
+    {lanes:[0,1,2],height:'high',tele:1.02,travel:.68,anim:'tele_wolf_slide_high',strike:'strike_wolf_slide_high',bodyLunge:6,bodySweep:true,sweep:{from:2,to:0,hitHalf:31,perfectHalf:68}}
+  ]},
+  {id:'wolf_hunting_circuit',w:14,minTier:2,rec:1.00,steps:[
+    {lanes:[0,1],height:'mid',tele:.80,travel:.52,anim:'tele_wolf_slide_mid',strike:'strike_wolf_slide_mid',bodyLunge:6,bodySweep:true,sweep:{from:0,to:1,hitHalf:31,perfectHalf:66}},
+    {lanes:[0,1,2],height:'low',tele:.62,travel:.62,anim:'tele_wolf_slide_low',strike:'strike_wolf_slide_low',bodyLunge:8.4,bodySweep:true,sweep:{from:2,to:0,hitHalf:31,perfectHalf:68}},
+    {lanes:[0,1,2],height:'high',tele:.60,travel:.62,anim:'tele_wolf_slide_high',strike:'strike_wolf_slide_high',bodyLunge:6,bodySweep:true,sweep:{from:0,to:2,hitHalf:31,perfectHalf:68}}
+  ]},
+  {id:'wolf_fang_gauntlet',w:10,minTier:3,rec:1.08,steps:[
+    {lanes:[0,1,2],height:'high',tele:.74,travel:.58,anim:'tele_wolf_slide_high',strike:'strike_wolf_slide_high',bodyLunge:6,bodySweep:true,sweep:{from:2,to:0,hitHalf:31,perfectHalf:68}},
+    {lanes:[0,1,2],height:'low',tele:.52,travel:.58,anim:'tele_wolf_slide_low',strike:'strike_wolf_slide_low',bodyLunge:8.4,bodySweep:true,sweep:{from:0,to:2,hitHalf:31,perfectHalf:68}},
+    {lanes:[0,1,2],height:'high',tele:.50,travel:.58,anim:'tele_wolf_slide_high',strike:'strike_wolf_slide_high',bodyLunge:6,bodySweep:true,sweep:{from:2,to:0,hitHalf:31,perfectHalf:68}}
+  ]},
+];
+const SERPENT_DUEL_ATTACKS=[
+  {id:'serpent_fang',w:28,rec:.72,steps:[
+    {lanes:()=>[Math.round(player.x)],height:'mid',tele:.90,travel:.33,anim:'tele_serpent_bite',strike:'strike_serpent_bite',lunge:7}
+  ]},
+  {id:'serpent_coil',w:22,rec:.82,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.02,travel:.37,anim:'tele_serpent_coil',strike:'strike_serpent_coil',lunge:5}
+  ]},
+  {id:'serpent_fork',w:19,rec:.90,steps:[
+    {lanes:[0],height:'mid',tele:.94,travel:.33,anim:'tele_serpent_left',strike:'strike_serpent_left',x:0,lunge:7},
+    {lanes:[2],height:'mid',tele:.68,travel:.30,anim:'tele_serpent_right',strike:'strike_serpent_right',x:2,lunge:7}
+  ]},
+  {id:'serpent_sway',w:14,minTier:2,rec:.98,steps:[
+    {lanes:[0],height:'mid',tele:.70,travel:.29,anim:'tele_serpent_left',strike:'strike_serpent_left',x:0,lunge:7},
+    {lanes:[2],height:'mid',tele:.52,travel:.28,anim:'tele_serpent_right',strike:'strike_serpent_right',x:2,lunge:7},
+    {lanes:[0,1,2],height:'high',tele:.68,travel:.32,anim:'tele_serpent_hood',strike:'strike_serpent_hood',lunge:5}
+  ]},
+];
+const IMP_DUEL_ATTACKS=[
+  {id:'imp_left_claw',w:20,rec:.72,steps:[
+    {lanes:[0],height:'mid',tele:.92,travel:.32,anim:'tele_imp_left',strike:'strike_imp_left',x:0,lunge:7}
+  ]},
+  {id:'imp_right_claw',w:20,rec:.72,steps:[
+    {lanes:[2],height:'mid',tele:.92,travel:.32,anim:'tele_imp_right',strike:'strike_imp_right',x:2,lunge:7}
+  ]},
+  {id:'imp_center_rend',w:19,rec:.76,steps:[
+    {lanes:[1],height:'mid',tele:.86,travel:.31,anim:'tele_imp_center',strike:'strike_imp_center',x:1,lunge:8}
+  ]},
+  {id:'imp_flamefloor',w:18,rec:.86,steps:[
+    {lanes:[0,1,2],height:'low',tele:1.04,travel:.38,anim:'tele_imp_flamefloor',strike:'strike_imp_flamefloor',x:1,bodyLunge:5}
+  ]},
+  {id:'imp_flamefan',w:18,rec:.88,steps:[
+    {lanes:[0,1,2],height:'high',tele:1.00,travel:.36,anim:'tele_imp_flamefan',strike:'strike_imp_flamefan',x:1,bodyLunge:5}
+  ]},
+  {id:'imp_outer_rend',w:16,minTier:2,rec:.92,steps:[
+    {lanes:[0,2],height:'mid',tele:.88,travel:.32,anim:'tele_imp_outer',strike:'strike_imp_outer',x:1,lunge:7}
+  ]},
+  {id:'imp_firestep',w:15,minTier:2,rec:1.02,steps:[
+    {lanes:[0,1],height:'mid',tele:.78,travel:.30,anim:'tele_imp_left_pair',strike:'strike_imp_left_pair',x:.5,lunge:7},
+    {lanes:[1,2],height:'mid',tele:.58,travel:.28,anim:'tele_imp_right_pair',strike:'strike_imp_right_pair',x:1.5,lunge:7}
+  ]},
+  {id:'imp_inferno_dance',w:12,minTier:3,rec:1.10,steps:[
+    {lanes:[0],height:'mid',tele:.66,travel:.28,anim:'tele_imp_left',strike:'strike_imp_left',x:0,lunge:8},
+    {lanes:[2],height:'mid',tele:.48,travel:.26,anim:'tele_imp_right',strike:'strike_imp_right',x:2,lunge:8},
+    {lanes:[0,2],height:'mid',tele:.50,travel:.27,anim:'tele_imp_outer',strike:'strike_imp_outer',x:1,lunge:8},
+    {lanes:[0,1,2],height:'low',tele:.62,travel:.32,anim:'tele_imp_flamefloor',strike:'strike_imp_flamefloor',x:1,bodyLunge:5},
+    {lanes:[0,1,2],height:'high',tele:.60,travel:.31,anim:'tele_imp_flamefan',strike:'strike_imp_flamefan',x:1,bodyLunge:5}
+  ]},
+];
+function minibossAttackSet(){ return biome==='forest'?WOLF_DUEL_ATTACKS:biome==='swamp'?SERPENT_DUEL_ATTACKS:IMP_DUEL_ATTACKS; }
+function buildMoveLabPlaylist(set){
+  const singles=set.filter(a=>!a.steps||a.steps.length<=1), combos=set.filter(a=>a.steps&&a.steps.length>1);
+  return singles.concat(combos).map(a=>{
+    const copy=Object.assign({},a);
+    copy.rec=(a.rec||.8)*1.55;
+    copy.steps=a.steps?a.steps.map(s=>Object.assign({},s,{tele:s.tele*1.7,travel:s.travel*1.5})):undefined;
+    copy._labName=a.id.replace(/_/g,' ').toUpperCase();
+    return copy;
+  });
+}
+function startBossMoveLab(){
+  startBoss();
+  const moves=buildMoveLabPlaylist(activeBossAttackSet());
+  boss._moveLab={moves,index:0,doneT:0}; boss.attacksLeft=moves.length;
+  boss.entering=false; boss.rise=1; boss.state='idle'; boss.stateT=0; boss.atkTimer=.8;
+  setMode('boss'); hazards=[];
+  floater(VW/2,250,'BOSS MOVE LAB · SINGLES THEN COMBOS','#ff9a3a',17);
+}
+function startMiniMoveLab(){
+  startMiniboss(1,true);
+  const moves=buildMoveLabPlaylist(minibossAttackSet());
+  wolfFight._moveLab={moves,index:0,doneT:0}; wolfFight.attacksLeft=moves.length;
+  wolfFight.z=10; wolfFight.state='idle'; wolfFight.stateT=0; wolfFight.atkTimer=.8; wolfFight._introDone=true;
+  hazards=[];
+  floater(VW/2,250,'MINIBOSS MOVE LAB · SINGLES THEN COMBOS','#c9f74a',17);
+}
+function debugMoveLabActive(){ return !!((boss&&boss._moveLab)||(wolfFight&&wolfFight._moveLab)); }
+function finishMoveLab(){
+  hazards=[]; boss=null; wolfFight=null;
+  debugRun=false; debugBossMoves=false; debugMiniMoves=false;
+  resetRun(); setMode('menu'); SFX.swipe();
+}
+function currentMiniMove(){
+  if(!wolfFight||!wolfFight.attack) return null;
+  return wolfFight.attack.steps?wolfFight.attack.steps[wolfFight.sequenceIndex||0]:wolfFight.attack;
+}
+function cueMiniMove(){
+  const move=currentMiniMove(); if(!move) return;
+  wolfFight.hazardLanes=typeof move.lanes==='function'?move.lanes():move.lanes;
+  wolfFight.xTarget=move.sweep&&move.bodySweep?move.sweep.from+(move.bodyOffset||0):
+    move.x!==undefined?move.x:(move.height==='mid'?wolfFight.hazardLanes[0]:1);
+  wolfFight.teleTime=attackTeleTime(move,wolfFight.hazardLanes);
+}
+let minibossTreeTravel=0;
+function spawnMinibossTreeRow(z){
+  trees.push({z,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()});
+  if(Math.random()<0.7)
+    trees.push({z:z+rnd(0.5,1.6),off:(Math.random()<.5?-1:1)*rnd(4.6,6.6),v:Math.random()});
+}
+function startMiniboss(lane,direct=false){
+  if(direct){
+    /* Enter at the real midpoint gate, not at distance zero.  When the duel ends,
+       normal spawning picks up from the remaining half of this same stage. */
+    const gateAt=CFG.LOOP_DIST*CFG.MINIBOSS_AT;
+    dist=gateAt; roadScroll=gateAt; wolfSpawned=true;
+    nextSpawnAt=Math.ceil((gateAt+CFG.Z_FAR)/CFG.SPAWN_GAP)*CFG.SPAWN_GAP;
+    nextTreeAt=gateAt+6; nextPondAt=gateAt;
+    guaranteed=guaranteed.filter(item=>item.at>=gateAt-6);
+  }
+  wolfFight=new EncounterActor({
+    /* Begin out on the road and walk into the fixed combat distance during the
+       cinematic. This is shared by normal gates and the debug shortcut. */
+    z:18, x:lane, xTarget:1,
+    state:'intro', stateT:0, attack:null, hazardLanes:[], hurtT:0, atkTimer:2.2, lastIds:[],
     /* a counter duel: it attacks WOLF_DODGE_ATKS times — land WOLF_COUNTERS counters and it falls.
        fall short and it simply flees (no penalty). a hit still kills you, as always. */
-    attacksLeft:CFG.WOLF_DODGE_ATKS, counters:0, _stg:0,
-  };
+    attacksLeft:minibossAttackCount(), counters:0, _stg:0,
+  });
   obstacles=[]; pickups=[];                  // WIPE the lanes: coins, weapons, obstacles — a clean duel
   /* but the forest stays: fill the treeline so the duel doesn't happen in a void */
-  for(let tz=5;tz<CFG.Z_FAR;tz+=rnd(1.7,3.2))
-    if(!trees.some(t=>Math.abs(t.z-tz)<1.4)) trees.push({z:tz,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()});
-  for(let tz=6;tz<CFG.Z_FAR;tz+=rnd(2.8,4.8))  // the outer flank line too
+  for(let tz=5;tz<SPAWN_FAR;tz+=rnd(1.7,3.2))
+    if(!trees.some(t=>Math.abs(t.z-tz)<1.4)) spawnMinibossTreeRow(tz);
+  for(let tz=6;tz<SPAWN_FAR;tz+=rnd(2.8,4.8))  // the outer flank line too
     trees.push({z:tz,off:(Math.random()<.5?-1:1)*rnd(4.6,6.6),v:Math.random()});
+  minibossTreeTravel=0;
   setMode('miniboss'); SFX.howl(); shake(6,.4);
 }
 /* a landed counter against the wolf: no HP — three of these and it yields */
@@ -3480,10 +4470,11 @@ function wolfCounterHit(dmg){
 }
 function updateMiniboss(dt){
   const w=wolfFight; if(!w) return;
-  w.stateT+=dt; w.hurtT=Math.max(0,w.hurtT-dt);
+  w.tick(dt);
   w.x+=(w.xTarget-w.x)*Math.min(1,5*dt);
-  if(w.state==='intro'){                       // cinematic: the wolf bars your path
-    if(w.stateT>2.2){ w.state='idle'; w.stateT=0; }
+  if(w.state==='intro'){                       // cinematic: the miniboss walks in and bars your path
+    w.z=lerp(18,10,easeOut(clamp(w.stateT/1.55,0,1)));
+    if(w.stateT>2.8){ w.z=10; w.state='idle'; w.stateT=0; w._introDone=true; }
     return;
   }
   if(w.state==='flee'){                        // not enough counters — it melts into the trees
@@ -3514,44 +4505,61 @@ function updateMiniboss(dt){
   }
   /* wolf attack state machine (same telegraph framework as the boss) */
   if(w.state==='idle'){
-    if(w.attacksLeft<=0&&hazards.length===0){  // out of attacks, not enough counters → it flees
+    if(w._moveLab&&w._moveLab.index>=w._moveLab.moves.length&&hazards.length===0){
+      if(w._moveLab.doneT===0) floater(VW/2,270,'MINIBOSS MOVE LAB COMPLETE','#c0f79a',20);
+      w._moveLab.doneT+=dt; if(w._moveLab.doneT>1.35) finishMoveLab();
+      return;
+    }
+    if(!w._moveLab&&w.attacksLeft<=0&&hazards.length===0){  // out of attacks, not enough counters → it flees
       w.state='flee'; w.stateT=0; SFX.howl();
       return;
     }
     w.atkTimer-=dt;
     if(w.atkTimer<=0&&w.attacksLeft>0){
       w.attacksLeft--;
-      let pool=WOLF_ATTACKS.filter(a=>w.lastIds.filter(x=>x===a.id).length<2);
-      let tot=pool.reduce((s,a)=>s+a.w,0), r=Math.random()*tot; let sel=pool[0];
-      for(const a of pool){ if((r-=a.w)<=0){ sel=a; break; } }
-      w.lastIds.push(sel.id); if(w.lastIds.length>3)w.lastIds.shift();
-      w.attack=sel; w.state='tele'; w.stateT=0; w.hazardLanes=sel.pick();
-      w.xTarget=sel.height==='mid'?w.hazardLanes[0]:1;
+      if(w._moveLab){
+        w.attack=w._moveLab.moves[w._moveLab.index++];
+        floater(VW/2,230,w._moveLab.index+'/'+w._moveLab.moves.length+' · '+w.attack._labName,'#c9f74a',15);
+      } else {
+        const miniTier=Math.floor((loop-1)/3)+1;
+        w.attack=w.choose(minibossAttackSet().filter(a=>(a.minTier||1)<=miniTier));
+      }
+      w.state='tele'; w.stateT=0;
+      w.sequenceIndex=0; cueMiniMove();
     }
   } else if(w.state==='tele'){
-    if(w.stateT>=w.attack.tele*teleMult()){
+    const a=currentMiniMove();
+    if(a&&w.stateT>=w.teleTime){
       w.state='strike'; w.stateT=0; SFX.slash();
-      spawnHazard(w.hazardLanes,w.attack.height,w.attack.travel,'wolf');
+      if(a.sweep) spawnSweepHazard(a.sweep,a.height,a.travel,'wolf');
+      else spawnHazard(w.hazardLanes,a.height,a.travel,'wolf');
     }
   } else if(w.state==='strike'){
-    if(w.stateT>=w.attack.travel){ w.state='recover'; w.stateT=0; }
+    const a=currentMiniMove();
+    if(a&&w.stateT>=a.travel+CFG.IMPACT_HOLD){
+      if(a.sweep&&a.bodySweep){ w.x=a.sweep.to+(a.bodyOffset||0); w.xTarget=w.x; }
+      if(w.attack.steps&&w.sequenceIndex<w.attack.steps.length-1){ w.sequenceIndex++; w.state='tele'; w.stateT=0; cueMiniMove(); }
+      else { w.state='recover'; w.stateT=0; }
+    }
   } else if(w.state==='recover'){
-    if(w.stateT>=w.attack.rec){ w.state='idle'; w.stateT=0; w.atkTimer=rnd(0.7,1.3); }
+    if(w.stateT>=w.attack.rec){ w.state='idle'; w.stateT=0; w.atkTimer=w._moveLab ? .85 : rnd(0.7,1.3); }
   }
 }
 /* --- the tamed wolf FOLLOWS the knight: it copies your movement on a short
        delay (lane changes, jumps), trotting between you and the camera so we
        see its haunches and wagging tail — back view, like the horse.
        during the boss fight it steps up and stands at your side. --- */
-let allyTrail=[];
+let allyTrail=[], allyTrailStart=0;
 function updateAllyTrail(){
   allyTrail.push({t:perfNow,x:player.x,j:jumpHeight()});
-  while(allyTrail.length&&allyTrail[0].t<perfNow-0.8) allyTrail.shift();
+  while(allyTrailStart<allyTrail.length&&allyTrail[allyTrailStart].t<perfNow-0.8) allyTrailStart++;
+  /* compact occasionally instead of shifting the whole trail every frame */
+  if(allyTrailStart>64){ allyTrail.splice(0,allyTrailStart); allyTrailStart=0; }
 }
 function trailSample(delay){
   const tt=perfNow-delay;
   for(let i=allyTrail.length-1;i>=0;i--) if(allyTrail[i].t<=tt) return allyTrail[i];
-  return allyTrail[0]||{x:player.x,j:0};
+  return allyTrail[allyTrailStart]||{x:player.x,j:0};
 }
 function drawAllyWolf(){
   if(pack<=0) return;
@@ -3571,17 +4579,35 @@ function drawAllyWolf(){
   }
 }
 /* ---- THE MARSH SERPENT: swamp miniboss + pack member ---- */
-function drawSerpent(x,y,scale,state,t,hurtFlash){
+function drawSerpent(x,y,scale,state,t,hurtFlash,contactXs){
   g.save(); g.translate(x,y); g.scale(scale,scale);
+  const hitScale=Math.max(.001,scale);
+  const contactLocal=(contactXs||[]).map(tx=>(tx-x)/(hitScale*U));
+  const biteX=contactLocal.length?contactLocal[0]:0;
+  const biteY=(BODY_ATTACK_Y-y)/(hitScale*U);
+  const groundContactY=(ATTACK_GROUND_Y-y)/(hitScale*U);
+  const highY=(DUCK_ATTACK_Y-y)/(hitScale*U);
   const sc=hurtFlash?'#ffffff':'#3a5a3a', scD=hurtFlash?'#e8e8e8':'#25402a',
         scL=hurtFlash?'#ffffff':'#5a8a52', belly=hurtFlash?'#e8e8e8':'#8aa87a';
   if(state==='dying'){ if(t<0.4) g.translate(rnd(-2,2)*t*8,0);
     else { const c=(t-0.4)/0.6; g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*22); g.scale(1,1-c*0.5); } }
   const slither=Math.sin(perfNow*7)*2.4;
-  let rear=8, jaw=0, coil=0, lungeF=0;
+  let rear=8, jaw=0, coil=0, lungeF=0, biteAim=0;
   if(state==='run'){ rear=6; }
   else if(state==='flee'){ rear=3; }
   else if(state==='howl'){ rear=13; jaw=1; }                       // intro: it rises and hisses
+  else if(state==='tele_serpent_bite'){ rear=13+Math.sin(t*20)*.6; jaw=.8; coil=easeOut(t)*3; }
+  else if(state==='strike_serpent_bite'){ biteAim=easeOut(t); lungeF=easeOut(t)*1.8; rear=13-lungeF*8; jaw=1; }
+  else if(state==='tele_serpent_left'){ rear=12; jaw=.7; coil=easeOut(t)*3; }
+  else if(state==='strike_serpent_left'){ biteAim=easeOut(t); lungeF=easeOut(t)*1.5; rear=12-lungeF*7; jaw=1; }
+  else if(state==='tele_serpent_right'){ rear=12; jaw=.7; coil=easeOut(t)*3; }
+  else if(state==='strike_serpent_right'){ biteAim=easeOut(t); lungeF=easeOut(t)*1.5; rear=12-lungeF*7; jaw=1; }
+  else if(state==='tele_serpent_split'){ rear=14; jaw=.8; coil=easeOut(t)*4; }
+  else if(state==='strike_serpent_split'){ biteAim=easeOut(t); lungeF=easeOut(t)*1.4; rear=14-lungeF*8; jaw=1; }
+  else if(state==='tele_serpent_coil'){ rear=3; coil=easeOut(t)*6; }
+  else if(state==='strike_serpent_coil'){ rear=5; coil=6-easeOut(t)*5; jaw=.65; }
+  else if(state==='tele_serpent_hood'){ rear=17; jaw=1; coil=easeOut(t)*2; }
+  else if(state==='strike_serpent_hood'){ rear=17-easeOut(t)*9; jaw=1; lungeF=easeOut(t)*.6; }
   else if(state==='tele_bite'||state==='tele_double'){ rear=12+Math.sin(t*20)*0.6; jaw=0.7; coil=easeOut(t)*3; }
   else if(state==='tele_sweep'){ rear=3; coil=easeOut(t)*4; }
   else if(state==='tele_leap'){ rear=1.5; coil=easeOut(t)*5; jaw=0.2; }   // flattens to a spring — it will fly
@@ -3595,11 +4621,14 @@ function drawSerpent(x,y,scale,state,t,hurtFlash){
   px(6,-3,5,3,scD);                                                // tail tip out the back
   /* the raised neck + head */
   const nx=-1+lungeF*3, base=-13+coil;
+  const tipX=lerp(nx+lungeF*4,biteX,biteAim), tipY=lerp(base-rear-2.4,biteY,biteAim);
   for(let k=0;k<4;k++){ const f=k/3;
-    px(nx-1.6+Math.sin(f*Math.PI+perfNow*3)*1.2,base-f*rear,3.6-f*0.8,rear/3.2,sc);
-    px(nx-1.6+Math.sin(f*Math.PI+perfNow*3)*1.2,base-f*rear,1.2,rear/3.2,scL); }
+    const sx=biteAim>0?lerp(nx,tipX,f)+Math.sin(f*Math.PI)*biteAim*1.4:nx+Math.sin(f*Math.PI+perfNow*3)*1.2;
+    const sy=biteAim>0?lerp(base,tipY+2.4,f):base-f*rear;
+    const sh=biteAim>0?Math.max(2.4,Math.hypot(tipX-nx,tipY+2.4-base)/3.2):rear/3.2;
+    px(sx-1.6,sy,3.6-f*0.8,sh,sc); px(sx-1.6,sy,1.2,sh,scL); }
   for(let k=0;k<3;k++) px(nx-0.6,base-2-k*rear*0.3,1.4,1.6,belly);
-  const hx2=nx+lungeF*4, hy2=base-rear-2.4;
+  const hx2=tipX, hy2=tipY;
   px(hx2-2.6,hy2,5.2,3,sc); px(hx2-2.6,hy2,5.2,1,scL);             // skull
   px(hx2-3.6,hy2+0.6,1.4,1.6,sc); px(hx2+2.2,hy2+0.6,1.4,1.6,sc);  // hood flares
   px(hx2-2,hy2+2.8,4,1.2,scD);                                     // upper jaw
@@ -3610,6 +4639,30 @@ function drawSerpent(x,y,scale,state,t,hurtFlash){
   g.fillStyle='#c9f74a'; g.shadowColor='#c9f74a'; g.shadowBlur=6*scale;
   g.fillRect((hx2-1.6)*U,(hy2+1.2)*U,1.3*U,1.3*U); g.fillRect((hx2+0.5)*U,(hy2+1.2)*U,1.3*U,1.3*U);
   g.shadowBlur=0;
+  if(state==='strike_serpent_coil'&&contactLocal.length){
+    /* The coiled body releases as one low tail-whip. Its scaled body spans from
+       the left collision point to the right one, so every lane is physically swept. */
+    const k=easeOut(clamp(t,0,1)), lx=contactLocal[0], rx=contactLocal[contactLocal.length-1];
+    const y=lerp(-5,groundContactY,k);
+    g.save(); g.globalAlpha=.35+.65*k; g.lineCap='round'; g.strokeStyle=scD; g.lineWidth=5.2*U;
+    g.beginPath(); g.moveTo(6*U,-3*U); g.quadraticCurveTo(0,(y-4)*U,lx*U,y*U); g.quadraticCurveTo(0,(y+2)*U,rx*U,y*U); g.stroke();
+    g.strokeStyle=scL; g.lineWidth=1.25*U; g.stroke();
+    for(let i=0;i<7;i++){ const q=i/6; px(lerp(lx,rx,q)-.8,y-1.1+(i%2)*.5,1.6,1.6,sc); }
+    g.restore();
+  }
+  /* Its high attack is a real three-lane venom cast from the open mouth. The
+     streams terminate on the same contact coordinates used by the hazards. */
+  if(state==='strike_serpent_hood'&&contactLocal.length){
+    const k=easeOut(clamp(t,0,1));
+    g.save(); g.globalAlpha=.28+.58*k; g.strokeStyle='#9ee86a'; g.shadowColor='#9ee86a'; g.shadowBlur=8*scale;
+    g.lineWidth=Math.max(1,1.25*U);
+    for(let i=0;i<contactLocal.length;i++){
+      g.beginPath(); g.moveTo(hx2*U,(hy2+4.2+jaw)*U);
+      const tx=lerp(hx2,contactLocal[i],k), ty=lerp(hy2+4.2,highY,k);
+      g.quadraticCurveTo(lerp(hx2,tx,.55)*U,(ty-3-Math.sin(perfNow*18+i)*1.5)*U,tx*U,ty*U); g.stroke();
+    }
+    g.restore();
+  }
   g.restore();
 }
 /* pack view from behind: coils + raised head watching ahead */
@@ -3628,8 +4681,13 @@ function drawSerpentBack(x,y,scale,t,spd){
   g.restore();
 }
 /* ---- THE CINDER IMP: volcano miniboss + pack member ---- */
-function drawImp(x,y,scale,state,t,hurtFlash){
+function drawImp(x,y,scale,state,t,hurtFlash,contactXs){
   g.save(); g.translate(x,y); g.scale(scale,scale);
+  const hitScale=Math.max(.001,scale);
+  const contactLocal=(contactXs||[]).map(tx=>(tx-x)/(hitScale*U));
+  const bodyHitY=(BODY_ATTACK_Y-y)/(hitScale*U);
+  const groundHitY=(ATTACK_GROUND_Y-y)/(hitScale*U);
+  const highHitY=(DUCK_ATTACK_Y-y)/(hitScale*U);
   const sk=hurtFlash?'#ffffff':'#2a1c22', skD=hurtFlash?'#e8e8e8':'#1a1015',
         skL=hurtFlash?'#ffffff':'#453040';
   const fl1='#ff6a2a', fl2='#ffd23a';
@@ -3637,8 +4695,34 @@ function drawImp(x,y,scale,state,t,hurtFlash){
     else { const c=(t-0.4)/0.6; g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*20); } }
   const hop=state==='run'?Math.abs(Math.sin(perfNow*9))*3:0;
   let armL=0.4, armR=0.4, crouch=0, mouth=0, crest=1;
+  let aimL=0,aimR=0,targetL=null,targetR=null,flameMode=null;
   if(state==='flee'){ crouch=2; crest=0.5; }
   else if(state==='howl'){ armL=-2.2; armR=-2.2; mouth=1; crest=1.6; }
+  else if(state==='tele_imp_left'){ armL=-2.35; armR=.35; crouch=easeOut(t)*2; crest=1.4; }
+  else if(state==='strike_imp_left'){ armL=1.55; mouth=.8; crest=1.6; aimL=easeOut(t); targetL=[contactLocal[0]||0,bodyHitY]; }
+  else if(state==='tele_imp_right'){ armR=-2.35; armL=.35; crouch=easeOut(t)*2; crest=1.4; }
+  else if(state==='strike_imp_right'){ armR=1.55; mouth=.8; crest=1.6; aimR=easeOut(t); targetR=[contactLocal[0]||0,bodyHitY]; }
+  else if(state==='tele_imp_center'){ armL=armR=-2.1; crouch=easeOut(t)*3; mouth=.45; crest=1.45; }
+  else if(state==='strike_imp_center'){ armL=armR=1.45; mouth=1; aimL=aimR=easeOut(t); const tx=contactLocal[0]||0; targetL=[tx-1.2,bodyHitY]; targetR=[tx+1.2,bodyHitY]; }
+  else if(state==='tele_imp_outer'){ armL=armR=-2.25; crouch=easeOut(t)*2; crest=1.55; }
+  else if(state==='strike_imp_outer'){ armL=armR=1.5; mouth=1; aimL=aimR=easeOut(t); targetL=[contactLocal[0]||-8,bodyHitY]; targetR=[contactLocal[contactLocal.length-1]||8,bodyHitY]; }
+  else if(state==='tele_imp_left_pair'||state==='tele_imp_right_pair'){ armL=armR=-2.05; crouch=easeOut(t)*2; mouth=.55; crest=1.45; }
+  else if(state==='strike_imp_left_pair'||state==='strike_imp_right_pair'){
+    armL=armR=1.45; mouth=1; aimL=aimR=easeOut(t);
+    targetL=[contactLocal[0]||-5,bodyHitY]; targetR=[contactLocal[contactLocal.length-1]||5,bodyHitY];
+  }
+  else if(state==='tele_imp_flamefloor'){ crouch=easeOut(t)*5; armL=-1.7; armR=-1.7; mouth=.6; crest=.55; }
+  else if(state==='strike_imp_flamefloor'){ crouch=5-easeOut(t)*7; armL=armR=1.15; mouth=1; crest=1.8; aimL=aimR=easeOut(t); targetL=[-4,1]; targetR=[4,1]; flameMode='ground'; }
+  else if(state==='tele_imp_flamefan'){ crouch=easeOut(t)*2; armL=-.8; armR=-.8; mouth=1; crest=1.8; }
+  else if(state==='strike_imp_flamefan'){ armL=armR=.75; mouth=1; crest=2; aimL=aimR=easeOut(t); targetL=[-5,-16]; targetR=[5,-16]; flameMode='high'; }
+  else if(state==='tele_imp_claw'){ armL=-2.25; armR=.2; mouth=.45; crest=1.35; }
+  else if(state==='strike_imp_claw'){ armL=1.65; armR=.45; mouth=1; crest=1.55; }
+  else if(state==='tele_imp_stomp'){ crouch=easeOut(t)*5; armL=armR=-1.1; crest=.7; }
+  else if(state==='strike_imp_stomp'){ crouch=5-easeOut(t)*8; armL=armR=1.25; mouth=.8; crest=1.45; }
+  else if(state==='tele_imp_leap'){ crouch=easeOut(t)*6; crest=.35; armL=1.3; armR=1.3; }
+  else if(state==='strike_imp_leap'){ crouch=-easeOut(t)*4; crest=1.7; armL=-.3; armR=-.3; mouth=1; }
+  else if(state==='tele_imp_double'){ crouch=easeOut(t)*2; armL=armR=-2.0; mouth=.6; crest=1.4; }
+  else if(state==='strike_imp_double'){ armL=armR=1.55; mouth=1; crest=1.55; }
   else if(state==='tele_bite'||state==='tele_double'){ armL=-2.0; armR=-2.0; mouth=0.6; crest=1.4+Math.sin(t*22)*0.1; }
   else if(state==='tele_sweep'){ crouch=easeOut(t)*4; armL=0.8; armR=0.8; }
   else if(state==='tele_leap'){ crouch=easeOut(t)*5; crest=0.4; armL=1.2; armR=1.2; }  // balls up tight — it will fly
@@ -3653,12 +4737,38 @@ function drawImp(x,y,scale,state,t,hurtFlash){
   px(-3,-9+crouch,6,3.6,skD);
   const gl=0.6+Math.sin(perfNow*4)*0.25;
   g.globalAlpha=gl*worldA; px(-3.4,-12+crouch,3,0.9,fl1); px(0.6,-10.4+crouch,2.6,0.9,fl1); g.globalAlpha=worldA;
-  /* arms with cinder claws */
-  const arm=(sx,ang,dir)=>{ g.save(); g.translate(sx*U,(-14+crouch)*U); g.rotate(ang*dir);
-    g.fillStyle=sk; g.fillRect(-1*U,0,2*U,6*U);
-    g.fillStyle=fl1; for(let i=0;i<2;i++) g.fillRect((i*1.4-1)*U,6*U,1*U,1.6*U);
-    g.restore(); };
-  arm(-5,armL,-1); arm(5,armR,1);
+  /* two-bone cinder arms: elbow folds on the tell, claws drive down on the strike. */
+  const seg=(ax,ay,bx,by,w,col)=>{ const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+    g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2); px(-w*.5,0,w,len,col); px(-w*.5,0,w*.3,len,skL); g.restore(); };
+  const arm=(sx,ang,dir,target,aim)=>{
+    const sy=-14+crouch;
+    let ex=sx+Math.sin(ang*dir)*3.2, ey=sy+4+Math.cos(ang)*2.2;
+    let fx=ex+Math.sin((ang+.65)*dir)*2.7, fy=ey+4+Math.cos(ang+.65)*2.3;
+    if(target&&aim>0){
+      ex=lerp(ex,lerp(sx,target[0],.48),aim); ey=lerp(ey,lerp(sy,target[1],.46),aim);
+      fx=lerp(fx,target[0],aim); fy=lerp(fy,target[1],aim);
+    }
+    seg(sx,sy,ex,ey,2.2,sk); seg(ex,ey,fx,fy,2,sk);
+    px(ex-1.2,ey-1.2,2.4,2.4,skD); px(fx-1.5,fy-1,3,2.4,skD);
+    g.fillStyle=fl1; for(let i=0;i<2;i++) g.fillRect((fx-1.2+i*1.4)*U,(fy+1)*U,1*U,1.6*U);
+    return {x:fx,y:fy};
+  };
+  const handL=arm(-5,armL,-1,targetL,aimL), handR=arm(5,armR,1,targetR,aimR);
+  if(flameMode&&contactLocal.length){
+    /* Flame remains part of the model attack: it is emitted by the articulated
+       hands and each tongue ends at an actual collision coordinate. */
+    const k=easeOut(clamp(t,0,1)), targetY=flameMode==='ground'?groundHitY:highHitY;
+    g.save(); g.lineCap='round';
+    for(let i=0;i<contactLocal.length;i++){
+      const src=i<contactLocal.length/2?handL:handR;
+      const tx=lerp(src.x,contactLocal[i],k), ty=lerp(src.y,targetY,k);
+      g.globalAlpha=.35+.5*k; g.strokeStyle=fl1; g.shadowColor=fl1; g.shadowBlur=9*scale; g.lineWidth=3.1*U;
+      g.beginPath(); g.moveTo(src.x*U,src.y*U); g.quadraticCurveTo(lerp(src.x,tx,.52)*U,(ty+Math.sin(perfNow*22+i*2.4)*2.4)*U,tx*U,ty*U); g.stroke();
+      g.globalAlpha=.75*k; g.strokeStyle=fl2; g.lineWidth=1.15*U; g.stroke();
+      px(tx-1.2,ty-1.2,2.4,2.4,i%2?fl2:fl1);
+    }
+    g.restore();
+  }
   /* whip tail with a flame tip */
   const wag=Math.sin(perfNow*6)*3;
   px(4.4,-8+crouch,4,1.4,sk); px(8+wag*0.3,-9.4+crouch,2,2,sk);
@@ -3829,7 +4939,7 @@ function shopTap(pt){
   if(pt.x>VW/2-95&&pt.x<VW/2+95&&pt.y>688&&pt.y<740){ nextLoop(); }   // RIDE ON
 }
 function nextLoop(){
-  loop++; dist=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
+  loop++; dist=0; roadScroll=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
   arrows=0; lances=0;                        // weapons reset every loop — all were spent on the boss
   obstacles=[]; pickups=[]; trees=[]; hazards=[]; projectiles=[];
   wolfSpawned=false; buildGuaranteed();
@@ -3841,15 +4951,19 @@ function nextLoop(){
 
 /* ============================== 12. GAME STATE / HUD / MENUS ============================== */
 let mode='menu', modeT=0, perfNow=0, lastDt=1/60;
-let loop=1, dist=0, gold=0, arrows=0, lances=0;
+let loop=1, dist=0, roadScroll=0, gold=0, arrows=0, lances=0;
 let bossKills=0, bossScoreRun=0, overkillRun=0, deathReason='';
 let bestScore=0, runTime=0, paused=false;
 let scoreShown=0;               // the HUD's racing counter (chases liveScore one by one)
 let env='forest';               // 'forest' during the run · 'cave' for the bear's lair
 function setMode(m){ mode=m; modeT=0; }
 function speed(){ /* gentle continuous ramp — the start feel is right, so it grows slowly */
-  return CFG.BASE_SPEED + Math.min((loop-1)*(hasRelic('bead')?0.65:0.9),14); }
-function countersNeeded(){ return CFG.WOLF_COUNTERS-(hasRelic('sigil')?1:0); }
+  return CFG.BASE_SPEED + Math.min((loop-1)*(hasRelic('bead')?0.52:0.72),11); }
+function countersNeeded(){
+  const base=CFG.WOLF_COUNTERS+(loop>=3?1:0)+(loop>=15?1:0);
+  return Math.max(1,base-(hasRelic('sigil')?1:0));
+}
+function minibossAttackCount(){ return Math.min(6,CFG.WOLF_DODGE_ATKS+Math.floor((loop-1)/4)); }
 function perfectWin(){ return CFG.PERFECT_WIN+(hasRelic('eye')?0.06:0); }
 function chainBonus(){ return CFG.CHAIN_BONUS+(hasRelic('moon')?0.02:0); }
 function relicPower(){ return 1+upg.relic*0.10; }        // the smith sharpens EVERY relic's teeth
@@ -3860,12 +4974,13 @@ function liveScore(){
   return Math.round(base*(hasRelic('banner')?1.25:1));
 }
 function resetRun(){
-  loop=1; dist=0; gold=0; arrows=0; lances=0; runTime=0; paused=false; env='forest'; biome='forest'; oakUsed=false;
+  loop=1; dist=0; roadScroll=0; gold=0; arrows=0; lances=0; runTime=0; paused=false; env='forest'; biome='forest'; oakUsed=false;
   scoreShown=0;
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
   relics=[null,null,null,null,null]; pendingRelic=null;   // all FIVE slots, empty
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; wolfLeap=null; wolfSpawned=false; wolfFight=null; boss=null;
+  allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; trees=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,invuln:0});
@@ -3879,6 +4994,7 @@ const CHARS=[
 ];
 let charSel=0, playerChar=CHARS[0];
 function uiConfirm(){
+  if(mode==='menu'){ debugBossStart=false; debugMiniStart=false; debugBossMoves=false; debugMiniMoves=false; }
   if(mode==='menu'){ debugRun=false; godMode=false; setMode('charsel'); SFX.swipe(); }  // PLAY → an honest ride
   else if(mode==='charsel'){ startRun(charSel); }
   else if(mode==='score'&&modeT>0.6){ resetRun(); setMode('menu'); }  // fresh board behind the menu
@@ -3894,6 +5010,10 @@ function startRun(i){
     floater(VW/2,300,'⚙ DEBUG — STAGE '+loop+(godMode?' · GOD MODE':''),'#5c8fa0',18);
   }
   setMode('run'); SFX.relic();
+  if(debugRun&&debugBossMoves) startBossMoveLab();
+  else if(debugRun&&debugMiniMoves) startMiniMoveLab();
+  else if(debugRun&&debugBossStart) startBoss();
+  else if(debugRun&&debugMiniStart) startMiniboss(1,true);
 }
 function charselTap(pt){
   for(let i=0;i<CHARS.length;i++){
@@ -3989,7 +5109,7 @@ function drawHUD(){
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
     g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,140);
-    if(boss&&mode==='boss'&&boss.state!=='dying'){
+    if(boss&&mode==='boss'&&!boss._moveLab&&boss.state!=='dying'){
       g.fillStyle='#3a101088'; g.fillRect(VW-128,150,112,36);
       g.strokeStyle='#ff4d3a'; g.lineWidth=2; g.strokeRect(VW-128,150,112,36);
       g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ff4d3a';
@@ -4116,8 +5236,23 @@ function drawHPBar(name,hp,max,status,col='#ff4d3a'){
   if(status){ g.font='bold 13px monospace'; g.fillStyle='#ffe37a';
     g.fillText(status,VW/2,by+34); }
 }
-/* telegraph markers: red lane glows / ground & high bands, pulsing until impact */
+/* Combat telegraphs: lane hit hue plus one small action arrow in each lane. */
 function drawTelegraphs(){
+  const telegraphActor=boss&&mode==='boss'?boss:(mode==='miniboss'?wolfFight:null);
+  if(telegraphActor&&(telegraphActor.state==='tele'||telegraphActor.state==='strike')&&telegraphActor.attack&&telegraphActor.hazardLanes){
+    const cue=telegraphActor===boss?currentBossMove():currentMiniMove();
+    if(!cue) return;
+    let height=cue.height;
+    if(height==='seq'){
+      const f=telegraphActor.stateT/(telegraphActor.teleTime||cue.tele*teleMult());
+      height=(f>0.55&&f<0.78)?'high':'low';
+    }
+    const pulse=telegraphActor.state==='strike'?.72:0.42+Math.sin(perfNow*16)*0.16;
+    for(const lane of telegraphActor.hazardLanes) drawLaneHitHue(lane,pulse);
+    if(height==='low') drawActionArrows(true,pulse);
+    else if(height==='high') drawActionArrows(false,pulse);
+  }
+  return; // Legacy bands, text prompts, player plate, and strike-wave indicators are disabled.
   const actor=boss&&mode==='boss'?boss:wolfFight;
   if(actor&&actor.state==='tele'&&actor.hazardLanes){
     const a=actor.attack, pulse=0.35+Math.sin(perfNow*16)*0.2;
@@ -4130,6 +5265,7 @@ function drawTelegraphs(){
     } else {
       for(const ln of actor.hazardLanes) drawLaneThreat(ln,a.height,pulse);
     }
+    if(actor===boss) drawBossNextHitIndicator(a);
   }
   /* the failed-volley finisher: every lane burns red — there is nowhere to go */
   if(boss&&boss.state==='finisher'&&boss.stateT<1.15){
@@ -4156,6 +5292,48 @@ function drawTelegraphs(){
       g.shadowBlur=0; g.restore();
     }
   }
+}
+/* The only combat cues: red light beneath hit lanes and one small directional arrow per lane. */
+function drawLaneHitHue(lane,alpha){
+  const x=laneX(lane,1);
+  g.save();
+  g.globalAlpha=alpha; g.fillStyle='#ff2638'; g.shadowColor='#ff2638'; g.shadowBlur=18;
+  g.beginPath(); g.ellipse(x,ATTACK_GROUND_Y,CFG.FIGHT_HIT_HALF,11,0,0,TAU); g.fill();
+  g.shadowBlur=0; g.globalAlpha=alpha*0.85; g.fillStyle='#ff7a82';
+  g.fillRect(x-CFG.FIGHT_HIT_HALF,ATTACK_GROUND_Y-3,CFG.FIGHT_HIT_HALF*2,3);
+  g.restore();
+}
+function drawActionArrows(up,alpha){
+  const y=PLAYER_Y-48;
+  g.save(); g.globalAlpha=alpha; g.fillStyle=up?'#fff0a6':'#ffbf82';
+  for(let lane=0;lane<3;lane++){
+    const x=laneX(lane,1);
+    g.beginPath();
+    if(up){ g.moveTo(x,y-7); g.lineTo(x-6,y); g.lineTo(x-2.5,y); g.lineTo(x-2.5,y+7); g.lineTo(x+2.5,y+7); g.lineTo(x+2.5,y); g.lineTo(x+6,y); }
+    else { g.moveTo(x,y+7); g.lineTo(x-6,y); g.lineTo(x-2.5,y); g.lineTo(x-2.5,y-7); g.lineTo(x+2.5,y-7); g.lineTo(x+2.5,y); g.lineTo(x+6,y); }
+    g.closePath(); g.fill();
+  }
+  g.restore();
+}
+/* A compact action plate directly beneath the rider makes the boss's NEXT hit
+   readable even while the larger lane telegraphs are partly hidden by effects. */
+function drawBossNextHitIndicator(attack){
+  let height=attack.height;
+  if(height==='seq'){
+    const f=boss.stateT/(attack.tele*teleMult());
+    height=(f>0.55&&f<0.78)?'high':'low';
+  }
+  const threatened=height!=='low'&&height!=='high' ? boss.hazardLanes.includes(Math.round(player.x)) : true;
+  const label=height==='low'?'JUMP':height==='high'?'DUCK':(threatened?'MOVE':'SAFE');
+  const col=height==='low'?'#ffe37a':height==='high'?'#ff9a3a':(threatened?'#ff4d3a':'#8ee8a0');
+  const x=laneX(player.x,1), y=PLAYER_Y+66;
+  const pulse=0.72+Math.sin(perfNow*14)*0.18;
+  g.save();
+  g.globalAlpha=pulse*0.88; g.fillStyle='#080a0d'; g.fillRect(x-35,y-13,70,24);
+  g.globalAlpha=pulse; g.strokeStyle=col; g.lineWidth=2; g.strokeRect(x-35,y-13,70,24);
+  g.globalAlpha=1; g.font='bold 12px monospace'; g.textAlign='center'; g.fillStyle=col;
+  g.fillText(label,x,y+4);
+  g.restore();
 }
 function drawLaneThreat(ln,height,alpha){
   /* physical anticipation: the ground trembles, dust rises, a claw-shadow gathers —
@@ -4269,6 +5447,17 @@ function settingsTap(pt){
 }
 /* ---------- the changelog: every version's notes, newest first (tabs to browse) ---------- */
 const CHANGELOGS=[
+ {v:'v9.9',lines:[
+  'COMBAT UPDATE',
+  '· Bear, Hydra & Turtle models rebuilt and enlarged',
+  '· Wolf, Serpent & Imp attack animations remade',
+  '· boss and miniboss patterns rebuilt with new combos',
+  '· model-based hits with clearer jump and duck timing',
+  '· finishing animations added across the encounters',
+  'TOOLS & FIXES',
+  '· boss/miniboss move labs and encounter shortcuts',
+  '· entrances, fight scenery and score timing fixed',
+ ]},
  {v:'v9.8',lines:[
   'VISUALS & RENDER',
   '· bear lair rebuilt: one rock throat, one moonlit',
@@ -4375,9 +5564,10 @@ function drawChangelog(){
   let y=122;
   for(const line of CHANGELOGS[clSel].lines){
     if(line===''){ y+=8; continue; }
-    const head=!line.startsWith('·')&&!line.startsWith(' ');
+    const bullet=line.startsWith('·');
+    const head=!bullet&&!line.startsWith(' ');
     g.font=head?'bold 13px monospace':'11px monospace';
-    g.fillStyle=head?'#ffd23a':line.startsWith('·')?'#e8e2d0':'#aeb2c2';
+    g.fillStyle=head?'#ffd23a':bullet?'#e8e2d0':'#aeb2c2';
     g.fillText(line,26,y); y+=head?23:19;
   }
   g.textAlign='center';
@@ -4406,12 +5596,22 @@ function drawDebugCfg(){
   g.strokeStyle=godMode?'#ffe37a':'#55565e'; g.lineWidth=2; g.strokeRect(VW/2-80,218,160,38);
   g.font='bold 14px monospace'; g.fillStyle=godMode?'#ffe37a':'#8b8fa0';
   g.fillText('GOD MODE: '+(godMode?'ON':'OFF'),VW/2,242);
+  const dl=VW/2-112,dr=VW/2+4,dw=108;
+  g.lineWidth=2; g.font='bold 10px monospace';
+  g.strokeStyle=debugBossStart?'#ff7a82':'#55565e'; g.strokeRect(dl,262,dw,34);
+  g.fillStyle=debugBossStart?'#ff7a82':'#8b8fa0'; g.fillText((debugBossStart?'✓ ':'□ ')+'TO BOSS',dl+dw/2,284);
+  g.strokeStyle=debugMiniStart?'#9ecbff':'#55565e'; g.strokeRect(dr,262,dw,34);
+  g.fillStyle=debugMiniStart?'#9ecbff':'#8b8fa0'; g.fillText((debugMiniStart?'✓ ':'□ ')+'TO MINI',dr+dw/2,284);
+  g.strokeStyle=debugBossMoves?'#ff9a3a':'#55565e'; g.strokeRect(dl,302,dw,34);
+  g.fillStyle=debugBossMoves?'#ff9a3a':'#8b8fa0'; g.fillText((debugBossMoves?'✓ ':'□ ')+'BOSS MOVES',dl+dw/2,324);
+  g.strokeStyle=debugMiniMoves?'#c9f74a':'#55565e'; g.strokeRect(dr,302,dw,34);
+  g.fillStyle=debugMiniMoves?'#c9f74a':'#8b8fa0'; g.fillText((debugMiniMoves?'✓ ':'□ ')+'MINI MOVES',dr+dw/2,324);
   /* relic toggles */
-  g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,278);
+  g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,348);
   const keys=Object.keys(RELIC_DEFS);
   for(let i=0;i<keys.length;i++){
     const d=RELIC_DEFS[keys[i]], on=!!debugSel[keys[i]];
-    const col=i%2, row=(i/2)|0, x=14+col*230, y=290+row*40;
+    const col=i%2, row=(i/2)|0, x=14+col*230, y=360+row*40;
     g.fillStyle=on?'rgba(255,227,122,0.12)':'rgba(0,0,0,0.4)'; g.fillRect(x,y,222,34);
     g.strokeStyle=on?d.col:'#3a3a44'; g.lineWidth=on?2:1; g.strokeRect(x,y,222,34);
     g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle=on?d.col:'#8b8fa0';
@@ -4422,6 +5622,17 @@ function startDebugRun(){
   debugRun=true;                                  // the rig itself is applied inside startRun
   setMode('charsel'); SFX.swipe();
 }
+function selectDebugFight(which){
+  const wasOn=which==='boss'?debugBossStart:which==='mini'?debugMiniStart:which==='bossMoves'?debugBossMoves:debugMiniMoves;
+  debugBossStart=debugMiniStart=debugBossMoves=debugMiniMoves=false;
+  if(!wasOn){
+    if(which==='boss') debugBossStart=true;
+    else if(which==='mini') debugMiniStart=true;
+    else if(which==='bossMoves') debugBossMoves=true;
+    else debugMiniMoves=true;
+  }
+  SFX.relic();
+}
 function debugCfgTap(pt){
   if(pt.x>20&&pt.x<110&&pt.y>60&&pt.y<96){ setMode('menu'); SFX.duck(); return; }
   if(pt.x>VW-150&&pt.x<VW-20&&pt.y>60&&pt.y<96){ startDebugRun(); return; }
@@ -4430,9 +5641,13 @@ function debugCfgTap(pt){
     if(pt.x>VW/2+48&&pt.x<VW/2+92){ debugLoop=Math.min(30,debugLoop+1); SFX.swipe(); return; }
   }
   if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>218&&pt.y<256){ godMode=!godMode; SFX.relic(); return; }
+  if(pt.x>VW/2-112&&pt.x<VW/2-4&&pt.y>262&&pt.y<296){ selectDebugFight('boss'); return; }
+  if(pt.x>VW/2+4&&pt.x<VW/2+112&&pt.y>262&&pt.y<296){ selectDebugFight('mini'); return; }
+  if(pt.x>VW/2-112&&pt.x<VW/2-4&&pt.y>302&&pt.y<336){ selectDebugFight('bossMoves'); return; }
+  if(pt.x>VW/2+4&&pt.x<VW/2+112&&pt.y>302&&pt.y<336){ selectDebugFight('miniMoves'); return; }
   const keys=Object.keys(RELIC_DEFS);
   for(let i=0;i<keys.length;i++){
-    const col=i%2, row=(i/2)|0, x=14+col*230, y=290+row*40;
+    const col=i%2, row=(i/2)|0, x=14+col*230, y=360+row*40;
     if(pt.x>x&&pt.x<x+222&&pt.y>y&&pt.y<y+34){ debugSel[keys[i]]=!debugSel[keys[i]]; SFX.coin(); return; }
   }
 }
@@ -4584,8 +5799,10 @@ function drawScore(){
   }
 }
 function drawMinibossIntro(){
-  const w=wolfFight; if(!w||w.state!=='intro') return;
-  letterbox(w.stateT);
+  /* Keep the card tied to the cinematic completion flag rather than a single
+     combat state, so it cannot disappear before the entrance has finished. */
+  const w=wolfFight; if(!w||w._introDone) return;
+  letterbox(Math.min(w.stateT,1));
   g.textAlign='center'; g.font='bold 24px monospace';
   g.fillStyle='#9ecbff'; g.fillText(BIO().miniName+' BARS YOUR PATH',VW/2,380);
   g.font='13px monospace';
@@ -4600,21 +5817,21 @@ function drawMinibossIntro(){
 function update(dt){
   perfNow+=dt; modeT+=dt; lastDt=dt;
   updateJuice(dt);
-  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='changelog'){ dist+=dt*6; return; }   // world drifts behind menus
+  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
   if(mode==='dying'){ if(modeT>1.4){ setMode('score'); } return; }
 
   updatePlayer(dt);
-  if(GAMEPLAY_MODES.includes(mode)) runTime+=dt;          // survival score clock
+  if(mode==='run') runTime+=dt;                            // survival score only during the stage ride
   if(mode==='run'||mode==='relic'||mode==='shop'){        // relic/shop: untimed safe auto-run
-    const mv=speed()*dt; dist+=mv;
+    const mv=speed()*dt; dist+=mv; roadScroll+=mv;
     for(const o of obstacles) o.z-=mv;
     for(const c of pickups) c.z-=mv;
     for(const t of trees) t.z-=mv;
     /* roots stay alive until their TALL upper arm has fully cleared the screen —
        they slide off the bottom organically like everything else (the extended
        phone-bottom included: nothing may vanish while still visible) */
-    obstacles=obstacles.filter(o=>o.z>(o.kind==='root'?-10.4:-8)); pickups=pickups.filter(c=>c.z>-7);
-    trees=trees.filter(t=>t.z>-6);
+    cullObstacles(); cullBehind(pickups,-7);
+    cullBehind(trees,-6);
     if(mode==='run'){
       spawnLoopEntities();
       updateRunCollisions();
@@ -4657,13 +5874,23 @@ function update(dt){
   /* during fights the run pauses, but the forest keeps drifting slowly so it feels alive */
   if(mode==='boss'||mode==='bossintro'||mode==='miniboss'){
     const mv=dt*5;
+    if(mode==='miniboss') roadScroll+=mv; // the duel is stationary in stage progress, not in the world
     for(const t of trees) t.z-=mv;
     for(const c of pickups) c.z-=mv;
     for(const o of obstacles) if(o.kind!=='wolfgate') o.z-=mv;
-    trees=trees.filter(t=>t.z>-6); pickups=pickups.filter(c=>c.z>-5);
+    cullBehind(trees,-6); cullBehind(pickups,-5);
+    if(mode==='miniboss'){
+      /* The duel freezes stage distance, so tree rows advance on visual travel.
+         They enter from the normal far depth at the normal spacing. */
+      minibossTreeTravel-=mv;
+      while(minibossTreeTravel<=0){
+        spawnMinibossTreeRow(SPAWN_FAR);
+        minibossTreeTravel+=rnd(1.7,3.4);
+      }
+    }
     if(mode==='miniboss'){                       // new trees keep marching in — the duel never empties the wood
       let far=0; for(const t of trees) far=Math.max(far,t.z);
-      while(far<CFG.Z_FAR-2){ far+=rnd(1.7,3.2);
+      while(false&&far<CFG.Z_FAR-2){ far+=rnd(1.7,3.2);
         trees.push({z:far,off:(Math.random()<.5?-1:1)*rnd(2.6,3.8),v:Math.random()});
         if(Math.random()<0.55)                   // outer flank line
           trees.push({z:far+0.6,off:(Math.random()<.5?-1:1)*rnd(4.6,6.6),v:Math.random()}); }
@@ -4672,7 +5899,9 @@ function update(dt){
 }
 
 /* ============================== render ============================== */
+const DRAW_QUEUE=[]; // reused each frame; entries are discarded without reallocating the backing array
 function render(){
+  const stage=BIO();
   g.setTransform(1,0,0,1,0,0);
   g.fillStyle='#05070c'; g.fillRect(0,0,cvs.width,cvs.height);
   g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
@@ -4682,18 +5911,18 @@ function render(){
   /* screen shake offset (inside the clip so shakes can't leak either) */
   if(shakeMag>0) g.translate(rnd(-shakeMag,shakeMag),rnd(-shakeMag,shakeMag));
 
-  if(env==='cave'){ BIO().arena(lastDt); }
-  else { BIO().bg(lastDt); }
+  if(env==='cave'){ stage.arena(lastDt); }
+  else { stage.bg(lastDt); }
   updateEffHorizon();          // obstacles/items enter under the lair when it looms
   /* depth-sorted world drawables (far → near) */
-  const dr=[];
+  const dr=DRAW_QUEUE; dr.length=0;
   if(env==='forest'&&mode==='run'&&CFG.LOOP_DIST-dist<SPAWN_FAR){
     const mz=CFG.LOOP_DIST-dist;
     /* the end-of-world sheet (water/lava) draws BEHIND everything, so the groves
        and columns marching in past the lair stand IN it. The lair itself renders
        from the same far distance as the trees around it. */
-    if(BIO().beyondDraw) dr.push({z:9999,fn:()=>BIO().beyondDraw(mz)});
-    dr.push({z:mz,fn:()=>BIO().mouthDraw(mz)});
+    if(stage.beyondDraw) dr.push({z:9999,fn:()=>stage.beyondDraw(mz)});
+    dr.push({z:mz,fn:()=>stage.mouthDraw(mz)});
   }
   if(env==='forest') for(const t of trees) dr.push({z:t.z,fn:()=>{
     /* ONE continuous render using the REAL tree sprite the whole way: beyond the
@@ -4720,8 +5949,8 @@ function render(){
        skip it (110 covers the widest crown in local sprite units) */
     if(xx+110*sc<0||xx-110*sc>VW){ worldA=1; return; }
     g.globalAlpha=worldA;
-    if(t.gnd){ if(BIO().ground) BIO().ground(xx,p.y+6,sc*0.55,t.v); }  // flat ground scenery (ponds)
-    else BIO().scenery(xx,p.y+6,sc,t.v);
+    if(t.gnd){ if(stage.ground) stage.ground(xx,p.y+6,sc*0.55,t.v); }  // flat ground scenery (ponds)
+    else stage.scenery(xx,p.y+6,sc,t.v);
     worldA=1; g.globalAlpha=1;
   }});
   const frontObs=[];                     // arches the knight is riding UNDER draw over him
@@ -4734,7 +5963,7 @@ function render(){
     if(o.kind==='wolfgate'){
       worldA=spawnFade(o.z); if(worldA<=0){worldA=1;return;} g.globalAlpha=worldA;
       const fleeT=o.flee?clamp((perfNow-o.flee)*1.4,0,1):0;
-      BIO().miniDraw(laneX(o.lane,p.t),p.y,p.s*1.4,o.flee?'flee':'run',fleeT,false);
+      stage.miniDraw(laneX(o.lane,p.t),p.y,p.s*1.4,o.flee?'flee':'run',fleeT,false);
       if(!o.flee){ g.font='bold '+Math.max(10,18*p.s)+'px monospace'; g.textAlign='center';
         g.fillStyle='#ffd23a'; g.fillText('!',laneX(o.lane,p.t),p.y-70*p.s); }
       worldA=1; g.globalAlpha=1;
@@ -4749,17 +5978,41 @@ function render(){
     else drawWeaponPickup(c.kind,laneX(c.lane,p.t),p.y-30*p.s,p.s*1.3,perfNow);
     g.globalAlpha=1; }});
   if(boss) dr.push({z:boss.z,fn:()=>{
-    /* on the strike the beast physically hurls itself down the track (no beams) */
-    let zD=boss.z;
-    if(boss.state==='strike'&&boss.attack)
-      zD=boss.z-Math.sin(Math.PI*clamp(boss.stateT/boss.attack.travel,0,1))*(boss.attack.lunge||3);
+    /* The attack now advances monotonically and is closest on the damage frame.
+       Recovery retreats from that same contact point, so the body never snaps back. */
+    const bossMove=currentBossMove(); let zD=boss.z;
+    /* Large traveling bodies stage most of their forward approach during the
+       tell. The active swipe then travels sideways instead of telescoping an arm. */
+    const tellReach=bossMove&&bossMove.bodySweep&&bossMove.bodyLunge>8
+      ? bossMove.bodyLunge*.88 : 1.8;
+    if(boss.state==='tele'&&bossMove)
+      zD=boss.z-easeOut(clamp(boss.stateT/(boss.teleTime||bossMove.tele*teleMult()),0,1))*tellReach;
+    const requestedReach=bossMove?(bossMove.bodyLunge!==undefined?bossMove.bodyLunge:(bossMove.lunge||boss.attack.lunge||3)+5.2):0;
+    const contactReach=bossMove?Math.min(boss.z-.8,requestedReach):0;
+    if(boss.state==='strike'&&bossMove)
+      zD=boss.z-tellReach-easeOut(clamp(boss.stateT/bossMove.travel,0,1))*Math.max(0,contactReach-tellReach);
+    if(boss.state==='recover'&&bossMove)
+      zD=boss.z-(1-easeOut(clamp(boss.stateT/Math.max(.12,boss.attack.rec*.72),0,1)))*contactReach;
+    if(boss.state==='finisher')
+      zD=boss.z-easeOut(clamp((boss.stateT-0.62)/1.3,0,1))*(biome==='forest'?12:10);
     const p=proj(zD);
-    const anim=boss.state==='tele'?boss.attack.anim:boss.state;
+    let anim=boss.state==='tele'?boss.attack.anim:boss.state;
+    if(bossMove) anim=boss.state==='tele'?bossMove.anim:boss.state==='strike'?bossMove.strike:boss.state;
     const riseK=easeOut(clamp(boss.rise,0,1)), sink=(1-riseK)*150*p.s;
-    const bx2=laneX(boss.x,p.t);
-    BIO().bossDraw(bx2,p.y+sink,p.s*3.3,anim,
-      clamp(boss.stateT/(boss.state==='tele'?boss.attack.tele*teleMult():boss.state==='dying'?2.5:0.5),0,1),
-      boss.hurtT>0);
+    let bx2=laneX(boss.x,p.t);
+    if(boss.state==='strike'&&bossMove&&bossMove.sweep&&bossMove.bodySweep){
+      bx2=laneX(sweepBodyLane(bossMove,easeInOut(clamp(boss.stateT/bossMove.travel,0,1))),1);
+    } else if(boss.state==='strike'&&bossMove){
+      const contactK=easeOut(clamp(boss.stateT/bossMove.travel,0,1));
+      bx2=lerp(bx2,laneX(boss.xTarget,1),contactK); // body/muzzle arrives on the marked line
+    } else if(boss.state==='recover'&&bossMove){
+      const retreatK=easeOut(clamp(boss.stateT/Math.max(.12,boss.attack.rec*.72),0,1));
+      bx2=lerp(laneX(boss.xTarget,1),bx2,retreatK);
+    }
+    const bossContacts=moveContactXs(boss,bossMove,boss.state==='finisher'?ALL_LANES:boss.hazardLanes);
+    stage.bossDraw(bx2,p.y+sink,p.s*bossSpeciesScale(),anim,
+      clamp(boss.stateT/(boss.state==='tele'&&bossMove?(boss.teleTime||bossMove.tele*teleMult()):boss.state==='strike'&&bossMove?bossMove.travel:boss.state==='finisher'?2.15:boss.state==='dying'?2.5:0.5),0,1),
+      boss.hurtT>0,bossContacts);
     if(boss.rise<1){                                    // it BREACHES: rings + spray at the waterline
       const wl=p.y+4*p.s, isLava=biome==='volcano';
       for(let r=0;r<3;r++){ const ph=(boss.rise*1.6+r*0.33)%1;
@@ -4789,16 +6042,36 @@ function render(){
         life:.6,maxLife:.6,size:2.2,col:Math.random()<.5?'#ff6a2a':'#ffd23a',grav:-30});
     } }});
   if(wolfFight) dr.push({z:wolfFight.z,fn:()=>{
+    const miniMove=currentMiniMove();
     let zD=wolfFight.z;
-    if(wolfFight.state==='strike'&&wolfFight.attack)
-      zD=wolfFight.z-Math.sin(Math.PI*clamp(wolfFight.stateT/wolfFight.attack.travel,0,1))*(wolfFight.attack.lunge||4);
+    const miniTellReach=1.25;
+    const miniRequestedReach=miniMove?(miniMove.bodyLunge!==undefined?miniMove.bodyLunge:(miniMove.lunge||4)+4):0;
+    const miniContactReach=miniMove?Math.min(wolfFight.z-.8,miniRequestedReach):0;
+    if(wolfFight.state==='tele'&&miniMove)
+      zD=wolfFight.z-easeOut(clamp(wolfFight.stateT/(wolfFight.teleTime||miniMove.tele*teleMult()),0,1))*miniTellReach;
+    if(wolfFight.state==='strike'&&miniMove)
+      zD=wolfFight.z-miniTellReach-easeOut(clamp(wolfFight.stateT/miniMove.travel,0,1))*Math.max(0,miniContactReach-miniTellReach);
+    if(wolfFight.state==='recover'&&miniMove)
+      zD=wolfFight.z-(1-easeOut(clamp(wolfFight.stateT/Math.max(.12,wolfFight.attack.rec*.72),0,1)))*miniContactReach;
     const p=proj(zD);
-    const anim=wolfFight.state==='tele'?wolfFight.attack.anim:
-               wolfFight.state==='intro'?'howl':
-               wolfFight.state==='dying'?(wolfFight.stateT<1.1?'howl':'run'):wolfFight.state;
-    BIO().miniDraw(laneX(wolfFight.x,p.t),p.y,p.s*2.4,anim,
-      clamp(wolfFight.stateT/(wolfFight.state==='tele'?wolfFight.attack.tele*teleMult():wolfFight.state==='dying'?1.8:0.6),0,1),
-      wolfFight.hurtT>0); }});
+    let wx=laneX(wolfFight.x,p.t);
+    if(wolfFight.state==='tele'&&miniMove&&miniMove.sweep&&miniMove.bodySweep)
+      wx=lerp(wx,laneX(miniMove.sweep.from+(miniMove.bodyOffset||0),1),easeOut(clamp(wolfFight.stateT/(wolfFight.teleTime||miniMove.tele*teleMult()),0,1)));
+    else if(wolfFight.state==='strike'&&miniMove&&miniMove.sweep&&miniMove.bodySweep)
+      wx=laneX(sweepBodyLane(miniMove,easeInOut(clamp(wolfFight.stateT/miniMove.travel,0,1))),1);
+    else if(wolfFight.state==='strike'&&miniMove)
+      wx=lerp(wx,laneX(wolfFight.xTarget,1),easeOut(clamp(wolfFight.stateT/miniMove.travel,0,1)));
+    else if(wolfFight.state==='recover'&&miniMove)
+      wx=lerp(laneX(wolfFight.xTarget,1),wx,easeOut(clamp(wolfFight.stateT/Math.max(.12,wolfFight.attack.rec*.72),0,1)));
+    let anim=wolfFight.state==='tele'?wolfFight.attack.anim:
+             wolfFight.state==='intro'?'howl':
+             wolfFight.state==='dying'?(wolfFight.stateT<1.1?'howl':'run'):wolfFight.state;
+    if(miniMove&&(wolfFight.state==='tele'||wolfFight.state==='strike'))
+      anim=wolfFight.state==='tele'?miniMove.anim:miniMove.strike;
+    const miniContacts=moveContactXs(wolfFight,miniMove,wolfFight.hazardLanes);
+    stage.miniDraw(wx,p.y,p.s*2.4,anim,
+      clamp(wolfFight.stateT/(wolfFight.state==='tele'?(wolfFight.teleTime||miniMove.tele*teleMult()):wolfFight.state==='strike'&&miniMove?miniMove.travel:wolfFight.state==='dying'?1.8:0.6),0,1),
+      wolfFight.hurtT>0,miniContacts); }});
   dr.sort((a,b)=>b.z-a.z);
   for(const d of dr) d.fn();
 
@@ -4813,7 +6086,7 @@ function render(){
   frontObs.sort((a,b)=>b.z-a.z);
   for(const o of frontObs) drawObstacle(o,proj(o.z));
   drawParticles(); updateDrawSlashes(lastDt);
-  BIO().atmos(lastDt);
+  stage.atmos(lastDt);
   drawVignette();
 
   /* overlays / UI per mode */
