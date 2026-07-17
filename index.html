@@ -1780,10 +1780,22 @@ function updateEffHorizon(){
 }
 
 let ambient=[];                                        // fireflies + drifting leaves
+const AMBIENT_TOP_SPREAD=150;
+function respawnFallingAmbient(a){
+  /* A long offscreen runway prevents several flakes becoming one horizontal
+     band at the canvas edge when they wrap during the same few frames. */
+  a.y=-PAD_TOP-rnd(24,AMBIENT_TOP_SPREAD);
+  a.x=rnd(-20,VW+40);
+}
+function respawnAmbientFromRight(a){
+  a.x=VW+rnd(24,100);
+  a.y=rnd(-PAD_TOP+36,VH+PAD_BOT-36);
+}
 function initAmbient(){ ambient=[];
   for(let i=0;i<26;i++) ambient.push({kind:'fly',x:rnd(VW),y:rnd(160,VH-120),ph:rnd(TAU),sp:rnd(.3,1)});
   for(let i=0;i<20;i++){ const cs=[['#5c7a3a','#42592a'],['#7a6a2e','#57491d'],['#6b4d2a','#4a3018']][i%3];
-    ambient.push({kind:'leaf',x:rnd(VW),y:rnd(VH),vx:rnd(-14,-30),vy:rnd(26,60),ph:rnd(TAU),col:cs[0],col2:cs[1]}); }
+    ambient.push({kind:'leaf',x:rnd(VW),y:rnd(36,VH-36),vx:rnd(-14,-30),vy:rnd(26,60),
+      ph:rnd(TAU),sp:rnd(.3,1),col:cs[0],col2:cs[1]}); }
 }
 initAmbient();
 
@@ -2689,8 +2701,8 @@ function drawVolcanoAtmos(dt){
     } else {
       /* falling ASH flakes — even respawns, never bunching in one corner */
       a.y+=dt*(20+a.sp*18); a.x+=Math.sin(a.ph+=dt*1.4)*10*dt - 8*dt;
-      if(a.y>VH+PAD_BOT){ a.y=-PAD_TOP-rnd(6,26); a.x=rnd(0,VW+30); }
-      else if(a.x<-10){ a.x=rnd(VW,VW+30); a.y=rnd(-PAD_TOP,VH+PAD_BOT); }
+      if(a.y>VH+PAD_BOT) respawnFallingAmbient(a);
+      else if(a.x<-10) respawnAmbientFromRight(a);
       g.globalAlpha=0.5;
       g.fillStyle=a.sp>0.6?'#4a4448':'#38333a';
       g.fillRect(a.x|0,a.y|0,2.6,2.6);
@@ -3332,8 +3344,8 @@ function drawAtmosphere(dt){
       a.x+=a.vx*dt+Math.sin(a.ph*1.7)*22*dt; a.y+=a.vy*dt; a.ph+=dt*3;
       /* EVEN respawns: fall off the bottom → return across the top; blow off the
          left → return at the right at any height. No more piling up in a corner. */
-      if(a.y>VH+PAD_BOT){ a.y=-PAD_TOP-rnd(6,30); a.x=rnd(0,VW+40); }
-      else if(a.x<-12){ a.x=rnd(VW,VW+40); a.y=rnd(-PAD_TOP,VH+PAD_BOT); }
+      if(a.y>VH+PAD_BOT) respawnFallingAmbient(a);
+      else if(a.x<-12) respawnAmbientFromRight(a);
       /* two-tone pixel leaf: blade + stem + midrib, rotation quantized for pixel feel */
       g.globalAlpha=0.85;
       g.save(); g.translate(a.x|0,a.y|0);
@@ -5457,6 +5469,7 @@ const CHANGELOGS=[
   'TOOLS & FIXES',
   '· boss/miniboss move labs and encounter shortcuts',
   '· entrances, fight scenery and score timing fixed',
+  '· ambient leaves and ash no longer bunch at the top',
  ]},
  {v:'v9.8',lines:[
   'VISUALS & RENDER',
