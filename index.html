@@ -47,7 +47,8 @@
 const CFG = {
   /* --- world & speed --- */
   BASE_SPEED      : 22,    // forward speed in z-units/second on loop 1
-  SPEED_TIER_ADD  : 1.6,   // endless linear speed step after each 3-stage cycle
+  SPEED_LOG_SCALE : 7.8,   // logarithmic gain size: meaningful early, gentle in deep endless play
+  SPEED_LOG_RATE  : 0.22,  // bends noticeably around cycle 10 without imposing a hard speed cap
   Z_FAR           : 60,    // draw/spawn horizon distance
   FOCAL           : 14,    // perspective focal length (smaller = more dramatic 3D)
   LOOP_DIST       : 1323,  // z-units per stage loop (10% shorter again — relentless)
@@ -105,11 +106,18 @@ const CFG = {
   BOSS_DODGE_ATKS : 4,     // the dodge phase lasts exactly this many boss attacks...
   BOSS_ATKS_TIER  : 1,     // endless: one extra turn every two completed cycles
   ATK_HASTE_TIER  : 0.045, // reciprocal curve: always tightens, never becomes negative
-  RANDOM_COMBO_TIER: 6,    // procedural chains stay out of the first five three-stage loops
-  RANDOM_COMBO_WEIGHT: 10, // late chains join the weighted move pool instead of replacing authored attacks
-  RANDOM_COMBO_GROWTH: 1.2,// their selection weight keeps rising through endless play
+  COMBO_UNLOCK_CYCLE:6,    // opening authored/multi-step strings begin only in the sixth cycle
+  RANDOM_COMBO_TIER:12,    // procedural chains join normal combos around the twelfth cycle
+  RANDOM_COMBO_WEIGHT_SCALE:.72,// one random chain stays less common than one normal combo
   TELE_TIER_RATE  : 0.035, // reciprocal tell curve; physical movement floors still apply
   RECOVERY_TIER_RATE:0.025,// recoveries tighten forever with loop tier; no difficulty ceiling
+  EVASIVE_WEIGHT_START:0.24,// jump/duck moves unlock in cycle 3 at this fraction of lane-hit weight
+  EVASIVE_WEIGHT_LIMIT:0.65,// asymptotic ceiling: evasive moves always remain rarer than lane hits
+  EVASIVE_WEIGHT_CURVE:0.16,// gradual endless rise toward the ceiling, never a sudden difficulty spike
+  PAIR_WEIGHT_START:0.56,  // two-lane hits unlock in cycle 2 between single-hit and evasive rarity
+  PAIR_WEIGHT_LIMIT:0.84,  // they remain less common than one-lane hits forever
+  PAIR_WEIGHT_CURVE:0.14,
+  PINCH_WEIGHT_SCALE:0.52, // paired inward sweeps stay substantially rarer than other evasive mechanics
   PERFECT_WIN     : 0.18,  // small last-moment input window that awards a counter
   FIGHT_HIT_HALF  : 62,    // screen px from a marked lane centre: matches the paw/body footprint
   IMPACT_HOLD     : 0.10,  // keep the contact pose visible after the damage frame
@@ -182,6 +190,11 @@ class DefinitionRegistry{
      Future stages register an atmosphere definition and reference its id.
    - ENCOUNTER_PACING owns recovery and between-attack delays for both roles.
      Species keep unique recovery animation poses, but timing scales universally.
+   - encounterAttackPool owns role-agnostic unlocks/weighting: two-lane hits begin
+     in cycle 2, jump/duck in 3, slides in 4, pinches in 5, opening/advanced/master
+     combos in cycles 6/7/8, and random chains in 12. Debug labs bypass progression.
+   - Route speed is logarithmic and unbounded: it rises clearly in early cycles,
+     bends around cycle 10, then changes only gradually in deep endless play.
 
    FUTURE DIRECTION
    - Infinite Subway-Surfers route play, Slay-the-Spire-style RNG builds and rare
@@ -3886,8 +3899,9 @@ function isAirborne(){ return jumpHeight()>CFG.JUMP_SAFE_H; }
 function isDucking(){ return player.duckT>=0; }
 function updatePlayer(dt){
   player.x+=(player.lane-player.x)*Math.min(1,CFG.LANE_EASE*dt);
+  const resting=mode==='relic'||mode==='shop';
   const inFight=(mode==='boss'||mode==='miniboss'||mode==='bossintro');
-  player.gallop=(player.gallop+dt*(inFight?0.55:speed()/9))%1;   // the horse WALKS in a fight
+  player.gallop=resting?0:(player.gallop+dt*(inFight?0.55:speed()/9))%1; // reward rooms are still
   if(player.jumpT>=0){ player.jumpT+=dt; if(player.jumpT>jumpDur()){ player.jumpT=-1;
     burst(laneX(player.x,1),PLAYER_Y+8,8,['#8a744f','#5c4a30'],110,260,3,.4); } }
   if(player.duckT>=0){ player.duckT+=dt; if(player.duckT>CFG.DUCK_TIME) player.duckT=-1; }
@@ -3896,7 +3910,7 @@ function updatePlayer(dt){
   player.invuln=Math.max(0,player.invuln-dt);
   updateAllyTrail();
   /* galloping dust */
-  if(Math.random()<dt*14) burst(laneX(player.x,1)+rnd(-12,12),PLAYER_Y+10,1,['#6a5a40'],40,60,3,.5);
+  if(!resting&&Math.random()<dt*14) burst(laneX(player.x,1)+rnd(-12,12),PLAYER_Y+10,1,['#6a5a40'],40,60,3,.5);
 }
 function drawPlayer(){
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
@@ -4686,20 +4700,76 @@ function randomComboLength(cycle,movesLeft){
   const min=3+Math.floor(growth/3), max=min+2+growth;
   return Math.min(movesLeft,min+Math.floor(Math.random()*(max-min+1)));
 }
-function pickRandomComboSource(attacks,lastId){
+function evasiveWeightFactor(cycle){
+  const age=Math.max(0,cycle-3), start=CFG.EVASIVE_WEIGHT_START, limit=CFG.EVASIVE_WEIGHT_LIMIT;
+  return limit-(limit-start)/(1+age*CFG.EVASIVE_WEIGHT_CURVE);
+}
+function pairWeightFactor(cycle){
+  const age=Math.max(0,cycle-2), start=CFG.PAIR_WEIGHT_START, limit=CFG.PAIR_WEIGHT_LIMIT;
+  return limit-(limit-start)/(1+age*CFG.PAIR_WEIGHT_CURVE);
+}
+function encounterStepKind(step){
+  if(step.sweeps||step.mechanic==='squeeze') return 'pinch';
+  if(step.sweep) return 'slide';
+  if(step.height==='low'||step.height==='high') return 'posture';
+  if(Array.isArray(step.lanes)&&step.lanes.length===2) return 'pair';
+  return 'hit';
+}
+function encounterStepWeightFactor(step,cycle){
+  const kind=encounterStepKind(step);
+  if(kind==='hit') return 1;
+  if(kind==='pair') return cycle<2?0:pairWeightFactor(cycle);
+  if(kind==='posture') return cycle<3?0:evasiveWeightFactor(cycle);
+  if(kind==='slide') return cycle<4?0:evasiveWeightFactor(cycle);
+  return cycle<5?0:evasiveWeightFactor(cycle)*CFG.PINCH_WEIGHT_SCALE;
+}
+function comboUnlockCycle(attack){
+  if(!(attack.comboType||(attack.steps&&attack.steps.length>1))) return 1;
+  return CFG.COMBO_UNLOCK_CYCLE+Math.max(0,(attack.comboRank||1)-1);
+}
+function encounterAttackWeight(attack,cycle){
+  const steps=attack.steps||[]; if(!steps.length) return attack.w;
+  if(cycle<comboUnlockCycle(attack)) return 0;
+  let factorTotal=0;
+  for(const step of steps){
+    const factor=encounterStepWeightFactor(step,cycle);
+    if(factor===0) return 0;                     // cycle one excludes the whole mixed combo
+    factorTotal+=factor;
+  }
+  /* Average step rarity preserves authored combo identity without letting one
+     rare mechanic make every ordinary strike in that combo equally unlikely. */
+  return attack.w*factorTotal/steps.length;
+}
+function encounterAttackPool(attacks,cycle,weightMultiplier){
+  const pool=[];
+  for(const attack of attacks){
+    if((attack.minTier||1)>cycle) continue;
+    const weight=encounterAttackWeight(attack,cycle)*(weightMultiplier?weightMultiplier(attack):1);
+    if(weight>0) pool.push(weight===attack.w?attack:Object.assign({},attack,{w:weight}));
+  }
+  return pool;
+}
+function randomComboSelectionWeight(attacks){
+  let total=0,count=0;
+  for(const attack of attacks) if(attack.comboType||(attack.steps&&attack.steps.length>1)){
+    total+=attack.w; count++;
+  }
+  return (count?total/count:12)*CFG.RANDOM_COMBO_WEIGHT_SCALE;
+}
+function pickRandomComboSource(attacks,lastId,cycle){
   const choices=attacks.filter(a=>a.id!==lastId);
   const pool=choices.length?choices:attacks;
-  let total=0; for(const a of pool) total+=a.w;
+  let total=0; for(const a of pool) total+=encounterAttackWeight(a,cycle);
   let roll=Math.random()*total;
-  for(const a of pool) if((roll-=a.w)<=0) return a;
+  for(const a of pool) if((roll-=encounterAttackWeight(a,cycle))<=0) return a;
   return pool[pool.length-1];
 }
 function buildRandomBossCombo(cycle,movesLeft){
-  const atomic=activeBossAttackSet().filter(a=>(a.minTier||1)<=cycle&&a.steps&&a.steps.length===1&&!a.comboType);
+  const atomic=activeBossAttackSet().filter(a=>(a.minTier||1)<=cycle&&a.steps&&a.steps.length===1&&!a.comboType&&encounterAttackWeight(a,cycle)>0);
   const length=randomComboLength(cycle,movesLeft), steps=[];
   let lastId='';
   for(let i=0;i<length;i++){
-    const source=pickRandomComboSource(atomic,lastId), step=Object.assign({},source.steps[0]);
+    const source=pickRandomComboSource(atomic,lastId,cycle), step=Object.assign({},source.steps[0]);
     /* The first hesitation announces the improvised string. Later tells contract
        into one flowing combo, but attackTeleTime still enforces movement, jump,
        and duck safety floors on every individual strike. */
@@ -4711,16 +4781,16 @@ function buildRandomBossCombo(cycle,movesLeft){
 }
 function chooseBossAttack(movesLeft=boss.attacksLeft){
   const cycle=progressionTier()+1;
-  const unlocked=activeBossAttackSet().filter(a=>(a.minTier||1)<=cycle).map(a=>{
-    if(!a.comboType) return a;
+  const unlocked=encounterAttackPool(activeBossAttackSet(),cycle,a=>{
+    if(!a.comboType) return 1;
     /* The three authored patterns remain each species' identity. Their harder
        ranks gain a mild endless-play preference without crowding out single hits. */
-    const growth=Math.max(0,cycle-a.minTier)*.01*(a.comboRank||1);
-    return Object.assign({},a,{w:a.w*(1+growth)});
+    const growth=Math.max(0,cycle-(a.minTier||1))*.01*(a.comboRank||1);
+    return 1+growth;
   });
   if(cycle>=CFG.RANDOM_COMBO_TIER&&movesLeft>=3){
     unlocked.push({id:'random_chain',randomCombo:true,
-      w:CFG.RANDOM_COMBO_WEIGHT+(cycle-CFG.RANDOM_COMBO_TIER)*CFG.RANDOM_COMBO_GROWTH});
+      w:randomComboSelectionWeight(unlocked)});
   }
   const selected=boss.choose(unlocked);
   return selected.randomCombo?buildRandomBossCombo(cycle,movesLeft):selected;
@@ -4793,7 +4863,7 @@ function updateBoss(dt){
       if(pack>0){ floater(VW/2,340,activeMinibossDefinition().byeLine,'#9ecbff',17); }
       pack=0; packTypes=[];                     // its debt is paid — the beast returns to its wild
       if(hasRelic('idol')){ gold+=40; floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
-      boss=null; env='forest'; giveRelic();
+      boss=null; giveRelic();                    // keep the now-empty defeated arena behind rewards
     }
     return;
   }
@@ -5301,7 +5371,7 @@ function updateMiniboss(dt){
         floater(VW/2,230,w._moveLab.index+'/'+w._moveLab.moves.length+' · '+w.attack._labName,'#c9f74a',15);
       } else {
         const miniTier=progressionTier()+1;
-        w.attack=w.choose(minibossAttackSet().filter(a=>(a.minTier||1)<=miniTier));
+        w.attack=w.choose(encounterAttackPool(minibossAttackSet(),miniTier));
       }
       w.state='tele'; w.stateT=0;
       w.sequenceIndex=0; cueMiniMove();
@@ -5710,6 +5780,7 @@ function giveRelic(){
   let bi=(Math.random()*(ARTIFACT_IDS.length-1))|0; if(bi>=ai) bi++;
   relicChoices=[ARTIFACTS.get(ARTIFACT_IDS[ai]).create(),ARTIFACTS.get(ARTIFACT_IDS[bi]).create()];
   pendingRelic=null;
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0});
   setMode('relic'); SFX.relic(); flash('#ffe37a',.35);
 }
 function relicTap(pt){
@@ -5771,7 +5842,7 @@ function nextLoop(){
   arrows=0; lances=0;                        // weapons reset every loop — all were spent on the boss
   obstacles=[]; pickups=[]; trees=[]; hazards=[]; projectiles=[];
   minibossSpawned=false; buildGuaranteed();
-  biome=biomeOf(loop); oakUsed=false;
+  biome=biomeOf(loop); env='forest'; oakUsed=false;
   floater(VW/2,300,'STAGE '+loop+' — '+BIO().enterLine,'#e8e2d0',20);
   if((loop-1)%STAGE_POOL_SEQUENCE.length===0&&loop>1)
     floater(VW/2,340,'A NEW CYCLE — THE ROAD QUICKENS...','#ff9a3a',17);
@@ -5788,8 +5859,9 @@ let env='forest';               // 'forest' during the run · 'cave' for the bea
 function setMode(m){ mode=m; modeT=0; }
 function speed(){
   /* All three pools in a cycle share one pace. Clearing the final pool advances
-     the world one visible step forever; the bead softens the slope, not infinity. */
-  const add=progressionTier()*CFG.SPEED_TIER_ADD;
+     the world forever. Logarithmic growth keeps early acceleration noticeable,
+     then makes each deep-run increase smaller without ever imposing a hard cap. */
+  const add=CFG.SPEED_LOG_SCALE*Math.log(1+progressionTier()*CFG.SPEED_LOG_RATE);
   return CFG.BASE_SPEED+add*(hasRelic('bead')?0.74:1);
 }
 function countersNeeded(){
@@ -6653,7 +6725,7 @@ function update(dt){
 
   updatePlayer(dt);
   if(mode==='run') runTime+=dt;                            // survival score only during the stage ride
-  if(mode==='run'||mode==='relic'||mode==='shop'){        // relic/shop: untimed safe auto-run
+  if(mode==='run'){
     const mv=speed()*dt; dist+=mv; roadScroll+=mv;
     /* Preserve the previous depth so infinite late-run speed cannot tunnel an
        obstacle or pickup through its narrow contact window in one frame. */
