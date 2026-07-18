@@ -180,6 +180,8 @@ class DefinitionRegistry{
    - ATMOSPHERES owns stage ambient-particle behavior. Motion runs only through
      updateAmbient; drawAmbient is render-only, so pause/hit-stop freezes ambience.
      Future stages register an atmosphere definition and reference its id.
+   - ENCOUNTER_PACING owns recovery and between-attack delays for both roles.
+     Species keep unique recovery animation poses, but timing scales universally.
 
    FUTURE DIRECTION
    - Infinite Subway-Surfers route play, Slay-the-Spire-style RNG builds and rare
@@ -1410,10 +1412,14 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
      visually identical. Two opposing bends leave visible slack and heat-wiggle;
      the physical tube itself is the hitbox, so no artificial dark cap is needed. */
   const drawBoilerTube=(mouthX,mouthY,targetX,targetY,reach,seed=0,bowX=0)=>{
+    /* Collapse every bend with its length and finish the fade inside the mouth.
+       Keeping full slack at near-zero reach left a small rope stub after swipes. */
+    reach=clamp(reach,0,1); if(reach<=.025) return;
     const endX=lerp(mouthX,targetX,reach), endY=lerp(mouthY,targetY,reach);
     const dx=endX-mouthX,dy=endY-mouthY,len=Math.max(.001,Math.hypot(dx,dy));
-    const nx=-dy/len,ny=dx/len,slack=4.6+Math.min(4,len*.052);
-    g.save(); g.globalAlpha=.22+.70*reach; g.lineCap='square';
+    const nx=-dy/len,ny=dx/len,shapeK=clamp(reach/.28,0,1);
+    const slack=(4.6+Math.min(4,len*.052))*shapeK;
+    g.save(); g.globalAlpha=.92*clamp(reach/.32,0,1); g.lineCap='square';
     g.strokeStyle='#ffd6a0'; g.shadowColor='#ff8a38'; g.shadowBlur=10*scale;
     g.lineWidth=Math.max(1,1.7*U);
     g.beginPath(); g.moveTo(mouthX*U,mouthY*U);
@@ -1421,11 +1427,11 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
        remains a truthful model-hitbox while looking loose enough to be whipped. */
     for(let j=1;j<=12;j++){
       const q=j/12,envelope=Math.sin(q*Math.PI);
-      const heat=Math.sin(q*TAU*1.55+perfNow*15+seed*2.4)*envelope*2.35;
+      const heat=Math.sin(q*TAU*1.55+perfNow*15+seed*2.4)*envelope*2.35*shapeK;
       const sag=envelope*slack;
       /* Pincer-only bow keeps the exact mouth and collision-tip endpoints while
          giving the pair a quiet ( ) silhouette that guides the eye to the tips. */
-      const px2=lerp(mouthX,endX,q)+nx*heat+envelope*bowX;
+      const px2=lerp(mouthX,endX,q)+nx*heat+envelope*bowX*shapeK;
       const py2=lerp(mouthY,endY,q)+ny*heat+sag;
       g.lineTo(px2*U,py2*U);
     }
@@ -3148,9 +3154,9 @@ function drawMagmaChamber(dt){
     g.fillStyle='#2a2226'; g.fillRect(ix-iw/2,iy,iw,3);
     g.globalAlpha=breathe*0.7; g.fillStyle='#ffd23a';
     g.fillRect(ix-iw*0.2,iy+ih*0.4,iw*0.3,1.6); g.globalAlpha=1; }
-  /* LAVA GEYSERS: periodic spouts with spray */
-  for(let i=0;i<3;i++){
-    const ph=(perfNow*0.5+i*0.37)%1, gx=VW*(0.22+i*0.28), gy2=top+50+sRnd(i*13+5)*70;
+  /* LAVA GEYSERS: side spouts only, leaving the boss and centre lane unobscured */
+  for(let i=0;i<2;i++){
+    const ph=(perfNow*0.5+i*0.74)%1, gx=VW*(i===0?.22:.78), gy2=top+50+sRnd(i*26+5)*70;
     if(ph<0.3){ const k=Math.sin(ph/0.3*Math.PI), gh=k*46;
       g.globalAlpha=0.9; g.fillStyle='#ffd23a'; g.fillRect(gx-4,gy2-gh,8,gh);
       g.globalAlpha=0.7; g.fillStyle='#ffe88a'; g.fillRect(gx-1.6,gy2-gh,3.2,gh*0.7);
@@ -4563,9 +4569,23 @@ function comboStepRecoveryTime(move){
   else if(move&&move.recoverAnim) base=.14;
   return base/(1+progressionTier()*CFG.RECOVERY_TIER_RATE);
 }
-function bossRecoveryTime(attack){
-  return (attack&&attack.rec||.8)/(1+progressionTier()*CFG.RECOVERY_TIER_RATE);
+/* Shared encounter cadence: adding a species never adds another fixed wait timer.
+   Miniboss duels use a brisker base because their entrance already supplies the
+   dramatic pause; both roles tighten forever through the same progression tier. */
+const ENCOUNTER_PACING=Object.freeze({
+  boss:Object.freeze({recoveryScale:1, idleMin:.5,idleMax:1.1}),
+  miniboss:Object.freeze({recoveryScale:.82,idleMin:.38,idleMax:.78})
+});
+function encounterPaceScale(rate){ return 1/(1+progressionTier()*rate); }
+function encounterRecoveryTime(attack,role){
+  const pace=ENCOUNTER_PACING[role];
+  return (attack&&attack.rec||.8)*pace.recoveryScale*encounterPaceScale(CFG.RECOVERY_TIER_RATE);
 }
+function encounterAttackDelay(role){
+  const pace=ENCOUNTER_PACING[role];
+  return rnd(pace.idleMin,pace.idleMax)*encounterPaceScale(CFG.ATK_HASTE_TIER);
+}
+function bossRecoveryTime(attack){ return encounterRecoveryTime(attack,'boss'); }
 function moveContactXs(actor,move,lanes){
   const out=actor?(actor._contactXs||(actor._contactXs=[])):[];
   out.length=0;
@@ -4885,12 +4905,10 @@ function updateBoss(dt){
     if(T>=bossRecoveryTime(boss.attack)){
       boss.state='idle'; boss.stateT=0;
       if(boss._moveLab){ boss.atkTimer=.85; return; }
-      const tier=progressionTier();
-      const haste=1/(1+tier*CFG.ATK_HASTE_TIER);
-      /* Full recovery separates whole attacks. The Turtle's short comboRecover
-         is only a visible neck follow-through, so the selected string still reads
-         as one continuous combo rather than several independently paced attacks. */
-      boss.atkTimer=rnd(0.5,1.1)*haste;
+       /* Full recovery separates whole attacks. The Turtle's short comboRecover
+          is only a visible neck follow-through, so the selected string still reads
+          as one continuous combo rather than several independently paced attacks. */
+       boss.atkTimer=encounterAttackDelay('boss');
     }
   }
 }
@@ -5173,7 +5191,7 @@ function finishMoveLab(){
 function currentMiniMove(){
   return minibossFight?minibossFight.currentMove():null;
 }
-function minibossRecoveryTime(attack){ return attack&&attack.rec||.8; }
+function minibossRecoveryTime(attack){ return encounterRecoveryTime(attack,'miniboss'); }
 function cueMiniMove(){
   if(minibossFight) minibossFight.cueMove();
 }
@@ -5197,7 +5215,8 @@ function startMiniboss(lane,direct=false){
     /* Begin out on the road and walk into the fixed combat distance during the
        cinematic. This is shared by normal gates and the debug shortcut. */
     z:18, x:lane, xTarget:1,
-    state:'intro', stateT:0, attack:null, hazardLanes:[], hurtT:0, atkTimer:2.2, lastIds:[],
+    state:'intro', stateT:0, attack:null, hazardLanes:[], hurtT:0,
+    atkTimer:encounterAttackDelay('miniboss'), lastIds:[],
     /* a counter duel: it attacks MINIBOSS_DODGE_ATKS times — land MINIBOSS_COUNTERS counters and it falls.
        fall short and it simply flees (no penalty). a hit still kills you, as always. */
     attacksLeft:minibossAttackCount(), counters:0, _stg:0,
@@ -5315,7 +5334,10 @@ function updateMiniboss(dt){
       w.sequenceIndex++; w.state='tele'; w.stateT=0; cueMiniMove();
     }
   } else if(w.state==='recover'){
-    if(w.stateT>=minibossRecoveryTime(w.attack)){ w.state='idle'; w.stateT=0; w.atkTimer=w._moveLab ? .85 : rnd(0.7,1.3); }
+    if(w.stateT>=minibossRecoveryTime(w.attack)){
+      w.state='idle'; w.stateT=0;
+      w.atkTimer=w._moveLab ? .85 : encounterAttackDelay('miniboss');
+    }
   }
 }
 /* --- the tamed wolf FOLLOWS the knight: it copies your movement on a short
