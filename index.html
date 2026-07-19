@@ -112,6 +112,8 @@ const CFG = {
   RANDOM_COMBO_WEIGHT_SCALE:.72,// one random chain stays less common than one normal combo
   COMBO_RANK_PREFERENCE:.30,// bounded late preference for harder authored combo ranks
   COMBO_RANK_CURVE:.06,    // reaches its preference gradually instead of growing forever
+  COMBO_MOVE_COST_RATIO:.60,// strings receive a discount but long chains still spend real budget
+  COMBO_MOVE_COST_MIN:2,   // a combo is never as cheap as one ordinary attack
   EVASIVE_WEIGHT_START:0.24,// jump/duck moves unlock in cycle 3 at this fraction of lane-hit weight
   EVASIVE_WEIGHT_LIMIT:0.65,// base-family ceiling before the later balance-beam transfer is applied
   EVASIVE_WEIGHT_CURVE:0.16,// gradual endless rise toward the ceiling, never a sudden difficulty spike
@@ -120,9 +122,9 @@ const CFG = {
   PAIR_WEIGHT_CURVE:0.14,
   PINCH_WEIGHT_SCALE:0.52, // paired inward sweeps stay substantially rarer than other evasive mechanics
   PINCH_JUMP_GRACE : 0.18, // early jumps remain safe briefly after landing at the central pinch snap
-  ENCOUNTER_TEMPO : Object.freeze({tele:1.70,travel:1.50,recovery:1.55,floor:.78,curve:.22,
-                                    comboStart:1.20,comboCurve:.28}),
-                        // loop 1 matches Move Labs; normal moves scale each loop, combos from debut
+  ENCOUNTER_TEMPO : Object.freeze({tele:1.70,travel:1.50,recovery:1.55,floor:.78,deepFloor:.60,curve:.22,
+                                     comboStart:1.20,comboCurve:.28}),
+                         // loop 1 matches Move Labs; a shared late bend makes every boss faster safely
   BOSS_HESITATION : Object.freeze({start:6,chanceMax:.42,swingMax:.16,curve:.12}),
                         // after loop 6, selected attacks gradually gain bounded random tell timing
   PERFECT_WIN     : 0.18,  // small last-moment input window that awards a counter
@@ -177,6 +179,9 @@ class DefinitionRegistry{
    CURRENT FOUNDATION
    - STAGES owns immutable StageDefinition records. Each stage has bossIds and
      minibossIds pools; seeded selection chooses one encounter for that stage.
+   - RUN_POLICIES owns shared run flow: stage pool/tier, encounter inclusion, boss
+     scoring, rewards and continuation. `endless_build` preserves current behavior;
+     future progression/scroller modes register policies instead of forking content.
    - ENCOUNTERS owns EncounterDefinition records for bosses and minibosses. Their
      attacks are data tables; EncounterActor owns shared hot state and move cueing.
    - EncounterCombatMechanics is the single attack-pattern factory. The public
@@ -187,10 +192,11 @@ class DefinitionRegistry{
    - OBSTACLE_TYPES owns render/cull/collision traits. ObstacleEntity contains only
      runtime state and cached occupied lanes. ARTIFACTS owns ArtifactDefinition data;
      equippedArtifactTypes is the O(1) hot-path cache and must be synced after loadout edits.
-   - Every boss combo step is a real collision/animation attack and costs one boss
-     move. Reserve the complete string cost when it is selected; if attacksLeft is
-     too small, exclude that combo instead of starting and truncating it. Contact ->
-     comboRecover -> next tele remains the required physical transition.
+   - Every boss combo step is a real collision/animation attack. A string reserves
+     max(2, ceil(visible steps * 0.60)) boss-move budget when selected; if that cost
+     does not fit, exclude it instead of starting and truncating it. This discounts
+     authored flow without letting one token buy an unbounded procedural chain.
+     Contact -> comboRecover -> next tele remains the required physical transition.
    - Encounter attack tables have one construction phase: normalize mechanics,
      attach species recovery, then freeze every nested step/shape/table. Runtime
      pacing always clones a selected definition and never mutates shared content.
@@ -207,10 +213,12 @@ class DefinitionRegistry{
      updateAmbient; drawAmbient is render-only, so pause/hit-stop freezes ambience.
      Future stages register an atmosphere definition and reference its id.
    - ENCOUNTER_PACING owns the shared 0.25-0.55 second idle-delay range (half
-     the original pause, keeping fights active without shortening physical moves).
-     ENCOUNTER_TEMPO starts at the current Move-Lab values in loop 1, then scales
-     tells, travel, recovery and cadence together every loop. Species keep unique
-     recovery poses without copied timing systems.
+      the original pause, keeping fights active without shortening physical moves).
+      ENCOUNTER_TEMPO starts at the current Move-Lab values in loop 1, then scales
+      tells, travel, recovery and cadence together every loop. Its one deepFloor
+      bends in through the existing curve pressure, so early teaching barely changes
+      while every boss and attack family becomes meaningfully faster in deep runs.
+      Species keep unique recovery poses without copied timing systems.
     - TERMINOLOGY: one LOOP is three individual STAGES/LEVELS (one complete biome
       cycle). Boss attack count, move unlocks, weights and speed advance per loop.
      Visible boss-hit budget grows linearly through loop 12, then by a square-root
@@ -241,8 +249,9 @@ class DefinitionRegistry{
      and eventually combos. Authored rank preference is bounded; with the current
      catalogue the whole combo family settles near 51% rather than drifting toward
      total dominance. Miniboss difficulty continues to use three-stage tiers.
-     Authored and procedural strings reserve one attacksLeft entry per visible step;
-     every internal step still resolves its own tell, hitbox, impact and recovery.
+     Authored and procedural strings reserve their shared discounted length-aware
+     cost up front; every internal step still resolves its own tell, hitbox, impact
+     and recovery.
     - Pinch early-jump forgiveness is collision grace, not extra PERFECT timing.
       Boss and miniboss telegraph, strike animation/travel, recovery and cadence
       match Move Lab in loop 1 and follow one bounded curve from loop 2 onward;
@@ -282,7 +291,8 @@ class DefinitionRegistry{
      beginner/intermediate/final pools; expanding a pool must not fork the run loop.
    - Future modes reuse the same stage/encounter/combat content: a carefully authored
      three-act progression/build mode, plus an optional pure infinite scroller for
-     Subway-Surfers-style route players. Add a mode policy layer before duplicating flow.
+     Subway-Surfers-style route players. Extend the shared policy contract instead
+     of duplicating flow.
    - Boss ambition is Expedition-33/Sekiro responsiveness: the animated attacking
      model should become collision truth through shared pose/contact samples. A future
      explicit counter/parry may sit beside physical evasion; do not fake either with
@@ -2288,12 +2298,12 @@ class StageDefinition{
    repeatedly. Adding 100 stages expands pools, never the three-stage cycle length. */
 let stageRouteSeed=(Math.random()*0x7fffffff)|0;
 function biomeOf(l){
-  const poolName=STAGE_POOL_SEQUENCE[(l-1)%STAGE_POOL_SEQUENCE.length];
+  const poolName=RUN_POLICY().stagePoolAt(l);
   const pool=STAGE_POOLS[poolName];
   if(!pool||!pool.length) throw new Error('Empty stage pool: '+poolName);
   return pool[(sRnd(stageRouteSeed+l*17.31)*pool.length)|0];
 }
-function progressionTier(stage=loop){ return Math.floor((stage-1)/STAGE_POOL_SEQUENCE.length); }
+function progressionTier(stage=loop){ return RUN_POLICY().progressionTierAt(stage); }
 const STAGE_POOL_RANK=Object.freeze({beginner:0,intermediate:1,final:2});
 function stagePoolRank(){ return STAGE_POOL_RANK[BIO().pool]||0; }
 let biome='forest';
@@ -2347,6 +2357,37 @@ const STAGE_POOL_SEQUENCE=Object.freeze(['beginner','intermediate','final']);
 const STAGE_POOLS=Object.freeze(Object.keys(STAGE_POOL_RANK).reduce((p,pool)=>{
   p[pool]=Object.freeze(STAGES.list.filter(s=>s.pool===pool).map(s=>s.id)); return p;
 },Object.create(null)));
+/* Run policies own flow and progression, while maps, encounters, actors and combat
+   remain shared content. Future progression/scroller modes register policy data
+   here instead of forking update, selection, reward, or scoring implementations. */
+class RunPolicyDefinition{
+  constructor(id,data){
+    this.id=id;
+    Object.assign(this,{
+      startStage:1, cycleLength:STAGE_POOL_SEQUENCE.length,
+      stagePoolAt:stage=>STAGE_POOL_SEQUENCE[(stage-1)%STAGE_POOL_SEQUENCE.length],
+      progressionTierAt:stage=>Math.floor((stage-1)/STAGE_POOL_SEQUENCE.length),
+      hasBossAt:()=>true, hasMinibossAt:()=>true,
+      bossScoreAt:stage=>CFG.BOSS_SCORE*stage,
+      nextStageAt:stage=>stage+1,
+      afterBoss:()=>giveRelic(), afterRoute:()=>nextLoop(),
+    },data);
+    for(const key of ['stagePoolAt','progressionTierAt','hasBossAt','hasMinibossAt','bossScoreAt','nextStageAt','afterBoss','afterRoute'])
+      if(typeof this[key]!=='function') throw new Error('Run policy '+id+' needs '+key+'()');
+    if(!(this.cycleLength>0)) throw new Error('Run policy '+id+' needs a positive cycleLength');
+    for(let stage=1;stage<=this.cycleLength;stage++){
+      const pool=this.stagePoolAt(stage);
+      if(!STAGE_POOLS[pool]||!STAGE_POOLS[pool].length)
+        throw new Error('Run policy '+id+' selects empty stage pool '+pool);
+    }
+    Object.freeze(this);
+  }
+}
+const RUN_POLICIES=new DefinitionRegistry('run policy');
+RUN_POLICIES.register(new RunPolicyDefinition('endless_build',{}));
+let activeRunPolicyId='endless_build';
+const RUN_POLICY=()=>RUN_POLICIES.get(activeRunPolicyId);
+function selectRunPolicy(id){ RUN_POLICIES.get(id); activeRunPolicyId=id; }
 const BIO=()=>STAGES.get(biome);
 function updateArenaFx(dt){
   if(env!=='cave') return;
@@ -3979,11 +4020,12 @@ let guaranteed=[];
 function buildGuaranteed(){
   guaranteed=[];
   const tier=progressionTier();
-  const routeLength=stageDistance(), minibossAt=routeLength*CFG.MINIBOSS_AT;
+  const routeLength=stageDistance(), hasMiniboss=RUN_POLICY().hasMinibossAt(loop);
+  const minibossAt=routeLength*CFG.MINIBOSS_AT;
   const place=(kind,count,from,to)=>{
     for(let i=0;i<count;i++){
       let at=routeLength*(from+(to-from)*(count===1?0.5:i/(count-1)))+rnd(-18,18);
-      if(Math.abs(at-minibossAt)<32) at+=48;                   // keep the encounter runway clear
+      if(hasMiniboss&&Math.abs(at-minibossAt)<32) at+=48;     // keep the optional encounter runway clear
       at=clamp(at,60,routeLength-70);                           // and of the boss runway
       guaranteed.push({kind,at});
     }
@@ -4025,11 +4067,12 @@ function spawnLoopEntities(){
       spawnRoadsideScenery(tz+rnd(...profile.outerDepth),randomScenerySide()*rnd(...profile.outerOffset));
     nextTreeAt+=rnd(...profile.normalGap);
   }
-  const stageEnd=stageDistance(), minibossAtDist=stageEnd*CFG.MINIBOSS_AT;
+  const stageEnd=stageDistance(), hasMiniboss=RUN_POLICY().hasMinibossAt(loop);
+  const minibossAtDist=stageEnd*CFG.MINIBOSS_AT;
   while(dist+SPAWN_FAR > nextSpawnAt && nextSpawnAt < stageEnd-30){
     const worldPos=nextSpawnAt; nextSpawnAt+=CFG.SPAWN_GAP;   // the runway before the cave stays clean
     if(worldPos>stageEnd-40) continue;                    // clear runway before the boss
-    if(Math.abs(worldPos-minibossAtDist)<26) continue;    // clear runway around the miniboss
+    if(hasMiniboss&&Math.abs(worldPos-minibossAtDist)<26) continue; // clear its encounter runway
     spawnPattern(worldPos-dist);
   }
   /* guaranteed weapons: drop each one into a lane free of obstacles */
@@ -4042,7 +4085,7 @@ function spawnLoopEntities(){
     guaranteed.shift();
   }
   /* the active stage miniboss (spawned once per loop) */
-  if(!minibossSpawned && dist+CFG.Z_FAR > minibossAtDist){
+  if(hasMiniboss&&!minibossSpawned && dist+CFG.Z_FAR > minibossAtDist){
     minibossSpawned=true;
     const gate=new ObstacleEntity('minibossGate',minibossAtDist-dist);
     gate.lane=(Math.random()*3)|0; gate.t=0; obstacles.push(gate);
@@ -4452,8 +4495,10 @@ class EncounterActor{
   }
 }
 /* Every boss owns three authored combos: an opening, advanced, and master string.
-   A string starts only when its complete visible-step cost fits attacksLeft. The
-   cost is reserved up front; continuations cannot truncate or overspend it. */
+   A string starts only when its discounted length-aware cost fits attacksLeft. The
+   cost is reserved up front; continuations cannot truncate or overspend it.
+   Bear and Hydra traveling swipes intentionally use the same .34 body-follow rate;
+   difficulty scaling belongs to shared encounter tempo, never to model-specific art. */
 const BEAR_DUEL_ATTACKS=[
   {id:'left_maul',w:24,minTier:1,rec:0.72,steps:[
     {lanes:[0],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6}
@@ -4471,16 +4516,16 @@ const BEAR_DUEL_ATTACKS=[
     {lanes:[1,2],height:'mid',tele:1.08,travel:.36,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:7}
   ]},
   {id:'earthbreaker_rtl',w:8,minTier:2,rec:0.98,steps:[
-    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'earthbreaker_ltr',w:8,minTier:2,rec:0.98,steps:[
-    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
   ]},
   {id:'high_reaper_rtl',w:7,minTier:2,rec:1.0,steps:[
-    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'high_reaper_ltr',w:7,minTier:2,rec:1.0,steps:[
-    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
   ]},
   {id:'cross_execution',w:18,minTier:2,comboType:'authored',comboRank:1,rec:1.0,steps:[
     {lanes:[0],height:'mid',tele:0.88,travel:0.30,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6},
@@ -4494,7 +4539,7 @@ const BEAR_DUEL_ATTACKS=[
     {lanes:[2],height:'mid',tele:0.70,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:7},
     {lanes:[1],height:'mid',tele:0.42,travel:0.25,anim:'tele_bite',strike:'strike_bite',x:1,lunge:8},
     {lanes:[0],height:'mid',tele:0.42,travel:0.25,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:7},
-    {lanes:[0,1,2],height:'low',tele:.64,travel:.62,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:.64,travel:.62,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'closing_jaws',w:10,minTier:4,rec:1.18,steps:[
     /* Both paws begin beyond the warning lanes. Their physical hitboxes close as
@@ -4510,8 +4555,8 @@ const BEAR_DUEL_ATTACKS=[
     {lanes:[0,1],height:'mid',tele:0.38,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',x:.5,lunge:8},
     {lanes:[1,2],height:'mid',tele:0.36,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:8},
     {lanes:[1],height:'mid',tele:0.34,travel:0.22,anim:'tele_bite',strike:'strike_bite',x:1,lunge:10},
-    {lanes:[0,1,2],height:'low',tele:.54,travel:.56,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}},
-    {lanes:[0,1,2],height:'high',tele:.52,travel:.55,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.32,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:.54,travel:.56,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}},
+    {lanes:[0,1,2],height:'high',tele:.52,travel:.55,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
 ];
 /* The swamp fight is a neck-and-head duel: each head visibly owns a lane, while
@@ -4791,13 +4836,6 @@ function attachBossRecoveryProfile(attacks,species){
     if(step.comboRecoverTime===undefined) step.comboRecoverTime=
       (species==='turtle'&&step.strike&&step.strike.startsWith('strike_turtle_bite')) ? .16 : profile.comboTime;
     if(step.recoverPortion===undefined) step.recoverPortion=profile.portion;
-    /* Bear swipe staging is two-phase animation data. The old .46 tell keeps the
-       complete hesitation visible; the torso then catches up to .80 during the
-       active sweep so the improved constrained paw finish remains unchanged. */
-    if(species==='bear'&&step.sweep&&step.bodySweep){
-      step.bodySweepStartFactor=.46;
-      step.bodySweepFactor=.80;
-    }
   }
 }
 function freezeEncounterAttackSet(attacks){
@@ -4865,12 +4903,8 @@ function moveContactXs(actor,move,lanes){
   return out;
 }
 function sweepBodyLane(move,k){
-  const lane=sweepLaneAt(move.sweep,k), endFactor=move.bodySweepFactor===undefined?1:move.bodySweepFactor;
-  /* A model may stage its tell closer to centre, then smoothly add torso travel
-     once the strike begins. At k=0 this exactly matches the held tell pose; at
-     k=1 it exactly preserves the final contact pose, with no phase teleport. */
-  const startFactor=move.bodySweepStartFactor===undefined?endFactor:move.bodySweepStartFactor;
-  const factor=lerp(startFactor,endFactor,easeInOut(clamp(k,0,1)));
+  const lane=sweepLaneAt(move.sweep,k);
+  const factor=move.bodySweepFactor===undefined?1:move.bodySweepFactor;
   return lerp(1,lane,factor)+(move.bodyOffset||0);
 }
 function cueBossMove(){
@@ -4975,10 +5009,12 @@ function activeBossAttackSet(){ return activeBossDefinition().attacks; }
 function bossSpeciesScale(){ return activeBossDefinition().scale; }
 function randomComboLength(cycle,movesLeft){
   /* Length has no fixed ceiling: every four cycles widen the possible chain.
-     The remaining boss-move budget caps the generated string before selection. */
+     Convert the remaining discounted budget back into a visible-step capacity;
+     this preserves endless growth without allowing a selected string to overspend. */
   const growth=Math.max(0,Math.floor((cycle-CFG.RANDOM_COMBO_TIER)/4));
   const min=3+Math.floor(growth/3), max=min+2+growth;
-  return Math.min(movesLeft,min+Math.floor(Math.random()*(max-min+1)));
+  const capacity=Math.floor(movesLeft/CFG.COMBO_MOVE_COST_RATIO);
+  return Math.min(capacity,min+Math.floor(Math.random()*(max-min+1)));
 }
 function evasiveWeightFactor(cycle){
   const age=Math.max(0,cycle-3), start=CFG.EVASIVE_WEIGHT_START, limit=CFG.EVASIVE_WEIGHT_LIMIT;
@@ -5110,7 +5146,13 @@ function buildRandomBossCombo(cycle,movesLeft){
 }
 function encounterTempoMultiplier(phase,cycle){
   const tempo=CFG.ENCOUNTER_TEMPO, start=tempo[phase];
-  return tempo.floor+(start-tempo.floor)/(1+Math.max(0,cycle-1)*tempo.curve);
+  const elapsed=Math.max(0,cycle-1), scaled=elapsed*tempo.curve;
+  /* Reuse the original progression pressure instead of adding a second timing
+     system. Cubing it leaves onboarding almost untouched, then gradually lowers
+     the shared asymptote for normal hits, swipes, combos, recovery and cadence. */
+  const pressure=scaled/(1+scaled);
+  const floor=lerp(tempo.floor,tempo.deepFloor,pressure*pressure*pressure);
+  return floor+(start-floor)/(1+scaled);
 }
 function encounterTempoRatio(phase,cycle){
   return encounterTempoMultiplier(phase,cycle)/CFG.ENCOUNTER_TEMPO[phase];
@@ -5155,8 +5197,11 @@ function applyEncounterTempo(attack,cycle,hesitationScale=1){
   }));
   return copy;
 }
+function comboMoveCostForLength(length){
+  return Math.max(CFG.COMBO_MOVE_COST_MIN,Math.ceil(length*CFG.COMBO_MOVE_COST_RATIO));
+}
 function attackMoveCost(attack){
-  return encounterAttackGroup(attack)==='combo'?attack.steps.length:1;
+  return encounterAttackGroup(attack)==='combo'?comboMoveCostForLength(attack.steps.length):1;
 }
 function chooseBossAttack(movesLeft=boss.attacksLeft){
   const cycle=bossCombatTier();             // loop-based ladder; every loop-6 boss gets rank 1
@@ -5172,7 +5217,7 @@ function chooseBossAttack(movesLeft=boss.attacksLeft){
   /* Lock the target when the tell is selected. Moving during the telegraph remains
      the intended dodge; only standalone single-lane attacks track this snapshot. */
   unlocked=targetSingleLaneAttackPool(unlocked,clamp(Math.round(player.x),0,2));
-  if(cycle>=CFG.RANDOM_COMBO_TIER&&movesLeft>=3){
+  if(cycle>=CFG.RANDOM_COMBO_TIER&&movesLeft>=CFG.COMBO_MOVE_COST_MIN){
     unlocked.push({id:'random_chain',randomCombo:true,
       w:randomComboSelectionWeight(unlocked)});
   }
@@ -5207,7 +5252,7 @@ function hurtBoss(dmg,fromCounter){
 /* called once the FULL volley has landed: score first, THEN the kill animation */
 function resolveVolley(){
   if(boss.hp<=0){
-    const overkill=Math.max(0,-boss.hp), pts=CFG.BOSS_SCORE*loop, okPts=Math.round(overkill*CFG.OVERKILL_MULT);
+    const overkill=Math.max(0,-boss.hp), pts=RUN_POLICY().bossScoreAt(loop), okPts=Math.round(overkill*CFG.OVERKILL_MULT);
     bossScoreRun+=pts; overkillRun+=okPts; bossKills++;
     floater(VW/2,300,'BOSS SLAIN  +'+pts,'#ffe37a',26);
     if(okPts>0) floater(VW/2,336,'OVERKILL '+overkill+' ×'+CFG.OVERKILL_MULT+'  +'+okPts,'#ff9a3a',20);
@@ -5273,7 +5318,7 @@ function updateBoss(dt){
       if(pack>0){ floater(VW/2,340,activeMinibossDefinition().byeLine,'#9ecbff',17); }
       pack=0; packTypes=[];                     // its debt is paid — the beast returns to its wild
       if(hasRelic('idol')){ awardGold(40); floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
-      boss=null; giveRelic();                    // keep the now-empty defeated arena behind rewards
+      boss=null; RUN_POLICY().afterBoss(loop);   // policy chooses reward/continuation; arena stays available
     }
     return;
   }
@@ -5339,7 +5384,7 @@ function updateBoss(dt){
       } else {
         boss.attack=chooseBossAttack(boss.attacksLeft);
         const planned=boss.attack.steps?boss.attack.steps.length:1;
-        boss.attacksLeft-=attackMoveCost(boss.attack); // reserve the complete string before it starts
+        boss.attacksLeft-=attackMoveCost(boss.attack); // reserve the complete discounted cost before it starts
         if(boss.attack.comboType) floater(VW/2,250,
           (boss.attack.comboType==='random'?'WILD CHAIN':'BOSS COMBO')+' x'+planned,
           boss.attack.comboType==='random'?'#ff5b3d':'#ff9a3a',16);
@@ -5613,6 +5658,14 @@ function playEncounterSound(def=activeMinibossDefinition()){
   const sound=SFX[def.sound]; if(typeof sound==='function') sound();
 }
 function validateEncounterHierarchy(){
+  const tempo=CFG.ENCOUNTER_TEMPO;
+  if(!(tempo.deepFloor>0&&tempo.deepFloor<=tempo.floor&&
+       tempo.floor<=Math.min(tempo.tele,tempo.travel,tempo.recovery)))
+    throw new Error('ENCOUNTER_TEMPO floors must be positive and ordered below phase starts');
+  if(!(CFG.COMBO_MOVE_COST_RATIO>0&&CFG.COMBO_MOVE_COST_RATIO<=1))
+    throw new Error('COMBO_MOVE_COST_RATIO must be within (0, 1]');
+  if(CFG.COMBO_MOVE_COST_MIN<2||comboMoveCostForLength(3)>CFG.COMBO_MOVE_COST_MIN)
+    throw new Error('COMBO_MOVE_COST_MIN must fund the shortest three-step random combo');
   for(const stage of STAGES.list){
     for(const role of ['boss','miniboss']){
       const ids=role==='boss'?stage.bossIds:stage.minibossIds;
@@ -6265,13 +6318,14 @@ function shopTap(pt){
   if(pt.x>VW/2-95&&pt.x<VW/2+95&&pt.y>688&&pt.y<740){ nextLoop(); }   // RIDE ON
 }
 function nextLoop(){
-  loop++; dist=0; roadScroll=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
+  const policy=RUN_POLICY();
+  loop=policy.nextStageAt(loop); dist=0; roadScroll=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
   arrows=0; lances=0;                        // weapons reset every loop — all were spent on the boss
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[];
   minibossSpawned=false; buildGuaranteed();
   biome=biomeOf(loop); env='forest'; oakUsed=false;
   floater(VW/2,300,'STAGE '+loop+' — '+BIO().enterLine,'#e8e2d0',20);
-  if((loop-1)%STAGE_POOL_SEQUENCE.length===0&&loop>1)
+  if((loop-policy.startStage)%policy.cycleLength===0&&loop>policy.startStage)
     floater(VW/2,340,'A NEW CYCLE — THE ROAD QUICKENS...','#ff9a3a',17);
   setMode('run');
 }
@@ -6333,7 +6387,7 @@ function commitFinalScore(){
 }
 function resetRun(){
   stageRouteSeed=(Math.random()*0x7fffffff)|0;
-  loop=1; dist=0; roadScroll=0; gold=0; goldEarned=0; runDistance=0; arrows=0; lances=0; paused=false; pausePhotoMode=false; env='forest'; biome=biomeOf(1); oakUsed=false;
+  loop=RUN_POLICY().startStage; dist=0; roadScroll=0; gold=0; goldEarned=0; runDistance=0; arrows=0; lances=0; paused=false; pausePhotoMode=false; env='forest'; biome=biomeOf(loop); oakUsed=false;
   scoreShown=0; newBestThisRun=false;
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
   relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null; // all FIVE slots, empty
@@ -7231,7 +7285,11 @@ function update(dt){
             floater(VW/2,180,activeMinibossDefinition().fleeLine,'#8b8fa0',14); }
         }
       }
-    if(dist>=stageDistance()) startBoss();
+    if(dist>=stageDistance()){
+      const policy=RUN_POLICY();
+      if(policy.hasBossAt(loop)) startBoss();
+      else policy.afterRoute(loop);
+    }
     /* Cull only after swept collision checks; at extreme speeds an entity may
        already be behind the camera on the same frame it crosses the rider. */
     cullObstacles(); cullBehind(pickups,-7);
