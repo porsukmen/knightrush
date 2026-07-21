@@ -121,7 +121,6 @@ const CFG = {
   PAIR_WEIGHT_LIMIT:0.84,  // base-family ceiling; progression can later tip them above single lanes
   PAIR_WEIGHT_CURVE:0.14,
   PINCH_WEIGHT_SCALE:0.52, // paired inward sweeps stay substantially rarer than other evasive mechanics
-  PINCH_JUMP_GRACE : 0.18, // early jumps remain safe briefly after landing at the central pinch snap
   ENCOUNTER_TEMPO : Object.freeze({tele:1.70,travel:1.50,recovery:1.55,floor:.78,deepFloor:.60,curve:.22,
                                      comboStart:1.20,comboCurve:.28}),
                          // loop 1 matches Move Labs; a shared late bend makes every boss faster safely
@@ -205,10 +204,43 @@ class DefinitionRegistry{
    - DRAW_ITEM_POOL is reused every frame. Add world objects through queueWorldDraw;
      never restore per-tree/per-obstacle/per-pickup frame closures.
    - Generic particles support a `behindBoss` layer. Arena emissions such as the
-     magma chamber's beams/embers draw after the arena but before world actors;
-     hit bursts, status effects and floaters remain in the front feedback layer.
-     All emission and slash aging occurs in update callbacks; render is read-only,
-     so pause and hit-stop cannot create, advance or leak effects.
+      magma chamber's beams/embers draw after the arena but before world actors;
+      hit bursts, status effects and floaters remain in the front feedback layer.
+      All emission and slash aging occurs in update callbacks; render is read-only,
+      so pause and hit-stop cannot create, advance or leak effects.
+   - BEAR MODEL-HIT PROTOTYPE: the shared presentation sample and cached Bear pose
+      drive both rendering and swept paw contact. Normal paws, traveling low/high
+      swipes and pincers resolve immediately on visible contact; bites plus stationary
+      three-lane jump/duck moves remain first-class frame hits. Move Lab draws the
+      exact model cores, near shells, swept trail and player hurt capsules. Each Bear
+      paw joint carries a square-inscribed palm radius: red meets the paw's side
+      midpoints while corner pixels can pass through, and gold extends beyond the
+      complete hand as an aura. Both follow limb perspective and boss projection
+      scale. Swipe contact is centred on the rotated hand, never the wrist. Low and
+      high slides share one paw size and opposite fixed clearance edges: low anchors
+      its core top to MODEL_JUMP_CLEARANCE_Y, while high anchors its core bottom to
+      MODEL_DUCK_CLEARANCE_Y, so resizing cannot change either required posture.
+      Move Lab keeps live cyan player volumes and moving red/gold geometry visible
+      after resolution, with separate PENDING, LATE HIT and PERFECT snapshot states.
+      LATE HIT recaptures the death frame and draws the exact swept red corridor
+      through the white knight volumes instead of relabeling the gold-contact frame.
+      Traveling-slide gold contact arms PERFECT while red remains lethal through
+      the visible sweep. Bear pinch confirms at its terminal physical clap instead,
+      so the paws' tiny settling tail cannot re-kill a valid two-hand dodge. The paused lab reuses the
+      active actor/playlist and exposes move restart, 0.25x-2x simulation speed, and
+      stage selection in ±1/±10 steps. Stage changes rebuild the playlist through
+      live encounter tempo while pinning the lab's original boss definition and arena.
+   - MODEL_DODGE_VIABILITY protects model-driven PERFECTs as shared encounter tempo
+      accelerates. At hazard spawn it samples the exact neutral-player gold/red
+      contact clocks and preserves `perfectWin + profileBonus + (redRaw-goldRaw) *
+      travel - clearanceTime`. The target is the move's accepted reference budget
+      or 0.060s usable after one 30 FPS frame, whichever is larger. Compensation
+      exposes timing first (maximum +0.060s), then grows only the visible gold aura
+      (maximum 2.06x); lethal red geometry never changes. Physical travel is the
+      final safety net: ordinary mid paws stop at 0.28s and low/high posture contacts
+      stop at 0.34s. Pinch is excluded because its accepted two-paw clap owns a
+      separate SAFE/PERFECT contract. Runtime profiles are derived clones; frozen
+      encounter/contact definitions remain immutable, and Move Lab reads the clone.
    - ATMOSPHERES owns stage ambient-particle behavior. Motion runs only through
      updateAmbient; drawAmbient is render-only, so pause/hit-stop freezes ambience.
      Future stages register an atmosphere definition and reference its id.
@@ -252,7 +284,11 @@ class DefinitionRegistry{
      Authored and procedural strings reserve their shared discounted length-aware
      cost up front; every internal step still resolves its own tell, hitbox, impact
      and recovery.
-    - Pinch early-jump forgiveness is collision grace, not extra PERFECT timing.
+    - Bear pinch resolves at its physical centre clap. A centred rider clearly over
+      its 70px normal-clear height is SAFE; both gold shells plus valid timing is PERFECT.
+      Grounded, late and individual outer-paw contacts remain lethal. The paws still
+      rotate inward and lower onto the shared jump edge, and Cave King uses its
+      neighboring swipe travel so the same tempo curve scales both equally.
       Boss and miniboss telegraph, strike animation/travel, recovery and cadence
       match Move Lab in loop 1 and follow one bounded curve from loop 2 onward;
       physical dodge floors remain authoritative for both roles. Authored and random
@@ -270,8 +306,9 @@ class DefinitionRegistry{
      its visible centre edge is anchored to the t=1 HIT/PERFECT frame (never its
      recessed baseline), keeping the jump timing readable from the artwork.
    - Move Labs draw PERFECT NOW above the rider only during the resolver's live
-     input window. Fixed hits use their exact impact clock; sweeps sample the same
-     eased collision path and pincer snap threshold. The lamp is debug-only.
+     input window. Model prediction uses cached pre-dodge hurt volumes so posture
+     cannot make the lamp flicker, includes profile timing bonuses, and suppresses
+     moves with no future gold contact. Pinch uses its physical clap. The lamp is debug-only.
    - Boss damage chains are encounter-local. Counters and follower hits share the
      same chain contract as weapons; miniboss taming counters remain outside it.
    - Gold earned is tracked independently from spendable gold, so shopping cannot
@@ -336,6 +373,13 @@ const HORIZON_Y=286, PLAYER_Y=648, GROUND_Y=PLAYER_Y-14;
 const ATTACK_GROUND_Y=PLAYER_Y+6; // centreline of the red lane warning and every ground-contact model
 const BODY_ATTACK_Y=PLAYER_Y-60;  // rider/horse body contact for bites and lane strikes
 const DUCK_ATTACK_Y=PLAYER_Y-108; // above the crouched profile, through the standing head/shoulders
+/* Model attacks scale around fixed posture-clearance edges. Low attacks keep their
+   upper lethal edge at JUMP; high attacks keep their lower edge at DUCK. */
+const MODEL_JUMP_CLEARANCE_Y=PLAYER_Y-76;
+const MODEL_DUCK_CLEARANCE_Y=DUCK_ATTACK_Y+34;
+/* Closing paws begin as upright walls whose core reaches above even the horse's
+   apex. Only their final palm-to-palm rotation lowers the top to JUMP clearance. */
+const MODEL_PINCH_WALL_TOP_Y=MODEL_JUMP_CLEARANCE_Y-34;
 const cvs=document.getElementById('game');
 /* opaque context: skips per-frame alpha compositing with the page — measurably
    cheaper on older phones. `let`, so draw helpers can retarget g at offscreen
@@ -456,6 +500,7 @@ function handleAction(a,pt){
   }
   if(settingsOpen){ if(a==='tap'&&pt) settingsTap(pt); return; }
   if(paused){
+    if(a==='tap'&&pt&&moveLabPauseTap(pt)) return;
     if(a==='tap'&&pt&&pt.x>VW/2-90&&pt.x<VW/2+90){
       if(pt.y>VH/2+20&&pt.y<VH/2+66){ pausePhotoMode=true; SFX.swipe(); return; }
       if(pt.y>VH/2+78&&pt.y<VH/2+124){ settingsOpen=true; SFX.swipe(); return; }
@@ -511,6 +556,22 @@ function handleAction(a,pt){
 }
 addEventListener('keydown',e=>{
   if(paused&&pausePhotoMode){ e.preventDefault(); return; }
+  if(paused&&debugMoveLabActive()){
+    if(e.key==='ArrowLeft'){ changeMoveLabSelection(-1); e.preventDefault(); return; }
+    if(e.key==='ArrowRight'){ changeMoveLabSelection(1); e.preventDefault(); return; }
+    if(e.key==='ArrowUp'){ changeMoveLabSpeed(1); e.preventDefault(); return; }
+    if(e.key==='ArrowDown'){ changeMoveLabSpeed(-1); e.preventDefault(); return; }
+    if(e.key==='['||e.key==='PageDown'){
+      changeBossMoveLabStage(e.shiftKey?-10:-1); e.preventDefault(); return;
+    }
+    if(e.key===']'||e.key==='PageUp'){
+      changeBossMoveLabStage(e.shiftKey?10:1); e.preventDefault(); return;
+    }
+    if(e.key==='r'||e.key==='R'){
+      const actor=activeMoveLabActor(); restartMoveLabSelection(actor,actor._moveLab.selected||0);
+      SFX.relic(); e.preventDefault(); return;
+    }
+  }
   const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',
              a:'left',d:'right',w:'up',s:'down',' ':'up',Enter:'tap'};
   if(e.key==='m'||e.key==='M'){SFX.toggle();return;}
@@ -827,44 +888,98 @@ function mixCol(a,b,f){
 }
 
 
-/* ---- THE CAVE BEAR NATURAL: low, humped brown-bear anatomy; no humanoid chest ---- */
-function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs){
+/* Bear pose data is sampled once into actor-owned scratch objects. Rendering and
+   model contact therefore consume the same named paw centres and coefficients. */
+function createBearPose(){
+  const leg=()=>({sx:0,sy:0,ex:0,ey:0,px:0,py:0,depth:1,fall:0,punch:0,swipeDir:0,pawTurn:0});
+  const joint=()=>({x:0,y:0,depth:1,r:0});
+  return {rightLeg:leg(),leftLeg:leg(),rightPaw:joint(),leftPaw:joint(),jaw:joint(),
+    contactMin:0,contactMax:0,contactCount:0};
+}
+const BEAR_PAW_VISUAL_CENTER_Y=2.5;
+/* The paw is roughly a 10.4px square. Its lethal circle is inscribed: the
+   circumference meets the middle of its sides while corner/claw pixels may pass
+   harmlessly. Gold expands beyond the 7.7px corner bound to restore a clear aura. */
+const BEAR_PAW_CORE_RADIUS=5.2;
+const BEAR_PAW_STRIKE_SCALE=.72,BEAR_PAW_SWIPE_SCALE=.90;
+function sampleBearForeleg(out,sx,sy,side,lift,slam,thrust,targetX,targetY,swipeDir,groundedSwipe,caveQuake,
+  attackPawScale,pawTurn){
+  const rise=clamp(lift,0,1),drop=clamp(slam,0,1),fall=drop*drop,punch=clamp(thrust,0,1);
+  /* Organic model-hit paws contract as they release. This keeps the rendered hand
+     posture-sized and dodgeable; frame-hit quake/shove poses retain their authored
+     perspective growth. Recovery reverses the same scale instead of popping. */
+  const attackScale=attackPawScale>0?lerp(1,attackPawScale,easeOut(Math.max(drop,punch))):1;
+  const perspectiveDepth=caveQuake?1:swipeDir?1+fall*.24:1+fall*.62+punch*.82;
+  /* Keep the authored toward-camera growth, then temper it with the attack-paw
+     contraction. The earlier version replaced that growth and made hands look tiny. */
+  const depth=perspectiveDepth*attackScale;
+  let ex=lerp(sx+side*1.2,sx+side*(caveQuake?2.4:swipeDir?8.8:7.5),rise);
+  let ey=lerp(sy+10.5,sy-(swipeDir?10.5:8.5),rise);
+  let px2=lerp(sx+side*2.2,sx+side*(caveQuake?2.2:swipeDir?9.4:2.8),rise);
+  let py2=lerp(48,sy-(swipeDir?17:19),rise);
+  if(swipeDir){
+    /* targetX is the visible paw centre. Compensate for the rotated palm centre so
+       the sampled hand, red core and authored travel path occupy the same place. */
+    const turnAngle=-swipeDir*Math.PI*.5*pawTurn;
+    const centreX=-Math.sin(turnAngle)*BEAR_PAW_VISUAL_CENTER_Y*depth;
+    const centreY=Math.cos(turnAngle)*BEAR_PAW_VISUAL_CENTER_Y*depth;
+    /* Opposite fixed edges: low centre sits below JUMP by its radius; high centre
+       sits above DUCK by its radius. Resizing cannot change either dodge height. */
+    const swipeY=targetY+(groundedSwipe?1:-1)*BEAR_PAW_CORE_RADIUS*depth-centreY;
+    px2=lerp(px2,targetX-centreX,fall); py2=lerp(py2,swipeY,fall);
+    const bendX=lerp(sx,px2,.48)-swipeDir*2.2,bendY=lerp(sy,py2,.46)-4.5;
+    ex=lerp(ex,bendX,fall); ey=lerp(ey,bendY,fall);
+  } else {
+    ex=lerp(ex,sx+side*2.2,fall); ey=lerp(ey,sy+9+fall*8,fall);
+    px2=lerp(px2,targetX,fall);
+    /* Standard model paws target their visible centre, not the wrist origin. */
+    py2=lerp(py2,targetY-(attackPawScale>0?BEAR_PAW_VISUAL_CENTER_Y*depth:0),fall);
+  }
+  ex=lerp(ex,sx+side*3,punch); ey=lerp(ey,sy+3,punch);
+  px2=lerp(px2,sx+side*2,punch); py2=lerp(py2,sy+18,punch);
+  out.sx=sx; out.sy=sy; out.ex=ex; out.ey=ey; out.px=px2; out.py=py2;
+  out.depth=depth; out.fall=fall; out.punch=punch; out.swipeDir=swipeDir; out.pawTurn=pawTurn;
+}
+function bearPawToScreen(out,leg,presentation,lean){
+  const angle=-leg.swipeDir*Math.PI*.5*leg.pawTurn;
+  const centreX=-Math.sin(angle)*BEAR_PAW_VISUAL_CENTER_Y*leg.depth;
+  const centreY=Math.cos(angle)*BEAR_PAW_VISUAL_CENTER_Y*leg.depth;
+  const dx=(leg.px+centreX-22)*U,dy=(leg.py+centreY-55)*U,c=Math.cos(lean),s=Math.sin(lean);
+  out.x=presentation.x+(dx*c-dy*s)*presentation.scale;
+  out.y=presentation.y+(dx*s+dy*c)*presentation.scale;
+  out.depth=leg.depth;
+  out.r=BEAR_PAW_CORE_RADIUS*leg.depth*presentation.scale*U;
+}
+function sampleBearPose(presentation,out){
+  out=out||createBearPose();
+  let state=presentation.anim,t=presentation.t;
   const poseRecovery=state.startsWith('recover_bear_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
   if(poseRecovery){ state=state.slice(state.indexOf(':')+1); t=1-easeInOut(poseRecoveryT); }
   const swipeRecovery=poseRecovery&&(state.includes('bear_low_')||state.includes('bear_high_')||state==='strike_bear_pincer');
   const caveQuake=state==='tele_cave_quake'||state==='strike_cave_quake';
-  g.save(); g.translate(x,y); g.scale(scale,scale);
-  const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U),Math.round(b*U),Math.round(w*U),Math.round(h*U)); };
-  /* Convert the red screen-space lane marks back into sprite coordinates. At full
-     strike extension each paw therefore lands on the exact centre of its mark. */
-  const contactLocal=(contactXs||[]).map(tx=>22+(tx-x)/(Math.max(.001,scale)*U));
-  let rightContact=contactLocal.length?contactLocal[0]:4.2;
-  let leftContact=contactLocal.length>1?contactLocal[contactLocal.length-1]:(contactLocal.length?contactLocal[0]:39.8);
-  const clawBaseReach=5.7; // paw-centre -> claw root at full swipe depth
+  const contactXs=presentation.contactXs||ALL_LANES;
+  const count=contactXs.length,den=Math.max(.001,presentation.scale)*U;
+  let first=count?22+(contactXs[0]-presentation.x)/den:4.2;
+  let last=count?22+(contactXs[count-1]-presentation.x)/den:39.8;
+  let rightContact=first,leftContact=count>1?last:(count?first:39.8);
+  out.contactCount=count; out.contactMin=count?Math.min(first,last):0; out.contactMax=count?Math.max(first,last):0;
   /* Cave Quake is a local ground slam, not a reach toward the knight. Its paws
      return directly beneath their own shoulders and strike beside its forefeet;
      the universal fullLow hazard is the resulting tremor across the road. */
   const bearGroundY=50.6, localPawTipReach=8.1;
   if(caveQuake){ rightContact=6.8; leftContact=37.2; }
-  const directionalSwipe=state.includes('bear_low_')||state.includes('bear_high_');
-  if(directionalSwipe){
-    /* The hitbox rides the claw root, not the paw centre. With the torso following
-       at .80, that root stops on the opposite leg and the paw cannot cross it. */
-    if(state.endsWith('_rtl')) leftContact=Math.max(leftContact+clawBaseReach,15.2);
-    if(state.endsWith('_ltr')) rightContact=Math.min(rightContact-clawBaseReach,28.8);
-  }
   if(state==='tele_bear_pincer'||state==='strike_bear_pincer'){
-    /* Two tiny end constraints meet at the claw roots. Paw centres remain one
-       clawBaseReach apart on either side, so the paws can touch but never overlap
-       or pass through one another as the universal tips close. */
-    rightContact-=clawBaseReach; leftContact+=clawBaseReach;
+    /* The larger perspective-scaled hands finish palm-to-palm around centre. */
+    rightContact-=4.7; leftContact+=4.7;
   }
   /* The red lane hue is centred at PLAYER_Y+6. This is the authoritative road
      plane for attack art as well as collision feedback. */
-  const groundContactY=55+(ATTACK_GROUND_Y-y)/(Math.max(.001,scale)*U);
-  const highContactY=55+(DUCK_ATTACK_Y-y)/(Math.max(.001,scale)*U);
-  const biteContactY=55+(BODY_ATTACK_Y-y)/(Math.max(.001,scale)*U);
+  const groundContactY=55+(ATTACK_GROUND_Y-presentation.y)/den;
+  const jumpContactY=55+(MODEL_JUMP_CLEARANCE_Y-presentation.y)/den;
+  const pinchWallContactY=55+(MODEL_PINCH_WALL_TOP_Y-presentation.y)/den;
+  const highContactY=55+(MODEL_DUCK_CLEARANCE_Y-presentation.y)/den;
+  const biteContactY=55+(BODY_ATTACK_Y-presentation.y)/den;
   let crouch=0, lean=0, headY=0, headOut=0, jaw=0, snarl=0;
   let rightLift=0, leftLift=0, rightSlam=0, leftSlam=0, highThrust=0;
   let rightTargetY=groundContactY,leftTargetY=groundContactY;
@@ -961,6 +1076,79 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs){
     rightSlam=lerp(rightSlam,0,s); leftSlam=lerp(leftSlam,0,s);
     highThrust=lerp(highThrust,0,s);
   }
+  const pincer=state.includes('bear_pincer');
+  const rightSwipe=(state.includes('bear_low_ltr')||state.includes('bear_high_ltr')||pincer)?1:0;
+  const leftSwipe=(state.includes('bear_low_rtl')||state.includes('bear_high_rtl')||pincer)?-1:0;
+  if(rightSwipe&&!state.includes('_high_')) rightTargetY=jumpContactY;
+  if(leftSwipe&&!state.includes('_high_')) leftTargetY=jumpContactY;
+  /* A pinch is not two ordinary jumpable swipes. The paws close upright as tall
+     side walls. When their physical red cores approach contact, both palms turn
+     inward and their upper edge lowers organically onto the normal jump line. */
+  let pincerUnlock=0;
+  if(pincer){
+    if(state==='strike_bear_pincer'){
+      const drop=Math.min(rightSlam,leftSlam),fall=drop*drop;
+      const depth=(1+fall*.24)*lerp(1,BEAR_PAW_SWIPE_SCALE,easeOut(drop));
+      const coreR=BEAR_PAW_CORE_RADIUS*depth*presentation.scale*U;
+      /* rightContact/leftContact include the enlarged-paw centre correction;
+         using raw lane targets would unlock before the visible cores meet. */
+      const separation=Math.abs(leftContact-rightContact)*den;
+      /* Begin the visible turn roughly one jump-rise before contact. The hands
+         are still horizontally too far away to pass here; this is anticipation,
+         not safety or collision grace. */
+      const turnLead=Math.max(18,coreR*6.5);
+      pincerUnlock=easeInOut(clamp((coreR*2+turnLead-separation)/turnLead,0,1));
+    }
+    rightTargetY=leftTargetY=lerp(pinchWallContactY,jumpContactY,pincerUnlock);
+  }
+  const modelSwipe=rightSwipe||leftSwipe;
+  const modelPaw=state==='tele_paw_right'||state==='strike_paw_right'||state==='tele_paw_left'||state==='strike_paw_left'||
+    state==='tele_double_paw'||state==='strike_double_paw';
+  const pawTurn=swipeRecovery?1-easeOut(clamp(easeInOut(poseRecoveryT)/.65,0,1)):pincer?pincerUnlock:1;
+  const attackPawScale=modelSwipe?BEAR_PAW_SWIPE_SCALE:modelPaw?BEAR_PAW_STRIKE_SCALE:0;
+  sampleBearForeleg(out.rightLeg,9,22-crouch,-1,rightLift,rightSlam,highThrust,rightContact,rightTargetY,
+    rightSwipe,state.includes('bear_low_ltr')||pincer,caveQuake,attackPawScale,pawTurn);
+  sampleBearForeleg(out.leftLeg,35,22-crouch,1,leftLift,leftSlam,highThrust,leftContact,leftTargetY,
+    leftSwipe,state.includes('bear_low_rtl')||pincer,caveQuake,attackPawScale,pawTurn);
+  bearPawToScreen(out.rightPaw,out.rightLeg,presentation,lean);
+  bearPawToScreen(out.leftPaw,out.leftLeg,presentation,lean);
+  const hy=-1+headY-crouch,snoutY=hy+9+headOut*.25;
+  const jawLocalX=22,jawLocalY=snoutY+12+jaw*3;
+  const jdx=(jawLocalX-22)*U,jdy=(jawLocalY-55)*U,jc=Math.cos(lean),js=Math.sin(lean);
+  out.jaw.x=presentation.x+(jdx*jc-jdy*js)*presentation.scale;
+  out.jaw.y=presentation.y+(jdx*js+jdy*jc)*presentation.scale; out.jaw.depth=1;
+  out.state=state; out.t=t; out.poseRecovery=poseRecovery;
+  out.caveQuake=caveQuake; out.crouch=crouch; out.lean=lean;
+  out.headY=headY; out.headOut=headOut; out.jawOpen=jaw; out.snarl=snarl;
+  out.rightLift=rightLift; out.leftLift=leftLift; out.rightSlam=rightSlam; out.leftSlam=leftSlam;
+  out.highThrust=highThrust; out.rightTargetY=rightTargetY; out.leftTargetY=leftTargetY;
+  out.pincerUnlock=pincerUnlock;
+  out.groundContactY=groundContactY; out.bearGroundY=bearGroundY; out.hy=hy; out.snoutY=snoutY;
+  return out;
+}
+const BEAR_RENDER_POSE=createBearPose();
+const BEAR_CONTACT_PROFILES=Object.freeze({
+  /* Red is the square-inscribed palm circle. Gold reaches past every 7.7px corner
+     and leaves another pixel of breathing room as a readable aura. */
+  rightPaw:Object.freeze({joints:Object.freeze(['rightPaw']),visualBounds:true,coreScale:1,shellScale:1.76}),
+  leftPaw:Object.freeze({joints:Object.freeze(['leftPaw']),visualBounds:true,coreScale:1,shellScale:1.76}),
+  bothPaws:Object.freeze({joints:Object.freeze(['rightPaw','leftPaw']),visualBounds:true,coreScale:1,shellScale:1.76}),
+  swipePawLeft:Object.freeze({joints:Object.freeze(['leftPaw']),visualBounds:true,coreScale:1,shellScale:1.67}),
+  swipePawRight:Object.freeze({joints:Object.freeze(['rightPaw']),visualBounds:true,coreScale:1,shellScale:1.67}),
+  /* Pinch keeps the same lethal paws but gets a broader readable aura and a tiny
+     timing bonus; both gold shells must still touch for PERFECT. */
+  pincerPaws:Object.freeze({joints:Object.freeze(['rightPaw','leftPaw']),visualBounds:true,coreScale:1,shellScale:1.84,
+    pincer:true,perfectBonus:.04,normalClearHeight:70})
+});
+const BEAR_CONTACT_RIG=Object.freeze({profiles:BEAR_CONTACT_PROFILES,createPose:createBearPose,samplePose:sampleBearPose});
+/* ---- THE CAVE BEAR NATURAL: low, humped brown-bear anatomy; no humanoid chest ---- */
+function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
+  const pose=sampledPose||sampleBearPose({x,y,scale,anim:state,t,contactXs},BEAR_RENDER_POSE);
+  ({state,t}=pose);
+  const {poseRecovery,crouch,lean,headY,headOut,jawOpen:jaw,snarl,
+    groundContactY,bearGroundY}=pose;
+  g.save(); g.translate(x,y); g.scale(scale,scale);
+  const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U),Math.round(b*U),Math.round(w*U),Math.round(h*U)); };
   if(state==='dying'){
     if(t<.42) g.translate(rnd(-2,2)*t*8,0);
     else { const k=(t-.42)/.58; g.rotate(easeOut(k)*.68); g.translate(0,easeOut(k)*34); g.globalAlpha=1-k*k; }
@@ -993,47 +1181,15 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs){
     P(-w*.5,0,w,len,base); P(-w*.5,0,w*.28,len,lit); P(w*.22,1,w*.18,len-2,dark);
     g.restore();
   };
-  const foreleg=(sx,sy,side,lift,slam,thrust,targetX,targetY,swipeDir=0,groundedSwipe=false)=>{
-    const rise=clamp(lift,0,1), drop=clamp(slam,0,1); // drop² gives the slam visible weight
-    const fall=drop*drop, punch=clamp(thrust,0,1);
-    /* Quake paws do not grow toward the camera: they lift and fall on the same
-       local depth plane as the bear's feet, preventing any apparent reach. */
-    const depth=caveQuake?1:swipeDir?1+fall*.24:1+fall*.62+punch*.82;
-    const restElbow=[sx+side*1.2,sy+10.5];
-    const raisedElbow=[sx+side*(caveQuake?2.4:swipeDir?8.8:7.5),sy-(swipeDir?10.5:8.5)];
-    const restPaw=[sx+side*2.2,48];
-    /* Swipe paws draw toward their own upper corner, then land beside the matching
-       foot. The bear can remain on-screen while the long foreleg owns the sweep. */
-    const raisedPaw=[sx+side*(caveQuake?2.2:swipeDir?9.4:2.8),sy-(swipeDir?17:19)];
-    let ex=lerp(restElbow[0],raisedElbow[0],rise), ey=lerp(restElbow[1],raisedElbow[1],rise);
-    let px2=lerp(restPaw[0],raisedPaw[0],rise), py2=lerp(restPaw[1],raisedPaw[1],rise);
-    /* The elbow comes in first; the paw accelerates past it and lands in front. */
-    if(swipeDir){
-      /* This vertical offset puts the same claw-root constraint on the road plane;
-         neither the paw block nor its claws can continue beneath the ground. */
-      const swipeY=targetY-(groundedSwipe?5.2*depth+.35:0);
-      /* The paw descends and reaches sideways in one arc. Collision remains
-         disabled until fall reaches one, then this centre and the hitbox coincide. */
-      px2=lerp(px2,targetX,fall); py2=lerp(py2,swipeY,fall);
-      const bendX=lerp(sx,px2,.48)-swipeDir*2.2;
-      const bendY=lerp(sy,py2,.46)-4.5;
-      ex=lerp(ex,bendX,fall); ey=lerp(ey,bendY,fall);
-    } else {
-      ex=lerp(ex,sx+side*2.2,fall); ey=lerp(ey,sy+9+fall*8,fall);
-      px2=lerp(px2,targetX,fall); py2=lerp(py2,targetY,fall);
-    }
-    /* The old high spin is now a straight two-paw shove over the player's head. */
-    ex=lerp(ex,sx+side*3, punch); ey=lerp(ey,sy+3,punch);
-    px2=lerp(px2,sx+side*2, punch); py2=lerp(py2,sy+18,punch);
+  const foreleg=(leg,side)=>{
+    const sx=leg.sx,sy=leg.sy,ex=leg.ex,ey=leg.ey,px2=leg.px,py2=leg.py,
+      swipeDir=leg.swipeDir,depth=leg.depth,fall=leg.fall,punch=leg.punch;
     limb(sx,sy,ex,ey,5.8,side<0?sun:mid,side<0?mid:sun);
     P(ex-3.2,ey-2.8,6.4,5.6,fur); P(ex-2.5,ey-2,2,4.2,side<0?sun:mid);
     limb(ex,ey,px2,py2,swipeDir?6.8:6.2+fall*2.4+punch*2.8,fur,side<0?sun:mid);
     g.save(); g.translate(px2*U,py2*U);
     if(swipeDir){
-      /* Turn the paw back toward its resting vertical orientation throughout
-         recovery instead of waiting until the arm has already returned. */
-      const turn=swipeRecovery?1-easeOut(clamp(easeInOut(poseRecoveryT)/.65,0,1)):1;
-      g.rotate(-swipeDir*Math.PI/2*turn);
+      g.rotate(-swipeDir*Math.PI/2*leg.pawTurn);
     }
     g.scale(depth,depth);
     P(-4.5,-3.1,9,6.2,dark); P(-5.2,-1,10.4,5.8,fur); P(-4.3,-1,2.2,4.8,side<0?sun:mid);
@@ -1041,18 +1197,15 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs){
     for(let i=0;i<4;i++) P(-4.7+i*2.7,4.6,1.15,3.5,claw);
     g.restore();
   };
-  const pincer=state.includes('bear_pincer');
-  const rightSwipe=(state.includes('bear_low_ltr')||state.includes('bear_high_ltr')||pincer)?1:0;
-  const leftSwipe=(state.includes('bear_low_rtl')||state.includes('bear_high_rtl')||pincer)?-1:0;
-  foreleg(9,22-crouch,-1,rightLift,rightSlam,highThrust,rightContact,rightTargetY,rightSwipe,state.includes('bear_low_ltr')||pincer);
-  foreleg(35,22-crouch,1,leftLift,leftSlam,highThrust,leftContact,leftTargetY,leftSwipe,state.includes('bear_low_rtl')||pincer);
+  foreleg(pose.rightLeg,-1);
+  foreleg(pose.leftLeg,1);
 
   /* CAVE QUAKE: after both paws plant, a broad dirt ridge travels from the Bear
      down all three lanes. Its centre bows toward the rider into a U rather than
      arching away like an n. The leading edge reaches groundContactY at t=1. */
   if(!poseRecovery&&state==='strike_cave_quake'&&t>=.30){
     const waveK=easeOut(clamp((t-.30)/.70,0,1));
-    const laneHalf=contactLocal.length>1?(Math.max(...contactLocal)-Math.min(...contactLocal))*.5+7:30;
+    const laneHalf=pose.contactCount>1?(pose.contactMax-pose.contactMin)*.5+7:30;
     const half=lerp(11,laneHalf,waveK), curve=2.2+Math.sin(waveK*Math.PI)*2.6;
     /* The U's centre is its leading edge. Anchor that visible edge—not the
        invisible baseline—to groundContactY at t=1 so visual touch, HIT and the
@@ -4325,16 +4478,293 @@ function spawnSweepHazards(sweeps,height,travel,src){
   const group={resolved:false};
   for(const sweep of sweeps) spawnSweepHazard(sweep,height,travel,src,group);
 }
+function createPlayerHurtVolumes(){
+  return {count:2,capsules:[{x1:0,y1:0,x2:0,y2:0,r:0,id:'horse'},{x1:0,y1:0,x2:0,y2:0,r:0,id:'rider'}]};
+}
+const PLAYER_HURT_VOLUMES=createPlayerHurtVolumes();
+function samplePlayerHurtVolumesAt(out,x,baseY,duck){
+  const horse=out.capsules[0],rider=out.capsules[1];
+  horse.x1=horse.x2=x; horse.y1=baseY-45; horse.y2=baseY-10; horse.r=17;
+  rider.x1=rider.x2=x; rider.y1=baseY-93+duck*37; rider.y2=baseY-43+duck*8; rider.r=10.5;
+  return out;
+}
+function samplePlayerHurtVolumes(out=PLAYER_HURT_VOLUMES){
+  const x=laneX(player.x,1),baseY=PLAYER_Y-jumpHeight();
+  const duck=player.duckT<0?0:Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1));
+  return samplePlayerHurtVolumesAt(out,x,baseY,duck);
+}
+function pointSegmentDistanceSq(px,py,ax,ay,bx,by){
+  const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  const q=l2?clamp(((px-ax)*dx+(py-ay)*dy)/l2,0,1):0;
+  const x=ax+dx*q,y=ay+dy*q; return (px-x)*(px-x)+(py-y)*(py-y);
+}
+function orient2d(ax,ay,bx,by,cx,cy){ return (bx-ax)*(cy-ay)-(by-ay)*(cx-ax); }
+function segmentsCross(ax,ay,bx,by,cx,cy,dx,dy){
+  const a=orient2d(ax,ay,bx,by,cx,cy),b=orient2d(ax,ay,bx,by,dx,dy);
+  const c=orient2d(cx,cy,dx,dy,ax,ay),d=orient2d(cx,cy,dx,dy,bx,by);
+  return ((a<=0&&b>=0)||(a>=0&&b<=0))&&((c<=0&&d>=0)||(c>=0&&d<=0));
+}
+function segmentDistanceSq(ax,ay,bx,by,cx,cy,dx,dy){
+  if(segmentsCross(ax,ay,bx,by,cx,cy,dx,dy)) return 0;
+  return Math.min(pointSegmentDistanceSq(ax,ay,cx,cy,dx,dy),pointSegmentDistanceSq(bx,by,cx,cy,dx,dy),
+    pointSegmentDistanceSq(cx,cy,ax,ay,bx,by),pointSegmentDistanceSq(dx,dy,ax,ay,bx,by));
+}
+function sweptCircleTouchesVolumes(ax,ay,bx,by,r,volumes){
+  for(let i=0;i<volumes.count;i++){
+    const v=volumes.capsules[i],sum=r+v.r;
+    if(segmentDistanceSq(ax,ay,bx,by,v.x1,v.y1,v.x2,v.y2)<=sum*sum) return true;
+  }
+  return false;
+}
+function spawnModelHazard(actor,move,def,src){
+  const rig=def.contactRig,profile=rig.profiles[move.contactId];
+  const prevPresentation=createBossPresentation(),currPresentation=createBossPresentation();
+  const prevPose=rig.createPose(),currPose=rig.createPose(),predictPresentation=createBossPresentation(),predictPose=rig.createPose();
+  const prevPlayerVolumes=createPlayerHurtVolumes(),currPlayerVolumes=createPlayerHurtVolumes(),timerPlayerVolumes=createPlayerHurtVolumes();
+  samplePlayerHurtVolumes(prevPlayerVolumes);
+  /* Timer/viability prediction owns a neutral pre-dodge silhouette at the same
+     lane. Player posture may then animate without moving the predicted clock. */
+  samplePlayerHurtVolumesAt(timerPlayerVolumes,laneX(player.x,1),PLAYER_Y,0);
+  sampleBossPresentation(actor,def,prevPresentation,'strike',0); rig.samplePose(prevPresentation,prevPose);
+  const h={kind:'model',actor,move,def,rig,profile,baseProfile:profile,contactId:move.contactId,height:move.height,
+    born:perfNow,impact:perfNow+move.travel,duration:move.travel,lastProgress:0,done:false,src,
+    prevPresentation,currPresentation,prevPose,currPose,predictPresentation,predictPose,
+    prevPlayerVolumes,currPlayerVolumes,timerPlayerVolumes,lastReason:'ACTIVE'};
+  configureModelDodgeViability(h); hazards.push(h);
+}
+function modelInputAge(h){
+  return h.profile.pincer||h.height==='low'?perfNow-player.lastJump:
+    h.height==='high'?perfNow-player.lastDuck:perfNow-player.lastLaneChange;
+}
+/* Visual-bound rigs report their current screen-space model radius on each joint.
+   Legacy/static rigs may still use authored local radii, so this remains a shared
+   contact contract rather than a Bear-only branch in the resolver. */
+function modelJointRadius(profile,joint,presentation,shell=false){
+  if(profile.visualBounds) return joint.r*(shell?profile.shellScale:profile.coreScale);
+  return (profile.radius+(shell?profile.near:0))*presentation.scale*U*joint.depth;
+}
+function sweptModelJointRadius(profile,a,b,prevPresentation,currPresentation,shell=false){
+  return Math.max(modelJointRadius(profile,a,prevPresentation,shell),modelJointRadius(profile,b,currPresentation,shell));
+}
+const MODEL_DODGE_VIABILITY=Object.freeze({
+  /* .06 remains after reserving one 30 FPS frame, yielding a .093s gross budget. */
+  targetUsable:.06,frameMargin:1/30,maxTimingBonus:.06,maxShellScale:2.06,samples:64,
+  travelFloorMid:.28,travelFloorPosture:.34
+});
+function modelContactTravelFloor(step){
+  if(!step.contactId) return 0;
+  return step.height==='mid'?MODEL_DODGE_VIABILITY.travelFloorMid:MODEL_DODGE_VIABILITY.travelFloorPosture;
+}
+function predictedModelContactRaw(h,profile,shell=false){
+  const samples=MODEL_DODGE_VIABILITY.samples;
+  for(let i=0;i<=samples;i++){
+    const raw=i/samples;
+    sampleBossPresentation(h.actor,h.def,h.predictPresentation,'strike',raw*h.duration);
+    h.rig.samplePose(h.predictPresentation,h.predictPose);
+    for(let j=0;j<profile.joints.length;j++){
+      const joint=h.predictPose[profile.joints[j]],radius=modelJointRadius(profile,joint,h.predictPresentation,shell);
+      if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,radius,h.timerPlayerVolumes)) return raw;
+    }
+  }
+  return Infinity;
+}
+function modelDodgeClearanceTime(h,redRaw){
+  if(h.height==='low'){
+    /* Horse bottom is PLAYER_Y+7. Low red top is the fixed jump line. */
+    const height=clamp(PLAYER_Y+7-MODEL_JUMP_CLEARANCE_Y,0,CFG.JUMP_H*.98);
+    return jumpDur()/Math.PI*Math.asin(height/CFG.JUMP_H)+MODEL_DODGE_VIABILITY.frameMargin;
+  }
+  if(h.height==='high'){
+    const uprightTop=PLAYER_Y-93-10.5,duckNeed=clamp((MODEL_DUCK_CLEARANCE_Y-uprightTop)/37,0,.98);
+    return CFG.DUCK_TIME/Math.PI*Math.asin(duckNeed)+MODEL_DODGE_VIABILITY.frameMargin;
+  }
+  sampleBossPresentation(h.actor,h.def,h.predictPresentation,'strike',redRaw*h.duration);
+  h.rig.samplePose(h.predictPresentation,h.predictPose);
+  let coreR=0;
+  for(let i=0;i<h.profile.joints.length;i++)
+    coreR=Math.max(coreR,modelJointRadius(h.profile,h.predictPose[h.profile.joints[i]],h.predictPresentation));
+  const laneSpan=Math.abs(laneX(1,1)-laneX(0,1));
+  const fraction=clamp((coreR+17)/Math.max(1,laneSpan),.05,.92);
+  return -Math.log(1-fraction)/CFG.LANE_EASE+MODEL_DODGE_VIABILITY.frameMargin;
+}
+function configureModelDodgeViability(h){
+  const base=h.baseProfile;
+  /* Pinch owns its accepted clap contract. This compensation targets ordinary
+     model paws and traveling low/high swipes whose gold-to-red lead shrinks. */
+  if(base.pincer) return;
+  const redRaw=predictedModelContactRaw(h,base,false);
+  if(!Number.isFinite(redRaw)) return;
+  const clearTime=modelDodgeClearanceTime(h,redRaw),baseBonus=base.perfectBonus||0;
+  let shellScale=base.shellScale,goldRaw=predictedModelContactRaw(h,base,true);
+  if(!Number.isFinite(goldRaw)) return;
+  const referenceDuration=Math.max(h.duration,h.move._viabilityReferenceTravel||h.duration);
+  const referenceUsable=perfectWin()+baseBonus+(redRaw-goldRaw)*referenceDuration-clearTime;
+  const targetUsable=Math.max(MODEL_DODGE_VIABILITY.targetUsable,referenceUsable);
+  const usable=()=>perfectWin()+baseBonus+(redRaw-goldRaw)*h.duration-clearTime;
+  let timingBonus=clamp(targetUsable-usable(),0,MODEL_DODGE_VIABILITY.maxTimingBonus);
+  /* Timing appears earlier first. If its cap cannot preserve the budget, grow
+     the visible gold aura in small bounded steps and re-sample exact geometry. */
+  let currentUsable=usable()+timingBonus;
+  while(currentUsable<targetUsable-.001&&shellScale<MODEL_DODGE_VIABILITY.maxShellScale){
+    shellScale=Math.min(MODEL_DODGE_VIABILITY.maxShellScale,shellScale+.03);
+    const candidate=Object.assign({},base,{shellScale});
+    goldRaw=predictedModelContactRaw(h,candidate,true);
+    if(!Number.isFinite(goldRaw)) break;
+    currentUsable=perfectWin()+baseBonus+timingBonus+(redRaw-goldRaw)*h.duration-clearTime;
+  }
+  if(timingBonus>.0001||shellScale>base.shellScale+.0001){
+    h.profile=Object.assign({},base,{shellScale,perfectBonus:baseBonus+timingBonus});
+  }
+  h.viability={redRaw,goldRaw,clearTime,usable:currentUsable,targetUsable,referenceUsable,
+    referenceDuration,timingBonus,shellScale,floor:modelContactTravelFloor(h.move)};
+}
+function modelPincerSnapped(h,pose,presentation){
+  if(!h.profile.pincer) return true;
+  const a=pose[h.profile.joints[0]],b=pose[h.profile.joints[1]];
+  const ar=modelJointRadius(h.profile,a,presentation),br=modelJointRadius(h.profile,b,presentation);
+  /* PERFECT becomes available when the two lethal paw cores physically meet,
+     not an invisible player-width before the clap. */
+  return Math.abs(a.x-b.x)<=ar+br+2;
+}
+function confirmModelPerfect(h,x,y,reason,preserveSnapshot=false){
+  h.done=true; h.lastReason=reason;
+  if(debugMoveLabActive()){
+    if(preserveSnapshot) setMoveLabModelSnapshotKind(h,'PERFECT');
+    else captureMoveLabModelSnapshot(h,'PERFECT');
+    moveLabResult('PERFECT',x,y,reason);
+  } else {
+    floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
+    burst(laneX(player.x,1),PLAYER_Y-jumpHeight()-50,10,['#ffe37a','#fff'],160,80,3,.6);
+    doCounter(h.src);
+  }
+}
+function resolveModelHazard(h){
+  if(h.done) return;
+  const raw=clamp((perfNow-h.born)/h.duration,0,1);
+  sampleBossPresentation(h.actor,h.def,h.currPresentation,'strike',raw*h.duration);
+  h.rig.samplePose(h.currPresentation,h.currPose);
+  const volumes=samplePlayerHurtVolumes(h.currPlayerVolumes),joints=h.profile.joints;
+  const snapped=modelPincerSnapped(h,h.currPose,h.currPresentation);
+  let core=false,near=false,nearCount=0,coreJoint=-1,contactX=laneX(player.x,1),contactY=attackImpactY(h.height);
+  for(let i=0;i<joints.length;i++){
+    const name=joints[i],a=h.prevPose[name],b=h.currPose[name];
+    const coreR=sweptModelJointRadius(h.profile,a,b,h.prevPresentation,h.currPresentation);
+    const shellR=sweptModelJointRadius(h.profile,a,b,h.prevPresentation,h.currPresentation,true);
+    if(sweptCircleTouchesVolumes(a.x,a.y,b.x,b.y,coreR,volumes)){
+      core=true; if(coreJoint<0) coreJoint=i; contactX=b.x; contactY=b.y;
+    }
+    if(sweptCircleTouchesVolumes(a.x,a.y,b.x,b.y,shellR,volumes)){
+      near=true; nearCount++; contactX=b.x; contactY=b.y;
+    }
+  }
+  const W=perfectWin()+(isMinibossSource(h.src)?minibossPerfectBonus():0)+(h.profile.perfectBonus||0),age=modelInputAge(h);
+  const playerX=laneX(player.x,1),pincerCentered=Math.abs(playerX-laneX(1,1))<=CFG.FIGHT_HIT_HALF;
+  const pincerAirborne=h.profile.pincer&&pincerCentered&&isAirborne();
+  /* A normal clear asks for obvious height at the clap. A well-timed two-gold
+     PERFECT may still graze lower, keeping its accepted timing/feel unchanged. */
+  const pincerNormalAir=h.profile.pincer&&pincerCentered&&jumpHeight()>(h.profile.normalClearHeight||CFG.JUMP_SAFE_H);
+  const pincerAirClear=pincerNormalAir&&snapped;
+  /* At the clap, posture owns the normal clear. PERFECT remains stricter: both
+     gold shells must touch the airborne knight inside the input window. */
+  const perfectContact=h.profile.pincer
+    ? pincerAirClear&&nearCount===joints.length&&age<=W
+    : !core&&near&&snapped&&age<=W;
+  const lethalCore=core&&!(pincerAirborne&&!snapped)&&!pincerAirClear;
+  h.lastProgress=raw; h.lastInputAge=age; h.lastCore=core; h.lastCoreJoint=coreJoint;
+  h.lastNear=near; h.lastNearCount=nearCount; h.lastSnapped=snapped;
+  h.lastReason=lethalCore?'visible core crossed player hurt capsule':perfectContact?'perfect contact':
+    pincerAirClear?'airborne at physical paw clap':
+    pincerAirborne?'airborne centre jump awaiting paw clap':
+    h.perfectPending?'perfect pending; attack still crossing':
+    near?'near shell, input not valid':'visible geometry clear';
+  if(perfectContact&&!h.perfectPending){
+    if(h.profile.pincer){
+      /* The central clap is the pinch's terminal dodge event. Once valid gold is
+         reached, do not re-kill the same jump with the paws' tiny settling tail. */
+      confirmModelPerfect(h,contactX,contactY,'gold contact cleared the physical paw clap');
+    } else {
+      h.perfectPending=true; h.pendingContactX=contactX; h.pendingContactY=contactY; h.pendingAt=perfNow;
+      h.lastReason='perfect pending; red remains lethal';
+      if(debugMoveLabActive()){
+        captureMoveLabModelSnapshot(h,'PENDING');
+        moveLabResult('PENDING',contactX,contactY,'gold contact armed; red remains lethal');
+      }
+    }
+  }
+  if(!h.done&&pincerAirClear){
+    h.done=true; h.lastReason='airborne at physical paw clap';
+    if(debugMoveLabActive()){
+      captureMoveLabModelSnapshot(h,'AIR CLEAR');
+      moveLabResult('SAFE',playerX,PLAYER_Y-jumpHeight()-42,h.lastReason);
+    }
+  }
+  if(!h.done&&lethalCore){
+    h.done=true;
+    burst(contactX,contactY,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
+    spawnSlash(contactX,contactY-9,.25,'#e8e2d0'); SFX.slash(); shake(4,.18);
+    if(debugMoveLabActive()){
+      /* Replace the earlier gold-contact picture with the exact death frame.
+         The snapshot includes the paw's swept red corridor through the knight. */
+      if(h.perfectPending) captureMoveLabModelSnapshot(h,'LATE HIT');
+      moveLabResult('HIT',contactX,contactY,h.perfectPending?'late red contact caught the pending dodge':h.lastReason);
+    }
+    else damagePlayer(combatHitText(h.src));
+  } else if(!h.done&&raw>=1){
+    h.done=true;
+    if(h.perfectPending){
+      confirmModelPerfect(h,h.pendingContactX,h.pendingContactY,'gold contact survived the complete red sweep',true);
+    } else {
+      h.lastReason=near?'near miss without valid input':'visible geometry cleared player';
+      if(debugMoveLabActive()) moveLabResult('SAFE',laneX(player.x,1),PLAYER_Y-jumpHeight()-42,h.lastReason);
+    }
+  }
+  const swapPose=h.prevPose; h.prevPose=h.currPose; h.currPose=swapPose;
+  const swapPresentation=h.prevPresentation; h.prevPresentation=h.currPresentation; h.currPresentation=swapPresentation;
+  const swapVolumes=h.prevPlayerVolumes; h.prevPlayerVolumes=h.currPlayerVolumes; h.currPlayerVolumes=swapVolumes;
+}
+/* A lab verdict resolves gameplay once, but its model keeps completing the authored
+   strike. This prevents the live red/gold geometry from freezing at dodge contact. */
+function advanceResolvedModelHazardPreview(h){
+  const raw=clamp((perfNow-h.born)/h.duration,0,1);
+  if(raw<=h.lastProgress) return;
+  sampleBossPresentation(h.actor,h.def,h.currPresentation,'strike',raw*h.duration);
+  h.rig.samplePose(h.currPresentation,h.currPose); h.lastProgress=raw;
+  const swapPose=h.prevPose; h.prevPose=h.currPose; h.currPose=swapPose;
+  const swapPresentation=h.prevPresentation; h.prevPresentation=h.currPresentation; h.currPresentation=swapPresentation;
+}
 function sweepProgress(h,elapsed=perfNow-h.born){ return clamp(elapsed/h.duration,0,1); }
 function sweepScreenX(h,elapsed=perfNow-h.born){ return laneX(sweepLaneAt(h,sweepProgress(h,elapsed)),1); }
 function attackImpactY(height){
   return height==='high'?DUCK_ATTACK_Y:height==='low'?ATTACK_GROUND_Y:BODY_ATTACK_Y;
 }
-function moveLabResult(kind,x,y){
+/* Preserve the exact successful-contact frame in a small lab-only snapshot. Live
+   world geometry continues moving separately, so the player can study both the
+   dodge clearance and the remainder of the authored attack. */
+function captureMoveLabModelSnapshot(h,kind){
+  const lab=h.actor&&h.actor._moveLab; if(!lab) return;
+  const snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
+  snap.kind=kind; snap.until=perfNow+1.15; snap.circleCount=h.profile.joints.length;
+  snap.hitJoint=kind==='LATE HIT'?h.lastCoreJoint:-1;
+  for(let i=0;i<snap.circleCount;i++){
+    const name=h.profile.joints[i],from=h.prevPose[name],joint=h.currPose[name];
+    const circle=snap.circles[i]||(snap.circles[i]={x:0,y:0,fromX:0,fromY:0,core:0,shell:0});
+    circle.fromX=from.x; circle.fromY=from.y;
+    circle.x=joint.x; circle.y=joint.y;
+    circle.core=sweptModelJointRadius(h.profile,from,joint,h.prevPresentation,h.currPresentation);
+    circle.shell=sweptModelJointRadius(h.profile,from,joint,h.prevPresentation,h.currPresentation,true);
+  }
+  const source=h.currPlayerVolumes;
+  for(let i=0;i<source.count;i++) Object.assign(snap.player.capsules[i],source.capsules[i]);
+}
+function setMoveLabModelSnapshotKind(h,kind){
+  const snap=h.actor&&h.actor._moveLab&&h.actor._moveLab.modelSnapshot;
+  if(snap){ snap.kind=kind; snap.until=perfNow+1.15; }
+}
+function moveLabResult(kind,x,y,reason='legacy resolver'){ 
   const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
   if(!actor) return;
-  const col=kind==='HIT'?'#ff4d3a':kind==='PERFECT'?'#ffe37a':'#8ee8a0';
-  actor._moveLab.lastResult={kind,col,until:perfNow+.9};
+  const col=kind==='HIT'?'#ff4d3a':kind==='PERFECT'?'#ffe37a':kind==='PENDING'?'#ffbf62':'#8ee8a0';
+  actor._moveLab.lastResult={kind,col,reason,until:perfNow+.9};
   floater(x,y-34,'TEST: '+kind,col,18);
 }
 function resolveSweepHazard(h){
@@ -4358,11 +4788,7 @@ function resolveSweepHazard(h){
      correct if the shared sweep easing changes and never kills centre early. */
   const pincerSnap=pincer&&Math.abs(sweepLaneAt(h,raw)-h.to)<=.34;
   const effectiveHeight=pincer?(pincerSnap?'low':'mid'):h.height;
-  /* A correctly read pinch should not punish a slightly early jump merely because
-     the short airborne animation ended just before the paws meet. This grace is
-     safety only; the normal last-moment window still controls PERFECT counters. */
-  const pinchEarlySafe=pincerSnap&&perfNow-player.lastJump<=jumpDur()+CFG.PINCH_JUMP_GRACE;
-  const postureSafe=effectiveHeight==='low'?(isAirborne()||pinchEarlySafe):effectiveHeight==='high'?isDucking():false;
+  const postureSafe=effectiveHeight==='low'?isAirborne():effectiveHeight==='high'?isDucking():false;
   const collides=dx<=h.hitHalf&&(effectiveHeight==='mid'||!postureSafe);
   const recent=effectiveHeight==='low'?perfNow-player.lastJump<=W:
                effectiveHeight==='high'?perfNow-player.lastDuck<=W:perfNow-player.lastLaneChange<=W;
@@ -4391,6 +4817,11 @@ function resolveSweepHazard(h){
 }
 function updateHazards(){
   for(const h of hazards){
+    if(h.kind==='model'){
+      if(!h.done) resolveModelHazard(h);
+      else if(debugMoveLabActive()&&h.lastProgress<1) advanceResolvedModelHazardPreview(h);
+      continue;
+    }
     if(h.kind==='sweep'){ if(!h.done) resolveSweepHazard(h); continue; }
     if(h.done||perfNow<h.impact) continue;
     h.done=true; resolveHazard(h);
@@ -4501,62 +4932,62 @@ class EncounterActor{
    difficulty scaling belongs to shared encounter tempo, never to model-specific art. */
 const BEAR_DUEL_ATTACKS=[
   {id:'left_maul',w:24,minTier:1,rec:0.72,steps:[
-    {lanes:[0],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6}
+    {lanes:[0],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_right',strike:'strike_paw_right',contactId:'rightPaw',x:0,lunge:6}
   ]},
   {id:'right_maul',w:24,minTier:1,rec:0.72,steps:[
-    {lanes:[2],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:6}
+    {lanes:[2],height:'mid',tele:1.08,travel:0.34,anim:'tele_paw_left',strike:'strike_paw_left',contactId:'leftPaw',x:2,lunge:6}
   ]},
   {id:'center_bite',w:20,minTier:1,rec:0.82,steps:[
     {lanes:[1],height:'mid',tele:0.92,travel:0.30,anim:'tele_bite',strike:'strike_bite',x:1,lunge:8}
   ]},
   {id:'left_center_crush',w:14,minTier:2,rec:.94,steps:[
-    {lanes:[0,1],height:'mid',tele:1.08,travel:.36,anim:'tele_double_paw',strike:'strike_double_paw',x:.5,lunge:7}
+    {lanes:[0,1],height:'mid',tele:1.08,travel:.36,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:.5,lunge:7}
   ]},
   {id:'right_center_crush',w:14,minTier:2,rec:.94,steps:[
-    {lanes:[1,2],height:'mid',tele:1.08,travel:.36,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:7}
+    {lanes:[1,2],height:'mid',tele:1.08,travel:.36,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:1.5,lunge:7}
   ]},
   {id:'earthbreaker_rtl',w:8,minTier:2,rec:0.98,steps:[
-    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',contactId:'swipePawLeft',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'earthbreaker_ltr',w:8,minTier:2,rec:0.98,steps:[
-    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:1.12,travel:.72,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',contactId:'swipePawRight',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
   ]},
   {id:'high_reaper_rtl',w:7,minTier:2,rec:1.0,steps:[
-    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',contactId:'swipePawLeft',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'high_reaper_ltr',w:7,minTier:2,rec:1.0,steps:[
-    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
+    {lanes:[0,1,2],height:'high',tele:1.08,travel:.70,anim:'tele_bear_high_ltr',strike:'strike_bear_high_ltr',contactId:'swipePawRight',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}}
   ]},
   {id:'cross_execution',w:18,minTier:2,comboType:'authored',comboRank:1,rec:1.0,steps:[
-    {lanes:[0],height:'mid',tele:0.88,travel:0.30,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:6},
-    {lanes:[2],height:'mid',tele:0.48,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:6},
+    {lanes:[0],height:'mid',tele:0.88,travel:0.30,anim:'tele_paw_right',strike:'strike_paw_right',contactId:'rightPaw',x:0,lunge:6},
+    {lanes:[2],height:'mid',tele:0.48,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',contactId:'leftPaw',x:2,lunge:6},
     {lanes:[1],height:'mid',tele:0.58,travel:0.28,anim:'tele_bite',strike:'strike_bite',x:1,lunge:9}
   ]},
   {id:'twin_crush',w:17,minTier:2,rec:0.92,steps:[
-    {lanes:[0,2],height:'mid',tele:1.02,travel:0.34,anim:'tele_double_paw',strike:'strike_double_paw',x:1,lunge:6}
+    {lanes:[0,2],height:'mid',tele:1.02,travel:0.34,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:1,lunge:6}
   ]},
   {id:'red_hunt',w:14,minTier:3,comboType:'authored',comboRank:2,rec:1.08,steps:[
-    {lanes:[2],height:'mid',tele:0.70,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',x:2,lunge:7},
+    {lanes:[2],height:'mid',tele:0.70,travel:0.27,anim:'tele_paw_left',strike:'strike_paw_left',contactId:'leftPaw',x:2,lunge:7},
     {lanes:[1],height:'mid',tele:0.42,travel:0.25,anim:'tele_bite',strike:'strike_bite',x:1,lunge:8},
-    {lanes:[0],height:'mid',tele:0.42,travel:0.25,anim:'tele_paw_right',strike:'strike_paw_right',x:0,lunge:7},
-    {lanes:[0,1,2],height:'low',tele:.64,travel:.62,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0],height:'mid',tele:0.42,travel:0.25,anim:'tele_paw_right',strike:'strike_paw_right',contactId:'rightPaw',x:0,lunge:7},
+    {lanes:[0,1,2],height:'low',tele:.64,travel:.62,anim:'tele_bear_low_rtl',strike:'strike_bear_low_rtl',contactId:'swipePawLeft',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
   {id:'closing_jaws',w:10,minTier:4,rec:1.18,steps:[
     /* Both paws begin beyond the warning lanes. Their physical hitboxes close as
        solid walls, then become a low hit at the centre: move middle, then jump. */
     {lanes:[0,1,2],height:'low',tele:1.32,travel:.98,anim:'tele_bear_pincer',strike:'strike_bear_pincer',centerJumpCue:true,
-     x:1,bodyLunge:10.5,stageReach:8.8,sweeps:[
+     contactId:'pincerPaws',x:1,bodyLunge:10.5,stageReach:8.8,sweeps:[
        {from:-.72,to:1,hitHalf:38,perfectHalf:72,collision:'pincer'},
        {from:2.72,to:1,hitHalf:38,perfectHalf:72,collision:'pincer'}
      ]}
   ]},
   {id:'cave_king',w:12,minTier:4,comboType:'authored',comboRank:3,rec:1.2,steps:[
-    {lanes:[0,2],height:'mid',tele:0.58,travel:0.26,anim:'tele_double_paw',strike:'strike_double_paw',x:1,lunge:7},
-    {lanes:[0,1],height:'mid',tele:0.38,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',x:.5,lunge:8},
-    {lanes:[1,2],height:'mid',tele:0.36,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',x:1.5,lunge:8},
+    {lanes:[0,2],height:'mid',tele:0.58,travel:0.26,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:1,lunge:7},
+    {lanes:[0,1],height:'mid',tele:0.38,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:.5,lunge:8},
+    {lanes:[1,2],height:'mid',tele:0.36,travel:0.23,anim:'tele_double_paw',strike:'strike_double_paw',contactId:'bothPaws',x:1.5,lunge:8},
     {lanes:[1],height:'mid',tele:0.34,travel:0.22,anim:'tele_bite',strike:'strike_bite',x:1,lunge:10},
-    {lanes:[0,1,2],height:'low',tele:.54,travel:.56,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}},
-    {lanes:[0,1,2],height:'high',tele:.52,travel:.55,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
+    {lanes:[0,1,2],height:'low',tele:.54,travel:.56,anim:'tele_bear_low_ltr',strike:'strike_bear_low_ltr',contactId:'swipePawRight',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:-.03,sweep:{from:0,to:2,hitHalf:38}},
+    {lanes:[0,1,2],height:'high',tele:.52,travel:.55,anim:'tele_bear_high_rtl',strike:'strike_bear_high_rtl',contactId:'swipePawLeft',bodyLunge:10.5,bodySweep:true,bodySweepFactor:.34,bodyOffset:.03,sweep:{from:2,to:0,hitHalf:38}}
   ]},
 ];
 /* The swamp fight is a neck-and-head duel: each head visibly owns a lane, while
@@ -4723,7 +5154,7 @@ const UNIVERSAL_ENCOUNTER_HITS=Object.freeze({
     sweep:{from:2,to:-.72,entryFrom:2.72,activeFrom:.24,hitHalf:38,perfectHalf:72}}),
   highLTR    :Object.freeze({lanes:[0,1,2],height:'high',tele:1.10,travel:.70,rec:1.00,
     sweep:{from:0,to:2.72,entryFrom:-.72,activeFrom:.24,hitHalf:38,perfectHalf:72}}),
-  squeeze    :Object.freeze({lanes:[0,1,2],height:'low',tele:1.30,travel:.96,rec:1.18,x:1,centerJumpCue:true,
+  squeeze    :Object.freeze({lanes:[0,1,2],height:'low',tele:1.30,travel:.70,rec:1.18,x:1,centerJumpCue:true,
     sweeps:[
       {from:-.72,to:1,entryFrom:-.72,activeFrom:.24,hitHalf:38,perfectHalf:72,collision:'pincer'},
       {from:2.72,to:1,entryFrom:2.72,activeFrom:.24,hitHalf:38,perfectHalf:72,collision:'pincer'}
@@ -4811,7 +5242,7 @@ HYDRA_DUEL_ATTACKS.push(
 const bearMaster=BEAR_DUEL_ATTACKS.find(a=>a.id==='cave_king');
 bearMaster.steps.splice(4,0,BossCombatMechanics.step('squeeze',
   {anim:'tele_bear_pincer',strike:'strike_bear_pincer'},
-  {bodyLunge:10.5,stageReach:8.8},{tele:.66,travel:.78}));
+  {contactId:'pincerPaws',bodyLunge:10.5,stageReach:8.8},{tele:.66,travel:.56}));
 const hydraMaster=HYDRA_DUEL_ATTACKS.find(a=>a.id==='drowned_crown');
 hydraMaster.steps.splice(5,0,BossCombatMechanics.step('squeeze',
   {anim:'tele_hydra_pincer',strike:'strike_hydra_pincer',recoverAnim:'recover_hydra_pincer'},
@@ -4885,21 +5316,73 @@ function encounterAttackDelay(previousAttack=null){
     : encounterCadenceMultiplier(cycle);
   return rnd(ENCOUNTER_PACING.idleMin,ENCOUNTER_PACING.idleMax)*scale;
 }
-function moveContactXs(actor,move,lanes){
-  const out=actor?(actor._contactXs||(actor._contactXs=[])):[];
+function fillMoveContactXs(actor,move,lanes,state,stateT,out){
   out.length=0;
-  const contactState=actor&&(actor.state==='tele'||actor.state==='strike'||actor.state==='recover'||actor.state==='comboRecover');
+  const contactState=actor&&(state==='tele'||state==='strike'||state==='recover'||state==='comboRecover');
   if(actor&&move&&move.sweeps&&contactState){
-    const k=actor.state==='recover'||actor.state==='comboRecover'?1:actor.state==='strike'?clamp(actor.stateT/move.travel,0,1):0;
+    const k=state==='recover'||state==='comboRecover'?1:state==='strike'?clamp(stateT/move.travel,0,1):0;
     for(const sweep of move.sweeps) out.push(laneX(sweepLaneAt(sweep,k),1));
     return out;
   }
   if(actor&&move&&move.sweep&&contactState){
-    const k=actor.state==='recover'||actor.state==='comboRecover'?1:actor.state==='strike'?clamp(actor.stateT/move.travel,0,1):0;
+    const k=state==='recover'||state==='comboRecover'?1:state==='strike'?clamp(stateT/move.travel,0,1):0;
     out.push(laneX(sweepLaneAt(move.sweep,k),1));
     return out;
   }
   for(const ln of lanes||ALL_LANES) out.push(laneX(ln,1));
+  return out;
+}
+function moveContactXs(actor,move,lanes){
+  const out=actor?(actor._contactXs||(actor._contactXs=[])):[];
+  return fillMoveContactXs(actor,move,lanes,actor&&actor.state,actor&&actor.stateT,out);
+}
+function createBossPresentation(){ return {contactXs:[],move:null,t:0,x:0,y:0,scale:1,z:0,tellReach:0,contactReach:0}; }
+function sampleProjectionInto(z,out){
+  const f=CFG.FOCAL,far=f/(f+CFG.Z_FAR),zc=Math.max(z,-f*.78);
+  const q=(f/(f+zc)-far)/(1-far);
+  out.tProj=q; out.t=q; out.yProj=lerp(HORIZON_Y,GROUND_Y,q);
+  out.sProj=lerp(.09,1,q*q*.35+q*.65); out.s=out.sProj;
+}
+/* One pure presentation contract owns the boss depth, screen origin, animation,
+   normalized clock and contact targets used by both drawing and pose collision. */
+function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.stateT){
+  const move=actor.currentMove(); let zD=actor.z;
+  const tellReach=move&&move.stageReach!==undefined?move.stageReach:
+    move&&move.bodySweep&&move.bodyLunge>8?move.bodyLunge*.88:1.8;
+  const requestedReach=move?(move.bodyLunge!==undefined?move.bodyLunge:(move.lunge||(actor.attack&&actor.attack.lunge)||3)+5.2):0;
+  const contactReach=move?Math.min(actor.z-.8,requestedReach):0;
+  const comboRecovering=state==='comboRecover';
+  const comboRecoverTime=move?comboStepRecoveryTime(move,actor.attack):.28;
+  const fullRecoverTime=encounterRecoveryTime(actor.attack);
+  const recoverAnimTime=fullRecoverTime*(move&&move.recoverPortion||.38);
+  if(state==='tele'&&move) zD=actor.z-easeOut(clamp(stateT/(actor.teleTime||move.tele),0,1))*tellReach;
+  if(state==='strike'&&move) zD=actor.z-tellReach-easeOut(clamp(stateT/move.travel,0,1))*Math.max(0,contactReach-tellReach);
+  if(state==='recover'&&move) zD=actor.z-(1-easeInOut(clamp(stateT/recoverAnimTime,0,1)))*contactReach;
+  if(comboRecovering&&move) zD=actor.z-(1-easeInOut(clamp(stateT/comboRecoverTime,0,1)))*contactReach;
+  if(state==='finisher') zD=actor.z-easeOut(clamp((stateT-.62)/1.3,0,1))*def.finisherReach;
+  sampleProjectionInto(zD,out);
+  let anim=state==='tele'&&actor.attack?actor.attack.anim:state;
+  if(move) anim=state==='tele'?move.anim:state==='strike'?move.strike:comboRecovering?comboStepRecoveryAnim(move):
+    state==='recover'&&move.recoverAnim?move.recoverAnim:state;
+  const riseK=easeOut(clamp(actor.rise,0,1)),sink=(1-riseK)*150*out.sProj;
+  let x=laneX(actor.x,out.tProj);
+  if(state==='tele'&&move&&move.sweep&&move.bodySweep)
+    x=lerp(x,laneX(sweepBodyLane(move,0),1),easeOut(clamp(stateT/(actor.teleTime||move.tele),0,1)));
+  else if(state==='strike'&&move&&move.sweep&&move.bodySweep)
+    x=laneX(sweepBodyLane(move,clamp(stateT/move.travel,0,1)),1);
+  else if(state==='strike'&&move)
+    x=lerp(x,laneX(actor.xTarget,1),easeOut(clamp(stateT/move.travel,0,1)));
+  else if(state==='recover'&&move)
+    x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/recoverAnimTime,0,1)));
+  else if(comboRecovering&&move)
+    x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/comboRecoverTime,0,1)));
+  const denom=state==='tele'&&move?(actor.teleTime||move.tele):state==='strike'&&move?move.travel:
+    comboRecovering?comboRecoverTime:state==='recover'?recoverAnimTime:state==='finisher'?2.15:state==='dying'?2.5:.5;
+  out.actor=actor; out.def=def; out.move=move; out.state=state; out.stateT=stateT;
+  out.z=zD; out.x=x; out.y=out.yProj+sink; out.scale=out.sProj*def.scale;
+  out.anim=anim; out.t=clamp(stateT/denom,0,1); out.tellReach=tellReach; out.contactReach=contactReach;
+  out.comboRecoverTime=comboRecoverTime; out.recoverAnimTime=recoverAnimTime;
+  fillMoveContactXs(actor,move,state==='finisher'?ALL_LANES:actor.hazardLanes,state,stateT,out.contactXs);
   return out;
 }
 function sweepBodyLane(move,k){
@@ -4927,8 +5410,8 @@ function attackTeleTime(move,lanes){
   if(move.height==='high') return Math.max(scaled,.32);
   return Math.max(scaled,.32);
 }
-function dodgeAttackCount(){
-  const completed=progressionTier();
+function dodgeAttackCount(stage=loop){
+  const completed=progressionTier(stage);
   const linearEnd=CFG.BOSS_ATKS_BEND-1;
   const early=Math.min(completed,linearEnd)*CFG.BOSS_ATKS_TIER;
   const late=Math.max(0,completed-linearEnd);
@@ -4967,11 +5450,11 @@ function bossGuaranteeQueue(tier=bossCombatTier()){
   for(let i=queue.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [queue[i],queue[j]]=[queue[j],queue[i]]; }
   return queue;
 }
-function bossAttackCount(){
+function bossAttackCount(stage=loop){
   /* One token unlocks per pre-combo group. Count it without constructing a
      throwaway shuffled queue: each boss should consume exactly one RNG-built plan. */
-  const guaranteeCount=Math.min(bossCombatTier(),CFG.COMBO_UNLOCK_CYCLE-1);
-  return Math.max(dodgeAttackCount(),guaranteeCount);
+  const guaranteeCount=Math.min(bossCombatTier(stage),CFG.COMBO_UNLOCK_CYCLE-1);
+  return Math.max(dodgeAttackCount(stage),guaranteeCount);
 }
 function packLeapDmg(){
   const base=CFG.PACK_LEAP_DMG+upg.fang*CFG.UPG_FANG_INC;
@@ -5001,12 +5484,13 @@ function startBoss(){
   floater(VW/2,300,def.arenaLine,'#e8e2d0',19);
   setMode('bossintro'); SFX.roar(); shake(10,.6);
 }
-function activeBossDefinition(){ return ENCOUNTERS.get(selectedEncounterId('boss')); }
+function activeBossDefinition(){
+  /* A Move Lab may advance difficulty without changing its specimen. Normal runs
+     remain fully stage-driven; only the lab actor can pin a definition id. */
+  const pinned=boss&&boss._moveLab&&boss._moveLab.definitionId;
+  return ENCOUNTERS.get(pinned||selectedEncounterId('boss'));
+}
 function activeBossAttackSet(){ return activeBossDefinition().attacks; }
-/* Hydra/turtle sprites use a smaller 32px base silhouette than the 44px bear.
-   Species scale compensates for source-art dimensions so all three occupy the
-   same intimidating screen footprint without altering combat speed. */
-function bossSpeciesScale(){ return activeBossDefinition().scale; }
 function randomComboLength(cycle,movesLeft){
   /* Length has no fixed ceiling: every four cycles widen the possible chain.
      Convert the remaining discounted budget back into a visible-step capacity;
@@ -5183,6 +5667,12 @@ function bossHesitationMultiplier(cycle){
   if(Math.random()>=variance.chanceMax*pressure) return 1;
   return 1+rnd(-variance.swingMax,variance.swingMax)*pressure;
 }
+function modelViabilityReferenceTravel(attack,step){
+  if(!step.contactId) return 0;
+  if(encounterAttackGroup(attack)!=='combo') return step.travel*CFG.ENCOUNTER_TEMPO.travel;
+  const debut=comboUnlockCycle(attack),tempoCycle=encounterAttackTempoCycle(attack,debut);
+  return step.travel*encounterTempoMultiplier('travel',tempoCycle)*openingComboMultiplier(attack,debut);
+}
 function applyEncounterTempo(attack,cycle,hesitationScale=1){
   /* Clone only the selected attack, preserving immutable species tables. Every
      animation/contact step uses its normal or combo-family bounded tempo age.
@@ -5191,10 +5681,13 @@ function applyEncounterTempo(attack,cycle,hesitationScale=1){
   const comboEase=openingComboMultiplier(attack,cycle);
   const tempoCycle=encounterAttackTempoCycle(attack,cycle);
   copy.rec=(attack.rec||.8)*encounterTempoMultiplier('recovery',tempoCycle)*comboEase;
-  copy.steps=attack.steps.map(step=>Object.assign({},step,{
-    tele:step.tele*encounterTempoMultiplier('tele',tempoCycle)*comboEase*hesitationScale,
-    travel:step.travel*encounterTempoMultiplier('travel',tempoCycle)*comboEase
-  }));
+  copy.steps=attack.steps.map(step=>{
+    const scaledTravel=Math.max(step.travel*encounterTempoMultiplier('travel',tempoCycle)*comboEase,modelContactTravelFloor(step));
+    return Object.assign({},step,{
+      tele:step.tele*encounterTempoMultiplier('tele',tempoCycle)*comboEase*hesitationScale,
+      travel:scaledTravel,_viabilityReferenceTravel:modelViabilityReferenceTravel(attack,step)
+    });
+  });
   return copy;
 }
 function comboMoveCostForLength(length){
@@ -5379,6 +5872,7 @@ function updateBoss(dt){
     if(boss.atkTimer<=0&&boss.attacksLeft>0){
       if(boss._moveLab){
         boss.attacksLeft--;
+        boss._moveLab.selected=boss._moveLab.index;
         boss.attack=boss._moveLab.moves[boss._moveLab.index++];
         floater(VW/2,230,boss._moveLab.index+'/'+boss._moveLab.moves.length+' · '+boss.attack._labName,'#ff9a3a',15);
       } else {
@@ -5397,7 +5891,9 @@ function updateBoss(dt){
     const a=currentBossMove();
     if(a&&T>=boss.teleTime){
       boss.state='strike'; boss.stateT=0; SFX.slash();
-      if(a.sweeps) spawnSweepHazards(a.sweeps,a.height,a.travel,BOSS_SOURCE);
+      const def=activeBossDefinition();
+      if(a.contactId&&def.contactRig) spawnModelHazard(boss,a,def,BOSS_SOURCE);
+      else if(a.sweeps) spawnSweepHazards(a.sweeps,a.height,a.travel,BOSS_SOURCE);
       else if(a.sweep) spawnSweepHazard(a.sweep,a.height,a.travel,BOSS_SOURCE);
       else spawnHazard(boss.hazardLanes,a.height,a.travel,BOSS_SOURCE);
     }
@@ -5591,7 +6087,7 @@ const ENCOUNTERS=new DefinitionRegistry('encounter');
 ENCOUNTERS.register(new EncounterDefinition('bear','boss',{
   name:'MIGHTY BEAR',hitText:"The bear's claws found you",finisherHit:'The cave bear executed you',
   arenaLine:"THE BEAR'S CAVE SWALLOWS YOU",
-  draw:drawBearNatural,attacks:BEAR_DUEL_ATTACKS,scale:3.65,
+  draw:drawBearNatural,attacks:BEAR_DUEL_ATTACKS,scale:3.65,contactRig:BEAR_CONTACT_RIG,
   finisherReach:12,element:'earth',rises:false
 }));
 ENCOUNTERS.register(new EncounterDefinition('hydra','boss',{
@@ -5666,6 +6162,11 @@ function validateEncounterHierarchy(){
     throw new Error('COMBO_MOVE_COST_RATIO must be within (0, 1]');
   if(CFG.COMBO_MOVE_COST_MIN<2||comboMoveCostForLength(3)>CFG.COMBO_MOVE_COST_MIN)
     throw new Error('COMBO_MOVE_COST_MIN must fund the shortest three-step random combo');
+  const viability=MODEL_DODGE_VIABILITY;
+  if(!(viability.targetUsable>0&&viability.frameMargin>=1/30&&viability.maxTimingBonus>=0&&
+       viability.maxShellScale>1&&viability.samples>=32&&viability.travelFloorMid>0&&
+       viability.travelFloorPosture>=viability.travelFloorMid))
+    throw new Error('MODEL_DODGE_VIABILITY needs a 30 FPS margin, bounded compensation, and ordered travel floors');
   for(const stage of STAGES.list){
     for(const role of ['boss','miniboss']){
       const ids=role==='boss'?stage.bossIds:stage.minibossIds;
@@ -5698,31 +6199,147 @@ function validateEncounterHierarchy(){
     const set=def.role==='boss'?BossCombatMechanics:MinibossCombatMechanics;
     if(!step.mechanic||!set.specs[step.mechanic])
       throw new Error(def.id+'/'+attack.id+' has no registered '+def.role+' mechanic');
+    if(step.contactId){
+      const rig=def.contactRig,profile=rig&&rig.profiles&&rig.profiles[step.contactId];
+      if(!rig) throw new Error(def.id+'/'+attack.id+' uses contactId without an encounter contact rig');
+      if(!profile) throw new Error(def.id+'/'+attack.id+' has unknown contactId '+step.contactId);
+      const validGeometry=profile.visualBounds?
+        profile.coreScale>=1&&profile.shellScale>profile.coreScale:
+        profile.radius>0&&profile.near>=0;
+      if(!validGeometry||!Array.isArray(profile.joints)||!profile.joints.length)
+        throw new Error(def.id+'/'+attack.id+' has invalid contact profile '+step.contactId);
+      if(!Object.isFrozen(rig)||!Object.isFrozen(rig.profiles)||!Object.isFrozen(profile)||!Object.isFrozen(profile.joints))
+        throw new Error(def.id+'/'+attack.id+' contact profile data must be frozen');
+      if(typeof rig.createPose!=='function'||typeof rig.samplePose!=='function')
+        throw new Error(def.id+' contact rig needs cached pose construction and sampling');
+      const pose=rig.createPose();
+      for(const joint of profile.joints){
+        if(!pose[joint]) throw new Error(def.id+'/'+attack.id+' contact profile references unknown joint '+joint);
+        if(profile.visualBounds&&typeof pose[joint].r!=='number')
+          throw new Error(def.id+'/'+attack.id+' visual-bound joint needs a cached radius '+joint);
+      }
+    }
   }
 }
 validateEncounterHierarchy();
-function buildMoveLabPlaylist(set){
+function buildMoveLabPlaylist(set,cycle=1){
   const singles=set.filter(a=>!a.steps||a.steps.length<=1), combos=set.filter(a=>a.steps&&a.steps.length>1);
   return singles.concat(combos).map(a=>{
-    const copy=Object.assign({},a);
-    copy.rec=(a.rec||.8)*CFG.ENCOUNTER_TEMPO.recovery;
-    copy.steps=a.steps?a.steps.map(s=>Object.assign({},s,{tele:s.tele*CFG.ENCOUNTER_TEMPO.tele,travel:s.travel*CFG.ENCOUNTER_TEMPO.travel})):undefined;
+    /* Use the live encounter-tempo path so a selected test stage exercises the
+       same travel floors and model viability compensation as a real fight. */
+    const copy=applyEncounterTempo(a,cycle,1);
     copy._labName=a.id.replace(/_/g,' ').toUpperCase();
     return copy;
   });
 }
-function startBossMoveLab(){
-  startBoss();
-  const moves=buildMoveLabPlaylist(activeBossAttackSet());
-  const cycle=bossCombatTier();
+const MOVE_LAB_SPEEDS=Object.freeze([.25,.5,1,1.5,2]);
+function activeMoveLabActor(){ return boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null); }
+function moveLabTimeScale(){
+  const actor=activeMoveLabActor(),lab=actor&&actor._moveLab;
+  return lab?MOVE_LAB_SPEEDS[lab.speedIndex]:1;
+}
+function restartMoveLabSelection(actor,index){
+  const lab=actor&&actor._moveLab; if(!lab||!lab.moves.length) return;
+  index=(index%lab.moves.length+lab.moves.length)%lab.moves.length;
+  lab.selected=index; lab.index=index+1; lab.doneT=0; lab.lastResult=null; lab.modelSnapshot=null;
+  actor.attack=lab.moves[index]; actor.sequenceIndex=0; actor.state='tele'; actor.stateT=0;
+  actor.x=1; actor.xTarget=1; actor.z=actor===boss?CFG.BOSS_Z:10; actor.atkTimer=0;
+  actor.attacksLeft=Math.max(0,lab.moves.length-index-1); actor.cueMove(); hazards=[];
+  player.jumpT=player.duckT=-1; player.lastJump=player.lastDuck=-9;
+}
+function changeMoveLabSelection(delta){
+  const actor=activeMoveLabActor(); if(!actor) return;
+  restartMoveLabSelection(actor,(actor._moveLab.selected||0)+delta); SFX.swipe();
+}
+function changeMoveLabSpeed(delta){
+  const actor=activeMoveLabActor(); if(!actor) return;
+  actor._moveLab.speedIndex=clamp(actor._moveLab.speedIndex+delta,0,MOVE_LAB_SPEEDS.length-1); SFX.swipe();
+}
+function buildBossMoveLabStagePlaylist(actor,stage){
+  const lab=actor._moveLab,def=ENCOUNTERS.get(lab.definitionId),cycle=bossCombatTier(stage);
+  const moves=buildMoveLabPlaylist(def.attacks,cycle);
   if(cycle>=CFG.RANDOM_COMBO_TIER){
     const generated=buildMoveLabPlaylist([
-      buildRandomBossCombo(cycle,Math.max(3,bossAttackCount()))
-    ])[0];
-    generated._labName='RANDOM CHAIN x'+generated.steps.length;
-    moves.push(generated);
+      buildRandomBossCombo(cycle,Math.max(3,bossAttackCount(stage)))
+    ],cycle)[0];
+    generated._labName='RANDOM CHAIN x'+generated.steps.length; moves.push(generated);
   }
-  boss._moveLab={moves,index:0,doneT:0}; boss.attacksLeft=moves.length;
+  return moves;
+}
+function changeBossMoveLabStage(delta){
+  const actor=activeMoveLabActor();
+  if(!actor||actor!==boss||!actor._moveLab.definitionId) return false;
+  const lab=actor._moveLab,next=Math.max(1,lab.testStage+delta);
+  if(next===lab.testStage) return true;
+  const selected=lab.moves[lab.selected||0],selectedId=selected&&selected.id;
+  /* Stage changes alter progression/tempo only. Keep the arena and pinned boss
+     definition intact so future dynamic stage encounter pools cannot reroll it. */
+  loop=debugLoop=next; lab.testStage=next;
+  lab.moves=buildBossMoveLabStagePlaylist(actor,next);
+  let index=selectedId?lab.moves.findIndex(move=>move.id===selectedId):-1;
+  if(index<0) index=Math.min(lab.selected||0,lab.moves.length-1);
+  restartMoveLabSelection(actor,index);
+  floater(VW/2,250,'LAB STAGE '+next+' · CYCLE '+bossCombatTier(next),'#74d7ff',16);
+  SFX.swipe(); return true;
+}
+function moveLabPauseTap(pt){
+  const actor=activeMoveLabActor(); if(!actor) return false;
+  if(pt.y>=180&&pt.y<=220){
+    if(pt.x<118) changeMoveLabSelection(-1);
+    else if(pt.x>362) changeMoveLabSelection(1);
+    else { restartMoveLabSelection(actor,actor._moveLab.selected||0); SFX.relic(); }
+    return true;
+  }
+  if(pt.y>=228&&pt.y<=265){
+    if(pt.x<150) changeMoveLabSpeed(-1);
+    else if(pt.x>330) changeMoveLabSpeed(1);
+    else { actor._moveLab.speedIndex=2; SFX.swipe(); }
+    return true;
+  }
+  if(actor===boss&&pt.y>=273&&pt.y<=310){
+    if(pt.x<102) changeBossMoveLabStage(-10);
+    else if(pt.x<160) changeBossMoveLabStage(-1);
+    else if(pt.x>378) changeBossMoveLabStage(10);
+    else if(pt.x>320) changeBossMoveLabStage(1);
+    return true;
+  }
+  return false;
+}
+function drawMoveLabPauseControls(){
+  const actor=activeMoveLabActor(); if(!actor) return;
+  const lab=actor._moveLab,move=lab.moves[lab.selected||0],speed=MOVE_LAB_SPEEDS[lab.speedIndex];
+  g.save();
+  g.fillStyle='rgba(8,10,17,.92)'; g.fillRect(22,146,436,174);
+  g.strokeStyle='#ff9a3a'; g.lineWidth=2; g.strokeRect(22.5,146.5,435,173);
+  g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ff9a3a';
+  g.fillText((actor===boss?'BOSS':'MINIBOSS')+' MOVE LAB CONTROLS',VW/2,165);
+  g.strokeStyle='#8b8fa0'; g.strokeRect(48,180,384,40);
+  g.font='bold 18px monospace'; g.fillStyle='#ffe37a';
+  g.fillText('<',82,207); g.fillText('>',398,207);
+  g.font='bold 11px monospace'; g.fillStyle='#e8e2d0';
+  g.fillText(((lab.selected||0)+1)+'/'+lab.moves.length+'  '+((move&&move._labName)||'MOVE').slice(0,28),VW/2,204);
+  g.strokeStyle='#8b8fa0'; g.strokeRect(74,228,332,37);
+  g.font='bold 17px monospace'; g.fillStyle='#74d7ff';
+  g.fillText('-',112,253); g.fillText('+',368,253);
+  g.font='bold 12px monospace'; g.fillStyle='#74d7ff'; g.fillText('SPEED '+speed.toFixed(2)+'x',VW/2,252);
+  if(actor===boss){
+    const stage=lab.testStage,cycle=bossCombatTier(stage);
+    g.strokeStyle='#8b8fa0'; g.strokeRect(48,273,384,37);
+    g.font='bold 11px monospace'; g.fillStyle='#9ecbff';
+    g.fillText('-10',76,297); g.fillText('−',134,297); g.fillText('+',346,297); g.fillText('+10',404,297);
+    g.fillStyle='#e8e2d0'; g.fillText('STAGE '+stage+' · CYCLE '+cycle,VW/2,291);
+    g.font='8px monospace'; g.fillStyle='#8b8fa0';
+    g.fillText(lab.definitionId.toUpperCase()+' PINNED · [ / ] stage · shift = 10',VW/2,306);
+  } else {
+    g.font='9px monospace'; g.fillStyle='#aeb2c2'; g.fillText('LEFT/RIGHT move · UP/DOWN speed',VW/2,296);
+  }
+  g.restore();
+}
+function startBossMoveLab(){
+  startBoss();
+  const definitionId=activeBossDefinition().id;
+  boss._moveLab={moves:[],index:0,selected:0,speedIndex:2,doneT:0,testStage:loop,definitionId};
+  boss._moveLab.moves=buildBossMoveLabStagePlaylist(boss,loop); boss.attacksLeft=boss._moveLab.moves.length;
   boss.entering=false; boss.rise=1; boss.state='idle'; boss.stateT=0; boss.atkTimer=.8;
   setMode('boss'); hazards=[];
   floater(VW/2,250,'BOSS MOVE LAB · SINGLES, AUTHORED, RANDOM','#ff9a3a',17);
@@ -5730,7 +6347,7 @@ function startBossMoveLab(){
 function startMiniMoveLab(){
   startMiniboss(1,true);
   const moves=buildMoveLabPlaylist(minibossAttackSet());
-  minibossFight._moveLab={moves,index:0,doneT:0}; minibossFight.attacksLeft=moves.length;
+  minibossFight._moveLab={moves,index:0,selected:0,speedIndex:2,doneT:0}; minibossFight.attacksLeft=moves.length;
   minibossFight.z=10; minibossFight.state='idle'; minibossFight.stateT=0; minibossFight.atkTimer=.8; minibossFight._introDone=true;
   hazards=[];
   floater(VW/2,250,'MINIBOSS MOVE LAB · SINGLES THEN COMBOS','#c9f74a',17);
@@ -5846,6 +6463,7 @@ function updateMiniboss(dt){
     if(w.atkTimer<=0&&w.attacksLeft>0){
       w.attacksLeft--;
       if(w._moveLab){
+        w._moveLab.selected=w._moveLab.index;
         w.attack=w._moveLab.moves[w._moveLab.index++];
         floater(VW/2,230,w._moveLab.index+'/'+w._moveLab.moves.length+' · '+w.attack._labName,'#c9f74a',15);
       } else {
@@ -6673,7 +7291,12 @@ function drawTelegraphs(){
     const height=cue.height;
     const pulse=telegraphActor.state==='strike'?.72:0.42+Math.sin(perfNow*16)*0.16;
     for(const lane of telegraphActor.hazardLanes) drawLaneHitHue(lane,pulse);
-    if(height==='low') cue.centerJumpCue?drawCenterJumpArrow(pulse):drawActionArrows(true,pulse);
+    if(height==='low'&&cue.centerJumpCue){
+      const ready=pinchJumpReadiness(telegraphActor,cue);
+      drawPinchGateCue(pulse,ready);
+      if(ready>.04) drawCenterJumpArrow(pulse*ready);
+    }
+    else if(height==='low') drawActionArrows(true,pulse);
     else if(height==='high') drawActionArrows(false,pulse);
   }
 }
@@ -6701,6 +7324,40 @@ function drawActionArrows(up,alpha){
   }
   g.restore();
 }
+function pinchJumpReadiness(actor,move){
+  if(actor.state!=='strike') return 0;
+  let model=null;
+  for(let i=0;i<hazards.length;i++){
+    const h=hazards[i];
+    if(h.kind==='model'&&h.actor===actor&&h.move===move&&h.profile.pincer){ model=h; break; }
+  }
+  if(model){
+    const pose=model.prevPose,presentation=model.prevPresentation;
+    const a=pose[model.profile.joints[0]],b=pose[model.profile.joints[1]];
+    const ar=modelJointRadius(model.profile,a,presentation),br=modelJointRadius(model.profile,b,presentation);
+    const lead=Math.max(18,(ar+br)*3.5);
+    return easeInOut(clamp((ar+br+lead-Math.abs(a.x-b.x))/lead,0,1));
+  }
+  /* Legacy species still use their two physical sweep tips. Fade from closing
+     chevrons to the jump cue only over the final approach to their shared point. */
+  if(move.sweeps&&move.sweeps.length>1){
+    const k=clamp(actor.stateT/move.travel,0,1);
+    const gap=Math.abs(sweepLaneAt(move.sweeps[0],k)-sweepLaneAt(move.sweeps[1],k));
+    return easeInOut(clamp((.72-gap)/.42,0,1));
+  }
+  return 0;
+}
+function drawPinchGateCue(alpha,ready){
+  /* Upright inward chevrons read as closing doors, not early jump prompts. They
+     converge and fade while the normal centre jump arrow takes over at the clap. */
+  const x=laneX(1,1),y=ATTACK_GROUND_Y+29,gap=lerp(42,17,ready),fade=1-ready*.82;
+  g.save(); g.globalAlpha=Math.min(1,alpha+.12)*fade; g.fillStyle='#ff8a70';
+  g.shadowColor='#ff2638'; g.shadowBlur=8;
+  g.fillRect(x-gap-9,y-15,4,29); g.fillRect(x+gap+5,y-15,4,29);
+  g.beginPath(); g.moveTo(x-gap+7,y); g.lineTo(x-gap-4,y-9); g.lineTo(x-gap-4,y+9); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(x+gap-7,y); g.lineTo(x+gap+4,y-9); g.lineTo(x+gap+4,y+9); g.closePath(); g.fill();
+  g.shadowBlur=0; g.restore();
+}
 function drawCenterJumpArrow(alpha){
   /* Closing attacks ask for one precise centre jump, not three generic posture
      cues. Its larger arrow sits below the centre contact hue and rider. */
@@ -6716,6 +7373,27 @@ function drawCenterJumpArrow(alpha){
    gold bracket is the wider last-moment input tolerance. The resolver prints the
    final HIT / PERFECT / SAFE verdict, but never damages or counters in a lab. */
 function moveLabPerfectContactTime(h){
+  if(h.kind==='model'){
+    const volumes=h.timerPlayerVolumes,start=h.lastProgress;
+    for(let i=0;i<=32;i++){
+      const raw=lerp(start,1,i/32);
+      sampleBossPresentation(h.actor,h.def,h.predictPresentation,'strike',raw*h.duration);
+      h.rig.samplePose(h.predictPresentation,h.predictPose);
+      /* Pinch timing belongs to the physical two-core clap. Gold overlap still
+         decides PERFECT in the resolver; the lamp tells the player when to jump. */
+      if(h.profile.pincer){
+        if(modelPincerSnapped(h,h.predictPose,h.predictPresentation)) return h.born+raw*h.duration;
+        continue;
+      }
+      for(let j=0;j<h.profile.joints.length;j++){
+        const joint=h.predictPose[h.profile.joints[j]];
+        const radius=modelJointRadius(h.profile,joint,h.predictPresentation,true);
+        if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,radius,volumes))
+          return h.born+raw*h.duration;
+      }
+    }
+    return Infinity;
+  }
   if(h.kind!=='sweep') return h.impact;
   const playerX=laneX(player.x,1), start=sweepProgress(h);
   /* Sweeps can contact before their nominal endpoint. Sample their same eased
@@ -6727,23 +7405,122 @@ function moveLabPerfectContactTime(h){
     const pincerReady=h.collisionMode!=='pincer'||Math.abs(sweepLaneAt(h,raw)-h.to)<=.34;
     if(raw>=h.activeFrom&&inPerfect&&pincerReady) return h.born+raw*h.duration;
   }
-  return h.impact;
+  return Infinity;
 }
 function drawMoveLabPerfectTimer(actor){
-  const W=perfectWin()+(actor===minibossFight?minibossPerfectBonus():0);
-  let active=false, remaining=Infinity;
+  let active=false,remaining=Infinity,activeWindow=perfectWin();
   for(const h of hazards) if(!h.done){
+    const W=perfectWin()+(actor===minibossFight?minibossPerfectBonus():0)+
+      (h.kind==='model'&&h.profile?(h.profile.perfectBonus||0):0);
     const left=moveLabPerfectContactTime(h)-perfNow;
-    if(left>=0&&left<=W){ active=true; remaining=Math.min(remaining,left); }
+    if(left>=0&&left<=W&&left<remaining){ active=true; remaining=left; activeWindow=W; }
   }
   if(!active) return;
   const x=laneX(player.x,1), y=PLAYER_Y-jumpHeight()-126;
-  const pulse=.72+.28*Math.sin((1-remaining/W)*Math.PI);
+  const pulse=.72+.28*Math.sin((1-remaining/activeWindow)*Math.PI);
   g.save(); g.textAlign='center'; g.globalAlpha=pulse;
   g.fillStyle='#ffe37a'; g.shadowColor='#ffe37a'; g.shadowBlur=18;
   g.beginPath(); g.ellipse(x,y,34,13,0,0,TAU); g.fill();
   g.shadowBlur=0; g.globalAlpha=1; g.font='bold 12px monospace';
   g.fillStyle='#3a2a08'; g.fillText('PERFECT NOW',x,y+4); g.restore();
+}
+function drawMoveLabCapsule(c,col,alpha=1){
+  g.save(); g.globalAlpha=alpha; g.strokeStyle=col; g.fillStyle=col; g.lineCap='round'; g.lineWidth=c.r*2;
+  g.beginPath(); g.moveTo(c.x1,c.y1); g.lineTo(c.x2,c.y2); g.stroke(); g.restore();
+}
+const MOVE_LAB_LIVE_PLAYER_VOLUMES=createPlayerHurtVolumes();
+function drawMoveLabLivePlayerGeometry(){
+  const volumes=samplePlayerHurtVolumes(MOVE_LAB_LIVE_PLAYER_VOLUMES);
+  for(let i=0;i<volumes.count;i++){
+    const v=volumes.capsules[i]; drawMoveLabCapsule(v,'#74d7ff',.22);
+    g.save(); g.strokeStyle='#74d7ff'; g.lineWidth=1.5; g.beginPath();
+    g.arc(v.x1,v.y1,v.r,0,TAU); g.arc(v.x2,v.y2,v.r,0,TAU); g.stroke(); g.restore();
+  }
+}
+function drawMoveLabContactSweep(profile,a,b,prevPresentation,currPresentation,trail=true){
+  const trailCore=sweptModelJointRadius(profile,a,b,prevPresentation,currPresentation);
+  const trailShell=sweptModelJointRadius(profile,a,b,prevPresentation,currPresentation,true);
+  const core=modelJointRadius(profile,b,currPresentation),shell=modelJointRadius(profile,b,currPresentation,true);
+  g.save(); g.lineCap='round';
+  if(trail){
+    g.globalAlpha=.18; g.strokeStyle='#ffe37a'; g.lineWidth=trailShell*2;
+    g.beginPath(); g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); g.stroke();
+    g.globalAlpha=.30; g.strokeStyle='#ff2638'; g.lineWidth=trailCore*2;
+    g.beginPath(); g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); g.stroke();
+  }
+  g.globalAlpha=.95; g.lineWidth=2; g.strokeStyle='#ffe37a';
+  g.beginPath(); g.arc(b.x,b.y,shell,0,TAU); g.stroke();
+  g.strokeStyle='#ff6a5a'; g.beginPath(); g.arc(b.x,b.y,core,0,TAU); g.stroke();
+  if(trail){ g.globalAlpha=.75; g.strokeStyle='#cfd4e2'; g.beginPath(); g.arc(a.x,a.y,3,0,TAU); g.stroke(); }
+  g.restore();
+}
+function drawMoveLabModelPreview(actor,move,def){
+  const lab=actor._moveLab,rig=def.contactRig,profile=rig&&rig.profiles[move.contactId];
+  if(!profile) return false;
+  const presentation=lab.previewPresentation||(lab.previewPresentation=createBossPresentation());
+  const pose=lab.previewPose||(lab.previewPose=rig.createPose());
+  sampleBossPresentation(actor,def,presentation); rig.samplePose(presentation,pose);
+  for(let i=0;i<profile.joints.length;i++){
+    const joint=pose[profile.joints[i]];
+    drawMoveLabContactSweep(profile,joint,joint,presentation,presentation,false);
+  }
+  return true;
+}
+function drawMoveLabDodgeSnapshot(actor){
+  const snap=actor._moveLab&&actor._moveLab.modelSnapshot;
+  if(!snap||snap.until<=perfNow) return;
+  const pending=snap.kind==='PENDING',late=snap.kind==='LATE HIT',airClear=snap.kind==='AIR CLEAR';
+  const panelCol=late?'#ff5b5b':pending?'#ffbf62':airClear?'#74d7ff':'#8ee8a0';
+  const bx=326,by=204,bw=140,bh=142,pad=8,head=25;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(let i=0;i<snap.circleCount;i++){
+    const c=snap.circles[i]; minX=Math.min(minX,c.fromX-c.shell,c.x-c.shell); maxX=Math.max(maxX,c.fromX+c.shell,c.x+c.shell);
+    minY=Math.min(minY,c.fromY-c.shell,c.y-c.shell); maxY=Math.max(maxY,c.fromY+c.shell,c.y+c.shell);
+  }
+  for(let i=0;i<snap.player.count;i++){
+    const v=snap.player.capsules[i]; minX=Math.min(minX,v.x1-v.r,v.x2-v.r); maxX=Math.max(maxX,v.x1+v.r,v.x2+v.r);
+    minY=Math.min(minY,v.y1-v.r,v.y2-v.r); maxY=Math.max(maxY,v.y1+v.r,v.y2+v.r);
+  }
+  const scale=Math.min((bw-pad*2)/Math.max(1,maxX-minX),(bh-head-pad)/Math.max(1,maxY-minY));
+  const ox=bx+bw*.5-(minX+maxX)*.5*scale,oy=by+head+(bh-head)*.5-(minY+maxY)*.5*scale;
+  g.save(); g.fillStyle='rgba(5,7,12,.88)'; g.fillRect(bx,by,bw,bh);
+  g.strokeStyle=panelCol; g.lineWidth=2; g.strokeRect(bx+.5,by+.5,bw-1,bh-1);
+  g.textAlign='center'; g.font='bold 10px monospace'; g.fillStyle=panelCol;
+  g.fillText(late?'LATE HIT':pending?'PERFECT PENDING':airClear?'AIR CLEAR':'PERFECT SNAPSHOT',bx+bw*.5,by+16);
+  g.beginPath(); g.rect(bx+2,by+head,bw-4,bh-head-14); g.clip(); g.translate(ox,oy); g.scale(scale,scale);
+  for(let i=0;i<snap.circleCount;i++){
+    const c=snap.circles[i],shellCol=pending?'#ffe37a':'#a8ff6a',coreCol=late?'#ff4d3a':'#ff63d8';
+    /* Thick lines are the exact swept shell/core capsules used by collision.
+       On LATE HIT, the red corridor visibly crossing white explains the death. */
+    g.lineCap='round'; g.globalAlpha=.18; g.strokeStyle=shellCol; g.lineWidth=c.shell*2;
+    g.beginPath(); g.moveTo(c.fromX,c.fromY); g.lineTo(c.x,c.y); g.stroke();
+    g.globalAlpha=late&&i===snap.hitJoint ? .55 : .32; g.strokeStyle=coreCol; g.lineWidth=c.core*2;
+    g.beginPath(); g.moveTo(c.fromX,c.fromY); g.lineTo(c.x,c.y); g.stroke();
+    g.globalAlpha=1; g.lineWidth=2/scale; g.strokeStyle=shellCol;
+    g.beginPath(); g.arc(c.x,c.y,c.shell,0,TAU); g.stroke();
+    g.strokeStyle=coreCol; g.beginPath(); g.arc(c.x,c.y,c.core,0,TAU); g.stroke();
+  }
+  for(let i=0;i<snap.player.count;i++) drawMoveLabCapsule(snap.player.capsules[i],'#f3fbff',.72);
+  g.restore(); g.save(); g.textAlign='center'; g.font='7px monospace'; g.fillStyle='#cfd4e2';
+  g.fillText(late?'RED SWEEP x WHITE = DEATH':pending?'GOLD TOUCHED · RED ACTIVE':airClear?'AIRBORNE AT PAW CLAP':'VIOLET ATTACK  WHITE KNIGHT',bx+bw*.5,by+bh-4); g.restore();
+}
+function drawMoveLabModelGeometry(h){
+  const current=h.prevPose,previous=h.currPose,presentation=h.prevPresentation,previousPresentation=h.currPresentation;
+  for(let i=0;i<h.profile.joints.length;i++){
+    const name=h.profile.joints[i],a=previous[name],b=current[name];
+    drawMoveLabContactSweep(h.profile,a,b,previousPresentation,presentation,true);
+  }
+  const lab=h.actor._moveLab,result=lab&&lab.lastResult;
+  g.save(); g.textAlign='left'; g.font='11px monospace';
+  g.fillStyle=h.done?'#ffe37a':'#8ee8a0';
+  g.fillText((h.done&&h.lastProgress<1?'RESOLVED · TRACKING':h.done?'RESOLVED':'ACTIVE')+'  '+h.contactId+'  anim '+h.prevPresentation.t.toFixed(3)+
+    '  strike '+h.lastProgress.toFixed(3),16,704);
+  g.fillStyle='#cfd4e2';
+  g.fillText('input '+(Number.isFinite(h.lastInputAge)?Math.max(0,h.lastInputAge*1000).toFixed(0):'—')+
+    ' ms  FPS '+debugFps.toFixed(0)+'  SPD '+moveLabTimeScale().toFixed(2)+'x  swept '+h.profile.joints.length+' '+(h.profile.joints.length===1?'paw':'paws'),16,720);
+  g.fillStyle=result?result.col:'#cfd4e2';
+  g.fillText((result?result.kind+': '+result.reason:h.lastReason).slice(0,67),16,736);
+  g.restore();
 }
 function drawMoveLabMarkers(){
   const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
@@ -6762,9 +7539,22 @@ function drawMoveLabMarkers(){
   }
   g.restore();
   drawMoveLabPerfectTimer(actor);
+  drawMoveLabLivePlayerGeometry();
+  drawMoveLabDodgeSnapshot(actor);
+  const move=actor===boss?currentBossMove():currentMiniMove();
+  const def=actor===boss?activeBossDefinition():activeMinibossDefinition();
+  let modelHazard=null;
+  for(let i=hazards.length-1;i>=0;i--) if(hazards[i].kind==='model'){
+    if(!modelHazard) modelHazard=hazards[i];
+    if(!hazards[i].done){ modelHazard=hazards[i]; break; }
+  }
+  if(modelHazard){ drawMoveLabModelGeometry(modelHazard); return; }
+  if(move&&move.contactId&&def.contactRig&&
+     (actor.state==='tele'||actor.state==='strike'||actor.state==='recover'||actor.state==='comboRecover')){
+    if(drawMoveLabModelPreview(actor,move,def)) return;
+  }
 
   if((actor.state!=='tele'&&actor.state!=='strike')||!actor.attack||!actor.hazardLanes) return;
-  const move=actor===boss?currentBossMove():currentMiniMove();
   if(!move) return;
   const contacts=moveContactXs(actor,move,actor.hazardLanes);
   const strikeK=actor.state==='strike'?clamp(actor.stateT/move.travel,0,1):0;
@@ -7416,57 +8206,14 @@ function render(){
   }
   for(const c of pickups) queueWorldDraw(c.z,drawPickupEntity,c);
   if(boss) queueWorldDraw(boss.z,()=>{
-    /* The attack now advances monotonically and is closest on the damage frame.
-       Recovery retreats from that same contact point, so the body never snaps back. */
-    const bossMove=currentBossMove(); let zD=boss.z;
-    /* Large traveling bodies stage most of their forward approach during the
-       tell. The active swipe then travels sideways instead of telescoping an arm. */
-    const tellReach=bossMove&&bossMove.stageReach!==undefined?bossMove.stageReach:
-      bossMove&&bossMove.bodySweep&&bossMove.bodyLunge>8?bossMove.bodyLunge*.88:1.8;
-    if(boss.state==='tele'&&bossMove)
-      zD=boss.z-easeOut(clamp(boss.stateT/(boss.teleTime||bossMove.tele),0,1))*tellReach;
-    const requestedReach=bossMove?(bossMove.bodyLunge!==undefined?bossMove.bodyLunge:(bossMove.lunge||boss.attack.lunge||3)+5.2):0;
-    const contactReach=bossMove?Math.min(boss.z-.8,requestedReach):0;
-    const comboRecovering=boss.state==='comboRecover';
-    const comboRecoverTime=bossMove?comboStepRecoveryTime(bossMove,boss.attack):.28;
-    const fullRecoverTime=encounterRecoveryTime(boss.attack);
-    const recoverAnimTime=fullRecoverTime*(bossMove&&bossMove.recoverPortion||.38);
-    if(boss.state==='strike'&&bossMove)
-      zD=boss.z-tellReach-easeOut(clamp(boss.stateT/bossMove.travel,0,1))*Math.max(0,contactReach-tellReach);
-    if(boss.state==='recover'&&bossMove)
-      zD=boss.z-(1-easeInOut(clamp(boss.stateT/recoverAnimTime,0,1)))*contactReach;
-    if(comboRecovering&&bossMove)
-      zD=boss.z-(1-easeInOut(clamp(boss.stateT/comboRecoverTime,0,1)))*contactReach;
-    if(boss.state==='finisher')
-      zD=boss.z-easeOut(clamp((boss.stateT-0.62)/1.3,0,1))*activeBossDefinition().finisherReach;
-    const p=proj(zD);
-    let anim=boss.state==='tele'?boss.attack.anim:boss.state;
-    if(bossMove) anim=boss.state==='tele'?bossMove.anim:boss.state==='strike'?bossMove.strike:
-      comboRecovering?comboStepRecoveryAnim(bossMove):
-      boss.state==='recover'&&bossMove.recoverAnim?bossMove.recoverAnim:boss.state;
-    const riseK=easeOut(clamp(boss.rise,0,1)), sink=(1-riseK)*150*p.s;
-    let bx2=laneX(boss.x,p.t);
-    if(boss.state==='tele'&&bossMove&&bossMove.sweep&&bossMove.bodySweep){
-      bx2=lerp(bx2,laneX(sweepBodyLane(bossMove,0),1),
-        easeOut(clamp(boss.stateT/(boss.teleTime||bossMove.tele),0,1)));
-    } else if(boss.state==='strike'&&bossMove&&bossMove.sweep&&bossMove.bodySweep){
-      bx2=laneX(sweepBodyLane(bossMove,clamp(boss.stateT/bossMove.travel,0,1)),1);
-    } else if(boss.state==='strike'&&bossMove){
-      const contactK=easeOut(clamp(boss.stateT/bossMove.travel,0,1));
-      bx2=lerp(bx2,laneX(boss.xTarget,1),contactK); // body/muzzle arrives on the marked line
-    } else if(boss.state==='recover'&&bossMove){
-      const retreatK=easeInOut(clamp(boss.stateT/recoverAnimTime,0,1));
-      bx2=lerp(laneX(boss.xTarget,1),bx2,retreatK);
-    } else if(comboRecovering&&bossMove){
-      const retreatK=easeInOut(clamp(boss.stateT/comboRecoverTime,0,1));
-      bx2=lerp(laneX(boss.xTarget,1),bx2,retreatK);
-    }
-    const bossContacts=moveContactXs(boss,bossMove,boss.state==='finisher'?ALL_LANES:boss.hazardLanes);
-    activeBossDefinition().draw(bx2,p.y+sink,p.s*bossSpeciesScale(),anim,
-      clamp(boss.stateT/(boss.state==='tele'&&bossMove?(boss.teleTime||bossMove.tele):boss.state==='strike'&&bossMove?bossMove.travel:comboRecovering?comboRecoverTime:boss.state==='recover'?recoverAnimTime:boss.state==='finisher'?2.15:boss.state==='dying'?2.5:0.5),0,1),
-      boss.hurtT>0,bossContacts);
+    const def=activeBossDefinition();
+    const presentation=sampleBossPresentation(boss,def,boss._presentation||(boss._presentation=createBossPresentation()));
+    const p=presentation,bx2=presentation.x;
+    const sampledPose=def.contactRig?def.contactRig.samplePose(presentation,boss._renderPose||(boss._renderPose=def.contactRig.createPose())):null;
+    def.draw(bx2,presentation.y,presentation.scale,presentation.anim,presentation.t,
+      boss.hurtT>0,presentation.contactXs,sampledPose);
     if(boss.rise<1){                                    // it BREACHES: spray at the waterline
-      const wl=p.y+4*p.s, isLava=activeBossDefinition().element==='lava';
+      const wl=p.yProj+4*p.s, isLava=activeBossDefinition().element==='lava';
       /* Water bosses retain surface rings. Lava rings crossed the rising turtle's
          face in screen space, so the snapper uses spray/embers without that overlay. */
       if(!isLava) for(let r=0;r<3;r++){ const ph=(boss.rise*1.6+r*0.33)%1;
@@ -7478,15 +8225,15 @@ function render(){
     if(boss.poisonT>0&&boss.state!=='dying'){
       for(let i=0;i<4;i++){ const ph=(perfNow*0.9+i*0.27)%1;
         g.globalAlpha=(1-ph)*0.8; g.fillStyle=i%2?'#7ade6a':'#4a9a42';
-        g.fillRect(bx2+(-46+i*30)*p.s,p.y-(120-ph*110)*p.s,3*p.s+1,(6+ph*4)*p.s+1); }
+        g.fillRect(bx2+(-46+i*30)*p.s,p.yProj-(120-ph*110)*p.s,3*p.s+1,(6+ph*4)*p.s+1); }
       g.globalAlpha=1;
     }
     if(boss.burnT>0&&boss.state!=='dying'){
       for(let i=0;i<5;i++){ const fh=(6+Math.sin(perfNow*11+i*2.3)*4)*p.s;
         g.globalAlpha=0.8; g.fillStyle='#ff6a2a';
-        g.fillRect(bx2+(-52+i*26)*p.s,p.y-(56+(i%3)*34)*p.s-fh,3.4*p.s+1,fh);
+        g.fillRect(bx2+(-52+i*26)*p.s,p.yProj-(56+(i%3)*34)*p.s-fh,3.4*p.s+1,fh);
         g.globalAlpha=0.9; g.fillStyle='#ffd23a';
-        g.fillRect(bx2+(-51+i*26)*p.s,p.y-(56+(i%3)*34)*p.s-fh*0.5,2*p.s+1,fh*0.5); }
+        g.fillRect(bx2+(-51+i*26)*p.s,p.yProj-(56+(i%3)*34)*p.s-fh*0.5,2*p.s+1,fh*0.5); }
       g.globalAlpha=1;
     } });
   if(minibossFight) queueWorldDraw(minibossFight.z,()=>{
@@ -7563,6 +8310,7 @@ function render(){
   }
   if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
     g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+    if(debugMoveLabActive()) drawMoveLabPauseControls();
     g.textAlign='center'; g.font='bold 34px monospace'; g.fillStyle='#e8e2d0';
     g.fillText('PAUSED',VW/2,VH/2-58);
     g.font='15px monospace'; g.fillStyle='#aeb2c2';
@@ -7583,9 +8331,11 @@ function render(){
 /* ============================== 13. MAIN LOOP ============================== */
 let lastTime=performance.now();
 let hadFocus=true;
+let debugFps=60;
 function frame(now){
   requestAnimationFrame(frame);
   const gap=(now-lastTime)/1000;
+  if(gap>0&&gap<.6) debugFps=lerp(debugFps,1/gap,.08);
   /* watchdog: a long frame gap means the browser suspended us — freeze the run.
      Focus is checked EDGE-triggered (only the moment it is lost pauses; some mobile
      browsers report no focus at all, and a level check locked the game on pause) */
@@ -7596,7 +8346,7 @@ function frame(now){
   let dt=Math.min(gap,1/25); lastTime=now;
   if(paused){ render(); return; }                   // paused: keep drawing, freeze the sim
   if(hitstop>0){ hitstop-=dt; render(); return; }   // hit-stop: freeze the sim, keep drawing
-  update(dt);
+  update(dt*moveLabTimeScale());
   render();
 }
 requestAnimationFrame(frame);
