@@ -1,0 +1,17 @@
+# Local agent/runtime state
+.agents/
+.codex/
+
+# Browser and automated-test profiles
+.edge-test-profile/
+knight-rush-*-profile/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Windows metadata
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
