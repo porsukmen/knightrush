@@ -2305,354 +2305,17 @@ function p3furTuftX(mesh,baseX,cy,cz,h,reach,depth,side,mat){
   p3tri(mesh,a,b,c,mat);p3tri(mesh,f,e,d,mat);
   p3quad(mesh,a,d,e,b,mat);p3quad(mesh,b,e,f,c,mat);p3quad(mesh,c,f,d,a,mat);
 }
-function buildWolfPixelModel3D(){
-  const mesh=[];
-  /* Minecraft-like construction using the established Wolf proportions: every
-     major mass is a clean cuboid and turns as part of one shared model. */
-  mesh._part='body';
-  p3box(mesh,0,15.8,-1.5,15.5,9.5,19,'fur');            // long torso
-  p3box(mesh,0,16.6,6.2,18,11,7.5,'mane');              // original broad shoulders
-  mesh._part='head';
-  p3box(mesh,0,19.2,10.2,11.2,8.2,6,'mane');            // short strong neck
-  p3box(mesh,0,21.0,14.4,12.4,8,8.5,'fur');             // lean wolf skull
-  p3frustumZ(mesh,17.1,25.0,8.2,4.0,15.3,19.9,15.6,19.0,'fur'); // tapered long muzzle
-  mesh._part='jaw';
-  p3frustumZ(mesh,17.0,25.0,7.5,4.1,14.15,15.55,14.35,15.5,'fur'); // fur-covered jaw
-  mesh._part='head';
-  p3box(mesh,0,17.0,25.25,3.3,2.1,1.1,'deep');          // compact wolf nose
-  /* Rectangular ears match the original game model rather than introducing a
-     second smooth/illustrative silhouette language. */
-  p3box(mesh,-4.25,26.4,12.8,3.0,4.8,3.2,'mane');
-  p3box(mesh,4.25,26.4,12.8,3.0,4.8,3.2,'mane');
-  /* Eyes sit on the front plane of the skull. Their blocks also remain legible
-     at three-quarter angles without ever changing to separate side artwork. */
-  mesh._part='frontEye';
-  p3plateZ(mesh,-3.3,21.6,18.83,2.15,1.9,'mouth');
-  p3plateZ(mesh,3.3,21.6,18.83,2.15,1.9,'mouth');
-  /* Keep the pupils visibly in front of their larger sockets. The small depth
-     separation also prevents their two canvas triangles interleaving at the
-     diagonal while remaining far too thin to become profile eyeballs. */
-  p3plateZ(mesh,-3.3,21.62,19.15,1.2,1.15,'eye');
-  p3plateZ(mesh,3.3,21.62,19.15,1.2,1.15,'eye');
-  mesh._part='head';
-  p3surfaceBox(mesh,-3.3,23.05,19.4,2.9,.72,.42,'mane');
-  p3surfaceBox(mesh,3.3,23.05,19.4,2.9,.72,.42,'mane');
-  /* Dedicated inner surfaces prevent the road/background from showing through
-     the opened jaw. The upper palate follows the skull. */
-  p3frustumZ(mesh,17.45,24.85,6.5,3.45,14.92,15.4,15.08,15.55,'mouth');
-  /* Two upper canines only. Their tops overlap the upper lip while the white
-     ends hang inside the opening, so they read as attached wolf fangs rather
-     than loose teeth underneath the animal. */
-  p3box(mesh,-1.58,14.55,24.72,.7,1.85,.8,'tooth');
-  p3box(mesh,1.58,14.55,24.72,.7,1.85,.8,'tooth');
-  /* Small upper teeth stay recessed inside the red mouth. They add a wolf-like
-     tooth row in profile without hanging below the closed lips. */
-  for(const tooth of [
-    [-3.2,15.13,18.9], [3.2,15.13,18.9],
-    [-2.75,15.2,20.7],[2.75,15.2,20.7],
-    [-2.28,15.27,22.35],[2.28,15.27,22.35]
-  ]) p3box(mesh,tooth[0],tooth[1],tooth[2],.42,.46,.46,'tooth');
-  /* The closed mouth keeps the red seam, nose and restrained square fangs from
-     the normal Wolf while preserving the clean cuboid muzzle. */
-  mesh._part='jaw';
-  p3frustumZ(mesh,17.4,24.8,6.2,3.35,15.52,15.9,15.5,15.88,'mouth'); // tongue/lower mouth
-  /* The chin wraps wider and farther forward than the opening, so the mouth is
-     seated inside a real lower muzzle rather than pasted over a black strip. */
-  p3frustumZ(mesh,17.0,25.05,8.0,4.75,12.95,14.28,13.15,14.35,'fur'); // broad chin
-  for(const side of [-1,1]){
-    mesh._part='jaw';
-    /* Four separate block limbs retain visible joints, but the pieces are now
-       rectangular like the original Wolf instead of sculpted animal volumes. */
-    const foreSide=side<0?'foreL':'foreR';
-    const frontRoot=p3v(side*7.3,14.6,6.4),frontJoint=p3v(side*7.55,8.2,6.8),frontPaw=p3v(side*7.6,2.4,8.1);
-    mesh._part=foreSide+'_upper';
-    p3box(mesh,frontRoot.x,frontRoot.y,frontRoot.z,4.0,4.2,4.1,'mane');
-    p3segment(mesh,frontRoot,frontJoint,3.15,3.25,'fur');
-    mesh._part=foreSide+'_lower';
-    p3segment(mesh,frontJoint,frontPaw,2.7,2.8,'mane');
-    mesh._part=foreSide+'_paw';
-    p3box(mesh,frontPaw.x,1.15,frontPaw.z+1.25,4.2,2.3,4.9,'deep');
-    const hindSide=side<0?'hindL':'hindR';
-    const hindRoot=p3v(side*5.5,13.7,-7.1),hindJoint=p3v(side*6.15,7.7,-7.8),hindPaw=p3v(side*6.25,2.35,-5.6);
-    mesh._part=hindSide+'_upper';
-    p3box(mesh,hindRoot.x,hindRoot.y,hindRoot.z,4.3,4.5,4.8,'fur');
-    p3segment(mesh,hindRoot,hindJoint,3.35,3.55,'fur');
-    mesh._part=hindSide+'_lower';
-    p3segment(mesh,hindJoint,hindPaw,2.75,2.9,'mane');
-    mesh._part=hindSide+'_paw';
-    p3box(mesh,hindPaw.x,1.15,hindPaw.z+1.15,4.2,2.3,4.7,'deep');
-    for(let toe=-1;toe<=1;toe++){
-      mesh._part=foreSide+'_paw';
-      p3box(mesh,frontPaw.x+toe*1.25,.65,frontPaw.z+3.7,.5,.55,1.0,'tooth');
-      mesh._part=hindSide+'_paw';
-      p3box(mesh,hindPaw.x+toe*1.25,.65,hindPaw.z+3.55,.5,.55,1.0,'tooth');
-    }
-  }
-  /* A jointed block tail and square hackles complete the Minecraft-like read. */
-  mesh._part='tail';
-  p3segment(mesh,p3v(0,16.5,-10.2),p3v(1.0,15.7,-15.0),4.8,4.6,'mane');
-  p3segment(mesh,p3v(1.0,15.7,-15.0),p3v(2.4,14.5,-19.4),3.7,3.6,'fur');
-  p3segment(mesh,p3v(2.4,14.5,-19.4),p3v(3.7,13.1,-22.4),2.5,2.5,'fur');
-  mesh._part='body';
-  for(const z of [-7,-3,1,5]) p3box(mesh,0,21.5+(z+7)*.13,z,2.0,2.4,2.2,'mane');
-  p3surfaceBox(mesh,-6.15,16.0,-1.2,.38,.65,4.0,'scar');
-  p3surfaceBox(mesh,-6.12,14.2,.3,.38,.58,3.0,'scar');
-  /* 4x supersampling keeps the block construction while removing visible raster
-     steps. The main canvas downsamples this smoothly like the other model art. */
-  delete mesh._part;
-  return Object.freeze({mesh,width:256,height:216,anchorX:128,anchorY:192,rasterScale:4,displayScale:.98,steps:16,frames:[[],[]],work:[null,null]});
-}
-const WOLF_PIXEL_MODEL_3D=buildWolfPixelModel3D();
 const P3_HEX_CACHE=Object.create(null);
 function p3hex(hex){
   let rgb=P3_HEX_CACHE[hex];
   if(!rgb){const n=parseInt(hex.slice(1),16);rgb=P3_HEX_CACHE[hex]=Object.freeze([(n>>16)&255,(n>>8)&255,n&255]);}
   return rgb;
 }
-function poseWolfPixelVertex(v,part,pose,out){
-  if(!pose) return v;
-  let x=v.x,y=v.y,z=v.z;
-  /* The jaw owns a real hinge. Positive rotation lowers its long front edge
-     while the rear edge stays attached under the skull. */
-  if(part==='jaw'&&pose.jaw){
-    const py=15.8,pz=17.2,a=pose.jaw*.82,c=Math.cos(a),s=Math.sin(a),dy=y-py,dz=z-pz;
-    y=py+dy*c-dz*s;z=pz+dy*s+dz*c;
-  }
-  if(part==='head'||part==='jaw'||part==='frontEye'){
-    if(pose.headTilt){
-      const py=19.2,pz=10.2,a=pose.headTilt,c=Math.cos(a),s=Math.sin(a),dy=y-py,dz=z-pz;
-      y=py+dy*c-dz*s;z=pz+dy*s+dz*c;
-    }
-    y+=pose.headY||0;z+=pose.headZ||0;
-  }
-  if(part.startsWith('fore')){
-    const side=part[4]==='L'?-1:1,rx=side*7.3,ry=14.6,rz=6.4;
-    /* Lower leg and paw first bend at the elbow; the complete chain then
-       inherits the shoulder transforms. Paw-tagged claws follow both pivots. */
-    if(pose.elbowBend&&(part.endsWith('_lower')||part.endsWith('_paw'))){
-      const jy=8.2,jz=6.8,a=pose.elbowBend,c=Math.cos(a),s=Math.sin(a),dy=y-jy,dz=z-jz;
-      y=jy+dy*c-dz*s;z=jz+dy*s+dz*c;
-    }
-    if(pose.foreSpread){
-      const a=side*pose.foreSpread,c=Math.cos(a),s=Math.sin(a),dx=x-rx,dy=y-ry;
-      x=rx+dx*c-dy*s;y=ry+dx*s+dy*c;
-    }
-    if(pose.foreSwing){
-      const a=pose.foreSwing,c=Math.cos(a),s=Math.sin(a),dy=y-ry,dz=z-rz;
-      y=ry+dy*c-dz*s;z=rz+dy*s+dz*c;
-    }
-    if(pose.forePawLift&&(part.endsWith('_lower')||part.endsWith('_paw'))){
-      const liftPart=part.endsWith('_paw')?1:clamp((8.2-y)/(8.2-2.4),0,1);
-      y+=pose.forePawLift*liftPart;
-    }
-  }
-  if(part.startsWith('hind')){
-    const side=part[4]==='L'?-1:1,rx=side*5.5,ry=13.7,rz=-7.1;
-    if(pose.hindBend&&(part.endsWith('_lower')||part.endsWith('_paw'))){
-      const jy=7.7,jz=-7.8,a=pose.hindBend,c=Math.cos(a),s=Math.sin(a),dy=y-jy,dz=z-jz;
-      y=jy+dy*c-dz*s;z=jz+dy*s+dz*c;
-    }
-    if(pose.hindSwing){
-      const a=pose.hindSwing,c=Math.cos(a),s=Math.sin(a),dy=y-ry,dz=z-rz;
-      y=ry+dy*c-dz*s;z=rz+dy*s+dz*c;
-    }
-  }
-  if(part==='tail'&&pose.tailWag){
-    const px=0,pz=-10.2,a=pose.tailWag,c=Math.cos(a),s=Math.sin(a),dx=x-px,dz=z-pz;
-    const reach=clamp((-10.2-z)/12.2,0,1);
-    x=px+dx*c-dz*s;z=pz+dx*s+dz*c;y+=Math.abs(a)*2.6*reach;
-  }
-  /* A pounce coil lowers the heavy masses and upper legs while keeping each
-     paw on the road. Lower-leg vertices receive a graduated drop from joint to
-     paw, so the visible blocks fold at the joint instead of the whole wolf
-     merely shrinking vertically. */
-  if(pose.bodyDrop){
-    const d=pose.bodyDrop;
-    if(part==='body'||part==='head'||part==='jaw'||part==='frontEye'||part==='tail'||part.endsWith('_upper')) y-=d;
-    else if(part.endsWith('_lower')){
-      const jointY=part.startsWith('fore')?8.2:7.7,pawY=2.4;
-      y-=d*clamp((y-pawY)/(jointY-pawY),0,1);
-    }
-  }
-  if(pose.crouch) y*=1-pose.crouch;
-  y+=pose.leap||0;
-  out.x=x;out.y=y;out.z=z;return out;
-}
-let WOLF_DEPTH_RENDERER=null,WOLF_DEPTH_RENDERER_FAILED=false;
-function wolfDepthShader(gl,type,source){
+function p3DepthShader(gl,type,source){
   const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);
-  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader)||'wolf shader compile failed');
+  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader)||'3D shader compile failed');
   return shader;
 }
-function wolfDepthRenderer(model){
-  if(WOLF_DEPTH_RENDERER||WOLF_DEPTH_RENDERER_FAILED) return WOLF_DEPTH_RENDERER;
-  try{
-    /* The wolf can fill most of a phone during its lunge. Render three times
-       larger than the old depth target so that close attacks never magnify a
-       tiny 256x216 image; final downsampling supplies clean antialiased edges. */
-    const supersample=3,canvas=document.createElement('canvas');
-    canvas.width=model.width*supersample;canvas.height=model.height*supersample;
-    canvas._wolfRasterScale=(model.rasterScale||1)*supersample;
-    const gl=canvas.getContext('webgl',{alpha:true,antialias:true,depth:true,
-      premultipliedAlpha:true,preserveDrawingBuffer:true});
-    if(!gl) throw new Error('WebGL unavailable');
-    const vs=wolfDepthShader(gl,gl.VERTEX_SHADER,
-      'attribute vec3 p;attribute vec4 c;varying vec4 v;void main(){gl_Position=vec4(p,1.0);v=c;}');
-    const fs=wolfDepthShader(gl,gl.FRAGMENT_SHADER,
-      'precision mediump float;varying vec4 v;void main(){gl_FragColor=v;}');
-    const program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
-    if(!gl.getProgramParameter(program,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program)||'wolf shader link failed');
-    const buffer=gl.createBuffer(),count=model.mesh.length*3,data=new Float32Array(count*7);
-    gl.useProgram(program);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-    const p=gl.getAttribLocation(program,'p'),c=gl.getAttribLocation(program,'c');
-    gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,3,gl.FLOAT,false,28,0);
-    gl.enableVertexAttribArray(c);gl.vertexAttribPointer(c,4,gl.FLOAT,false,28,12);
-    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.GREATER);gl.clearDepth(0);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
-    WOLF_DEPTH_RENDERER={canvas,gl,program,buffer,count,data,supersample,pv:{x:0,y:0,z:0}};
-  }catch(err){ WOLF_DEPTH_RENDERER_FAILED=true;console.warn('Wolf depth renderer fallback:',err); }
-  return WOLF_DEPTH_RENDERER;
-}
-function renderWolfDepthFrame(model,yaw,hurtFlash,pose){
-  const r=wolfDepthRenderer(model);if(!r) return null;
-  const {gl,data,pv}=r,cy=Math.cos(yaw),sy=Math.sin(yaw),rs=(model.rasterScale||1)*r.supersample;let o=0;
-  for(const tri of model.mesh){
-    const light=tri.n.x*-.34+tri.n.y*.72+tri.n.z*.24;
-    const tier=light>.52?3:light>.03?2:light>-.46?1:0;
-    const rgb=p3hex(hurtFlash&&tri.mat!=='eye'?'#ffffff':PIXEL_MODEL_MATS[tri.mat][tri.emissive?3:tier]);
-    const bias=tri.part==='frontEye'?(tri.mat==='eye'?3:2):0;
-    for(let vi=0;vi<3;vi++){
-      const source=vi===0?tri.a:vi===1?tri.b:tri.c;
-      const v=poseWolfPixelVertex(source,tri.part,pose,pv),rx=v.x*cy+v.z*sy,rz=v.z*cy-v.x*sy;
-      const px=model.anchorX*r.supersample+rx*rs;
-      const py=model.anchorY*r.supersample+(-v.y+rz*.18)*rs,depth=rz+v.y*.14+bias;
-      data[o++]=px/r.canvas.width*2-1;data[o++]=1-py/r.canvas.height*2;data[o++]=clamp(depth/64,-.98,.98);
-      data[o++]=rgb[0]/255;data[o++]=rgb[1]/255;data[o++]=rgb[2]/255;data[o++]=1;
-    }
-  }
-  gl.viewport(0,0,r.canvas.width,r.canvas.height);gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.bindBuffer(gl.ARRAY_BUFFER,r.buffer);
-  gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);gl.drawArrays(gl.TRIANGLES,0,r.count);gl.flush();
-  return r.canvas;
-}
-const WOLF_FALLBACK_FACE_POOL=[],WOLF_FALLBACK_FACES=[],WOLF_FALLBACK_PVA={},WOLF_FALLBACK_PVB={},WOLF_FALLBACK_PVC={};
-function projectWolfFallbackVertex(v,part,pose,out,pv,x,y,ps,cy,sy){
-  v=poseWolfPixelVertex(v,part,pose,pv);
-  const rx=v.x*cy+v.z*sy,rz=v.z*cy-v.x*sy;
-  out.x=x+rx*ps;out.y=y+(-v.y+rz*.18)*ps;out.z=rz+v.y*.14;return out;
-}
-function renderPixelModel3D(model,x,y,scale,yaw,hurtFlash=false,fluid=false,pose=null){
-  /* WebGL contributes only a transparent, depth-tested picture of the wolf;
-     gameplay and the rest of the game stay on the normal 2D canvas. A real
-     depth buffer removes intersecting-part flicker at every turn angle. */
-  const depthFrame=renderWolfDepthFrame(model,yaw,hurtFlash,pose);
-  if(depthFrame){
-    /* The source canvas is supersampled, but its destination remains the
-       original model rectangle. Higher source density must never change the
-       wolf's gameplay size or anchor. */
-    const basePs=U*scale*model.displayScale,ps=basePs/(model.rasterScale||1);
-    g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
-    g.globalAlpha=.34;g.fillStyle='#050405';g.beginPath();g.ellipse(x,y+1.2*basePs,18*basePs,2.6*basePs,0,0,TAU);g.fill();g.globalAlpha=1;
-    g.drawImage(depthFrame,x-model.anchorX*ps,y-model.anchorY*ps,model.width*ps,model.height*ps);g.restore();return;
-  }
-  /* Draw the projected faces directly onto the game canvas. Canvas edge
-     antialiasing makes every yaw genuinely smooth; there is no sprite grid,
-     nearest-neighbour scaling or angle snapping left in the visible model. */
-  const ps=U*scale*model.displayScale,cy=Math.cos(yaw),sy=Math.sin(yaw),faces=WOLF_FALLBACK_FACES;
-  let faceCount=0;
-  for(const tri of model.mesh){
-    let face=WOLF_FALLBACK_FACE_POOL[faceCount];
-    if(!face)face=WOLF_FALLBACK_FACE_POOL[faceCount]={a:{x:0,y:0,z:0},b:{x:0,y:0,z:0},c:{x:0,y:0,z:0},z:0,color:'#fff'};
-    const a=projectWolfFallbackVertex(tri.a,tri.part,pose,face.a,WOLF_FALLBACK_PVA,x,y,ps,cy,sy),
-      b=projectWolfFallbackVertex(tri.b,tri.part,pose,face.b,WOLF_FALLBACK_PVB,x,y,ps,cy,sy),
-      c=projectWolfFallbackVertex(tri.c,tri.part,pose,face.c,WOLF_FALLBACK_PVC,x,y,ps,cy,sy);
-    const area=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-    /* Every cuboid has consistent winding. Discard its hidden face instead of
-       letting painter-order swaps flash rear triangles through the coat. */
-    if(area>=-.0001)continue;
-    const light=tri.n.x*-.34+tri.n.y*.72+tri.n.z*.24;
-    const tier=light>.52?3:light>.03?2:light>-.46?1:0;
-    const color=hurtFlash&&tri.mat!=='eye'?'#ffffff':PIXEL_MODEL_MATS[tri.mat][tri.emissive?3:tier];
-    /* Face plates are decals on the skull. Give them a painter-order bias so
-       the broad head triangles cannot cut a diagonal notch through either eye. */
-    const plateBias=tri.part==='frontEye'?(tri.mat==='eye'?3:2):0;
-    face.z=(a.z+b.z+c.z)/3+plateBias;face.color=color;faces[faceCount++]=face;
-  }
-  faces.length=faceCount;
-  faces.sort((a,b)=>a.z-b.z);
-  g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
-  g.globalAlpha=.34;g.fillStyle='#050405';g.beginPath();g.ellipse(x,y+1.2*ps,18*ps,2.6*ps,0,0,TAU);g.fill();g.globalAlpha=1;
-  g.lineJoin='round';g.lineWidth=.34;
-  for(const face of faces){
-    g.fillStyle=g.strokeStyle=face.color;g.beginPath();g.moveTo(face.a.x,face.a.y);
-    g.lineTo(face.b.x,face.b.y);g.lineTo(face.c.x,face.c.y);g.closePath();g.fill();g.stroke();
-  }
-  g.restore();
-}
-function drawWolfTurntable(x,y,scale,hurtFlash){
-  const labClock=minibossFight&&minibossFight.state==='lab_wolf_turn'?minibossFight.stateT:perfNow;
-  const rate=.72,spinT=TAU/rate,morphT=.72,cycle=spinT*2+morphT*2,phase=labClock%cycle;
-  let yaw=0,openK=0,label='CLOSED-MOUTH SPIN';
-  if(phase<spinT) yaw=phase*rate;
-  else if(phase<spinT+morphT){openK=easeInOut((phase-spinT)/morphT);label='OPENING MOUTH';}
-  else if(phase<spinT+morphT+spinT){openK=1;yaw=(phase-spinT-morphT)*rate;label='OPEN-MOUTH SPIN';}
-  else {openK=1-easeInOut((phase-spinT*2-morphT)/morphT);label='CLOSING MOUTH';}
-  const pose=openK?{jaw:1.12*openK,headTilt:-.15*openK,headY:.5*openK,headZ:-.4*openK}:null;
-  renderPixelModel3D(WOLF_PIXEL_MODEL_3D,x,y,scale,yaw,hurtFlash,true,pose);
-  g.save();g.textAlign='center';g.font='bold '+Math.max(8,9*scale)+'px monospace';
-  g.fillStyle=openK>.5?'#ff9a7a':'#aeb2c2';g.fillText(label,x,y-38*U*scale);g.restore();
-}
-
-function drawWolfPixelCombat(x,y,scale,state,t,hurtFlash,contactXs){
-  let recovering=false,recoveryT=0;
-  if(state.startsWith('recover_miniboss_from:')){
-    recovering=true;recoveryT=easeInOut(clamp(t,0,1));state=state.slice(state.indexOf(':')+1);
-  }
-  const pose={jaw:0,headTilt:0,headY:0,headZ:0,crouch:0,bodyDrop:0,leap:0,
-    foreSpread:0,foreSwing:0,forePawLift:0,elbowBend:0,hindBend:0,hindSwing:0,tailWag:0};
-  const den=Math.max(.001,scale)*U,contacts=contactXs||[];
-  let targetYaw=0;
-  if(contacts.length===1) targetYaw=clamp((contacts[0]-x)/(den*22),-.26,.26);
-  let yaw=0,active=false;
-  if(recovering&&state==='strike_wolf_bite'){
-    const r=recoveryT;pose.jaw=.04*(1-r);pose.headTilt=lerp(.035,0,r);
-    pose.headZ=lerp(3.2,0,r);yaw=targetYaw*(1-r);active=true;
-  }else if(recovering&&state==='strike_wolf_double_pounce'){
-    const r=recoveryT;pose.foreSwing=.12*(1-r);pose.elbowBend=.04*(1-r);
-    pose.hindBend=.02*(1-r);active=true;
-  }else if(state==='howl'){
-    const k=easeOut(clamp(t*1.7,0,1));pose.jaw=.92*k;pose.headTilt=-.18*k;
-    pose.headY=1.5*k;pose.headZ=-1.0*k;active=true;
-  }else if(state==='tele_wolf_bite'){
-    const k=hesitationPose(t);pose.crouch=.07*k;pose.jaw=1.12*k;pose.headTilt=-.17*k;
-    pose.headY=.5*k;pose.headZ=-1.7*k;yaw=targetYaw*k;active=true;
-  }else if(state==='strike_wolf_bite'){
-    const k=easeOut(t),close=easeInOut(clamp((t-.62)/.38,0,1));pose.crouch=.07*(1-k);
-    pose.jaw=lerp(1.15,.04,close);
-    pose.headTilt=lerp(-.17,.035,k);pose.headY=lerp(.5,0,k);pose.headZ=lerp(-1.7,3.2,k);
-    pose.leap=Math.sin(t*Math.PI)*.9;yaw=targetYaw;active=true;
-  }else if(state==='tele_wolf_double_pounce'){
-    const k=hesitationPose(t);pose.bodyDrop=5.2*k;pose.jaw=.2*k;pose.headY=-.9*k;pose.headZ=-.7*k;
-    pose.foreSpread=0;pose.foreSwing=-.12*k;pose.elbowBend=.38*k;
-    pose.hindBend=.34*k;pose.hindSwing=-.12*k;
-    pose.tailWag=Math.sin(t*TAU*2)*.92*k;active=true;
-  }else if(state==='strike_wolf_double_pounce'){
-    const k=easeOut(t),air=Math.sin(t*Math.PI);
-    pose.bodyDrop=5.2*(1-k);pose.leap=air*7.4;pose.jaw=.2*(1-k);
-    pose.headY=-.9*(1-k);pose.headZ=-.7*(1-k);
-    /* Both stick-like chains fold backward in depth during flight, then extend
-       straight toward the rider instead of crossing inward or flaring sideways. */
-    /* The slash lifts from the shoulders: both complete foreleg chains swing
-       forward/up together, while only a tiny wrist lift keeps the paws level. */
-    pose.foreSpread=0;pose.foreSwing=lerp(-.12,.12,k)-air*.68;
-    pose.elbowBend=lerp(.38,.04,k)+air*.48;pose.forePawLift=air*.45;
-    pose.hindBend=lerp(.34,.02,k)+air*.42;pose.hindSwing=-.12*(1-k)-air*.32;
-    active=true;
-  }
-  /* Recovery reuses the exact impact pose backwards, keeping every block joint
-     attached instead of popping immediately to idle between combo steps. */
-  renderPixelModel3D(WOLF_PIXEL_MODEL_3D,x,y,scale,yaw,hurtFlash,active,active?pose:null);
-}
-
 /* ---- 3DMODELRENDER · APPROVED PRODUCTION BEAR -----------------------------
    The complete articulated model now drives live Bear combat and Boss Lab. The
    old 2D renderer/contact sampler remain intact below as a reversible fallback. */
@@ -3047,8 +2710,8 @@ function bearDepthRenderer(model){
     canvas.width=model.width*supersample;canvas.height=model.height*supersample;
     const gl=canvas.getContext('webgl',{alpha:true,antialias:true,depth:true,premultipliedAlpha:true,preserveDrawingBuffer:true});
     if(!gl) throw new Error('WebGL unavailable');
-    const vs=wolfDepthShader(gl,gl.VERTEX_SHADER,'attribute vec3 p;attribute vec4 c;varying vec4 v;void main(){gl_Position=vec4(p,1.0);v=c;}');
-    const fs=wolfDepthShader(gl,gl.FRAGMENT_SHADER,'precision mediump float;varying vec4 v;void main(){gl_FragColor=v;}');
+    const vs=p3DepthShader(gl,gl.VERTEX_SHADER,'attribute vec3 p;attribute vec4 c;varying vec4 v;void main(){gl_Position=vec4(p,1.0);v=c;}');
+    const fs=p3DepthShader(gl,gl.FRAGMENT_SHADER,'precision mediump float;varying vec4 v;void main(){gl_FragColor=v;}');
     const program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program)||'bear shader link failed');
     const buffer=gl.createBuffer(),count=model.mesh.length*3,data=new Float32Array(count*7);
@@ -3376,14 +3039,33 @@ function drawBear3DNative(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   if(!ok)drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs);
 }
 
-/* ---- DIRE WOLF: shoulder-heavy, long-jawed miniboss with scheduled frame-hit attacks ---- */
+/* Lazy 2.5D front-paw pitch. Frame zero is the normal live paw; later frames
+   reveal the underside without changing the Wolf silhouette or frame-hit truth. */
+let WOLF_PAW_PITCH_CLIP=null;
+function wolfPawPitchClip(){
+  if(WOLF_PAW_PITCH_CLIP)return WOLF_PAW_PITCH_CLIP;
+  WOLF_PAW_PITCH_CLIP=createAngleClip(7,18,18,9,3,(c,i,count)=>{
+    const k=i/(count-1),faceH=lerp(4,8,k),top=3,front=top+faceH;
+    c.fillStyle=k<.5?'#5d6070':'#4a4d59';c.fillRect(3,top,12,faceH);
+    c.fillStyle='#8b8fa0';c.fillRect(3,top,12,1.5);
+    c.fillStyle='#32343d';c.fillRect(4,front-1,10,3);
+    if(k>.28){
+      c.globalAlpha=clamp((k-.28)/.45,0,1);c.fillStyle='#17191f';
+      c.fillRect(6,top+faceH*.38,6,faceH*.38);
+      c.fillRect(4.2,top+faceH*.28,1.5,1.8);c.fillRect(12.3,top+faceH*.28,1.5,1.8);
+      c.globalAlpha=1;
+    }
+    /* During the pitch the toes travel around the front edge. At full underside
+       reveal all four claws point upward toward the top of the screen. */
+    const clawY=lerp(front+1.1,top-2.2,k);
+    c.fillStyle='#ded8c9';
+    for(let claw=0;claw<4;claw++)c.fillRect(3.45+claw*3,clawY,1.05,2.4);
+  },4);
+  return WOLF_PAW_PITCH_CLIP;
+}
+
+/* ---- GREY WOLF: compact game-native pixel miniboss ---- */
 function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
-  if(state==='lab_wolf_turn'){drawWolfTurntable(x,y,scale,hurtFlash);return;}
-  if(state==='idle'||state==='howl'||state==='tele_wolf_bite'||state==='strike_wolf_bite'||
-     state==='tele_wolf_double_pounce'||state==='strike_wolf_double_pounce'||
-     state.startsWith('recover_miniboss_from:')){
-    drawWolfPixelCombat(x,y,scale,state,t,hurtFlash,contactXs);return;
-  }
   const poseRecovery=state.startsWith('recover_miniboss_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
   if(poseRecovery){ state=state.slice(state.indexOf(':')+1); t=1-easeInOut(poseRecoveryT); }
@@ -3399,14 +3081,13 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
   g.translate(-11*U,-24*U);
   const fur=hurtFlash?'#fff':'#8b8fa0', furD=hurtFlash?'#eee':'#5d6070', furL=hurtFlash?'#fff':'#aeb2c2';
   let crouch=0,jaw=0,headY=0,bodyRise=0;
-  let pounceCoil=0,pounceAir=0;
+  let pounceCoil=0,pounceAir=0,pawTurn=0;
   let legTargetL=null,legTargetR=null,legAimL=0,legAimR=0;
   if(state==='tele_wolf_bite'){ crouch=easeOut(t)*5; jaw=easeOut(t); headY=-easeOut(t)*3; }
   else if(state==='strike_wolf_bite'){ const s=easeOut(t); crouch=-s*3; headY=s*8; jaw=biteJawAt(t); }
   else if(state==='tele_wolf_double_pounce'){
-    /* A real four-legged coil: the torso settles DOWN between planted hind legs.
-       The forelegs stay separate and braced instead of stretching into the body. */
-    pounceCoil=hesitationPose(t); headY=pounceCoil*.8; jaw=Math.min(1,.15+pounceCoil*.85);
+    /* Four paws stay planted while the compact body coils for the release. */
+    pounceCoil=hesitationPose(t); headY=pounceCoil*.8; jaw=pounceCoil*.18;
   }
   else if(state==='strike_wolf_double_pounce'){
     const k=clamp(t,0,1), launch=k*k*(3-2*k);
@@ -3414,22 +3095,25 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
     headY=-pounceAir*1.5; jaw=biteJawAt(t);
     bodyRise=pounceAir*6.5;
     legAimL=legAimR=launch;
+    pawTurn=poseRecovery?0:Math.sin(Math.PI*launch);
   }
   else if(state==='howl'){ headY=-easeOut(Math.min(t*2,1))*6; jaw=1; }
   else if(state==='run'){ crouch=Math.sin(perfNow*14)*1.5; }
   if(poseRecovery){
     const s=easeInOut(poseRecoveryT);
-    crouch=lerp(crouch,0,s); jaw=lerp(jaw,0,s); headY=lerp(headY,0,s);
+    crouch=lerp(crouch,0,s);
+    jaw=(state==='strike_wolf_bite'||state==='strike_wolf_double_pounce') ? .08*(1-s) : lerp(jaw,0,s);
+    headY=lerp(headY,0,s);
     bodyRise=lerp(bodyRise,0,s);
     pounceCoil=lerp(pounceCoil,0,s); pounceAir=lerp(pounceAir,0,s);
     legAimL=lerp(legAimL,0,s); legAimR=lerp(legAimR,0,s);
   }
   const stanceDrop=pounceCoil*4;
-  if(state==='strike_wolf_double_pounce'&&contactLocal.length){
+  if(state==='strike_wolf_double_pounce'){
     /* Compensate for the torso's leap/drop transform so the paw tips—not an
        invisible lane check—arrive on the two red contact marks at impact. */
-    legTargetL=[contactLocal[0],bodyContactY-stanceDrop+bodyRise];
-    legTargetR=[contactLocal[contactLocal.length-1],bodyContactY-stanceDrop+bodyRise];
+    legTargetL=[contactLocal.length?contactLocal[0]:3.8,bodyContactY-stanceDrop+bodyRise];
+    legTargetR=[contactLocal.length?contactLocal[contactLocal.length-1]:18.2,bodyContactY-stanceDrop+bodyRise];
   }
   if(stanceDrop||bodyRise) g.translate(0,(stanceDrop-bodyRise)*U);
   /* Four readable limbs: the hind pair supports; the fore pair attacks. */
@@ -3441,27 +3125,30 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
     px(mirror<0?-w*.5:w*.25,0,w*.25,len,furL); g.restore(); };
   const pouncePose=state==='tele_wolf_double_pounce'||state==='strike_wolf_double_pounce';
   const wolfHindLeg=(sx,dir)=>{
-    const sy=14.5-crouch*.25, footBaseY=24-stanceDrop;
+    const sy=14.5-crouch*.25, footBaseY=22.8-stanceDrop;
     const kx=sx+dir*(1.2+pounceCoil*.55-pounceAir*.2);
     const ky=18.7-pounceCoil*1.5-pounceAir*1.2;
     const fx=sx+dir*(.6+pounceCoil*.8), fy=footBaseY;
     wolfSeg(sx,sy,kx,ky,3.6,furD,dir); wolfSeg(kx,ky,fx,fy,3.1,furD,dir);
     px(sx-2,sy-1.5,4,3.3,furD); px(kx-1.8,ky-1.5,3.6,3,fur);
-    px(fx-2.3,fy-1,4.6,2.6,furD);
+    px(fx-2.05,fy-1,4.1,2.35,furD);
+    for(let i=0;i<4;i++)px(fx-1.55+i*.92,fy+1.05,.48,1.05,'#8f8d88');
   };
   const wolfForeLeg=(sx,dir,target,aim)=>{
     const sy=16-crouch;
     let ex,ey,fx,fy;
     if(pouncePose){
-      /* Forepaws stay planted during the hold, arc forward through the leap,
-         then independently land on the two threatened lane centres. */
-      const drive=clamp(aim,0,1), plantY=24-stanceDrop;
-      const restX=sx+dir*(.65+pounceCoil*.25);
-      const tx=target?target[0]:restX, ty=target?target[1]:plantY;
-      fx=lerp(restX,tx,drive);
-      fy=lerp(plantY,ty,drive)-pounceAir*7.2;
-      ex=lerp(sx,fx,.47)+dir*(.75+pounceAir*.9);
-      ey=lerp(sy,fy,.54)+.4-pounceAir*2.2;
+      /* Lift first, strike second. Both arms remain on their vertical shoulder
+         axes, and at motion zero these equations exactly match the idle pose. */
+      const drive=clamp(aim,0,1),reach=easeIn(clamp((drive-.55)/.45,0,1)),plantY=24-stanceDrop;
+      const ty=target?target[1]:plantY;
+      /* Paws strike on their shoulder axes. The frame-hit lanes remain the
+         combat truth; the visible arms never splay outward to chase them. */
+      fx=lerp(sx+dir*pounceCoil*.25,sx,reach);
+      fy=lerp(plantY,ty,reach)-pounceAir*11.5;
+      const raisedX=sx,raisedY=lerp(sy,fy,.52)-pounceAir*3.4;
+      const motion=clamp(pounceCoil+pounceAir+reach,0,1);
+      ex=lerp(sx,raisedX,motion);ey=lerp(sy+4,raisedY,motion);
     } else {
       ex=sx; ey=sy+4; fx=sx; fy=24;
       if(target&&aim>0){
@@ -3471,10 +3158,22 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
     }
     wolfSeg(sx,sy,ex,ey,3.15,fur,dir); wolfSeg(ex,ey,fx,fy,2.85,furD,dir);
     px(sx-2,sy-1.5,4,3.4,furL); px(ex-1.7,ey-1.5,3.4,3,fur);
-    px(fx-2.35,fy-1.1,4.7,2.9,furD);
-    for(let i=0;i<2;i++) px(fx-1.65+i*1.8,fy+1.5,.8,1.7,'#d8d3c4');
+    /* Frame zero is also the idle paw, so attack recovery cannot swap between
+       two differently sized drawings. */
+    const clip=wolfPawPitchClip(),turn=(pouncePose&&state==='strike_wolf_double_pounce')?pawTurn:0;
+    const pawSize=lerp(7.05,8.4,turn)*U;
+    drawAngleClip(clip,turn*.999,fx*U,fy*U,pawSize,pawSize,false);
   };
-  /* Dire-wolf anatomy: deep shoulders, narrow waist and a long predatory keel. */
+  /* The tail hangs behind the rump. The body hides its root, leaving only the
+     lower brush visible as it wags instead of sticking out from one side. */
+  const tailSwing=state==='tele_wolf_double_pounce'?Math.sin(perfNow*9)*3:
+    state==='run'?Math.sin(perfNow*7)*2:Math.sin(perfNow*2)*.7;
+  wolfSeg(11,10,11+tailSwing*.35,15,3.6,furD,tailSwing<0?-1:1);
+  wolfSeg(11+tailSwing*.35,15,11+tailSwing,19,3.0,fur,tailSwing<0?-1:1);
+  px(9.3+tailSwing*1.45,18,3.4,3.2,furL);
+  /* Rear legs are occluded by the torso; front legs render later over it. */
+  wolfHindLeg(8.1,-1); wolfHindLeg(13.9,1);
+  /* Compact wolf body: broad shoulders, narrow waist and square hackles. */
   px(1.5,8-crouch*0.5,19,10,furD); px(3,6.5-crouch*0.5,16,7,fur);
   px(4.5,6-crouch*0.5,13,3,furL); px(5,14-crouch*.5,12,5,furD);
   for(let i=0;i<4;i++) px(5.2+i*3.1,11-crouch*0.5,1.25,5,furD);            // rib shadows
@@ -3482,7 +3181,8 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
   px(4,6.4-crouch*0.5,2,2,furD); px(8,5.8-crouch*0.5,2,2.4,furD); px(12,6.2-crouch*0.5,2,2,furD);
   /* old scar raked across the flank */
   px(13,10-crouch*0.5,4.4,1,'#4a3438'); px(14,12-crouch*0.5,3.6,1,'#4a3438');
-  wolfHindLeg(8.1,-1); wolfHindLeg(13.9,1);
+  px(4.4,8.4-crouch*.5,3.2,2.1,furL);
+  px(16.5,7.2-crouch*.5,2.5,2.8,furD);
   /* Forelimbs render over the chest so their shoulders, elbows and paws remain
      readable throughout the pounce; the hind pair stays behind the torso. */
   wolfForeLeg(5.8,-1,legTargetL,legAimL);
@@ -7879,36 +7579,48 @@ const CROCODILE_DUEL_ATTACKS=[
       {bodyLunge:9.2},{tele:1.24,travel:.52})
   ]},
 ];
+/* Reusable ranged frame-hit families. A future boss/miniboss supplies only its
+   ids, animations, timing and optional visual flags; lane coverage, stationary
+   casting and per-lane expansion stay identical to the proven Imp attacks. */
+const RangedFrameAttackFactory=Object.freeze({
+  singleLaneFamily(spec){
+    const labels=['left','center','right'];
+    return labels.map((label,lane)=>({
+      id:spec.idPrefix+'_'+label,w:spec.w,rec:spec.rec,steps:[Object.assign({
+        lanes:[lane],height:spec.height||'mid',tele:spec.tele,travel:spec.travel,
+        anim:spec.anim,strike:spec.strike,x:spec.castLane===undefined?1:spec.castLane,
+        bodyLunge:0
+      },spec.visual||{})]
+    }));
+  },
+  twoLaneFamily(spec){
+    const placements=[
+      {label:'left',lanes:[0,1],w:spec.w},
+      {label:'right',lanes:[1,2],w:spec.w},
+      {label:'outer',lanes:[0,2],w:spec.outerW===undefined?spec.w:spec.outerW}
+    ];
+    return placements.map(place=>({
+      id:spec.idPrefix+'_'+place.label,w:place.w,rec:spec.rec,steps:[Object.assign({
+        lanes:place.lanes,height:spec.height||'mid',tele:spec.tele,travel:spec.travel,
+        anim:spec.anim,strike:spec.strike,x:spec.castLane===undefined?1:spec.castLane,
+        bodyLunge:0
+      },spec.visual||{})]
+    }));
+  }
+});
 const IMP_DUEL_ATTACKS=[
-  {id:'imp_left_claw',w:20,rec:.72,steps:[
-    {lanes:[0],height:'mid',tele:.92,travel:.32,anim:'tele_imp_left',strike:'strike_imp_left',x:0,lunge:7}
-  ]},
-  {id:'imp_right_claw',w:20,rec:.72,steps:[
-    {lanes:[2],height:'mid',tele:.92,travel:.32,anim:'tele_imp_right',strike:'strike_imp_right',x:2,lunge:7}
-  ]},
-  {id:'imp_center_rend',w:19,rec:.76,steps:[
-    {lanes:[1],height:'mid',tele:.86,travel:.31,anim:'tele_imp_center',strike:'strike_imp_center',x:1,lunge:8}
-  ]},
-  {id:'imp_flamefloor',w:18,rec:.86,steps:[
-    {lanes:[0,1,2],height:'low',tele:1.04,travel:.38,anim:'tele_imp_flamefloor',strike:'strike_imp_flamefloor',x:1,bodyLunge:5}
-  ]},
-  {id:'imp_flamefan',w:18,rec:.88,steps:[
-    {lanes:[0,1,2],height:'high',tele:1.00,travel:.36,anim:'tele_imp_flamefan',strike:'strike_imp_flamefan',x:1,bodyLunge:5}
-  ]},
-  {id:'imp_outer_rend',w:16,minTier:2,rec:.92,steps:[
-    {lanes:[0,2],height:'mid',tele:.88,travel:.32,anim:'tele_imp_outer',strike:'strike_imp_outer',x:1,lunge:7}
-  ]},
-  {id:'imp_firestep',w:15,minTier:2,rec:1.02,steps:[
-    {lanes:[0,1],height:'mid',tele:.78,travel:.30,anim:'tele_imp_left_pair',strike:'strike_imp_left_pair',x:.5,lunge:7},
-    {lanes:[1,2],height:'mid',tele:.58,travel:.28,anim:'tele_imp_right_pair',strike:'strike_imp_right_pair',x:1.5,lunge:7}
-  ]},
-  {id:'imp_inferno_dance',w:12,minTier:3,rec:1.10,steps:[
-    {lanes:[0],height:'mid',tele:.66,travel:.28,anim:'tele_imp_left',strike:'strike_imp_left',x:0,lunge:8},
-    {lanes:[2],height:'mid',tele:.48,travel:.26,anim:'tele_imp_right',strike:'strike_imp_right',x:2,lunge:8},
-    {lanes:[0,2],height:'mid',tele:.50,travel:.27,anim:'tele_imp_outer',strike:'strike_imp_outer',x:1,lunge:8},
-    {lanes:[0,1,2],height:'low',tele:.62,travel:.32,anim:'tele_imp_flamefloor',strike:'strike_imp_flamefloor',x:1,bodyLunge:5},
-    {lanes:[0,1,2],height:'high',tele:.60,travel:.31,anim:'tele_imp_flamefan',strike:'strike_imp_flamefan',x:1,bodyLunge:5}
-  ]},
+  ...RangedFrameAttackFactory.singleLaneFamily({
+    idPrefix:'imp_flame_beam',w:12,rec:.82,height:'mid',tele:1.08,travel:.48,
+    anim:'tele_imp_beam',strike:'strike_imp_beam',visual:{recoverPortion:.65}
+  }),
+  ...RangedFrameAttackFactory.twoLaneFamily({
+    idPrefix:'imp_eruption',w:10,outerW:9,rec:.94,height:'mid',tele:1.28,travel:.36,
+    anim:'tele_imp_eruption',strike:'strike_imp_eruption',visual:{recoverPortion:.82}
+  }),
+  ...RangedFrameAttackFactory.singleLaneFamily({
+    idPrefix:'imp_fireball',w:10,rec:.86,height:'high',tele:1.02,travel:.52,
+    anim:'tele_imp_fireball',strike:'strike_imp_fireball',visual:{targetOnlyArrow:true}
+  })
 ];
 class EncounterDefinition{
   constructor(id,role,data){
@@ -7971,7 +7683,7 @@ attachMinibossRecovery(CROCODILE_DUEL_ATTACKS);
 attachMinibossRecovery(IMP_DUEL_ATTACKS);
 ENCOUNTERS.register(new EncounterDefinition('wolf','miniboss',{
   name:'THE GREY WOLF',barName:'GREY WOLF',hitText:"The wolf's fangs found you",draw:drawWolf,
-  attacks:WOLF_DUEL_ATTACKS,scale:2.7,ally:'wolf',
+  attacks:WOLF_DUEL_ATTACKS,scale:2.35,ally:'wolf',
   allyBack:drawWolfBack,allyFront:(x,y,s)=>drawWolf(x,y,s,'run',0,false),allyIcon:'🐺',fangLine:'WOLF FANG!',
   arrivalLine:'A howl echoes ahead...',introFlavor:'a grey shadow peels from the treeline, hackles up',
   yieldLine:'THE WOLF YIELDS',tameLine:'...AND FOLLOWS YOU',fleeLine:'the wolf slips away, unbeaten...',
@@ -7986,8 +7698,8 @@ ENCOUNTERS.register(new EncounterDefinition('crocodile','miniboss',{
   byeLine:'the crocodile rolls back into the black water — its debt is paid',introAnim:'idle',exitAnim:'run'
 }));
 ENCOUNTERS.register(new EncounterDefinition('imp','miniboss',{
-  name:'THE CINDER IMP',barName:'CINDER IMP',hitText:"The imp's claws found you",draw:drawImp,
-  attacks:IMP_DUEL_ATTACKS,scale:2.7,ally:'imp',
+  name:'THE CINDER IMP',barName:'CINDER IMP',hitText:"The imp's fire found you",draw:drawImp,
+  attacks:IMP_DUEL_ATTACKS,scale:2.7,ally:'imp',ranged:true,
   allyBack:drawImpBack,allyFront:(x,y,s)=>drawImp(x,y,s,'run',0,false),allyIcon:'🔥',fangLine:'CINDER BURST!',
   arrivalLine:'A cackle crackles through the ash...',introFlavor:'a spark skitters up out of the fissures, laughing',
   yieldLine:'THE IMP YIELDS',tameLine:'...AND CRACKLES ALONG BESIDE YOU',fleeLine:'the imp scatters into embers, unbeaten...',
@@ -8154,7 +7866,7 @@ function restartMoveLabSelection(actor,index){
   const selected=lab.moves[index];
   if(selected._labVisual){
     lab.visualMode=selected._labVisual;actor.attack=null;actor.sequenceIndex=0;
-    actor.state=selected._labVisual==='bear_turntable'?'lab_bear_turn':'lab_wolf_turn';
+    actor.state='lab_bear_turn';
     actor.stateT=0;actor.x=actor.xTarget=1;actor.z=actor===boss?CFG.BOSS_Z:10;
     actor.atkTimer=0;actor.attacksLeft=Math.max(0,lab.moves.length-index-1);hazards=[];
     player.jumpT=player.duckT=-1;player.lastJump=player.lastDuck=-9;return;
@@ -8285,8 +7997,6 @@ function startMiniMoveLab(){
   startMiniboss(1,true);
   const definitionId=activeMinibossDefinition().id;
   const moves=buildMoveLabPlaylist(minibossAttackSet());
-  if(definitionId==='wolf') moves.push({id:'wolf_model_spin',_labVisual:'wolf_turntable',
-    _labName:'MODEL SPIN · CLOSED + OPEN'});
   minibossFight._moveLab={moves,index:0,selected:0,speedIndex:2,doneT:0,definitionId,
     visualMode:null}; minibossFight.attacksLeft=moves.length;
   minibossFight.z=10; minibossFight.state='idle'; minibossFight.stateT=0; minibossFight.atkTimer=.8; minibossFight._introDone=true;
@@ -8356,12 +8066,6 @@ function minibossCounterHit(){
 function updateMiniboss(dt){
   const w=minibossFight; if(!w) return;
   w.tick(dt);
-  /* Optional Wolf turntable hook retained for renderer inspection. It is off in
-     the playable Move Lab, where the real frame-hit attacks now run normally. */
-  if(w._moveLab&&w._moveLab.visualMode==='wolf_turntable'){
-    w.z=10;w.x=w.xTarget=1;w.state='lab_wolf_turn';w.attack=null;w.sequenceIndex=0;
-    w.hazardLanes=[];w.hurtT=0;hazards=[];return;
-  }
   w.x+=(w.xTarget-w.x)*Math.min(1,5*dt);
   if(w.state==='intro'){                       // cinematic: the miniboss walks in and bars your path
     w.z=lerp(18,10,easeOut(clamp(w.stateT/1.55,0,1)));
@@ -8412,13 +8116,6 @@ function updateMiniboss(dt){
       if(w._moveLab){
         w._moveLab.selected=w._moveLab.index;
         w.attack=w._moveLab.moves[w._moveLab.index++];
-        if(w.attack._labVisual){
-          const visual=w.attack;
-          w._moveLab.visualMode=visual._labVisual;w.attack=null;w.sequenceIndex=0;
-          w.state='lab_wolf_turn';w.stateT=0;w.x=w.xTarget=1;w.z=10;hazards=[];
-          floater(VW/2,230,w._moveLab.index+'/'+w._moveLab.moves.length+' MODEL SPIN','#c9f74a',15);
-          return;
-        }
         w._moveLab.visualMode=null;
         floater(VW/2,230,w._moveLab.index+'/'+w._moveLab.moves.length+' · '+w.attack._labName,'#c9f74a',15);
       } else {
@@ -8680,128 +8377,375 @@ function drawCrocodile(x,y,scale,state,t,hurtFlash,contactXs){
 function drawCrocodileBack(x,y,scale,t,spd){
   drawCrocodile(x,y,scale*.90,spd>0?'pack_run':'pack_back',t%1,false,[]);
 }
+/* Shared elemental styling for the reusable ranged spell renderer below.
+   Other encounters can pass a different six-color palette without inheriting
+   any Imp body code. */
+const RANGED_FIRE_PALETTE=Object.freeze({
+  ember:'#9f2516',red:'#d9361f',orange:'#ff6a2a',
+  gold:'#ffd23a',cream:'#fff0a4',white:'#fffbe2'
+});
 /* ---- THE CINDER IMP: volcano miniboss + pack member ---- */
+/* Ranged Imp revamp. It preserves the approved block model while giving every
+   spell a clean arm rig and a layered, deterministic fire animation. */
 function drawImp(x,y,scale,state,t,hurtFlash,contactXs){
-  const poseRecovery=state.startsWith('recover_miniboss_from:');
-  const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
-  if(poseRecovery){ state=state.slice(state.indexOf(':')+1); t=1-easeInOut(poseRecoveryT); }
-  g.save(); g.translate(x,y); g.scale(scale,scale);
-  const hitScale=Math.max(.001,scale);
-  const contactLocal=fillLocalContacts(LOCAL_CONTACT_SCRATCH_A,contactXs,x,hitScale*U);
-  const bodyHitY=(BODY_ATTACK_Y-y)/(hitScale*U);
-  const groundHitY=(ATTACK_GROUND_Y-y)/(hitScale*U);
-  const highHitY=(DUCK_ATTACK_Y-y)/(hitScale*U);
-  const sk=hurtFlash?'#ffffff':'#2a1c22', skD=hurtFlash?'#e8e8e8':'#1a1015',
-        skL=hurtFlash?'#ffffff':'#453040';
-  const fl1='#ff6a2a', fl2='#ffd23a';
-  if(state==='dying'){ if(t<0.4) g.translate(rnd(-2,2)*t*8,0);
-    else { const c=(t-0.4)/0.6; g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*20); } }
-  const hop=state==='run'?Math.abs(Math.sin(perfNow*9))*3:0;
-  let armL=0.4, armR=0.4, crouch=0, mouth=0, crest=1;
-  let aimL=0,aimR=0,targetL=null,targetR=null,flameMode=null;
-  const held=hesitationPose(t);
-  if(state==='flee'){ crouch=2; crest=0.5; }
-  else if(state==='howl'){ armL=-2.2; armR=-2.2; mouth=1; crest=1.6; }
-  else if(state==='tele_imp_left'){ armL=-2.35; armR=.35; crouch=held*2; crest=1.4; }
-  else if(state==='strike_imp_left'){ armL=1.55; mouth=.8; crest=1.6; aimL=easeOut(t); targetL=[contactLocal[0]||0,bodyHitY]; }
-  else if(state==='tele_imp_right'){ armR=-2.35; armL=.35; crouch=held*2; crest=1.4; }
-  else if(state==='strike_imp_right'){ armR=1.55; mouth=.8; crest=1.6; aimR=easeOut(t); targetR=[contactLocal[0]||0,bodyHitY]; }
-  else if(state==='tele_imp_center'){ armL=armR=-2.1; crouch=held*3; mouth=.45; crest=1.45; }
-  else if(state==='strike_imp_center'){ armL=armR=1.45; mouth=1; aimL=aimR=easeOut(t); const tx=contactLocal[0]||0; targetL=[tx-1.2,bodyHitY]; targetR=[tx+1.2,bodyHitY]; }
-  else if(state==='tele_imp_outer'){ armL=armR=-2.25; crouch=held*2; crest=1.55; }
-  else if(state==='strike_imp_outer'){ armL=armR=1.5; mouth=1; aimL=aimR=easeOut(t); targetL=[contactLocal[0]||-8,bodyHitY]; targetR=[contactLocal[contactLocal.length-1]||8,bodyHitY]; }
-  else if(state==='tele_imp_left_pair'||state==='tele_imp_right_pair'){ armL=armR=-2.05; crouch=held*2; mouth=.55; crest=1.45; }
-  else if(state==='strike_imp_left_pair'||state==='strike_imp_right_pair'){
-    armL=armR=1.45; mouth=1; aimL=aimR=easeOut(t);
-    targetL=[contactLocal[0]||-5,bodyHitY]; targetR=[contactLocal[contactLocal.length-1]||5,bodyHitY];
+  const recovering=state.startsWith('recover_miniboss_from:'),recoveryT=recovering?clamp(t,0,1):0;
+  if(recovering){state=state.slice(state.indexOf(':')+1);t=1-easeInOut(recoveryT);}
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  const den=Math.max(.001,scale)*U,contacts=fillLocalContacts(LOCAL_CONTACT_SCRATCH_A,contactXs,x,den);
+  const bodyY=(BODY_ATTACK_Y-y)/den,groundY=(ATTACK_GROUND_Y-y)/den,highY=(DUCK_ATTACK_Y-y)/den;
+  const sk=hurtFlash?'#fff':'#2a1c22',skD=hurtFlash?'#e8e8e8':'#1a1015',
+    skL=hurtFlash?'#fff':'#453040',{orange,gold}=RANGED_FIRE_PALETTE;
+  if(state==='dying'){
+    if(t<.4)g.translate(Math.sin(t*70)*3*t,0);
+    else {const k=clamp((t-.4)/.6,0,1);g.globalAlpha*=1-k*k;g.translate(0,easeOut(k)*20);}
   }
-  else if(state==='tele_imp_flamefloor'){ crouch=held*5; armL=-1.7; armR=-1.7; mouth=.6; crest=.55; }
-  else if(state==='strike_imp_flamefloor'){ crouch=5-easeOut(t)*7; armL=armR=1.15; mouth=1; crest=1.8; aimL=aimR=easeOut(t); targetL=[-4,1]; targetR=[4,1]; flameMode='ground'; }
-  else if(state==='tele_imp_flamefan'){ crouch=held*2; armL=-.8; armR=-.8; mouth=1; crest=1.8; }
-  else if(state==='strike_imp_flamefan'){ armL=armR=.75; mouth=1; crest=2; aimL=aimR=easeOut(t); targetL=[-5,-16]; targetR=[5,-16]; flameMode='high'; }
-  else if(state==='tele_imp_claw'){ armL=-2.25; armR=.2; mouth=.45; crest=1.35; }
-  else if(state==='strike_imp_claw'){ armL=1.65; armR=.45; mouth=1; crest=1.55; }
-  else if(state==='tele_imp_stomp'){ crouch=easeOut(t)*5; armL=armR=-1.1; crest=.7; }
-  else if(state==='strike_imp_stomp'){ crouch=5-easeOut(t)*8; armL=armR=1.25; mouth=.8; crest=1.45; }
-  else if(state==='tele_imp_leap'){ crouch=easeOut(t)*6; crest=.35; armL=1.3; armR=1.3; }
-  else if(state==='strike_imp_leap'){ crouch=-easeOut(t)*4; crest=1.7; armL=-.3; armR=-.3; mouth=1; }
-  else if(state==='tele_imp_double'){ crouch=easeOut(t)*2; armL=armR=-2.0; mouth=.6; crest=1.4; }
-  else if(state==='strike_imp_double'){ armL=armR=1.55; mouth=1; crest=1.55; }
-  else if(state==='tele_bite'||state==='tele_double'){ armL=-2.0; armR=-2.0; mouth=0.6; crest=1.4+Math.sin(t*22)*0.1; }
-  else if(state==='tele_sweep'){ crouch=easeOut(t)*4; armL=0.8; armR=0.8; }
-  else if(state==='tele_leap'){ crouch=easeOut(t)*5; crest=0.4; armL=1.2; armR=1.2; }  // balls up tight — it will fly
-  else if(state==='strike'){ const k=easeOut(t); armL=0.4+k*2.4; armR=0.4+k*2.4; mouth=1; crest=1.5; }
-  else if(state==='hit'){ crouch=-1; crest=0.6; }
-  if(poseRecovery){
-    const s=easeInOut(poseRecoveryT);
-    armL=lerp(armL,.4,s); armR=lerp(armR,.4,s); crouch=lerp(crouch,0,s);
-    mouth=lerp(mouth,0,s); crest=lerp(crest,1,s); aimL=lerp(aimL,0,s); aimR=lerp(aimR,0,s);
-    if(s>.98) flameMode=null;
+  const hop=state==='run'?Math.abs(Math.sin(perfNow*9))*3:0;
+  let crouch=0,mouth=0,crest=1,mode=null,aim=0,leftTarget=null,rightTarget=null;
+  const held=hesitationPose(t),fade=recovering?1-easeInOut(recoveryT):1;
+  if(state==='flee'){crouch=2;crest=.5;}
+  else if(state==='howl'){mouth=1;crest=1.6;aim=1;leftTarget=[-4,-26];rightTarget=[4,-26];}
+  else if(state==='tele_imp_beam'){
+    crouch=held*.8;mouth=held*.35;crest=1+held*.45;aim=held;
+    leftTarget=[-1.15,-12+crouch];rightTarget=[1.15,-12+crouch];
+    mode='charge_beam';
+  }else if(state==='strike_imp_beam'){
+    mouth=.5;crest=1.55;aim=1;leftTarget=[-1.15,-12];rightTarget=[1.15,-12];
+    mode='beam';
+  }else if(state==='tele_imp_fireball'){
+    mouth=held*.25;crest=1+held*.6;aim=held;
+    leftTarget=[-1.35,-28];rightTarget=[1.35,-28];mode='charge_ball';
+  }else if(state==='strike_imp_fireball'){
+    const throwK=easeOut(clamp(t/.38,0,1));mouth=.45;crest=1.7;aim=1;
+    leftTarget=[lerp(-1.35,-3.2,throwK),lerp(-28,-15,throwK)];
+    rightTarget=[lerp(1.35,3.2,throwK),lerp(-28,-15,throwK)];mode='fireball';
+  }else if(state==='tele_imp_eruption'){
+    mouth=.55;crest=1.55;aim=held;
+    const tremble=Math.sin(perfNow*36)*.18*held;
+    leftTarget=[-4.2+tremble,-27];rightTarget=[4.2-tremble,-27];mode='heat';
+  }else if(state==='strike_imp_eruption'){
+    mouth=1;crest=1.9;aim=1;leftTarget=[-4.2,-27];rightTarget=[4.2,-27];mode='eruption';
+  }
+  if(recovering){
+    const s=easeInOut(recoveryT);crouch*=1-s;mouth*=1-s;crest=lerp(crest,1,s);aim*=1-s;
+    if(mode==='fireball')mode='fireball_burst';
+    else if(mode==='beam')mode='beam_retract';
+    else if(mode!=='eruption')mode=null;
   }
   g.translate(0,-hop);
-  /* stubby legs + hooves */
-  px(-4,-6+crouch,3,6-crouch,skD); px(1,-6+crouch,3,6-crouch,skD);
-  px(-4.6,-1,4,1.6,skD); px(0.6,-1,4,1.6,skD);
-  /* pot-bellied little body, soot-dark with ember cracks */
-  px(-5.4,-16+crouch,10.8,11,sk); px(-5.4,-16+crouch,10.8,2.4,skL);
+  const glow=.6+Math.sin(perfNow*4)*.25,wag=Math.sin(perfNow*6)*3;
+  /* Tail is genuinely behind the model. */
+  px(4.4,-8+crouch,4,1.4,sk);px(8+wag*.3,-9.4+crouch,2,2,sk);
+  g.globalAlpha=glow*worldA;px(9.4+wag*.4,-11+crouch,1.8,2,orange);
+  px(9.8+wag*.4,-12+crouch,1,1.2,gold);g.globalAlpha=worldA;
+  /* Legs, body and head form the middle layer. */
+  px(-4,-6+crouch,3,6-crouch,skD);px(1,-6+crouch,3,6-crouch,skD);
+  px(-4.6,-1,4,1.6,skD);px(.6,-1,4,1.6,skD);
+  px(-5.4,-16+crouch,10.8,11,sk);px(-5.4,-16+crouch,10.8,2.4,skL);
   px(-3,-9+crouch,6,3.6,skD);
-  const gl=0.6+Math.sin(perfNow*4)*0.25;
-  g.globalAlpha=gl*worldA; px(-3.4,-12+crouch,3,0.9,fl1); px(0.6,-10.4+crouch,2.6,0.9,fl1); g.globalAlpha=worldA;
-  /* two-bone cinder arms: elbow folds on the tell, claws drive down on the strike. */
-  const seg=(ax,ay,bx,by,w,col)=>{ const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
-    g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2); px(-w*.5,0,w,len,col); px(-w*.5,0,w*.3,len,skL); g.restore(); };
-  const arm=(sx,ang,dir,target,aim)=>{
-    const sy=-14+crouch;
-    let ex=sx+Math.sin(ang*dir)*3.2, ey=sy+4+Math.cos(ang)*2.2;
-    let fx=ex+Math.sin((ang+.65)*dir)*2.7, fy=ey+4+Math.cos(ang+.65)*2.3;
-    if(target&&aim>0){
-      ex=lerp(ex,lerp(sx,target[0],.48),aim); ey=lerp(ey,lerp(sy,target[1],.46),aim);
-      fx=lerp(fx,target[0],aim); fy=lerp(fy,target[1],aim);
+  g.globalAlpha=glow*worldA;px(-3.4,-12+crouch,3,.9,orange);px(.6,-10.4+crouch,2.6,.9,orange);
+  g.globalAlpha=worldA;
+  px(-3.6,-22+crouch,7.2,6,sk);px(-3.6,-22+crouch,7.2,1.6,skL);
+  px(-4.8,-23.4+crouch,1.8,3,skL);px(3,-23.4+crouch,1.8,3,skL);
+  px(-4.8,-24.4+crouch,1.2,1.4,'#d8d3c4');px(3.6,-24.4+crouch,1.2,1.4,'#d8d3c4');
+  g.fillStyle=gold;g.shadowColor=orange;g.shadowBlur=6*scale;
+  g.fillRect(-2.2*U,(-20.4+crouch)*U,1.4*U,1.4*U);g.fillRect(.8*U,(-20.4+crouch)*U,1.4*U,1.4*U);
+  g.shadowBlur=0;g.globalAlpha=glow*worldA;px(-1.8,-17.4+crouch,3.6,.8+mouth*1.4,orange);
+  if(mouth>.4)px(-.8,-17.2+crouch,1.6,.7+mouth*.8,gold);g.globalAlpha=worldA;
+  for(let i=0;i<3;i++){
+    const fh=(2.6+i%2)*crest+Math.sin(perfNow*11+i*2.3)*.8;
+    g.globalAlpha=.85*worldA;px(-2.2+i*1.8,-22.4+crouch-fh,1.5,fh,orange);
+    g.globalAlpha=.9*worldA;px(-2+i*1.8,-22.4+crouch-fh*.55,1.1,fh*.55,gold);
+  }
+  g.globalAlpha=worldA;
+  /* Two-bone arms are the foreground layer. */
+  const seg=(ax,ay,bx,by,w,col)=>{const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;
+    g.save();g.translate(ax*U,ay*U);g.rotate(Math.atan2(dy,dx)-Math.PI/2);
+    px(-w*.5,0,w,len,col);px(-w*.5,0,w*.3,len,skL);g.restore();};
+  const arm=(sx,dir,target)=>{
+    const sy=-14+crouch,restEx=sx+dir*3.1,restEy=sy+4.5,restFx=sx+dir*4.4,restFy=sy+8.2;
+    let ex=restEx,ey=restEy,fx=restFx,fy=restFy;
+    if(target){
+      ex=lerp(restEx,lerp(sx,target[0],.48),aim);ey=lerp(restEy,lerp(sy,target[1],.46),aim);
+      fx=lerp(restFx,target[0],aim);fy=lerp(restFy,target[1],aim);
     }
-    seg(sx,sy,ex,ey,2.2,sk); seg(ex,ey,fx,fy,2,sk);
-    px(ex-1.2,ey-1.2,2.4,2.4,skD); px(fx-1.5,fy-1,3,2.4,skD);
-    g.fillStyle=fl1; for(let i=0;i<2;i++) g.fillRect((fx-1.2+i*1.4)*U,(fy+1)*U,1*U,1.6*U);
+    seg(sx,sy,ex,ey,2.2,sk);seg(ex,ey,fx,fy,2,sk);
+    px(ex-1.2,ey-1.2,2.4,2.4,skD);px(fx-1.5,fy-1,3,2.4,skD);
+    px(fx-1.2,fy+1,1,1.6,orange);px(fx+.2,fy+1,1,1.6,orange);
     return {x:fx,y:fy};
   };
-  const handL=arm(-5,armL,-1,targetL,aimL), handR=arm(5,armR,1,targetR,aimR);
-  if(flameMode&&contactLocal.length){
-    /* Flame remains part of the model attack: it is emitted by the articulated
-       hands and each tongue ends at an actual collision coordinate. */
-    const k=easeOut(clamp(t,0,1)), targetY=flameMode==='ground'?groundHitY:highHitY;
-    g.save(); g.lineCap='round';
-    for(let i=0;i<contactLocal.length;i++){
-      const src=i<contactLocal.length/2?handL:handR;
-      const tx=lerp(src.x,contactLocal[i],k), ty=lerp(src.y,targetY,k);
-      g.globalAlpha=.35+.5*k; g.strokeStyle=fl1; g.shadowColor=fl1; g.shadowBlur=9*scale; g.lineWidth=3.1*U;
-      g.beginPath(); g.moveTo(src.x*U,src.y*U); g.quadraticCurveTo(lerp(src.x,tx,.52)*U,(ty+Math.sin(perfNow*22+i*2.4)*2.4)*U,tx*U,ty*U); g.stroke();
-      g.globalAlpha=.75*k; g.strokeStyle=fl2; g.lineWidth=1.15*U; g.stroke();
-      px(tx-1.2,ty-1.2,2.4,2.4,i%2?fl2:fl1);
-    }
-    g.restore();
-  }
-  /* whip tail with a flame tip */
-  const wag=Math.sin(perfNow*6)*3;
-  px(4.4,-8+crouch,4,1.4,sk); px(8+wag*0.3,-9.4+crouch,2,2,sk);
-  g.globalAlpha=gl*worldA; px(9.4+wag*0.4,-11+crouch,1.8,2,fl1); px(9.8+wag*0.4,-12+crouch,1,1.2,fl2); g.globalAlpha=worldA;
-  /* the head: horned, grinning */
-  px(-3.6,-22+crouch,7.2,6,sk); px(-3.6,-22+crouch,7.2,1.6,skL);
-  px(-4.8,-23.4+crouch,1.8,3,skL); px(3,-23.4+crouch,1.8,3,skL);         // horns
-  px(-4.8,-24.4+crouch,1.2,1.4,'#d8d3c4'); px(3.6,-24.4+crouch,1.2,1.4,'#d8d3c4');
-  g.fillStyle=fl2; g.shadowColor=fl1; g.shadowBlur=6*scale;
-  g.fillRect(-2.2*U,(-20.4+crouch)*U,1.4*U,1.4*U); g.fillRect(0.8*U,(-20.4+crouch)*U,1.4*U,1.4*U);
-  g.shadowBlur=0;
-  g.globalAlpha=gl*worldA; px(-1.8,-17.4+crouch,3.6,0.8+mouth*1.4,fl1);    // ember grin splits open
-  if(mouth>0.4) px(-0.8,-17.2+crouch,1.6,0.7+mouth*0.8,fl2);
-  g.globalAlpha=worldA;
-  /* THE FLAME CREST: a living fire mohawk */
-  for(let i=0;i<3;i++){
-    const fh=(2.6+i%2)*crest+Math.sin(perfNow*11+i*2.3)*0.8;
-    g.globalAlpha=0.85*worldA; px(-2.2+i*1.8,-22.4+crouch-fh,1.5,fh,fl1);
-    g.globalAlpha=0.9*worldA;  px(-2+i*1.8,-22.4+crouch-fh*0.55,1.1,fh*0.55,fl2);
-  }
-  g.globalAlpha=worldA;
-  g.restore();
+  const handL=arm(-5,-1,leftTarget),handR=arm(5,1,rightTarget);
+  const sourceX=(handL.x+handR.x)*.5,sourceY=(handL.y+handR.y)*.5;
+  drawRangedFireAttackVisual({
+    mode,t,held,recovering,recoveryT,fade,contacts,sourceX,sourceY,
+    bodyY,groundY,highY,den,palette:RANGED_FIRE_PALETTE
+  });
+  g.globalAlpha=worldA;g.restore();
 }
+
+/* Shared ranged VFX skeleton. It owns charge, continuous beam, retract, ground
+   eruption, arced projectile and impact burst phases, but owns no creature pose.
+   Any encounter renderer can call it after supplying local anchors and contacts. */
+function drawRangedFireAttackVisual(ctx){
+  const {
+    mode,t,held,recovering,recoveryT,fade,contacts,sourceX,sourceY,
+    bodyY,groundY,highY,den,palette=RANGED_FIRE_PALETTE
+  }=ctx,{ember,red,orange,gold,cream,white}=palette;
+  const pixelOrb=(cx,cy,r,alpha=1)=>{
+    const flick=Math.sin(perfNow*19)*r*.10;
+    g.globalAlpha=alpha*fade;
+    px(cx-r,cy-r*.58,2*r,1.16*r,red);
+    px(cx-r*.70,cy-r+flick,1.40*r,.42*r,red);
+    px(cx-r*.72,cy+r*.58,1.44*r,.32*r,red);
+    px(cx-r*.72,cy-r*.52,1.44*r,1.08*r,orange);
+    px(cx-r*.44,cy-r*.68+flick*.4,.88*r,.25*r,orange);
+    px(cx-r*.38,cy-r*.34,.76*r,.72*r,gold);
+    px(cx-r*.15,cy-r*.18,.30*r,.36*r,cream);
+    g.globalAlpha=worldA;
+  };
+  const fireSparks=(cx,cy,spread,rise,seed,count,alpha=1)=>{
+    for(let i=0;i<count;i++){const age=(perfNow*(1.05+i*.035)+sRnd(seed+i*13.7))%1,
+      sx=cx+(sRnd(seed+i*29.1)-.5)*spread,sy=cy-age*rise;
+      g.globalAlpha=(1-age)*alpha*fade;
+      px(sx,sy,.45+(i%3)*.22,.45+(i%2)*.28,i%3?orange:gold);}
+    g.globalAlpha=worldA;
+  };
+  const flameRibbon=(sx,sy,tx,ty,k,rootBulb=true,rootCore=rootBulb)=>{
+    const endX=lerp(sx,tx,easeOut(k)),endY=lerp(sy,ty,easeOut(k)),dx=endX-sx,dy=endY-sy,
+      len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len;
+    /* Original organic jet silhouette. Only its internal texture is pixelated;
+       there is no endpoint orb attached to the beam. */
+    const angle=Math.atan2(dy,dx);
+    const layer=(width,col,phase,alpha,capForward,rootForward,rootAcross)=>{g.globalAlpha=alpha*fade;g.fillStyle=col;
+      const endWave=Math.sin(perfNow*22+8*1.9+phase)*width*.24,
+        capX=endX+nx*endWave,capY=endY+ny*endWave,ux=dx/len,uy=dy/len,
+        arcK=4/3;
+      /* Body and both rounded ends are one continuous silhouette. The impact
+         arc begins on the body's upper edge and ends on its lower edge, so no
+         old flat endpoint exists underneath the rounded mouth. */
+      g.beginPath();
+      for(let q=0;q<=8;q++){
+        const f=q/8,w=width*(.40+easeInOut(f)*.60),
+          wave=Math.sin(perfNow*22+q*1.9+phase)*width*.24*easeInOut(f);
+        const xx=lerp(sx,endX,f)+nx*(w+wave),yy=lerp(sy,endY,f)+ny*(w+wave);
+        q?g.lineTo(xx*U,yy*U):g.moveTo(xx*U,yy*U);
+      }
+      g.bezierCurveTo(
+        (capX+nx*width+ux*capForward*arcK)*U,(capY+ny*width+uy*capForward*arcK)*U,
+        (capX-nx*width+ux*capForward*arcK)*U,(capY-ny*width+uy*capForward*arcK)*U,
+        (capX-nx*width)*U,(capY-ny*width)*U);
+      for(let q=7;q>=0;q--){
+        const f=q/8,w=width*(.40+easeInOut(f)*.60),
+          wave=Math.sin(perfNow*22+q*1.9+phase)*width*.24*easeInOut(f),
+          xx=lerp(sx,endX,f)+nx*(-w+wave),yy=lerp(sy,endY,f)+ny*(-w+wave);
+        g.lineTo(xx*U,yy*U);
+      }
+      if(rootBulb)g.bezierCurveTo(
+        (sx-nx*rootAcross-ux*rootForward*arcK)*U,(sy-ny*rootAcross-uy*rootForward*arcK)*U,
+        (sx+nx*rootAcross-ux*rootForward*arcK)*U,(sy+ny*rootAcross-uy*rootForward*arcK)*U,
+        (sx+nx*rootAcross)*U,(sy+ny*rootAcross)*U);
+      g.closePath();g.fill();};
+    layer(7.2,red,0,.72,5.8,3.05,2.88);
+    layer(5.0,orange,1.8,.92,4.0,2.35,2.00);
+    layer(2.25,gold,3.4,.96,2.0,1.18,.90);
+    g.globalAlpha=fade;g.fillStyle=cream;
+    if(rootCore){g.beginPath();g.ellipse(sx*U,sy*U,.55*U,.44*U,angle,0,TAU);g.fill();}
+    g.globalAlpha=fade;
+    for(let i=1;i<=7;i++){const f=i/8,xx=lerp(sx,endX,f),yy=lerp(sy,endY,f),
+      side=i%2?-1:1,along=(i%3-1)*1.2;
+      px(xx+nx*side*1.15+dx/len*along-.42,yy+ny*side*1.15+dy/len*along-.42,
+        .84+(i%2)*.34,.84+(i%3===0)*.30,i%3===0?cream:i%2?gold:orange);}
+    g.globalAlpha=worldA;
+  };
+  const drawHeat=(k,effectFade=fade)=>{
+    if(!contacts.length)return;
+    const laneGap=Math.abs(laneX(1,1)-laneX(0,1))/den,pad=lerp(7,29,easeOut(k)),
+      top=groundY+2.1;
+    const bed=(left,right,seed)=>{
+      const span=right-left+pad*2,cx=(left+right)*.5,rx=span*.5,
+        pulse=.90+.10*Math.sin(perfNow*3.2+seed),ry=1.75+1.20*k;
+      g.save();g.globalAlpha=(.18+.72*k)*effectFade;
+      g.fillStyle='#4b1010';g.beginPath();g.ellipse(cx*U,(top+.72)*U,(rx+.55)*U,(ry+.70)*U,0,0,TAU);g.fill();
+      g.shadowColor=red;g.shadowBlur=(2+5*k)*U;
+      g.fillStyle=ember;g.beginPath();g.ellipse(cx*U,top*U,rx*U,ry*U,0,0,TAU);g.fill();
+      g.shadowBlur=0;g.globalAlpha=(.22+.70*k)*effectFade;
+      g.fillStyle=red;g.beginPath();g.ellipse(cx*U,(top-.18)*U,rx*.90*U,ry*.70*U,0,0,TAU);g.fill();
+      g.fillStyle=orange;g.beginPath();g.ellipse(cx*U,(top-.32)*U,rx*.72*U,ry*.38*U,0,0,TAU);g.fill();
+      g.globalAlpha=(.08+.64*k*pulse)*effectFade;g.fillStyle=gold;g.beginPath();
+      g.ellipse(cx*U,(top-.40)*U,rx*.48*U,ry*.16*U,0,0,TAU);g.fill();
+      g.restore();
+      g.globalAlpha=(.15+.70*k)*effectFade;
+      for(let n=0;n<4;n++){const bx=left-pad+2.2+((n*5.3+seed*2.1)%(Math.max(3,span-5)));
+        px(bx,top-.46,.7+(n&1)*.48,.38,n===2?cream:gold);}
+      fireSparks((left+right)*.5,top,(right-left)+pad*1.5,5.5,151+seed*17,6,k*pulse*effectFade);
+    };
+    /* Adjacent lanes share one bed. The [left,right] pair is split so the safe
+       centre lane remains visibly empty instead of becoming a three-lane cue. */
+    if(contacts.length===2&&Math.abs(contacts[1]-contacts[0])>laneGap*1.45){
+      bed(contacts[0],contacts[0],0);bed(contacts[1],contacts[1],1);
+    }else{
+      let left=contacts[0],right=contacts[0];
+      for(let i=1;i<contacts.length;i++){left=Math.min(left,contacts[i]);right=Math.max(right,contacts[i]);}
+      bed(left,right,0);
+    }
+    g.globalAlpha=worldA;
+  };
+  const drawHeatLip=(k,effectFade=fade)=>{
+    if(!contacts.length||k<=0)return;
+    /* Overlapping root pockets cover only each flame's cut foot. Their curved
+       crowns merge into the connected bed without a straight masking line. */
+    for(let i=0;i<contacts.length;i++){
+      const cx=contacts[i],wobble=Math.sin(perfNow*4.1+i*2.3);
+      g.save();g.shadowColor=red;g.shadowBlur=3.5*U;
+      g.globalAlpha=effectFade;g.fillStyle=ember;g.beginPath();
+      g.ellipse((cx+wobble*.35)*U,(groundY+1.55)*U,(27+2*k)*U,(3.15+.35*k)*U,0,0,TAU);g.fill();
+      g.shadowBlur=0;g.globalAlpha=(.68+.22*k)*effectFade;g.fillStyle=red;g.beginPath();
+      g.ellipse((cx-1.8+wobble*.55)*U,(groundY+.82)*U,(20+2*k)*U,(2.15+.28*k)*U,-.025,0,TAU);g.fill();
+      g.globalAlpha=(.42+.26*k)*effectFade;g.fillStyle=orange;g.beginPath();
+      g.ellipse((cx+2.2-wobble*.45)*U,(groundY+.35)*U,(10.5+1.5*k)*U,(1.15+.22*k)*U,.04,0,TAU);g.fill();
+      g.restore();
+    }
+    g.globalAlpha=worldA;
+  };
+  const drawEruption=(k,retreat=false)=>{
+    const rise=retreat?clamp(k,0,1):easeOut(k);
+    const flameLayer=(cx,base,w,h,phase,col)=>{
+      const clock=perfNow*5.2+phase,bend=Math.sin(clock)*w*.065,
+        f1=Math.sin(clock*1.37+1.1)*.035,f2=Math.sin(clock*1.63+2.4)*.038,
+        f3=Math.sin(clock*1.81+4.0)*.032;
+      const X=(part,lift)=>(cx+part*w+bend*lift)*U,Y=part=>(base-part*h)*U;
+      const left=.62+f1,centre=.80+f3,right=.66+f2;
+      /* Preserve the same broad base and three-tongue composition, but connect
+         it with natural pointed curves instead of stair-stepped blocks. */
+      g.fillStyle=col;g.beginPath();g.moveTo(X(-.50,0),Y(0));
+      g.bezierCurveTo(X(-.50,.16),Y(.16),X(-.43,.42),Y(.42),X(-.31,left),Y(left));
+      g.bezierCurveTo(X(-.27,left-.04),Y(left-.04),X(-.22,.47),Y(.47),X(-.15,.38),Y(.38));
+      g.bezierCurveTo(X(-.10,.32),Y(.32),X(-.04,.60),Y(.60),X(.04,centre),Y(centre));
+      g.bezierCurveTo(X(.10,centre-.04),Y(centre-.04),X(.14,.56),Y(.56),X(.19,.44),Y(.44));
+      g.bezierCurveTo(X(.23,.38),Y(.38),X(.28,.58),Y(.58),X(.33,right),Y(right));
+      g.bezierCurveTo(X(.39,right-.08),Y(right-.08),X(.46,.30),Y(.30),X(.50,0),Y(0));
+      g.closePath();g.fill();
+    };
+    for(let i=0;i<contacts.length;i++){
+      if(rise<.004)continue;
+      const cx=contacts[i],height=92*rise,width=22+36*rise,appear=clamp(rise*3,0,1);
+      g.globalAlpha=fade*appear;
+      /* One continuous set of animated flame tongues. Every hotter layer owns
+         a slightly different clock, so the interior breathes instead of
+         behaving like a rigid scaled model. */
+      flameLayer(cx,groundY,width,height,i*.7,red);
+      flameLayer(cx+Math.sin(perfNow*6.1+i)*width*.018,groundY,width*.76,height*.78,i*.7+1.3,orange);
+      flameLayer(cx+Math.sin(perfNow*6.8+i*1.4)*width*.022,groundY,width*.52,height*.54,i*.7+2.5,gold);
+      flameLayer(cx+Math.sin(perfNow*7.4+i*1.8)*width*.018,groundY,width*.31,height*.34,i*.7+3.7,cream);
+      flameLayer(cx+Math.sin(perfNow*8.0+i*2.1)*width*.012,groundY,width*.15,height*.18,i*.7+4.6,white);
+      fireSparks(cx,groundY-height*.40,width*1.15,height*.68,301+i*47,10,fade*appear);
+    }
+    g.globalAlpha=worldA;
+  };
+  const fireballShape=(cx,cy,r,angle,alpha=1)=>{
+    const backX=-Math.cos(angle),backY=-Math.sin(angle);
+    g.globalAlpha=alpha*fade;
+    px(cx-r*.92,cy-r*.62,1.84*r,1.24*r,red);
+    px(cx-r*.64,cy-r*.92,1.28*r,.34*r,red);
+    px(cx-r*.68,cy+r*.62,1.36*r,.30*r,red);
+    px(cx+backX*r*.82-r*.48,cy+backY*r*.82-r*.35,.96*r,.70*r,red);
+    px(cx-r*.67,cy-r*.52,1.34*r,1.04*r,orange);
+    px(cx-r*.38,cy-r*.32,.76*r,.68*r,gold);
+    px(cx-r*.14,cy-r*.16,.28*r,.32*r,cream);
+    px(cx+backX*r*1.35-r*.32,cy+backY*r*1.35-r*.25,.64*r,.50*r,orange);
+    px(cx+backX*r*1.85-r*.22,cy+backY*r*1.85-r*.18,.44*r,.36*r,red);
+    g.globalAlpha=worldA;
+  };
+  const fireBurst=(cx,cy,r,alpha=1)=>{
+    const blob=(ox,oy,rx,ry,col,phase)=>{g.globalAlpha=alpha*fade;g.fillStyle=col;g.beginPath();
+      for(let p=0;p<14;p++){const a=p/14*TAU,
+        wobble=.90+.07*Math.sin(p*2.15+phase)+.04*Math.sin(perfNow*11+p*1.6+phase),
+        xx=(ox+Math.cos(a)*rx*wobble)*U,yy=(oy+Math.sin(a)*ry*wobble)*U;
+        p?g.lineTo(xx,yy):g.moveTo(xx,yy);}
+      g.closePath();g.fill();};
+    /* Overlapping lobes share a core, producing a fire cloud rather than a
+       concentric target. Hotter layers sit slightly low inside the red shell. */
+    blob(cx,cy,r*.78,r*.76,red,.2);
+    blob(cx-r*.48,cy+r*.04,r*.48,r*.43,red,1.1);
+    blob(cx+r*.46,cy+r*.02,r*.46,r*.48,red,2.0);
+    blob(cx-r*.05,cy-r*.48,r*.44,r*.48,red,2.8);
+    blob(cx+r*.04,cy+r*.42,r*.50,r*.38,red,3.7);
+    blob(cx-r*.10,cy+r*.06,r*.66,r*.60,orange,1.4);
+    blob(cx+r*.27,cy-r*.10,r*.34,r*.33,orange,2.4);
+    blob(cx-r*.30,cy+r*.02,r*.31,r*.30,orange,3.2);
+    blob(cx+r*.02,cy+r*.10,r*.42,r*.39,gold,2.3);
+    blob(cx-r*.08,cy+r*.13,r*.23,r*.21,cream,3.1);
+    blob(cx-r*.05,cy+r*.14,r*.10,r*.09,white,4.2);
+    g.globalAlpha=worldA;
+  };
+  if(mode==='charge_beam'){
+    pixelOrb(sourceX,sourceY,.45+held*2.1);fireSparks(sourceX,sourceY,5,8,71,5,held);
+  }else if(mode==='charge_ball'){
+    const chargeX=0,chargeY=-29;
+    pixelOrb(chargeX,chargeY,.5+held*2.7);fireSparks(chargeX,chargeY,6,10,83,7,held);
+  }
+  else if(mode==='beam'&&contacts.length){
+    const k=clamp(t,0,1),endK=easeOut(k),endX=lerp(sourceX,contacts[0],endK),endY=lerp(sourceY,bodyY,endK);
+    /* The rounded charge silhouette is authored inside flameRibbon itself; no
+       second fireball texture is overlaid at the source. */
+    flameRibbon(sourceX,sourceY,contacts[0],bodyY,k);
+    /* The jet has no persistent endpoint ball; its changing mouth sheds sparks. */
+    fireSparks((sourceX+endX)*.5,(sourceY+endY)*.5,13,11,127,6,k);
+    fireSparks(endX,endY,8+5*k,10+8*k,113,9,k);
+  }else if(mode==='beam_retract'&&contacts.length){
+    const cut=easeInOut(recoveryT),tipX=contacts[0],tipY=bodyY,
+      cutX=lerp(0,tipX,cut),cutY=lerp(-12,tipY,cut),remaining=1-cut;
+    /* Source power is gone: only the detached ribbon remains, contracting from
+       the Imp toward the fixed impact mouth until that final cap fades out. */
+    if(remaining>.30){
+      /* The severed end is rounded by the same ribbon layers, without a hot
+         centre, so no flat cut line or second fireball texture can appear. */
+      flameRibbon(cutX,cutY,tipX,tipY,1,true,false);
+      fireSparks(cutX,cutY,8,9,139,5,remaining);
+      fireSparks(tipX,tipY,9,11,113,7,1-cut*.55);
+    }else{
+      const p=clamp(remaining/.30,0,1),r=5.8*easeOut(p);
+      g.globalAlpha=fade*p;g.fillStyle=red;g.beginPath();g.ellipse(tipX*U,tipY*U,r*U,r*.82*U,0,0,TAU);g.fill();
+      g.fillStyle=orange;g.beginPath();g.ellipse(tipX*U,tipY*U,r*.66*U,r*.56*U,0,0,TAU);g.fill();
+      g.fillStyle=gold;g.beginPath();g.ellipse(tipX*U,tipY*U,r*.34*U,r*.29*U,0,0,TAU);g.fill();
+      g.globalAlpha=worldA;
+    }
+  }else if(mode==='fireball'&&contacts.length){
+    const launchX=0,launchY=-29,raw=clamp((t-.10)/.90,0,1),depthK=easeOut(raw),tx=contacts[0],ty=highY,
+      arcHeight=Math.max(21,Math.abs(ty-launchY)*.42),
+      cx=lerp(launchX,tx,raw),cy=lerp(launchY,ty,raw)-Math.sin(raw*Math.PI)*arcHeight,
+      dx=tx-launchX,dy=(ty-launchY)-Math.cos(raw*Math.PI)*Math.PI*arcHeight,
+      len=Math.hypot(dx,dy)||1,angle=Math.atan2(dy,dx),
+      explode=clamp((raw-.985)/.015,0,1);
+    if(explode<.02){
+      for(let trail=3;trail>0;trail--){const back=trail*(1.8+depthK*2.2);
+        fireballShape(cx-dx/len*back,cy-dy/len*back,.65+trail*.12,angle,1-trail*.20);}
+      fireballShape(cx,cy,lerp(3.9,5.8,depthK)+.25*Math.sin(perfNow*20),angle);
+      fireSparks(cx,cy,9,13,211,8,1);
+    }else{
+      const p=.25*explode,burst=lerp(5.2,16,easeOut(p)),alpha=1-p*.42;
+      fireBurst(tx,ty,burst,alpha);
+      fireSparks(tx,ty,burst*2,burst*1.5,241,12,alpha);
+    }
+    g.globalAlpha=worldA;
+  }else if(mode==='fireball_burst'&&contacts.length){
+    const p=.25+.75*easeOut(recoveryT),burst=lerp(5.2,16,easeOut(p)),alpha=1-p*.82;
+    fireBurst(contacts[0],highY,burst,alpha);
+    fireSparks(contacts[0],highY,burst*2.1,burst*1.7,263,13,alpha);
+  }else if(mode==='heat')drawHeat(held);
+  else if(mode==='eruption'){
+    if(recovering){
+      /* The flames return through the hot bed first. A narrow near rim masks
+         their feet while the complete bed glows behind them, then cools. */
+      const flameK=clamp(1-recoveryT/.72,0,1),
+        heatK=1-easeInOut(clamp((recoveryT-.58)/.42,0,1));
+      drawHeat(heatK,heatK);drawEruption(flameK,true);drawHeatLip(heatK,heatK);
+    }else{
+      drawHeat(1);drawEruption(clamp(t,0,1),false);drawHeatLip(1);
+    }
+  }
+  g.globalAlpha=worldA;
+}
+
 /* pack view from behind: soot back, horn tips, flame crest bobbing */
 function drawImpBack(x,y,scale,t,spd){
   const U2=2.6*scale;
@@ -9323,7 +9267,7 @@ function drawTelegraphs(){
       if(ready>.04) drawCenterJumpArrow(pulse*ready);
     }
     else if(height==='low') drawActionArrows(true,pulse);
-    else if(height==='high') drawActionArrows(false,pulse);
+    else if(height==='high') drawActionArrows(false,pulse,cue.targetOnlyArrow?telegraphActor.hazardLanes:null);
   }
 }
 /* The only combat cues: red light beneath hit lanes and one small directional arrow per lane. */
@@ -9336,12 +9280,13 @@ function drawLaneHitHue(lane,alpha){
   g.fillRect(x-CFG.FIGHT_HIT_HALF,ATTACK_GROUND_Y-3,CFG.FIGHT_HIT_HALF*2,3);
   g.restore();
 }
-function drawActionArrows(up,alpha){
+function drawActionArrows(up,alpha,lanes=null){
   /* Keep the three posture cues below both the knight and the red contact hue.
      They remain readable even when a large character or jump pose fills the lane. */
   const y=ATTACK_GROUND_Y+24;
   g.save(); g.globalAlpha=alpha; g.fillStyle=up?'#fff0a6':'#ffbf82';
-  for(let lane=0;lane<3;lane++){
+  const drawLanes=lanes||ALL_LANES;
+  for(const lane of drawLanes){
     const x=laneX(lane,1);
     g.beginPath();
     if(up){ g.moveTo(x,y-7); g.lineTo(x-6,y); g.lineTo(x-2.5,y); g.lineTo(x-2.5,y+7); g.lineTo(x+2.5,y+7); g.lineTo(x+2.5,y); g.lineTo(x+6,y); }
@@ -10322,9 +10267,10 @@ function drawActiveBossWorld(){
 }
 function drawActiveMinibossWorld(){
   const miniMove=currentMiniMove();let zD=minibossFight.z;
-  const miniTellReach=1.25;
+  const miniDef=activeMinibossDefinition(),ranged=miniDef.ranged===true;
+  const miniTellReach=ranged?0:1.25;
   const miniRequestedReach=miniMove?(miniMove.bodyLunge!==undefined?miniMove.bodyLunge:(miniMove.lunge||4)+4):0;
-  const miniContactReach=miniMove?Math.min(minibossFight.z-.8,miniRequestedReach):0;
+  const miniContactReach=miniMove&&!ranged?Math.min(minibossFight.z-.8,miniRequestedReach):0;
   const miniComboRecovering=minibossFight.state==='comboRecover';
   const miniComboRecoverTime=miniMove?comboStepRecoveryTime(miniMove,minibossFight.attack):.1;
   const miniFullRecoverTime=encounterRecoveryTime(minibossFight.attack);
@@ -10337,14 +10283,13 @@ function drawActiveMinibossWorld(){
     zD=minibossFight.z-(1-easeInOut(clamp(minibossFight.stateT/miniRecoverAnimTime,0,1)))*miniContactReach;
   if(miniComboRecovering&&miniMove)
     zD=minibossFight.z-(1-easeInOut(clamp(minibossFight.stateT/miniComboRecoverTime,0,1)))*miniContactReach;
-  const p=proj(zD);let wx=laneX(minibossFight.x,p.t);
-  if(minibossFight.state==='strike'&&miniMove)
+  const p=proj(zD);let wx=laneX(ranged?1:minibossFight.x,p.t);
+  if(!ranged&&minibossFight.state==='strike'&&miniMove)
     wx=lerp(wx,laneX(minibossFight.xTarget,1),easeOut(clamp(minibossFight.stateT/miniMove.travel,0,1)));
-  else if(minibossFight.state==='recover'&&miniMove)
+  else if(!ranged&&minibossFight.state==='recover'&&miniMove)
     wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniRecoverAnimTime,0,1)));
-  else if(miniComboRecovering&&miniMove)
+  else if(!ranged&&miniComboRecovering&&miniMove)
     wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniComboRecoverTime,0,1)));
-  const miniDef=activeMinibossDefinition();
   let anim=minibossFight.state==='tele'?minibossFight.attack.anim:
     minibossFight.state==='intro'?miniDef.introAnim:
     minibossFight.state==='dying'?(minibossFight.stateT<1.1?miniDef.introAnim:miniDef.exitAnim):minibossFight.state;
