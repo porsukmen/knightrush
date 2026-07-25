@@ -513,6 +513,7 @@ const SFX=(()=>{
     counter(){tone(880,1760,.14,'square',.4); tone(1320,2200,.16,'square',.3,.06);},
     roar(){tone(120,45,.8,'sawtooth',.6); noise(.5,.4,0,700);},
     howl(){tone(400,820,.5,'sine',.4); tone(820,520,.7,'sine',.35,.5);},
+    croak(){tone(105,62,.18,'sine',.52);tone(62,118,.34,'triangle',.38,.12);noise(.16,.16,.08,420);},
     relic(){[660,830,990,1320].forEach((f,i)=>tone(f,f,.16,'square',.3,i*.09));},
     win(){[523,659,784,1046].forEach((f,i)=>tone(f,f,.2,'square',.32,i*.11));},
     dead(){[440,349,261,196].forEach((f,i)=>tone(f,f*.8,.25,'sawtooth',.3,i*.14));},
@@ -3795,7 +3796,7 @@ const STAGE_DEFINITIONS=[
              boulder:'You crashed into a moss-grown boulder'},
   }),
   new StageDefinition('swamp','intermediate',{
-    bossIds:['hydra'], minibossIds:['crocodile'],
+    bossIds:['hydra'], minibossIds:['toad'],
     enterLine:'THE MARSH DROWNS THE TRAIL',
     mouthDraw:drawMereApproach, beyondDraw:drawMereBeyond,
     bg:()=>{ drawSwampBg(); drawSwampRoad(); },
@@ -7560,25 +7561,6 @@ const WOLF_DUEL_ATTACKS=[
     {lanes:[1,2],height:'mid',tele:1.16,travel:.44,anim:'tele_wolf_double_pounce',strike:'strike_wolf_double_pounce',x:1.5,bodyLunge:9.2}
   ]},
 ];
-/* The Crocodile begins with two readable frame-hit families. Its mirrored
-   corkscrew placements are one move expressed on either neighboring lane pair. */
-const CROCODILE_DUEL_ATTACKS=[
-  {id:'crocodile_rush_bite',w:30,rec:.88,steps:[
-    MinibossCombatMechanics.step('targetLane',
-      {anim:'tele_crocodile_rush',strike:'strike_crocodile_rush'},
-      {bodyLunge:8.8},{tele:1.12,travel:.44})
-  ]},
-  {id:'crocodile_corkscrew_left',w:21,rec:1.08,steps:[
-    MinibossCombatMechanics.step('pairLeft',
-      {anim:'tele_crocodile_corkscrew_left',strike:'strike_crocodile_corkscrew_left'},
-      {bodyLunge:9.2},{tele:1.24,travel:.52})
-  ]},
-  {id:'crocodile_corkscrew_right',w:21,rec:1.08,steps:[
-    MinibossCombatMechanics.step('pairRight',
-      {anim:'tele_crocodile_corkscrew_right',strike:'strike_crocodile_corkscrew_right'},
-      {bodyLunge:9.2},{tele:1.24,travel:.52})
-  ]},
-];
 /* Reusable ranged frame-hit families. A future boss/miniboss supplies only its
    ids, animations, timing and optional visual flags; lane coverage, stationary
    casting and per-lane expansion stay identical to the proven Imp attacks. */
@@ -7596,9 +7578,10 @@ const RangedFrameAttackFactory=Object.freeze({
   twoLaneFamily(spec){
     const placements=[
       {label:'left',lanes:[0,1],w:spec.w},
-      {label:'right',lanes:[1,2],w:spec.w},
-      {label:'outer',lanes:[0,2],w:spec.outerW===undefined?spec.w:spec.outerW}
+      {label:'right',lanes:[1,2],w:spec.w}
     ];
+    if(spec.includeOuter!==false)placements.push(
+      {label:'outer',lanes:[0,2],w:spec.outerW===undefined?spec.w:spec.outerW});
     return placements.map(place=>({
       id:spec.idPrefix+'_'+place.label,w:place.w,rec:spec.rec,steps:[Object.assign({
         lanes:place.lanes,height:spec.height||'mid',tele:spec.tele,travel:spec.travel,
@@ -7608,6 +7591,22 @@ const RangedFrameAttackFactory=Object.freeze({
     }));
   }
 });
+const TOAD_DUEL_ATTACKS=[
+  ...RangedFrameAttackFactory.singleLaneFamily({
+    idPrefix:'toad_tongue',w:15,rec:.80,height:'mid',tele:1.02,travel:.40,
+    anim:'tele_toad_tongue',strike:'strike_toad_tongue',visual:{recoverPortion:.58}
+  }),
+  ...RangedFrameAttackFactory.twoLaneFamily({
+    idPrefix:'toad_belly_slam',w:19,rec:1.04,height:'mid',tele:1.24,travel:.56,
+    anim:'tele_toad_belly_slam',strike:'strike_toad_belly_slam',
+    includeOuter:false,visual:{recoverPortion:.78}
+  }),
+  ...RangedFrameAttackFactory.singleLaneFamily({
+    idPrefix:'toad_bog_glob',w:11,rec:.88,height:'high',tele:1.08,travel:.54,
+    anim:'tele_toad_bog_glob',strike:'strike_toad_bog_glob',
+    visual:{targetOnlyArrow:true,recoverPortion:.62}
+  })
+];
 const IMP_DUEL_ATTACKS=[
   ...RangedFrameAttackFactory.singleLaneFamily({
     idPrefix:'imp_flame_beam',w:12,rec:.82,height:'mid',tele:1.08,travel:.48,
@@ -7676,10 +7675,10 @@ function attachMinibossRecovery(attacks){
 /* Miniboss tables normalize through the restricted frame-only catalogue.
    Authored timings and model animations stay species-owned. */
 MinibossCombatMechanics.normalizeSet(WOLF_DUEL_ATTACKS,true);
-MinibossCombatMechanics.normalizeSet(CROCODILE_DUEL_ATTACKS,true);
+MinibossCombatMechanics.normalizeSet(TOAD_DUEL_ATTACKS,true);
 MinibossCombatMechanics.normalizeSet(IMP_DUEL_ATTACKS,true);
 attachMinibossRecovery(WOLF_DUEL_ATTACKS);
-attachMinibossRecovery(CROCODILE_DUEL_ATTACKS);
+attachMinibossRecovery(TOAD_DUEL_ATTACKS);
 attachMinibossRecovery(IMP_DUEL_ATTACKS);
 ENCOUNTERS.register(new EncounterDefinition('wolf','miniboss',{
   name:'THE GREY WOLF',barName:'GREY WOLF',hitText:"The wolf's fangs found you",draw:drawWolf,
@@ -7689,13 +7688,13 @@ ENCOUNTERS.register(new EncounterDefinition('wolf','miniboss',{
   yieldLine:'THE WOLF YIELDS',tameLine:'...AND FOLLOWS YOU',fleeLine:'the wolf slips away, unbeaten...',
   byeLine:'the wolf melts back into the wood — its debt is paid',introAnim:'howl',exitAnim:'run'
 }));
-ENCOUNTERS.register(new EncounterDefinition('crocodile','miniboss',{
-  name:'THE MIRE CROCODILE',barName:'MIRE CROCODILE',hitText:"The crocodile's jaws found you",draw:drawCrocodile,
-  attacks:CROCODILE_DUEL_ATTACKS,scale:3.40,ally:'crocodile',
-  allyBack:drawCrocodileBack,allyFront:(x,y,s)=>drawCrocodile(x,y,s,'run',0,false),allyIcon:'🐊',fangLine:'DEATH ROLL!',
-  arrivalLine:'Armored scales break the black water...',introFlavor:'a vast crocodile plants itself across the mire-road, jaws open',
-  yieldLine:'THE CROCODILE YIELDS',tameLine:'...AND LUMBERS INTO YOUR WAKE',fleeLine:'the crocodile sinks beneath the mire, unbeaten...',
-  byeLine:'the crocodile rolls back into the black water — its debt is paid',introAnim:'idle',exitAnim:'run'
+ENCOUNTERS.register(new EncounterDefinition('toad','miniboss',{
+  name:'THE MIRE TOAD',barName:'MIRE TOAD',hitText:"The mire toad's strike found you",draw:drawMireToad,
+  attacks:TOAD_DUEL_ATTACKS,scale:2.95,ally:'toad',ranged:true,sound:'croak',
+  allyBack:drawMireToadBack,allyFront:(x,y,s)=>drawMireToad(x,y,s,'run',0,false),allyIcon:'🐸',fangLine:'BOG BOUNCE!',
+  arrivalLine:'A deep croak rolls through the drowned trees...',introFlavor:'a vast toad heaves from the mire, throat glowing',
+  yieldLine:'THE MIRE TOAD YIELDS',tameLine:'...AND BOUNDS INTO YOUR WAKE',fleeLine:'the toad vanishes beneath the black water...',
+  byeLine:'the mire toad springs back into the reeds — its debt is paid',introAnim:'croak',exitAnim:'run'
 }));
 ENCOUNTERS.register(new EncounterDefinition('imp','miniboss',{
   name:'THE CINDER IMP',barName:'CINDER IMP',hitText:"The imp's fire found you",draw:drawImp,
@@ -7828,8 +7827,10 @@ const BOSS_MOVE_NAMES=Object.freeze({
   canopy_rtl:'High Head Swipe: Right to Left',canopy_ltr:'High Head Swipe: Left to Right',
   serpent_gate:'Two-Head Pinch',marsh_waltz:'Marsh Combo',threefold_drown:'Threefold Combo',
   drowned_crown:'Drowned Crown Combo',acid_canopy:'Acid High Attack',
-  crocodile_rush_bite:'Running Jaw Snap',crocodile_corkscrew_left:'Left Death Roll',
-  crocodile_corkscrew_right:'Right Death Roll',
+  toad_tongue_left:'Left Tongue Lash',toad_tongue_center:'Middle Tongue Lash',toad_tongue_right:'Right Tongue Lash',
+  toad_belly_slam_left:'Left Bog Slam',toad_belly_slam_right:'Right Bog Slam',
+  toad_bog_glob_left:'Left High Bog Glob',toad_bog_glob_center:'Middle High Bog Glob',
+  toad_bog_glob_right:'Right High Bog Glob',
   wolf_bite_left:'Left Lane Bite',wolf_bite_center:'Middle Lane Bite',wolf_bite_right:'Right Lane Bite',
   left_snap:'Left Bite',right_snap:'Right Bite',furnace_snap:'Middle Bite',shell_wheel:'Shell Jump Attack',
   boiler_vent:'Steam Duck Attack',outer_crush:'Outer Crush',left_center_tubes:'Left + Middle Tubes',
@@ -8190,193 +8191,296 @@ function drawPackAllies(){
     packEncounter(i).allyBack(x,y,1.0-i*0.07,perfNow+i*0.9,speed());
   }
 }
-/* ---- THE MIRE CROCODILE: three authored flat block views ----
-   Front, side and underside are separate drawings with identical proportions.
-   Attacks switch these views quickly; no projected tube or pseudo-3D geometry is
-   involved. Collision remains the scheduled miniboss frame hit. */
-function drawCrocodile(x,y,scale,state,t,hurtFlash,contactXs){
+/* ---- THE MIRE TOAD: jointed swamp-native pixel miniboss ---- */
+let TOAD_WEB_FOOT_CLIP=null;
+function toadWebFootClip(){
+  if(TOAD_WEB_FOOT_CLIP)return TOAD_WEB_FOOT_CLIP;
+  TOAD_WEB_FOOT_CLIP=createAngleClip(7,20,14,10,2,(c,i,count)=>{
+    const k=i/(count-1),top=2,faceH=lerp(3.2,6.5,k),front=top+faceH;
+    c.fillStyle=k<.55?'#52653a':'#405034';c.fillRect(5,top,10,faceH);
+    c.fillStyle='#71804a';c.fillRect(5,top,10,1.2);
+    /* Four toes remain the same anatomy at every angle. Pitching reveals the
+       webbing and round underside pads instead of swapping to another drawing. */
+    c.fillStyle='#6f7b46';
+    for(let toe=0;toe<4;toe++){
+      const tx=3.3+toe*4.15,tipY=lerp(front+3.1,top-.8,k);
+      c.beginPath();c.moveTo(6.2+toe*2.55,front-1);
+      c.lineTo(tx,tipY);c.lineTo(tx+1.7,tipY+.5);c.lineTo(8.1+toe*1.75,front);
+      c.closePath();c.fill();
+      c.fillStyle='#b7b07a';c.fillRect(tx,tipY,1.7,1.3);c.fillStyle='#6f7b46';
+    }
+    if(k>.24){
+      c.globalAlpha=clamp((k-.24)/.50,0,1);c.fillStyle='#273323';
+      c.fillRect(7,top+faceH*.34,6,faceH*.42);
+      c.fillStyle='#9e9565';
+      for(let pad=0;pad<4;pad++)c.fillRect(4.1+pad*3.7,top+faceH*.15,1.5,1.35);
+      c.globalAlpha=1;
+    }
+  },4);
+  return TOAD_WEB_FOOT_CLIP;
+}
+
+function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
   const recovering=state.startsWith('recover_miniboss_from:'),recoveryT=recovering?clamp(t,0,1):0;
   if(recovering){state=state.slice(state.indexOf(':')+1);t=1-easeInOut(recoveryT);}
-  const packBack=state==='pack_back'||state==='pack_run';
-  const held=hesitationPose(t),dir=state.endsWith('_left')?-1:1;
-  let view=packBack?'back':'front',jaw=0,gait=0,phase=0,flipY=false,wind=0;
-  if(state==='run'||state==='pack_run'){gait=.85;phase=perfNow*8;}
-  else if(state==='flee'){view='side';gait=1;phase=perfNow*9;}
-  else if(state==='tele_crocodile_rush'){jaw=held*.88;gait=held*.12;}
-  else if(state==='strike_crocodile_rush'){jaw=biteJawAt(t);gait=1;phase=t*TAU*2;}
-  else if(state.startsWith('tele_crocodile_corkscrew')){
-    view=held<.48?'front':'side';jaw=held*.86;gait=held*.08;
-  }else if(state.startsWith('strike_crocodile_corkscrew')){
-    const frame=Math.min(5,Math.floor(clamp(t,0,.999)*6));
-    view=(frame===1||frame===3)?'under':'side';
-    flipY=frame===2||frame===3;
-    jaw=biteJawAt(t);gait=.58;phase=t*TAU*2;wind=Math.sin(Math.PI*t);
+  const den=Math.max(.001,scale)*U,
+    contacts=fillLocalContacts(LOCAL_CONTACT_SCRATCH_A,contactXs,x,den),
+    bodyY=(BODY_ATTACK_Y-y)/den,groundY=(ATTACK_GROUND_Y-y)/den,highY=(DUCK_ATTACK_Y-y)/den,
+    held=hesitationPose(t),backView=state==='pack_back'||state==='pack_run';
+  const targetX=contacts.length?contacts.reduce((sum,v)=>sum+v,0)/contacts.length:0;
+  const breathe=(Math.sin(perfNow*1.65)+1)*.5;
+  let crouch=0,coil=0,mouth=0,throat=.12+breathe*.045,eyeAim=0,gait=0,phase=perfNow*5.4;
+  let leapMove=0,leapArc=0,pawTurn=0,landing=0,splashAge=0,splashAlpha=0,mode=null;
+  if(state==='run'||state==='pack_run'){gait=.72;phase=perfNow*7.2;}
+  else if(state==='croak'){throat=.45+.48*Math.sin(clamp(t,0,1)*Math.PI);mouth=.18;coil=.08;}
+  else if(state==='tele_toad_tongue'){
+    crouch=held*1.8;coil=held*.18;mouth=held*.16;throat=.12-held*.08;eyeAim=held;mode='tongue_charge';
+  }else if(state==='strike_toad_tongue'){
+    crouch=.35;mouth=lerp(.16,.92,easeOut(clamp(t/.16,0,1)));eyeAim=1;mode='tongue';
+  }else if(state==='tele_toad_belly_slam'){
+    coil=held;crouch=held*6.2;mouth=held*.10;throat=.10-held*.06;eyeAim=held;mode='leap_charge';
+  }else if(state==='strike_toad_belly_slam'){
+    eyeAim=1;mode='leap';
+    if(recovering){
+      const r=easeInOut(recoveryT);
+      leapMove=1-r;leapArc=Math.sin(r*Math.PI)*8*(1-r*.28);
+      pawTurn=Math.sin(r*Math.PI)*.42;landing=(1-r)*.16;
+      splashAge=.36+recoveryT*.64;splashAlpha=1-recoveryT;
+    }else{
+      const raw=clamp(t,0,1);
+      leapMove=easeInOut(raw);leapArc=Math.sin(leapMove*Math.PI)*29;
+      pawTurn=Math.sin(leapMove*Math.PI);coil=1-easeOut(clamp(raw/.24,0,1));
+      crouch=coil*6.2;landing=easeOut(clamp((raw-.84)/.16,0,1))*.16;
+      splashAge=clamp((raw-.82)/.18,0,1);splashAlpha=splashAge;
+    }
+  }else if(state==='tele_toad_bog_glob'){
+    crouch=held*.8;throat=.12+held*.88;mouth=held*.24;eyeAim=held;mode='glob_charge';
+  }else if(state==='strike_toad_bog_glob'){
+    crouch=.25;throat=recovering?.12:lerp(.72,.12,easeOut(clamp(t/.28,0,1)));
+    mouth=recovering?.94*(1-easeInOut(recoveryT)):.94;eyeAim=1;mode=recovering?'glob_burst':'glob';
   }
-  if(recovering&&recoveryT>.52){view='front';flipY=false;}
-  if(recovering){jaw*=1-easeInOut(recoveryT);gait*=1-recoveryT;wind*=1-recoveryT;}
 
+  const moveScale=1+leapMove*.18,modelX=targetX*leapMove,
+    modelY=groundY*leapMove-leapArc,air=Math.sin(leapMove*Math.PI);
   g.save();g.translate(x,y);
-  if(state==='flee'){g.translate(easeOut(t)*78*dir,-easeOut(t)*12);g.globalAlpha*=1-t*.82;}
-  g.scale(scale*U,scale*U);g.lineJoin='miter';g.lineCap='butt';
-  /* Swamp-native values echo the mangroves and the existing muted miniboss
-     palette. Form comes from layered value blocks, never a black cartoon rim. */
-  const dark=hurtFlash?'#eeeeee':'#2f402b',deep=hurtFlash?'#eeeeee':'#1f2b20';
-  const green=hurtFlash?'#ffffff':'#586d3f',greenL=hurtFlash?'#ffffff':'#7b8b4b';
-  const greenD=hurtFlash?'#eeeeee':'#3e5234',belly=hurtFlash?'#ffffff':'#8b7a4e';
-  const bellyD=hurtFlash?'#eeeeee':'#66583b',mouth=hurtFlash?'#ffffff':'#7a2a3a';
-  const tongue=hurtFlash?'#ffffff':'#ba4f58',tooth=hurtFlash?'#ffffff':'#d8d3c4';
-  const eye=hurtFlash?'#ffffff':'#ffd05a';
-  const R=(a,b,w,h,c)=>{
-    a=Math.round(a*2)/2;b=Math.round(b*2)/2;w=Math.round(w*2)/2;h=Math.round(h*2)/2;
-    g.fillStyle=c;g.fillRect(a,b,w,h);
-  };
-  const Q=(pts,c)=>{
-    g.beginPath();g.moveTo(pts[0][0],pts[0][1]);
-    for(let i=1;i<pts.length;i++)g.lineTo(pts[i][0],pts[i][1]);
-    g.closePath();g.fillStyle=c;g.fill();
-  };
-  const toothRow=(x0,y0,count,step,down)=>{
-    for(let i=0;i<count;i++)R(x0+i*step,y0+(i%2)*.15,.55,down?1.25:-1.25,tooth,false);
-  };
-  const sideLeg=(rootX,far,index)=>{
-    const stride=Math.sin(phase+(index%2)*Math.PI+(far?Math.PI*.2:0))*1.15*gait;
-    const lift=Math.max(0,Math.cos(phase+(index%2)*Math.PI))*.85*gait;
-    const bend=rootX<0?-1.45:1.45;
-    const col=far?dark:greenD,alpha=far?.62:1;
-    g.save();g.globalAlpha*=alpha;
-    R(rootX,-8.2,4.0,5.2,col);R(rootX+.55,-7.7,1.15,4.5,greenL);
-    R(rootX+bend+stride,-3.6+stride*.16-lift,3.0,4.4,col);
-    R(rootX+bend-.45+stride,-.25-lift,4.8,1.7,deep);
-    for(let c=0;c<3;c++)R(rootX+bend+2.4+c*.72+stride,.65-lift,.55,1.0,tooth);
-    g.restore();
-  };
-  const plantedLeg=(rootX,rootY,sideSign,index,backLeg)=>{
-    const step=Math.sin(phase+(index%2)*Math.PI)*.72*gait;
-    const col=backLeg?greenD:green,alpha=backLeg?.72:1;
-    g.save();g.globalAlpha*=alpha;
-    const out=sideSign*(2.0+step),upperX=rootX-(sideSign<0?4.2:0);
-    R(upperX,rootY,4.2,6.2,col);R(upperX,rootY,1.2,5.4,greenL);
-    const lowerX=rootX+out-(sideSign<0?3.2:0);
-    R(lowerX,rootY+5.0,3.2,5.4,col);R(lowerX+sideSign*.35,rootY+9.2,4.3,2.0,deep);
-    for(let c=0;c<3;c++)R(lowerX+sideSign*(2.7+c*.62),rootY+10.2+c*.08,.55,1.15,tooth);
-    g.restore();
-  };
-  const tailPower=(gait>.2||view==='side'||view==='under')?.105:.025;
-  const tailJoint=Math.round(Math.sin(perfNow*2.35+phase*.14)*4)/4*tailPower;
-  const jointedTail=(baseX,baseY,underView=false,baseAngle=0)=>{
-    const cols=underView?[belly,belly,bellyD]:[greenD,green,greenD];
-    const hi=underView?belly:greenL,lengths=[11,10,9],heights=[8,5.8,3.4];
-    g.save();g.translate(baseX,baseY);g.rotate(baseAngle+tailJoint*.35);
-    for(let i=0;i<3;i++){
-      const h=heights[i],len=lengths[i];
-      R(-.5,-h*.5,len+1,h,cols[i]);R(.4,-h*.5,len*.68,1.15,hi);
-      if(!underView){
-        R(0,h*.5-1.3,len,1.3,bellyD);
-        R(2,-h*.5-1.1,1.7,1.5,dark);R(len-2.2,-h*.5-.8,1.3,1.1,dark);
-      }
-      g.translate(len,0);g.rotate(tailJoint*(.75+i*.35));
-    }
-    g.restore();
-  };
-  const sideMouth=(open)=>{
-    const hingeX=-15.7,hingeY=-10.5,a=-open*.34,ca=Math.cos(a),sa=Math.sin(a);
-    const tipX=hingeX-14.8*ca-.2*sa,tipY=hingeY-14.8*sa+.2*ca;
-    R(-31,-14.5,15.5,4.0,greenL);R(-29.5,-14.5,12.5,1.2,green);
-    if(open>.04)Q([[-30.5,-10.7],[hingeX,-10.7],[hingeX,-10.1],[tipX,tipY]],mouth);
-    else R(-30.5,-10.7,14.8,.6,deep);
-    toothRow(-29.8,-10.65,9,1.48,true);
-    g.save();g.translate(hingeX,hingeY);g.rotate(a);
-    R(-15,0,15,3.2,belly);R(-14.3,2.0,13.5,1.2,bellyD);
-    if(open>.08)R(-13.8,.35,10.5,1.0,tongue);
-    for(let i=0;i<9;i++)R(-14.2+i*1.48,.2,.58,-1.2,tooth);
-    g.restore();
-    R(-31,-14.5,2.2,1.1,greenL);R(-29.8,-13.7,.8,.6,'#11150f');
-  };
-  const drawSide=(underView=false)=>{
-    /* Far limbs first, then one uninterrupted torso block. */
-    sideLeg(-11.5,true,0);sideLeg(7.5,true,1);
-    jointedTail(18.5,-9.4,underView,0);
-    if(underView){
-      R(-10,-15.2,29.5,10.2,belly);R(-15,-16.2,8,11.2,belly);
-      R(-19,-14.2,5,8.4,bellyD);
-      for(let bx=-7.5;bx<17;bx+=3.2)R(bx,-13.5,2.6,7.7,(Math.round(bx)&1)?belly:bellyD,false);
-    }else{
-      R(-10,-15.2,29.5,10.2,green);R(-7.5,-17.0,22.5,3.0,greenL);
-      R(-10,-7.5,29.5,2.5,bellyD);
-      R(-15,-16.2,8,11.2,greenD);R(-19,-14.2,5,8.4,green);
-      for(let bx=-5;bx<18;bx+=4.4)R(bx,-11.3,1.1,1.0,dark);
-      for(let bx=-6;bx<18;bx+=4.0)R(bx,-18.2,1.8,2.4,deep);
-    }
-    sideMouth(jaw);
-    R(-18,-17.2,6.5,3.0,greenL);R(-16.6,-16.0,2.0,1.8,eye);
-    R(-15.85,-15.8,.65,1.2,'#11150f');
-    sideLeg(-7.5,false,0);sideLeg(11.5,false,1);
-  };
-  const drawFront=(backView=false)=>{
-    /* Three-quarter idle: broad face forward, low shoulders behind, and a tail
-       that recedes sideways like the supplied guide rather than a vertical bar. */
-    jointedTail(14,-23,false,-.15);
-    plantedLeg(-5.5,-20,-1,0,true);plantedLeg(14.5,-19,1,1,true);
-    R(-6,-29,22,14,greenD);R(-3,-32,17,4,greenL);R(-8,-25,26,10,green);
-    R(-8,-25,4,10,greenD);R(14,-24,4,9,dark);
-    for(let sx=-3;sx<15;sx+=4.5){R(sx,-30,2.2,2.6,dark);R(sx+1,-23,2.1,2.4,greenD);}
-    R(-10,-20,21,14,green);R(-10,-20,5,12,greenD);R(7,-20,4,12,dark);
-    R(-8,-20,15,2.2,greenL);
-    plantedLeg(-10.5,-14,-1,1,false);plantedLeg(10,-14,1,0,false);
-    if(backView){
-      R(-9,-10,18,9,greenD);R(-7,-9,14,2,greenL);
-      for(let sx=-5;sx<=5;sx+=3.4)R(sx,-15,1.4,2,dark);
-      return;
-    }
-    const gap=jaw*5.0;
-    R(-9,-11,18,7,greenL);R(-8,-5+gap,16,4.5,belly);
-    if(jaw>.08){
-      R(-8.3,-5.1,16.6,gap+.3,mouth);R(-3.2,-4.3+gap*.45,6.4,1.1,tongue);
-      for(let i=0;i<8;i++){
-        R(-7.1+i*1.9,-5.0,.68,1.25,tooth);
-        R(-7.1+i*1.9,-.5+gap,.68,-1.25,tooth);
-      }
-    }else{
-      R(-8,-5.1,16,.65,dark);
-      for(const tx of [-6.4,-2.4,2.3,6.2])R(tx,-5.0,.72,1.25,tooth);
-    }
-    /* Heavy stepped brows reproduce the low, hostile stare of the guide. */
-    R(-9,-18,6.5,2.2,greenL);R(-7.2,-16.4,4.7,1.4,greenL);
-    R(2.5,-18,6.5,2.2,greenL);R(2.5,-16.4,4.7,1.4,greenL);
-    R(-8.5,-17,6,4.5,greenD);R(2.5,-17,6,4.5,greenD);
-    R(-7.3,-15.8,2.2,2.0,eye);R(4.8,-15.8,2.2,2.0,eye);
-    R(-6.35,-15.6,.7,1.3,'#11150f');R(5.05,-15.6,.7,1.3,'#11150f');
-    R(-4.8,-10,2,1.7,dark);R(2.8,-10,2,1.7,dark);
-  };
+  if(state==='flee'){
+    const k=easeOut(t);g.translate(k*105,-Math.sin(k*Math.PI)*34);g.globalAlpha*=1-k*.86;
+  }
+  if(state==='dying'){
+    if(t<.42)g.translate(Math.sin(t*72)*4*t,0);
+    else{const k=clamp((t-.42)/.58,0,1);g.translate(easeOut(k)*24,easeOut(k)*18);
+      g.rotate(easeOut(k)*.52);g.globalAlpha*=1-k*k;}
+  }
 
-  /* The other large beasts carry their own contact shadow. This keeps every
-     flat view planted on the road even while the body drawing changes. */
-  g.save();g.globalAlpha=.34;g.fillStyle='#050405';g.beginPath();
-  if(view==='side'||view==='under')g.ellipse(2,1,31,2.7,0,0,TAU);
-  else g.ellipse(0,1,20,3.2,0,0,TAU);
-  g.fill();
-  g.restore();
-  if(view==='side'||view==='under'){
-    g.save();g.scale(dir,1);
-    if(flipY){g.translate(0,-19);g.scale(1,-1);}
-    drawSide(view==='under');g.restore();
-  }else drawFront(view==='back');
-
-  if(wind>.03){
-    g.save();g.globalAlpha=.25+.55*wind;g.strokeStyle='#d9f2e5';g.lineWidth=.45;
-    for(const sy of [-1,1]){
-      const wy=sy<0?-18:2;
-      g.beginPath();g.moveTo(-13,wy);g.lineTo(-8,wy+sy*2.4);
-      g.lineTo(-2,wy);g.lineTo(4,wy+sy*2.4);g.lineTo(10,wy);g.stroke();
+  /* Shadow follows the landing plane while the animal arcs above it. It is
+     independent from the model transform, preventing a glued-on flying shadow. */
+  g.save();g.scale(scale*U,scale*U);g.globalAlpha*=.30*(1-air*.62);
+  g.fillStyle='#050706';g.beginPath();
+  g.ellipse(modelX,lerp(1,groundY+1.5,leapMove),lerp(19,27,leapMove)*(1-air*.22),
+    lerp(2.5,4.1,leapMove)*(1-air*.35),0,0,TAU);g.fill();g.restore();
+  if(mode==='leap'&&splashAlpha>.01){
+    const span=contacts.length>1?Math.abs(contacts[contacts.length-1]-contacts[0]):0,
+      ripple=span*.5+18;
+    g.save();g.scale(scale*U,scale*U);g.globalAlpha*=splashAlpha*.62;
+    g.strokeStyle='#7c7449';g.lineWidth=.65;g.beginPath();
+    g.ellipse(targetX,groundY+1,ripple*(.55+.45*splashAge),2.2+splashAge*1.8,0,0,TAU);g.stroke();
+    for(let i=0;i<14;i++){
+      const side=i&1?-1:1,spread=(7+(i%7)*4.8)*splashAge,
+        lift=Math.sin(splashAge*Math.PI)*(3+(i%4)*1.5),
+        px2=targetX+side*(span*.28+spread),py2=groundY-lift+(i%3)*.7*splashAge;
+      g.fillStyle=i%3===0?'#a2945f':i%2?'#5e7041':'#4b402a';
+      g.fillRect(px2-(i%3)*.3,py2,1.2+(i%2)*.7,.8+(i%3)*.35);
     }
     g.restore();
   }
-  g.restore();
+
+  g.translate(modelX*scale*U,modelY*scale*U);
+  g.scale(scale*U*moveScale,scale*U*moveScale*(1-landing));
+  if(landing)g.translate(0,landing*5);
+  g.lineJoin='miter';g.lineCap='butt';
+  const deep=hurtFlash?'#e9e9e9':'#202c20',dark=hurtFlash?'#efefef':'#31422e',
+    greenD=hurtFlash?'#f5f5f5':'#405536',green=hurtFlash?'#ffffff':'#5e7041',
+    greenL=hurtFlash?'#ffffff':'#7d894f',moss=hurtFlash?'#ffffff':'#82914e',
+    bellyD=hurtFlash?'#eeeeee':'#756a48',belly=hurtFlash?'#ffffff':'#a2945f',
+    sacD=hurtFlash?'#eeeeee':'#777447',sac=hurtFlash?'#ffffff':'#a6a45c',
+    mouthD=hurtFlash?'#eeeeee':'#592b35',tongueD=hurtFlash?'#eeeeee':'#823b50',
+    tongue=hurtFlash?'#ffffff':'#c75d72',slimeD='#29462e',slime='#5f8b43',
+    slimeL='#a8c75d',slimeHot='#d6df79',eye='#d7d25f',pupil='#11160f';
+  const R=(a,b,w,h,col,alpha=1)=>{const oldAlpha=g.globalAlpha;g.globalAlpha=oldAlpha*alpha;g.fillStyle=col;
+    g.fillRect(Math.round(a*2)/2,Math.round(b*2)/2,Math.round(w*2)/2,Math.round(h*2)/2);
+    g.globalAlpha=oldAlpha;};
+  const Q=(pts,col,alpha=1)=>{const oldAlpha=g.globalAlpha;g.globalAlpha=oldAlpha*alpha;g.fillStyle=col;g.beginPath();
+    g.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)g.lineTo(pts[i][0],pts[i][1]);
+    g.closePath();g.fill();g.globalAlpha=oldAlpha;};
+  const limb=(ax,ay,bx,by,w,col,hi)=>{
+    const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1,nx=-dy/len*w*.5,ny=dx/len*w*.5;
+    Q([[ax+nx,ay+ny],[bx+nx,by+ny],[bx-nx,by-ny],[ax-nx,ay-ny]],col);
+    R(ax-w*.55,ay-w*.50,w*1.1,w,hi||col);R(bx-w*.48,by-w*.45,w*.96,w*.9,col);
+  };
+  const toeFan=(cx,cy,side,count=5,col=greenD)=>{
+    const spread=count===5?8.8:7.0;
+    /* One filled, shallow zig-zag web keeps the five hind toes connected.
+       Individual pale pads sit on that membrane rather than floating as dots. */
+    Q([[cx-side*1.4,cy-1.7],[cx+side*2.6,cy-2.0],[cx+side*4.2,cy-1.25],
+      [cx+side*5.8,cy-2.0],[cx+side*7.2,cy-1.15],[cx+side*(spread+1.1),cy-1.55],
+      [cx+side*(spread+1.5),cy+.9],[cx+side*1.0,cy+1.7]],col);
+    for(let n=0;n<count;n++){
+      const tx=cx+side*(2.2+n*(spread-1)/(count-1)),ty=cy+(Math.abs(n-(count-1)/2))*-.35;
+      R(tx-(side<0?1.2:0),ty-.5,1.2,1.15,belly);
+    }
+  };
+
+  const step=Math.sin(phase)*gait,otherStep=Math.sin(phase+Math.PI)*gait;
+  const hindLeg=(side,far)=>{
+    const stride=(side<0?step:otherStep)*(far?.72:1),fade=far?.68:1;
+    const hipX=side*11,hipY=-12+crouch*.32;
+    const kneeX=side*(18+coil*3-air*2)+stride*2.4,kneeY=-10+crouch*.62-air*1.5;
+    const ankleX=side*(15+coil*4-air*1.5)+stride*3.2,ankleY=-3+crouch*.18+air*1.0;
+    g.save();g.globalAlpha*=fade;
+    Q([[side*7,-19+crouch*.36],[side*18,-18+crouch*.55],[side*22,-11+crouch*.62],
+      [side*16,-6+crouch*.2],[side*7,-9+crouch*.2]],far?dark:greenD);
+    limb(hipX,hipY,kneeX,kneeY,5.2,far?dark:greenD,green);
+    limb(kneeX,kneeY,ankleX,ankleY,3.3,far?deep:greenD,greenL);
+    toeFan(ankleX,ankleY+.8,side,5,far?dark:greenD);g.restore();
+  };
+  const foreLeg=(side,far=false)=>{
+    const shoulderX=side*9.5,shoulderY=-15+crouch*.46;
+    const elbowX=side*(13.5+coil*1.5-air*1.2),elbowY=-8+crouch*.30-air*1.1;
+    const wristX=side*(10.5-air*1.0),wristY=-1+crouch*.10-air*1.8;
+    g.save();g.globalAlpha*=far?.72:1;
+    limb(shoulderX,shoulderY,elbowX,elbowY,3.6,far?dark:greenD,green);
+    limb(elbowX,elbowY,wristX,wristY,2.7,far?deep:greenD,greenL);
+    g.save();g.translate(wristX,wristY);g.scale(side,1);
+    drawAngleClip(toadWebFootClip(),pawTurn*.999,0,0,11.5,8.2,false);
+    g.restore();g.restore();
+  };
+
+  if(!backView){hindLeg(-1,false);hindLeg(1,false);}
+  if(backView){
+    Q([[-16,-20+crouch*.4],[-11,-28+crouch*.45],[0,-31+crouch*.45],[11,-28+crouch*.45],
+      [16,-20+crouch*.4],[14,-7],[-14,-7]],greenD);
+    Q([[-11,-24],[0,-28],[11,-24],[13,-12],[8,-7],[-8,-7],[-13,-12]],green);
+    R(-10,-28,5,3,greenL);R(5,-28,5,3,greenL);
+    for(const wart of [[-8,-20,2,2],[1,-23,2.4,1.8],[7,-16,1.8,2],[-2,-12,2,1.6]])
+      R(wart[0],wart[1],wart[2],wart[3],wart[0]>0?moss:dark);
+    hindLeg(-1,false);hindLeg(1,false);g.restore();return;
+  }
+
+  /* Broad fused torso/head silhouette: no neck, raised eyes and folded rear
+     quarters keep the anatomy recognizably an adult toad rather than a lizard. */
+  Q([[-17,-18+crouch*.42],[-13,-27+crouch*.48],[-7,-31+crouch*.52],[7,-31+crouch*.52],
+    [13,-27+crouch*.48],[17,-18+crouch*.42],[16,-8+crouch*.20],[10,-4],[-10,-4],
+    [-16,-8+crouch*.20]],greenD);
+  Q([[-14,-22+crouch*.44],[-9,-28+crouch*.5],[0,-30+crouch*.5],[9,-28+crouch*.5],
+    [14,-22+crouch*.44],[13,-12+crouch*.3],[8,-7],[-8,-7],[-13,-12+crouch*.3]],green);
+  Q([[-12,-25+crouch*.48],[-6,-29+crouch*.5],[6,-29+crouch*.5],[12,-25+crouch*.48],
+    [10,-21+crouch*.42],[-10,-21+crouch*.42]],greenL);
+  R(-15,-19+crouch*.4,3.2,8,greenD);R(11.8,-19+crouch*.4,3.2,8,dark);
+  for(const wart of [[-10,-23,2.2,1.8],[-4,-26,1.6,1.5],[4,-25,2.4,1.8],[9,-21,1.8,2],
+    [-7,-13,2,1.7],[6,-11,2.1,1.8],[-1,-9,1.8,1.5]])R(wart[0],wart[1]+crouch*.35,
+      wart[2],wart[3],wart[0]%2?moss:dark,.88);
+
+  const sacK=clamp(throat,0,1),sacH=3.2+sacK*7.2,sacY=-11+crouch*.18;
+  Q([[-7,sacY],[7,sacY],[9,sacY+sacH*.58],[6,sacY+sacH],[-6,sacY+sacH],
+    [-9,sacY+sacH*.58]],sacD,.96);
+  Q([[-5.5,sacY+.7],[5.5,sacY+.7],[6.5,sacY+sacH*.58],[4,sacY+sacH-1],
+    [-4,sacY+sacH-1],[-6.5,sacY+sacH*.58]],sac,.94);
+  if(sacK>.4)R(-3.6,sacY+sacH*.34,7.2,1.2,slimeL,(sacK-.4)*.72);
+
+  const gap=mouth*5.2,mouthY=-17+crouch*.43;
+  if(mouth>.04){
+    Q([[-12,mouthY],[12,mouthY],[10,mouthY+gap],[-10,mouthY+gap]],mouthD);
+    R(-8.2,mouthY+gap*.44,16.4,1.5,tongueD);
+    R(-11,mouthY+gap,22,2.5,bellyD);
+  }else R(-12,mouthY,24,.8,deep);
+  R(-12,mouthY-1.4,24,1.8,greenL);
+
+  const look=eyeAim*clamp(targetX/42,-1,1),blink=(Math.sin(perfNow*.82)>.985)?1:0;
+  for(const side of [-1,1]){
+    const ex=side*8.3,ey=-30.5+crouch*.5;
+    Q([[ex-side*4.2,ey+4],[ex-side*3.5,ey-1],[ex+side*1.9,ey-2],
+      [ex+side*3.4,ey+3],[ex+side*2.4,ey+5],[ex-side*2.8,ey+5]],greenD);
+    R(ex-side*2.3,ey,4.5,blink?.65:3.6,eye);
+    if(!blink)R(ex-.65+look*1.1,ey+.45,1.3,2.5,pupil);
+    R(ex-side*2.7,ey-.7,5.2,1.3,greenL);
+  }
+  R(-4.3,-20+crouch*.42,2.2,1.5,deep);R(2.1,-20+crouch*.42,2.2,1.5,deep);
+  foreLeg(-1,false);foreLeg(1,false);
+
+  const drawTongueLayer=(sx,sy,tx,ty,k,width,col,inner=false)=>{
+    const ex=lerp(sx,tx,easeOut(k)),ey=lerp(sy,ty,easeOut(k)),dx=ex-sx,dy=ey-sy,
+      len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,nx=-uy,ny=ux,
+      wave=Math.sin(perfNow*15)*1.15*k,tipW=width*(inner?1.32:1.58),arcK=4/3;
+    const cx=ex+nx*wave,cy=ey+ny*wave,startW=width*.46;
+    g.fillStyle=col;g.beginPath();g.moveTo(sx+nx*startW,sy+ny*startW);
+    g.bezierCurveTo(lerp(sx,ex,.34)+nx*(width*.72+wave*.18),lerp(sy,ey,.34)+ny*(width*.72+wave*.18),
+      lerp(sx,ex,.72)+nx*(width+wave*.65),lerp(sy,ey,.72)+ny*(width+wave*.65),cx+nx*tipW,cy+ny*tipW);
+    g.bezierCurveTo(cx+nx*tipW+ux*width*arcK,cy+ny*tipW+uy*width*arcK,
+      cx-nx*tipW+ux*width*arcK,cy-ny*tipW+uy*width*arcK,cx-nx*tipW,cy-ny*tipW);
+    g.bezierCurveTo(lerp(sx,ex,.72)+nx*(-width+wave*.65),lerp(sy,ey,.72)+ny*(-width+wave*.65),
+      lerp(sx,ex,.34)+nx*(-width+wave*.18),lerp(sy,ey,.34)+ny*(-width+wave*.18),
+      sx-nx*startW,sy-ny*startW);
+    g.closePath();g.fill();
+  };
+  if(mode==='tongue'&&contacts.length){
+    const k=easeOut(clamp((t-.08)/.92,0,1)),sourceY=mouthY+Math.max(1.2,gap*.44);
+    if(k>.01){
+      drawTongueLayer(0,sourceY,contacts[0],bodyY,k,2.8,tongueD);
+      drawTongueLayer(0,sourceY,contacts[0],bodyY,k,1.35,tongue,true);
+      const ex=lerp(0,contacts[0],easeOut(k)),ey=lerp(sourceY,bodyY,easeOut(k));
+      for(let p=1;p<5;p++){const f=p/5;R(lerp(0,ex,f)-.45,lerp(sourceY,ey,f)-.45,
+        .9,.9,p&1?'#e98a91':tongue,.82);}
+    }
+  }
+
+  const drawGlob=(cx,cy,r,angle,alpha=1)=>{
+    const bx=-Math.cos(angle),by=-Math.sin(angle);
+    const oldAlpha=g.globalAlpha;g.globalAlpha=oldAlpha*alpha;
+    R(cx-r,cy-r*.72,2*r,1.44*r,slimeD);
+    R(cx-r*.78,cy-r,1.56*r,.42*r,slime);
+    R(cx-r*.76,cy-r*.62,1.52*r,1.25*r,slime);
+    R(cx-r*.40,cy-r*.34,.80*r,.75*r,slimeL);
+    R(cx-r*.12,cy-r*.18,.28*r,.32*r,slimeHot);
+    R(cx+bx*r*1.15-r*.35,cy+by*r*1.15-r*.28,.70*r,.56*r,slime);
+    R(cx+bx*r*1.75-r*.22,cy+by*r*1.75-r*.18,.44*r,.36*r,slimeD);
+    g.globalAlpha=oldAlpha;
+  };
+  const drawGlobBurst=(cx,cy,r,alpha)=>{
+    const oldAlpha=g.globalAlpha;g.globalAlpha=oldAlpha*alpha;
+    Q([[cx-r,cy],[cx-r*.62,cy-r*.28],[cx-r*.42,cy-r*.85],[cx-r*.16,cy-r*.35],
+      [cx+.04*r,cy-r],[cx+.27*r,cy-r*.30],[cx+.72*r,cy-r*.64],[cx+.55*r,cy-r*.12],
+      [cx+r,cy+r*.05],[cx+.42*r,cy+r*.35],[cx-.48*r,cy+r*.38]],slimeD);
+    Q([[cx-r*.62,cy+.05*r],[cx-r*.30,cy-r*.25],[cx,cy-r*.55],[cx+.20*r,cy-r*.12],
+      [cx+.58*r,cy-r*.30],[cx+.42*r,cy+.20*r],[cx,cy+.32*r]],slime);
+    R(cx-r*.18,cy-r*.28,r*.36,r*.44,slimeL);
+    for(let d=0;d<7;d++){const a=d/7*TAU,rise=.75+.25*Math.sin(perfNow*7+d);
+      R(cx+Math.cos(a)*r*(.7+rise*.35)-.55,cy+Math.sin(a)*r*(.55+rise*.28)-.55,
+        1.1,1.1,d&1?slime:slimeL);}
+    g.globalAlpha=oldAlpha;
+  };
+  if(mode==='glob_charge'){
+    const pulse=.82+.12*Math.sin(perfNow*9),r=(.5+held*3.2)*pulse;
+    drawGlob(0,mouthY-1.6,r,-Math.PI/2,held);
+  }else if((mode==='glob'||mode==='glob_burst')&&contacts.length){
+    const tx=contacts[0],ty=highY,launchX=0,launchY=mouthY-1.2;
+    if(mode==='glob'){
+      const raw=clamp((t-.08)/.92,0,1),arcH=Math.max(20,Math.abs(ty-launchY)*.40),
+        cx=lerp(launchX,tx,raw),cy=lerp(launchY,ty,raw)-Math.sin(raw*Math.PI)*arcH,
+        dx=tx-launchX,dy=(ty-launchY)-Math.cos(raw*Math.PI)*Math.PI*arcH,
+        angle=Math.atan2(dy,dx),explode=clamp((raw-.975)/.025,0,1);
+      if(explode<.02)drawGlob(cx,cy,lerp(3.2,5.6,easeOut(raw))+.18*Math.sin(perfNow*18),angle);
+      else drawGlobBurst(tx,ty,lerp(5,13,easeOut(explode*.30)),1-explode*.28);
+    }else{
+      const p=easeOut(recoveryT),r=lerp(7,17,p),alpha=1-p*.90;
+      drawGlobBurst(tx,ty,r,alpha);
+    }
+  }
+  g.globalAlpha=worldA;g.restore();
 }
-/* Pack followers reuse the complete model turned rearward. */
-function drawCrocodileBack(x,y,scale,t,spd){
-  drawCrocodile(x,y,scale*.90,spd>0?'pack_run':'pack_back',t%1,false,[]);
+function drawMireToadBack(x,y,scale,t,spd){
+  drawMireToad(x,y,scale*.90,spd>0?'pack_run':'pack_back',t%1,false,[]);
 }
+
 /* Shared elemental styling for the reusable ranged spell renderer below.
    Other encounters can pass a different six-color palette without inheriting
    any Imp body code. */
@@ -8806,7 +8910,7 @@ const ARTIFACT_DATA={
   seal:   {name:"SMITH'S SEAL",   desc:'smith prices −30%',                     col:'#ff9a3a'},
   clover: {name:'LUCKY CLOVER',   desc:'every coin is worth +1 gold',           col:'#7ade6a'},
   drum:   {name:'WAR DRUM',       desc:'counters strike +3 harder',             col:'#e06a5a'},
-  eye:    {name:'CROCODILE EYE',  desc:'perfect-dodge windows widen',           col:'#c9f74a'},
+  eye:    {name:'TOAD EYE',       desc:'perfect-dodge windows widen',           col:'#c9f74a'},
   flask:  {name:'EMBER FLASK',    desc:'lances burn for +8 damage',             col:'#ff6a2a'},
   moon:   {name:'MOON CHARM',     desc:'chain stacks give +7% (not +5%)',       col:'#dfe8ff'},
   oak:    {name:'OAKEN CHARM',    desc:'one crash forgiven each loop',          col:'#c9a86a'},
@@ -9644,7 +9748,7 @@ const CHANGELOGS=[
  {v:'v1.0',lines:[
   'COMBAT UPDATE',
   '· Bear, Hydra & Turtle models rebuilt and enlarged',
-  '· Wolf, Crocodile & Imp attack animations remade',
+  '· Wolf, Mire Toad & Imp attack animations remade',
   '· Wolf finalized with bite and two-lane lunges',
   '· boss and miniboss patterns rebuilt with new combos',
   '· physical model hits with clear jump and duck timing',
