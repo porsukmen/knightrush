@@ -7593,11 +7593,11 @@ const RangedFrameAttackFactory=Object.freeze({
 });
 const TOAD_DUEL_ATTACKS=[
   ...RangedFrameAttackFactory.singleLaneFamily({
-    idPrefix:'toad_tongue',w:15,rec:.80,height:'mid',tele:1.02,travel:.40,
+    idPrefix:'toad_tongue',w:15,rec:.80,height:'mid',tele:1.02,travel:.24,
     anim:'tele_toad_tongue',strike:'strike_toad_tongue',visual:{recoverPortion:.58}
   }),
   ...RangedFrameAttackFactory.twoLaneFamily({
-    idPrefix:'toad_belly_slam',w:19,rec:1.04,height:'mid',tele:1.24,travel:.56,
+    idPrefix:'toad_belly_slam',w:19,rec:1.16,height:'mid',tele:1.24,travel:.74,
     anim:'tele_toad_belly_slam',strike:'strike_toad_belly_slam',
     includeOuter:false,visual:{recoverPortion:.78}
   }),
@@ -8193,6 +8193,22 @@ function drawPackAllies(){
 }
 /* ---- THE MIRE TOAD: jointed swamp-native pixel miniboss ---- */
 let TOAD_WEB_FOOT_CLIP=null;
+/* Shared centerline storage keeps the tongue whip allocation-free. The same
+   straight raised ribbon opens into the lane-specific downward slap. */
+const TOAD_TONGUE_SAMPLE_COUNT=96;
+const TOAD_TONGUE_CURVE=new Float32Array((TOAD_TONGUE_SAMPLE_COUNT+1)*2);
+const TOAD_TONGUE_DEPTH=new Float32Array(TOAD_TONGUE_SAMPLE_COUNT+1);
+const TOAD_TONGUE_RENDER_SEGMENTS=64;
+const TOAD_TONGUE_RENDER_CURVE=new Float32Array((TOAD_TONGUE_RENDER_SEGMENTS+1)*2);
+const TOAD_TONGUE_RENDER_DEPTH=new Float32Array(TOAD_TONGUE_RENDER_SEGMENTS+1);
+const TOAD_TONGUE_RENDER_PARAM=new Float32Array(TOAD_TONGUE_RENDER_SEGMENTS+1);
+/* Normalized against the .24 s strike: one 60 Hz frame between the first
+   slash beat at peak and the second beat at scheduled contact. */
+const TOAD_TONGUE_PEAK_HOLD=.07;
+const toadCubic=(a,b,c,d,k)=>{
+  const q=1-k;
+  return q*q*q*a+3*q*q*k*b+3*q*k*k*c+k*k*k*d;
+};
 function toadWebFootClip(){
   if(TOAD_WEB_FOOT_CLIP)return TOAD_WEB_FOOT_CLIP;
   TOAD_WEB_FOOT_CLIP=createAngleClip(7,20,14,10,2,(c,i,count)=>{
@@ -8203,11 +8219,14 @@ function toadWebFootClip(){
        webbing and round underside pads instead of swapping to another drawing. */
     c.fillStyle='#6f7b46';
     for(let toe=0;toe<4;toe++){
-      const tx=3.3+toe*4.15,tipY=lerp(front+3.1,top-.8,k);
-      c.beginPath();c.moveTo(6.2+toe*2.55,front-1);
-      c.lineTo(tx,tipY);c.lineTo(tx+1.7,tipY+.5);c.lineTo(8.1+toe*1.75,front);
+      const tipCx=3.9+toe*4.05,baseCx=6.7+toe*2.2,
+        tipY=lerp(front+3.1,top-.8,k),toeHalf=.92,baseHalf=1.05;
+      c.beginPath();c.moveTo(baseCx-baseHalf,front-.8);
+      c.lineTo(tipCx-toeHalf,tipY);c.lineTo(tipCx+toeHalf,tipY);
+      c.lineTo(baseCx+baseHalf,front-.8);
       c.closePath();c.fill();
-      c.fillStyle='#b7b07a';c.fillRect(tx,tipY,1.7,1.3);c.fillStyle='#6f7b46';
+      c.fillStyle='#b7b07a';c.fillRect(tipCx-toeHalf,tipY,1.84,1.3);
+      c.fillStyle='#6f7b46';
     }
     if(k>.24){
       c.globalAlpha=clamp((k-.24)/.50,0,1);c.fillStyle='#273323';
@@ -8220,6 +8239,193 @@ function toadWebFootClip(){
   return TOAD_WEB_FOOT_CLIP;
 }
 
+/* Canonical cached-2.5D treatment for the Toad parts that truly change
+   angle. Like Turtle, the approved frontal contour remains stable while face,
+   jaw and belly surfaces reveal prepared hidden planes across a lazy atlas. */
+let TOAD_HEAD_PITCH_CLIP=null,TOAD_HEAD_POISON_PITCH_CLIP=null,
+  TOAD_HEAD_SPIT_PITCH_CLIP=null,TOAD_AIR_PITCH_CLIP=null,TOAD_AIR_LAND_PITCH_CLIP=null;
+function paintToadClipPoly(c,pts,col,alpha=1){
+  c.save();c.globalAlpha*=alpha;c.fillStyle=col;c.beginPath();
+  c.moveTo(pts[0],pts[1]);for(let i=2;i<pts.length;i+=2)c.lineTo(pts[i],pts[i+1]);
+  c.closePath();c.fill();c.restore();
+}
+function paintToadHeadPitch(c,index,count,variant='normal'){
+  const poison=variant==='poison',spit=variant==='spit',
+    k=index/(count-1),turn=Math.sin(k*Math.PI*.5),front=Math.cos(k*Math.PI*.5),
+    X=x=>22+x,Y=y=>42+y,
+    deep='#202c20',greenD='#405536',green='#5e7041',greenL='#7d894f',
+    bellyD='#756a48',belly='#a2945f',mouthD='#592b35',tongueD='#823b50',
+    eye='#d7d25f',pupil='#11160f',slimeD='#29462e',slime='#5f8b43',
+    slimeL='#a8c75d',slimeHot='#d6df79',
+    mouthY=lerp(-17,-25.5,k),gap=lerp(0,17,k),mouthHalf=15,
+    eyeY=lerp(-30.5,-34.1,k),eyeH=lerp(4,1.35,k),
+    eyeW=lerp(5,3.5,k),eyeSpread=lerp(9,8.2,k),
+    spitPucker=spit?turn:0,baseJawY=mouthY+gap,spitSeam=mouthY+gap*.56,
+    /* Normal opening translates one fixed jaw. Spit alone contracts both lips
+       toward a shared aperture because puckering is an anatomical deformation. */
+    upperLipY=lerp(mouthY,spitSeam-3.3,spitPucker),
+    jawY=lerp(baseJawY,spitSeam+3.3,spitPucker),
+    lipOuterHalf=lerp(14.5,7.4,spitPucker),lipInnerHalf=lerp(10.5,5.7,spitPucker),
+    jawOuterHalf=lerp(14,7.4,spitPucker),jawSideHalf=lerp(11,6.2,spitPucker),
+    jawUnder=lerp(7,4.2,spitPucker),jawInnerHalf=lerp(11.6,5.35,spitPucker);
+  c.imageSmoothingEnabled=false;c.lineJoin='miter';c.lineCap='square';
+  /* Stable approved frontal contour: surface anatomy turns inside it. */
+  paintToadClipPoly(c,[-17+22,-18+42,-13+22,-27+42,-7+22,-33+42,7+22,-33+42,
+    13+22,-27+42,17+22,-18+42,15+22,-8+42,-15+22,-8+42],greenD);
+  /* This is a pitched skull plane, not a squeezed frontal face. Its rear edge
+     travels behind the eye ridge while its near lip becomes the mouth roof. */
+  paintToadClipPoly(c,[X(-lipOuterHalf),Y(upperLipY-1),X(-12.2+turn*2.3),Y(eyeY+3.5),
+    X(-5.2+turn*1.0),Y(eyeY+.4),X(5.2-turn*1.0),Y(eyeY+.4),
+    X(12.2-turn*2.3),Y(eyeY+3.5),X(lipOuterHalf),Y(upperLipY-1),
+    X(lipInnerHalf),Y(upperLipY+.4),X(-lipInnerHalf),Y(upperLipY+.4),
+    X(-lipOuterHalf),Y(upperLipY-1)],green);
+  const browLipHalf=lerp(12.8,7.0,spitPucker),
+    browLipY=lerp(mouthY-1.4,upperLipY-1.2,spitPucker);
+  paintToadClipPoly(c,[X(-11+turn*2.2),Y(mouthY-3.8-front*1.8),
+    X(0),Y(mouthY-5-front*1.6-turn*.8),
+    X(11-turn*2.2),Y(mouthY-3.8-front*1.8),
+    X(browLipHalf),Y(browLipY),X(-browLipHalf),Y(browLipY)],greenL,.78);
+  /* One jaw survives every state. Opening changes only its position and the
+     cavity above it; idle and full-open frames use identical jaw anatomy. */
+  paintToadClipPoly(c,[X(-jawOuterHalf),Y(jawY-1),X(jawOuterHalf),Y(jawY-1),
+    X(jawOuterHalf+.2),Y(jawY+1),X(jawSideHalf),Y(jawY+jawUnder),
+    X(lerp(7.5,4.8,spitPucker)),Y(jawY+jawUnder+.8),
+    X(-lerp(7.5,4.8,spitPucker)),Y(jawY+jawUnder+.8),
+    X(-jawSideHalf),Y(jawY+jawUnder),X(-jawOuterHalf-.2),Y(jawY+1)],bellyD);
+  paintToadClipPoly(c,[X(-jawInnerHalf),Y(jawY+.3),X(jawInnerHalf),Y(jawY+.3),
+    X(lerp(8.6,4.3,spitPucker)),Y(jawY+jawUnder-.3),
+    X(-lerp(8.6,4.3,spitPucker)),Y(jawY+jawUnder-.3)],belly,.94);
+  if(gap>.35){
+    /* Receding palate bands make the open mouth a volume. At full pitch the
+       broad mouth and near jaw obscure almost the entire former face plane. */
+    const innerHalf=Math.max(5.8,mouthHalf-.8),floorHalf=Math.max(5.2,mouthHalf-2);
+    if(spit){
+      const outerHalf=lerp(2.4,6.25,spitPucker),
+        innerHalfO=lerp(.7,4.15,spitPucker),corner=lerp(.45,1.55,spitPucker),
+        top=upperLipY+.1,bottom=jawY-.1,innerTop=lerp(top,spitSeam-2.35,spitPucker),
+        innerBottom=lerp(bottom,spitSeam+2.35,spitPucker);
+      /* No cavity-filling patch: these are the actual contracted upper lip and
+         jaw boundaries, with a small hole left between them. */
+      paintToadClipPoly(c,[X(-outerHalf+corner),Y(top),X(outerHalf-corner),Y(top),
+        X(outerHalf),Y(top+corner),X(outerHalf),Y(bottom-corner),
+        X(outerHalf-corner),Y(bottom),X(-outerHalf+corner),Y(bottom),
+        X(-outerHalf),Y(bottom-corner),X(-outerHalf),Y(top+corner)],mouthD);
+      paintToadClipPoly(c,[X(-innerHalfO+corner*.5),Y(innerTop),
+        X(innerHalfO-corner*.5),Y(innerTop),X(innerHalfO),Y(innerTop+corner*.5),
+        X(innerHalfO),Y(innerBottom-corner*.5),X(innerHalfO-corner*.5),Y(innerBottom),
+        X(-innerHalfO+corner*.5),Y(innerBottom),X(-innerHalfO),Y(innerBottom-corner*.5),
+        X(-innerHalfO),Y(innerTop+corner*.5)],deep);
+    }else{
+      paintToadClipPoly(c,[X(-mouthHalf),Y(mouthY),X(mouthHalf),Y(mouthY),
+        X(mouthHalf*.90),Y(mouthY+gap),X(-mouthHalf*.90),Y(mouthY+gap)],deep);
+      paintToadClipPoly(c,[X(-innerHalf),Y(mouthY+.7),X(innerHalf),Y(mouthY+.7),
+        X(floorHalf),Y(mouthY+gap-.9),X(-floorHalf),Y(mouthY+gap-.9)],mouthD);
+      paintToadClipPoly(c,[X(-innerHalf*.90),Y(mouthY+1.2),X(innerHalf*.90),Y(mouthY+1.2),
+        X(floorHalf*.92),Y(mouthY+gap*.26),X(-floorHalf*.92),Y(mouthY+gap*.26)],
+        '#6f3341',turn*.72);
+    }
+    if(poison&&k>.14){
+      const fill=clamp((k-.14)/.72,0,1),poolY=mouthY+gap*.55;
+      paintToadClipPoly(c,[X(-11.1),Y(poolY),X(11.1),Y(poolY),
+        X(9.8),Y(mouthY+gap-1.2),X(-9.8),Y(mouthY+gap-1.2)],slimeD,fill);
+      paintToadClipPoly(c,[X(-9.6),Y(poolY+.4),X(9.6),Y(poolY+.4),
+        X(8.4),Y(mouthY+gap-1.5),X(-8.4),Y(mouthY+gap-1.5)],slime,fill);
+      c.globalAlpha=fill;c.fillStyle=slimeL;c.fillRect(X(-5),Y(poolY+.8),10,1.45);
+      c.globalAlpha=1;
+    }
+  }else{
+    c.fillStyle=deep;c.fillRect(X(-14.4),Y(mouthY),28.8,1);
+  }
+  if(spit&&gap>.35){
+    const hiHalf=lerp(14.5,7.1,spitPucker);
+    paintToadClipPoly(c,[X(-hiHalf),Y(upperLipY-1.5),X(hiHalf),Y(upperLipY-1.5),
+      X(hiHalf-.9),Y(upperLipY+.1),X(-hiHalf+.9),Y(upperLipY+.1)],greenL,.82);
+  }else paintToadClipPoly(c,[X(-15),Y(mouthY-1.8),X(15),Y(mouthY-1.8),
+    X(13.8),Y(mouthY+.1),X(-13.8),Y(mouthY+.1)],greenL);
+  for(const side of [-1,1]){
+    const ex=side*eyeSpread,ey=eyeY,half=eyeW*.5;
+    /* Eye sockets roll onto the top plane. The pupils climb into the far edge
+       and flatten, making the gaze read upward instead of remaining frontal. */
+    paintToadClipPoly(c,[X(ex-half-1.7),Y(ey+lerp(4,2.1,k)),
+      X(ex-half-1),Y(ey-lerp(1.1,.5,k)),X(ex+half-.3),Y(ey-lerp(1.8,.7,k)),
+      X(ex+half+1.2),Y(ey+lerp(2.8,1.5,k)),X(ex+half+.2),Y(ey+lerp(4.8,2.6,k)),
+      X(ex-half-.5),Y(ey+lerp(4.8,2.6,k))],greenD);
+    c.fillStyle=eye;c.fillRect(X(ex-half),Y(ey),eyeW,eyeH);
+    c.fillStyle=pupil;c.fillRect(X(ex-.7),Y(ey+lerp(.55,.02,k)),1.4,lerp(2.8,.72,k));
+    c.fillStyle=greenL;c.fillRect(X(ex-half-.3),Y(ey-.75),eyeW+.6,lerp(1.25,.75,k));
+  }
+  if(front>.08||spitPucker>.08){
+    const nostrilAlpha=Math.max(front,spitPucker*.92),
+      nostrilY=lerp(mouthY-3.8-turn*.55,upperLipY-4.25,spitPucker),
+      nostrilW=lerp(2.2,1.8,spitPucker),nostrilSpread=lerp(3.7,2.8,spitPucker);
+    c.globalAlpha=nostrilAlpha;c.fillStyle=deep;
+    c.fillRect(X(-nostrilSpread-nostrilW*.5),Y(nostrilY),nostrilW,1.25);
+    c.fillRect(X(nostrilSpread-nostrilW*.5),Y(nostrilY),nostrilW,1.25);
+    c.globalAlpha=1;
+  }
+}
+function toadHeadPitchClip(variant='normal'){
+  if(variant==='poison')return TOAD_HEAD_POISON_PITCH_CLIP||(TOAD_HEAD_POISON_PITCH_CLIP=
+    createAngleClip(9,44,46,22,42,(c,i,n)=>paintToadHeadPitch(c,i,n,'poison'),5));
+  if(variant==='spit')return TOAD_HEAD_SPIT_PITCH_CLIP||(TOAD_HEAD_SPIT_PITCH_CLIP=
+    createAngleClip(9,44,46,22,42,(c,i,n)=>paintToadHeadPitch(c,i,n,'spit'),5));
+  return TOAD_HEAD_PITCH_CLIP||(TOAD_HEAD_PITCH_CLIP=
+    createAngleClip(9,44,46,22,42,(c,i,n)=>paintToadHeadPitch(c,i,n,'normal'),5));
+}
+function paintToadAirPitch(c,index,count,landing=false){
+  const k=index/(count-1),turn=Math.sin(k*Math.PI*.5),X=x=>22+x,Y=y=>42+y,
+    deep='#202c20',greenD='#405536',green='#5e7041',greenL='#7d894f',
+    bellyD='#756a48',belly='#a2945f',eye='#d7d25f',pupil='#11160f',
+    crouch=landing?0:(1-k)*5.2,
+    mouthY=lerp(landing?-17:-14.8,-23.5,k),
+    eyeY=lerp(landing?-30.5:-27.7,mouthY-6.8,k);
+  c.imageSmoothingEnabled=false;c.lineJoin='miter';
+  /* Frame zero is the crouched takeoff core. The outer contour remains stable
+     while the approved face recedes and the hidden underside rotates forward. */
+  paintToadClipPoly(c,[X(-17),Y(-18+crouch*.42),X(-13),Y(-27+crouch*.48),
+    X(-7),Y(-31+crouch*.52),X(7),Y(-31+crouch*.52),X(13),Y(-27+crouch*.48),
+    X(17),Y(-18+crouch*.42),X(16),Y(-8+crouch*.2),X(10),Y(-4),
+    X(-10),Y(-4),X(-16),Y(-8+crouch*.2)],greenD);
+  paintToadClipPoly(c,[X(-14),Y(-22+crouch*.44),X(-9),Y(-28+crouch*.5),
+    X(0),Y(-30+crouch*.5),X(9),Y(-28+crouch*.5),X(14),Y(-22+crouch*.44),
+    X(13),Y(-12+crouch*.3),X(8),Y(-7),X(-8),Y(-7),X(-13),Y(-12+crouch*.3)],green);
+  /* Frontal face markings fade only as their actual plane rotates away. */
+  const faceAlpha=Math.pow(1-k,.62);
+  if(faceAlpha>.02){
+    c.globalAlpha=faceAlpha;c.fillStyle=deep;c.fillRect(X(-14.2),Y(mouthY),28.4,1);
+    for(const side of [-1,1]){
+      const ex=side*9;
+      c.fillStyle=eye;c.fillRect(X(ex-2.4),Y(eyeY),4.8,lerp(3.8,2.2,k));
+      c.fillStyle=pupil;c.fillRect(X(ex-.65),Y(eyeY+.35),1.3,lerp(2.6,1.6,k));
+      c.fillStyle=greenL;c.fillRect(X(ex-2.7),Y(eyeY-.7),5.4,1.2);
+    }
+    c.globalAlpha=1;
+  }
+  /* Hidden belly/chin plane is absent at frame zero and owns its own surface
+     markings once rotation reveals it. */
+  if(turn>.01){
+    const top=lerp(-17,-23.2,k),bottom=-4;
+    paintToadClipPoly(c,[X(-13.2),Y(top),X(13.2),Y(top),X(14),Y(top+4.2),
+      X(11),Y(bottom-1.6),X(7.7),Y(bottom),X(-7.7),Y(bottom),
+      X(-11),Y(bottom-1.6),X(-14),Y(top+4.2)],bellyD,turn);
+    paintToadClipPoly(c,[X(-11.2),Y(top+1),X(11.2),Y(top+1),X(12),Y(top+4.2),
+      X(9),Y(bottom-2),X(6.7),Y(bottom-1),X(-6.7),Y(bottom-1),
+      X(-9),Y(bottom-2),X(-12),Y(top+4.2)],belly,turn);
+    for(const spot of [[-6,-15,1.8,1.3],[4,-12,1.6,1.2],[-2,-8,1.4,1.1],[6,-6,1.2,1]])
+      c.fillStyle=bellyD,c.fillRect(X(spot[0]),Y(spot[1]),spot[2],spot[3]);
+  }else{
+    paintToadClipPoly(c,[X(-7),Y(-11),X(7),Y(-11),X(8),Y(-6),X(5),Y(-4),
+      X(-5),Y(-4),X(-8),Y(-6)],bellyD,.96);
+    c.fillStyle=belly;c.fillRect(X(-5),Y(-9.5),10,3.5);
+  }
+  c.fillStyle=greenL;c.fillRect(X(-11.5),Y(mouthY-1.5),23,1.5);
+}
+function toadAirPitchClip(landing=false){
+  if(landing)return TOAD_AIR_LAND_PITCH_CLIP||(TOAD_AIR_LAND_PITCH_CLIP=
+    createAngleClip(9,44,46,22,42,(c,i,n)=>paintToadAirPitch(c,i,n,true),5));
+  return TOAD_AIR_PITCH_CLIP||(TOAD_AIR_PITCH_CLIP=
+    createAngleClip(9,44,46,22,42,(c,i,n)=>paintToadAirPitch(c,i,n,false),5));
+}
 function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
   const recovering=state.startsWith('recover_miniboss_from:'),recoveryT=recovering?clamp(t,0,1):0;
   if(recovering){state=state.slice(state.indexOf(':')+1);t=1-easeInOut(recoveryT);}
@@ -8227,41 +8433,86 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
     contacts=fillLocalContacts(LOCAL_CONTACT_SCRATCH_A,contactXs,x,den),
     bodyY=(BODY_ATTACK_Y-y)/den,groundY=(ATTACK_GROUND_Y-y)/den,highY=(DUCK_ATTACK_Y-y)/den,
     held=hesitationPose(t),backView=state==='pack_back'||state==='pack_run';
+  const stableHeld=t<.40?easeOut(clamp(t/.40,0,1))*.74:
+    .74+easeInOut(clamp((t-.40)/.60,0,1))*.26;
   const targetX=contacts.length?contacts.reduce((sum,v)=>sum+v,0)/contacts.length:0;
-  const breathe=(Math.sin(perfNow*1.65)+1)*.5;
-  let crouch=0,coil=0,mouth=0,throat=.12+breathe*.045,eyeAim=0,gait=0,phase=perfNow*5.4;
-  let leapMove=0,leapArc=0,pawTurn=0,landing=0,splashAge=0,splashAlpha=0,mode=null;
+  const breathe=(Math.sin(perfNow*1.35)+1)*.5;
+  let crouch=0,coil=0,mouth=0,throat=.12+breathe*.018,eyeAim=0,gait=0,phase=perfNow*5.4;
+  let headLift=0,headPitch=0,mouthBob=0,tongueLaunch=0,tonguePrep=0,
+    leapMove=0,leapArc=0,leapPose=0,leapRaw=0,pawTurn=0,landing=0,
+    splashAge=0,splashAlpha=0,mode=null;
   if(state==='run'||state==='pack_run'){gait=.72;phase=perfNow*7.2;}
   else if(state==='croak'){throat=.45+.48*Math.sin(clamp(t,0,1)*Math.PI);mouth=.18;coil=.08;}
   else if(state==='tele_toad_tongue'){
-    crouch=held*1.8;coil=held*.18;mouth=held*.16;throat=.12-held*.08;eyeAim=held;mode='tongue_charge';
+    const hesitate=easeInOut(clamp(t/.72,0,1)),
+      mouthLaunch=easeOut(clamp((t-.82)/.12,0,1));
+    tongueLaunch=clamp((t-.84)/.16,0,1);
+    tonguePrep=hesitate*Math.pow(1-mouthLaunch,3);
+    crouch=held*1.35;coil=held*.14;mouth=mouthLaunch;
+    headLift=mouthLaunch*9.0;headPitch=mouthLaunch;
+    /* Move the whole cached mouth layer, not its frame index: visible tension
+       without reintroducing the old atlas flicker. */
+    mouthBob=hesitate*(.9+Math.sin(perfNow*20.5)*.22*(1-mouthLaunch));
+    throat=.12-held*.07;eyeAim=held;mode='tongue_charge';
   }else if(state==='strike_toad_tongue'){
-    crouch=.35;mouth=lerp(.16,.92,easeOut(clamp(t/.16,0,1)));eyeAim=1;mode='tongue';
+    /* Retract the complete tongue before the jaw is allowed to close. */
+    const closeK=recovering?easeInOut(clamp((recoveryT-.58)/.42,0,1)):0,
+      openK=1-closeK;
+    crouch=.24;mouth=openK;headLift=9.0*openK;headPitch=openK;
+    mouthBob=recovering?0:.9*(1-easeOut(clamp((t-TOAD_TONGUE_PEAK_HOLD)/.22,0,1)));
+    eyeAim=openK;mode='tongue';
   }else if(state==='tele_toad_belly_slam'){
-    coil=held;crouch=held*6.2;mouth=held*.10;throat=.10-held*.06;eyeAim=held;mode='leap_charge';
+    /* Unlike a trembling cast hold, the jump preload must read as one continuous
+       weight transfer across the whole tell. */
+    const load=easeInOut(clamp(t,0,1));
+    coil=load;crouch=load*6.2;mouth=load*.10;throat=.10-load*.06;eyeAim=load;mode='leap_charge';
   }else if(state==='strike_toad_belly_slam'){
     eyeAim=1;mode='leap';
     if(recovering){
       const r=easeInOut(recoveryT);
       leapMove=1-r;leapArc=Math.sin(r*Math.PI)*8*(1-r*.28);
-      pawTurn=Math.sin(r*Math.PI)*.42;landing=(1-r)*.16;
+      leapPose=Math.pow(Math.max(0,Math.sin(leapMove*Math.PI)),.52)*.42;
+      pawTurn=0;landing=(1-r)*.16;
       splashAge=.36+recoveryT*.64;splashAlpha=1-recoveryT;
     }else{
       const raw=clamp(t,0,1);
-      leapMove=easeInOut(raw);leapArc=Math.sin(leapMove*Math.PI)*29;
-      pawTurn=Math.sin(leapMove*Math.PI);coil=1-easeOut(clamp(raw/.24,0,1));
+      leapRaw=raw;
+      leapMove=easeInOut(raw);
+      leapArc=Math.pow(Math.max(0,Math.sin(leapMove*Math.PI)),.52)*78;
+      leapPose=easeInOut(clamp(raw/.28,0,1));
+      pawTurn=Math.sin(leapMove*Math.PI);coil=1-easeInOut(clamp(raw/.20,0,1));
       crouch=coil*6.2;landing=easeOut(clamp((raw-.84)/.16,0,1))*.16;
       splashAge=clamp((raw-.82)/.18,0,1);splashAlpha=splashAge;
     }
   }else if(state==='tele_toad_bog_glob'){
-    crouch=held*.8;throat=.12+held*.88;mouth=held*.24;eyeAim=held;mode='glob_charge';
+    crouch=held*.55;throat=.12+held*.88;mouth=stableHeld;headLift=stableHeld*9.0;
+    headPitch=stableHeld;eyeAim=held;mode='glob_charge';
   }else if(state==='strike_toad_bog_glob'){
-    crouch=.25;throat=recovering?.12:lerp(.72,.12,easeOut(clamp(t/.28,0,1)));
-    mouth=recovering?.94*(1-easeInOut(recoveryT)):.94;eyeAim=1;mode=recovering?'glob_burst':'glob';
+    /* The projectile leaves through a brief pucker, then the lips and pitched
+       skull close progressively during the spit itself. */
+    const spitClose=recovering?1:easeInOut(clamp((t-.10)/.72,0,1)),
+      returnK=1-spitClose;
+    crouch=.18;throat=recovering?.12:lerp(.78,.12,easeOut(clamp(t/.28,0,1)));
+    mouth=returnK;headLift=returnK*9;
+    headPitch=returnK;eyeAim=returnK;
+    mode=recovering?'glob_burst':'glob_spit';
   }
 
-  const moveScale=1+leapMove*.18,modelX=targetX*leapMove,
-    modelY=groundY*leapMove-leapArc,air=Math.sin(leapMove*Math.PI);
+  /* The planted feet own the preload anchor. Only the articulated core settles;
+     the model origin itself must never slide down during the tell. */
+  const coreSink=(mode==='leap_charge'||mode==='leap')?crouch*.92:0,
+    moveScale=1+leapMove*.18,modelX=targetX*leapMove,
+    modelY=groundY*leapMove-leapArc,
+    air=Math.pow(Math.max(0,Math.sin(leapMove*Math.PI)),.52);
+  let flightExtend=mode==='leap'?leapPose:0;
+  if(mode==='leap'&&!recovering&&leapRaw>.5){
+    /* Finish the rear-leg return in open air. This keeps the long feet above
+       the red lane discs instead of dragging them through the telegraph plane. */
+    const groundClearance=Math.max(0,groundY-modelY),
+      groundClose=easeInOut(clamp((52-groundClearance)/24,0,1));
+    flightExtend*=1-groundClose;
+  }
+  if(mode==='leap'&&!recovering)pawTurn=flightExtend;
   g.save();g.translate(x,y);
   if(state==='flee'){
     const k=easeOut(t);g.translate(k*105,-Math.sin(k*Math.PI)*34);g.globalAlpha*=1-k*.86;
@@ -8317,7 +8568,7 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
     Q([[ax+nx,ay+ny],[bx+nx,by+ny],[bx-nx,by-ny],[ax-nx,ay-ny]],col);
     R(ax-w*.55,ay-w*.50,w*1.1,w,hi||col);R(bx-w*.48,by-w*.45,w*.96,w*.9,col);
   };
-  const toeFan=(cx,cy,side,count=5,col=greenD)=>{
+  const toeFan=(cx,cy,side,count=5,col=greenD,padCol=belly)=>{
     const spread=count===5?8.8:7.0;
     /* One filled, shallow zig-zag web keeps the five hind toes connected.
        Individual pale pads sit on that membrane rather than floating as dots. */
@@ -8326,27 +8577,39 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
       [cx+side*(spread+1.5),cy+.9],[cx+side*1.0,cy+1.7]],col);
     for(let n=0;n<count;n++){
       const tx=cx+side*(2.2+n*(spread-1)/(count-1)),ty=cy+(Math.abs(n-(count-1)/2))*-.35;
-      R(tx-(side<0?1.2:0),ty-.5,1.2,1.15,belly);
+      R(tx-(side<0?1.2:0),ty-.5,1.2,1.15,padCol);
     }
   };
 
   const step=Math.sin(phase)*gait,otherStep=Math.sin(phase+Math.PI)*gait;
   const hindLeg=(side,far)=>{
-    const stride=(side<0?step:otherStep)*(far?.72:1),fade=far?.68:1;
-    const hipX=side*11,hipY=-12+crouch*.32;
-    const kneeX=side*(18+coil*3-air*2)+stride*2.4,kneeY=-10+crouch*.62-air*1.5;
-    const ankleX=side*(15+coil*4-air*1.5)+stride*3.2,ankleY=-3+crouch*.18+air*1.0;
+    const stride=(side<0?step:otherStep)*(far?.72:1),fade=far?.80:1;
+    const hipX=side*11,hipY=-12+coreSink;
+    const kneeX=lerp(side*(18+coil*3)+stride*2.4,side*10.5,flightExtend),
+      kneeY=lerp(-10+coreSink*.82,-1.2,flightExtend);
+    const ankleX=lerp(side*(15+coil*4)+stride*3.2,side*5.8,flightExtend),
+      /* The planted rear contact never follows the crouching core. */
+      ankleY=lerp(1.5,18.5,flightExtend);
     g.save();g.globalAlpha*=fade;
-    Q([[side*7,-19+crouch*.36],[side*18,-18+crouch*.55],[side*22,-11+crouch*.62],
-      [side*16,-6+crouch*.2],[side*7,-9+crouch*.2]],far?dark:greenD);
+    Q([[side*7,-19+coreSink],[lerp(side*18,side*12.5,flightExtend),
+      lerp(-18+coreSink*.92,-9,flightExtend)],
+      [lerp(side*22,side*12,flightExtend),lerp(-11+coreSink*.70,1,flightExtend)],
+      [lerp(side*16,side*7.2,flightExtend),lerp(-6+coreSink*.36,4,flightExtend)],
+      [side*7,-9+coreSink*.72]],far?dark:greenD);
     limb(hipX,hipY,kneeX,kneeY,5.2,far?dark:greenD,green);
     limb(kneeX,kneeY,ankleX,ankleY,3.3,far?deep:greenD,greenL);
-    toeFan(ankleX,ankleY+.8,side,5,far?dark:greenD);g.restore();
+    g.save();g.translate(ankleX,ankleY+.8);
+    /* Rear feet remain front-facing in flight; the old quarter-turn made each
+       web read sideways and crossed the returning front hand. */
+    toeFan(0,0,side,5,far?dark:greenD,far?bellyD:belly);g.restore();g.restore();
   };
   const foreLeg=(side,far=false)=>{
-    const shoulderX=side*9.5,shoulderY=-15+crouch*.46;
-    const elbowX=side*(13.5+coil*1.5-air*1.2),elbowY=-8+crouch*.30-air*1.1;
-    const wristX=side*(10.5-air*1.0),wristY=-1+crouch*.10-air*1.8;
+    const shoulderX=side*15.6,shoulderY=-12+coreSink*.72;
+    const elbowX=lerp(side*(14.8+coil*3.2),side*15.4,flightExtend),
+      elbowY=lerp(-8+coreSink*.72,-14.3,flightExtend);
+    const wristX=lerp(side*10.5,side*21.2,flightExtend),
+      /* Front palms are the second fixed preload contact. */
+      wristY=lerp(-1,-10.2,flightExtend);
     g.save();g.globalAlpha*=far?.72:1;
     limb(shoulderX,shoulderY,elbowX,elbowY,3.6,far?dark:greenD,green);
     limb(elbowX,elbowY,wristX,wristY,2.7,far?deep:greenD,greenL);
@@ -8355,7 +8618,9 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
     g.restore();g.restore();
   };
 
-  if(!backView){hindLeg(-1,false);hindLeg(1,false);}
+  /* Both hind legs sit behind the torso and front arms in this frontal view.
+     Darker values keep their folded joints separate from the body mass. */
+  if(!backView){hindLeg(-1,true);hindLeg(1,true);}
   if(backView){
     Q([[-16,-20+crouch*.4],[-11,-28+crouch*.45],[0,-31+crouch*.45],[11,-28+crouch*.45],
       [16,-20+crouch*.4],[14,-7],[-14,-7]],greenD);
@@ -8365,20 +8630,37 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
       R(wart[0],wart[1],wart[2],wart[3],wart[0]>0?moss:dark);
     hindLeg(-1,false);hindLeg(1,false);g.restore();return;
   }
+  /* From here through the face/tongue pass, only the articulated core moves.
+     Feet and wrists above remain planted in world space. */
+  g.save();g.translate(0,coreSink);
+  const landingAirView=mode==='leap'&&leapRaw>.5,
+    cachedAirActive=mode==='leap'&&!recovering&&!hurtFlash&&flightExtend>.012,
+    cachedHeadActive=!hurtFlash&&!cachedAirActive,
+    liveFlightPitch=cachedAirActive||recovering?0:flightExtend,
+    liveHeadLift=cachedHeadActive?0:headLift,
+    bodyPitch=(cachedAirActive||cachedHeadActive)?0:
+      Math.max(headPitch,recovering?0:flightExtend*.92),
+    skullBack=bodyPitch*6.4;
 
   /* Broad fused torso/head silhouette: no neck, raised eyes and folded rear
      quarters keep the anatomy recognizably an adult toad rather than a lizard. */
-  Q([[-17,-18+crouch*.42],[-13,-27+crouch*.48],[-7,-31+crouch*.52],[7,-31+crouch*.52],
-    [13,-27+crouch*.48],[17,-18+crouch*.42],[16,-8+crouch*.20],[10,-4],[-10,-4],
+  Q([[-17,-18+crouch*.42],[-13,-27-skullBack*.65+crouch*.48],
+    [-7,-31-skullBack+crouch*.52],[7,-31-skullBack+crouch*.52],
+    [13,-27-skullBack*.65+crouch*.48],[17,-18+crouch*.42],[16,-8+crouch*.20],[10,-4],[-10,-4],
     [-16,-8+crouch*.20]],greenD);
-  Q([[-14,-22+crouch*.44],[-9,-28+crouch*.5],[0,-30+crouch*.5],[9,-28+crouch*.5],
-    [14,-22+crouch*.44],[13,-12+crouch*.3],[8,-7],[-8,-7],[-13,-12+crouch*.3]],green);
-  Q([[-12,-25+crouch*.48],[-6,-29+crouch*.5],[6,-29+crouch*.5],[12,-25+crouch*.48],
+  Q([[-14,-22-skullBack*.22+crouch*.44],[-9,-28-skullBack*.72+crouch*.5],
+    [0,-30-skullBack*.92+crouch*.5],[9,-28-skullBack*.72+crouch*.5],
+    [14,-22-skullBack*.22+crouch*.44],[13,-12+crouch*.3],[8,-7],[-8,-7],[-13,-12+crouch*.3]],green);
+  Q([[-12,-25-skullBack*.48+crouch*.48],[-6,-29-skullBack*.82+crouch*.5],
+    [6,-29-skullBack*.82+crouch*.5],[12,-25-skullBack*.48+crouch*.48],
     [10,-21+crouch*.42],[-10,-21+crouch*.42]],greenL);
   R(-15,-19+crouch*.4,3.2,8,greenD);R(11.8,-19+crouch*.4,3.2,8,dark);
   for(const wart of [[-10,-23,2.2,1.8],[-4,-26,1.6,1.5],[4,-25,2.4,1.8],[9,-21,1.8,2],
-    [-7,-13,2,1.7],[6,-11,2.1,1.8],[-1,-9,1.8,1.5]])R(wart[0],wart[1]+crouch*.35,
+    [-7,-13,2,1.7],[6,-11,2.1,1.8],[-1,-9,1.8,1.5]])R(wart[0],
+      wart[1]-(wart[1]<-20?skullBack*.62:0)+crouch*.35,
       wart[2],wart[3],wart[0]%2?moss:dark,.88);
+  if(bodyPitch>.035)Q([[-10,-20],[-8,-25-skullBack*.45],[8,-25-skullBack*.45],
+    [10,-20],[8,-14],[-8,-14]],bellyD,bodyPitch*.55);
 
   const sacK=clamp(throat,0,1),sacH=3.2+sacK*7.2,sacY=-11+crouch*.18;
   Q([[-7,sacY],[7,sacY],[9,sacY+sacH*.58],[6,sacY+sacH],[-6,sacY+sacH],
@@ -8387,51 +8669,243 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
     [-4,sacY+sacH-1],[-6.5,sacY+sacH*.58]],sac,.94);
   if(sacK>.4)R(-3.6,sacY+sacH*.34,7.2,1.2,slimeL,(sacK-.4)*.72);
 
-  const gap=mouth*5.2,mouthY=-17+crouch*.43;
-  if(mouth>.04){
-    Q([[-12,mouthY],[12,mouthY],[10,mouthY+gap],[-10,mouthY+gap]],mouthD);
-    R(-8.2,mouthY+gap*.44,16.4,1.5,tongueD);
-    R(-11,mouthY+gap,22,2.5,bellyD);
-  }else R(-12,mouthY,24,.8,deep);
-  R(-12,mouthY-1.4,24,1.8,greenL);
-
-  const look=eyeAim*clamp(targetX/42,-1,1),blink=(Math.sin(perfNow*.82)>.985)?1:0;
-  for(const side of [-1,1]){
-    const ex=side*8.3,ey=-30.5+crouch*.5;
-    Q([[ex-side*4.2,ey+4],[ex-side*3.5,ey-1],[ex+side*1.9,ey-2],
-      [ex+side*3.4,ey+3],[ex+side*2.4,ey+5],[ex-side*2.8,ey+5]],greenD);
-    R(ex-side*2.3,ey,4.5,blink?.65:3.6,eye);
-    if(!blink)R(ex-.65+look*1.1,ey+.45,1.3,2.5,pupil);
-    R(ex-side*2.7,ey-.7,5.2,1.3,greenL);
-  }
-  R(-4.3,-20+crouch*.42,2.2,1.5,deep);R(2.1,-20+crouch*.42,2.2,1.5,deep);
-  foreLeg(-1,false);foreLeg(1,false);
-
-  const drawTongueLayer=(sx,sy,tx,ty,k,width,col,inner=false)=>{
-    const ex=lerp(sx,tx,easeOut(k)),ey=lerp(sy,ty,easeOut(k)),dx=ex-sx,dy=ey-sy,
-      len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,nx=-uy,ny=ux,
-      wave=Math.sin(perfNow*15)*1.15*k,tipW=width*(inner?1.32:1.58),arcK=4/3;
-    const cx=ex+nx*wave,cy=ey+ny*wave,startW=width*.46;
-    g.fillStyle=col;g.beginPath();g.moveTo(sx+nx*startW,sy+ny*startW);
-    g.bezierCurveTo(lerp(sx,ex,.34)+nx*(width*.72+wave*.18),lerp(sy,ey,.34)+ny*(width*.72+wave*.18),
-      lerp(sx,ex,.72)+nx*(width+wave*.65),lerp(sy,ey,.72)+ny*(width+wave*.65),cx+nx*tipW,cy+ny*tipW);
-    g.bezierCurveTo(cx+nx*tipW+ux*width*arcK,cy+ny*tipW+uy*width*arcK,
-      cx-nx*tipW+ux*width*arcK,cy-ny*tipW+uy*width*arcK,cx-nx*tipW,cy-ny*tipW);
-    g.bezierCurveTo(lerp(sx,ex,.72)+nx*(-width+wave*.65),lerp(sy,ey,.72)+ny*(-width+wave*.65),
-      lerp(sx,ex,.34)+nx*(-width+wave*.18),lerp(sy,ey,.34)+ny*(-width+wave*.18),
-      sx-nx*startW,sy-ny*startW);
-    g.closePath();g.fill();
-  };
-  if(mode==='tongue'&&contacts.length){
-    const k=easeOut(clamp((t-.08)/.92,0,1)),sourceY=mouthY+Math.max(1.2,gap*.44);
-    if(k>.01){
-      drawTongueLayer(0,sourceY,contacts[0],bodyY,k,2.8,tongueD);
-      drawTongueLayer(0,sourceY,contacts[0],bodyY,k,1.35,tongue,true);
-      const ex=lerp(0,contacts[0],easeOut(k)),ey=lerp(sourceY,bodyY,easeOut(k));
-      for(let p=1;p<5;p++){const f=p/5;R(lerp(0,ex,f)-.45,lerp(sourceY,ey,f)-.45,
-        .9,.9,p&1?'#e98a91':tongue,.82);}
+  /* Frog face rebuild: the eyes ride on the rear skull plane while the broad
+     upper jaw tilts back. At full pitch the mouth owns most of the head, as it
+     does on a real frog, instead of opening as a small rectangle in its muzzle. */
+  const viewPitch=bodyPitch,
+    mouthY=-17-liveHeadLift-liveFlightPitch*7.2+crouch*.43,
+    gap=(cachedHeadActive||cachedAirActive?0:mouth)*17.0,
+    eyeY=lerp(-30.5+crouch*.5,mouthY-7.0-viewPitch*.35,viewPitch),
+    skullInset=viewPitch*1.3;
+  if(!cachedHeadActive&&!cachedAirActive){
+  Q([[-15.2+skullInset,mouthY-.5],[-13.8+skullInset,eyeY+3.8],[-8.4,eyeY-1.2],
+    [8.4,eyeY-1.2],[13.8-skullInset,eyeY+3.8],[15.2-skullInset,mouthY-.5],
+    [11.8,mouthY+2.1],[-11.8,mouthY+2.1]],greenD);
+  Q([[-13.8+skullInset*.5,mouthY-1.2],[-11.2,eyeY+3.0],[-5.2,eyeY+1.0],
+    [5.2,eyeY+1.0],[11.2,eyeY+3.0],[13.8-skullInset*.5,mouthY-1.2],
+    [9.8,mouthY+.5],[-9.8,mouthY+.5]],green);
+  Q([[-10.8,mouthY-4.3-viewPitch*.9],[-4.8,mouthY-6.0-viewPitch*1.4],
+    [4.8,mouthY-6.0-viewPitch*1.4],[10.8,mouthY-4.3-viewPitch*.9],
+    [12.6,mouthY-1.5],[-12.6,mouthY-1.5]],greenL,.72);
+  if(gap>.04){
+    Q([[-15.2,mouthY],[15.2,mouthY],[13.4,mouthY+gap],[-13.4,mouthY+gap]],deep);
+    Q([[-14.3,mouthY+.7],[14.3,mouthY+.7],[12.7,mouthY+gap-1],
+      [-12.7,mouthY+gap-1]],mouthD);
+    Q([[-12.9,mouthY+1.2],[12.9,mouthY+1.2],[11.8,mouthY+gap*.28],
+      [-11.8,mouthY+gap*.28]],'#3f222c');
+    if(mode!=='tongue_charge'&&mode!=='tongue')
+      R(-11.2,mouthY+gap*.62,22.4,2.0,tongueD);
+    if(mode==='glob_charge'&&held>.06){
+      const fillK=easeOut(clamp((held-.06)/.78,0,1)),poolY=mouthY+gap*(.62-.08*fillK);
+      Q([[-11.3,poolY],[11.3,poolY],[10.2,mouthY+gap-1],[-10.2,mouthY+gap-1]],slimeD,fillK);
+      Q([[-9.9,poolY+.35],[9.9,poolY+.35],[8.8,mouthY+gap-1.3],
+        [-8.8,mouthY+gap-1.3]],slime,fillK);
+      R(-5.2,poolY+.8,10.4,1.55,slimeL,fillK*.92);
+      for(let b=0;b<5;b++){
+        const bx=-7.1+b*3.55+(b&1?.45:-.25),
+          bob=(perfNow*(.42+b*.035)+b*.173)%1,
+          by=lerp(mouthY+gap-1.4,poolY-1.3,bob);
+        R(bx,by,.9+(b%3)*.28,.9+(b&1)*.24,b&1?slimeL:slimeHot,(1-bob)*fillK);
+      }
+    }
+    const jawUnder=1.7+viewPitch*4.8;
+    const jawY=mouthY+gap;
+    Q([[-14,jawY-1],[14,jawY-1],[14.3,jawY+1.0],[11.5,jawY+jawUnder],
+      [8.2,jawY+jawUnder+1],[-8.2,jawY+jawUnder+1],[-11.5,jawY+jawUnder],
+      [-14.3,jawY+1.0]],bellyD);
+    Q([[-11.8,jawY+.4],[11.8,jawY+.4],[10.2,jawY+jawUnder-.5],
+      [7.5,jawY+jawUnder+.1],[-7.5,jawY+jawUnder+.1],
+      [-10.2,jawY+jawUnder-.5]],belly,.94);
+    R(-11.8,mouthY+gap-.4,23.6,1.7,belly);
+  }else{
+    R(-14.4,mouthY,28.8,1.0,deep);
+    if(liveFlightPitch>.025){
+      const underH=4+liveFlightPitch*12.5;
+      Q([[-13.2,mouthY+.8],[13.2,mouthY+.8],[14,mouthY+4.2],
+        [11.2,mouthY+underH-1.5],[7.8,mouthY+underH],
+        [-7.8,mouthY+underH],[-11.2,mouthY+underH-1.5],
+        [-14,mouthY+4.2]],bellyD,liveFlightPitch);
+      Q([[-11.2,mouthY+1.8],[11.2,mouthY+1.8],[12,mouthY+4.4],
+        [9.3,mouthY+underH-2],[6.8,mouthY+underH-1],
+        [-6.8,mouthY+underH-1],[-9.3,mouthY+underH-2],
+        [-12,mouthY+4.4]],belly,liveFlightPitch);
+      for(const spot of [[-7,-10,1.8,1.4],[4,-8,1.6,1.3],[-2,-4,1.4,1.2],[6,-2,1.3,1]])
+        R(spot[0],mouthY+underH+spot[1],spot[2],spot[3],bellyD,liveFlightPitch*.72);
     }
   }
+  Q([[-15,mouthY-1.8],[15,mouthY-1.8],[13.8,mouthY+.1],[-13.8,mouthY+.1]],greenL);
+
+  const look=eyeAim*clamp(targetX/48,-1,1),blink=(Math.sin(perfNow*.72)>.992)?1:0;
+  for(const side of [-1,1]){
+    const ex=side*(9.2-skullInset*.18),ey=eyeY,eyeH=lerp(4,2.8,viewPitch),
+      pupilH=lerp(2.8,2.0,viewPitch);
+    Q([[ex-4.3,ey+4.4],[ex-3.7,ey-1.4],[ex+2.4,ey-2.2],
+      [ex+3.9,ey+3.0],[ex+2.9,ey+5.2],[ex-3.2,ey+5.2]],greenD);
+    R(ex-2.5,ey,5,blink?.7:eyeH,eye);
+    if(!blink)R(ex-.7+look*.76,ey+.55-viewPitch*.45,1.4,pupilH,pupil);
+    R(ex-2.85,ey-.8,5.7,1.35,greenL);
+  }
+  const nostrilY=mouthY-3.6-viewPitch*.72;
+  R(-4.8,nostrilY,2.2,1.35,deep);R(2.6,nostrilY,2.2,1.35,deep);
+  }
+  if(cachedAirActive){
+    drawAngleClip(toadAirPitchClip(landingAirView),flightExtend*.999,0,0,44,46,true);
+  }else if(cachedHeadActive){
+    const headVariant=mode==='glob_charge'?'poison':
+      (mode==='glob_spit'||mode==='glob_burst')?'spit':'normal';
+    drawAngleClip(toadHeadPitchClip(headVariant),headPitch*.999,0,mouthBob,44,46,true);
+  }
+  if(cachedHeadActive&&mode==='tongue_charge'&&tonguePrep>.015){
+    const a=tonguePrep;
+    /* Closed pre-whip strain only tightens the brow and nose. The cached
+       normal closed mouth remains untouched. */
+    Q([[-13,-32+mouthBob],[-5.4,-31+mouthBob],[-5.4,-29.4+mouthBob],
+      [-13,-30.3+mouthBob]],greenD,a);
+    Q([[13,-32+mouthBob],[5.4,-31+mouthBob],[5.4,-29.4+mouthBob],
+      [13,-30.3+mouthBob]],greenD,a);
+    Q([[-12.6,-32.6+mouthBob],[-5.6,-31.6+mouthBob],[-6.2,-30.8+mouthBob],
+      [-12.6,-31.5+mouthBob]],greenL,a*.78);
+    Q([[12.6,-32.6+mouthBob],[5.6,-31.6+mouthBob],[6.2,-30.8+mouthBob],
+      [12.6,-31.5+mouthBob]],greenL,a*.78);
+    R(-6.2,-24+mouthBob,3.2,.85,greenD,a*.88);
+    R(3,-24+mouthBob,3.2,.85,greenD,a*.88);
+  }
+  const effectMouthY=(cachedHeadActive?lerp(-17,-25.5,headPitch):mouthY)+mouthBob,
+    effectGap=cachedHeadActive?17*headPitch:gap;
+  if(cachedHeadActive&&mode==='glob_charge'&&held>.06){
+    const fillK=easeOut(clamp((held-.06)/.78,0,1)),
+      poolY=effectMouthY+effectGap*(.55-.04*fillK);
+    /* Cached mouth geometry stays immutable; these deterministic surface
+       bubbles rise, swell and pop live inside the pitched poison pool. */
+    for(let b=0;b<6;b++){
+      const age=(perfNow*(.52+b*.037)+b*.193)%1,
+        bx=-7.4+b*2.95+(b&1?.35:-.25),
+        by=lerp(effectMouthY+effectGap-1.5,poolY-2.1,age),
+        size=.72+(b%3)*.28+Math.sin(age*Math.PI)*.38,
+        alpha=Math.sin(age*Math.PI)*fillK;
+      R(bx-size*.5,by-size*.5,size,size,b&1?slimeL:slimeHot,alpha);
+      if(age>.78){
+        const pop=clamp((age-.78)/.22,0,1);
+        R(bx-1.5-pop,by-.4-pop,1,1,slimeL,(1-pop)*fillK);
+        R(bx+.6+pop,by-.8-pop*.6,.8,.8,slimeHot,(1-pop)*fillK);
+      }
+    }
+  }
+  const buildTongueCurve=(sx,sy,tx,ty,whip,trembleX=0,trembleY=0)=>{
+    const dir=Math.sign(tx-sx)||-1;
+    /* Preparation is a near-vertical tongue with one shallow natural bow.
+       Release opens it rapidly into a lane-specific downward whip. */
+    const s0x=sx,s0y=sy,
+      s1x=lerp(sx+dir*.15,sx+dir*2,whip),s1y=lerp(sy-10,sy-10,whip),
+      s2x=lerp(sx+dir*.35,sx+dir*2,whip),s2y=lerp(sy-27,sy-39,whip),
+      s3x=lerp(sx+dir*.70+trembleX*.18,sx+dir*8,whip),
+      s3y=lerp(sy-46+trembleY*.12,sy-35,whip),
+      s4x=lerp(sx+dir*1.10+trembleX*.38,sx+dir*18,whip),
+      s4y=lerp(sy-58+trembleY*.32,sy-29,whip),
+      s5x=lerp(sx+dir*1.40+trembleX*.72,tx-dir*8,whip),
+      s5y=lerp(sy-66+trembleY*.68,ty-18,whip),
+      s6x=lerp(sx+dir*2.60+trembleX,tx,whip),
+      s6y=lerp(sy-63+trembleY,ty,whip),
+      d0=0,d1=4*whip,d2=10*whip,d3=16*whip,
+      d4=23*whip,d5=34*whip,d6=44*whip;
+    for(let i=0;i<=TOAD_TONGUE_SAMPLE_COUNT;i++){
+      const u=i/TOAD_TONGUE_SAMPLE_COUNT*2,second=u>1,k=second?u-1:u;
+      const depth=second?toadCubic(d3,d4,d5,d6,k):toadCubic(d0,d1,d2,d3,k),
+        rawY=second?toadCubic(s3y,s4y,s5y,s6y,k):toadCubic(s0y,s1y,s2y,s3y,k),
+        rawX=second?toadCubic(s3x,s4x,s5x,s6x,k):toadCubic(s0x,s1x,s2x,s3x,k);
+      TOAD_TONGUE_CURVE[i*2]=rawX;
+      TOAD_TONGUE_CURVE[i*2+1]=rawY+depth*.06;
+      TOAD_TONGUE_DEPTH[i]=depth;
+    }
+  };
+  const sampleVisibleTongue=visible=>{
+    const maxPos=clamp(visible,0,1)*TOAD_TONGUE_SAMPLE_COUNT;
+    /* Always emit the same number of render vertices. Every vertex samples a
+       fractional position on the full curve, so neither tip nor ribbon body can
+       pause when an integer source index changes. */
+    for(let i=0;i<=TOAD_TONGUE_RENDER_SEGMENTS;i++){
+      const param=i/TOAD_TONGUE_RENDER_SEGMENTS*clamp(visible,0,1),
+        pos=maxPos*i/TOAD_TONGUE_RENDER_SEGMENTS,
+        base=Math.min(TOAD_TONGUE_SAMPLE_COUNT,Math.floor(pos)),
+        next=Math.min(TOAD_TONGUE_SAMPLE_COUNT,base+1),frac=pos-base;
+      TOAD_TONGUE_RENDER_CURVE[i*2]=lerp(TOAD_TONGUE_CURVE[base*2],
+        TOAD_TONGUE_CURVE[next*2],frac);
+      TOAD_TONGUE_RENDER_CURVE[i*2+1]=lerp(TOAD_TONGUE_CURVE[base*2+1],
+        TOAD_TONGUE_CURVE[next*2+1],frac);
+      TOAD_TONGUE_RENDER_DEPTH[i]=lerp(TOAD_TONGUE_DEPTH[base],
+        TOAD_TONGUE_DEPTH[next],frac);
+      TOAD_TONGUE_RENDER_PARAM[i]=param;
+    }
+  };
+  const drawTongueRibbon=(width,col,inner=false)=>{
+    const widthAt=i=>{
+      const strikePerspective=clamp(1+TOAD_TONGUE_RENDER_DEPTH[i]*.009,.82,1.42),
+        f=TOAD_TONGUE_RENDER_PARAM[i],
+        strikeProfile=(.58+easeInOut(f)*.64)*strikePerspective;
+      return width*(inner?.52:1)*strikeProfile;
+    };
+    g.fillStyle=col;g.beginPath();
+    for(let i=0;i<=TOAD_TONGUE_RENDER_SEGMENTS;i++){
+      const prev=Math.max(0,i-1),next=Math.min(TOAD_TONGUE_RENDER_SEGMENTS,i+1),
+        dx=TOAD_TONGUE_RENDER_CURVE[next*2]-TOAD_TONGUE_RENDER_CURVE[prev*2],
+        dy=TOAD_TONGUE_RENDER_CURVE[next*2+1]-TOAD_TONGUE_RENDER_CURVE[prev*2+1],
+        len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=widthAt(i),
+        xx=TOAD_TONGUE_RENDER_CURVE[i*2]+nx*w,
+        yy=TOAD_TONGUE_RENDER_CURVE[i*2+1]+ny*w;
+      i?g.lineTo(xx,yy):g.moveTo(xx,yy);
+    }
+    const ei=TOAD_TONGUE_RENDER_SEGMENTS,pi=ei-1,
+      edx=TOAD_TONGUE_RENDER_CURVE[ei*2]-TOAD_TONGUE_RENDER_CURVE[pi*2],
+      edy=TOAD_TONGUE_RENDER_CURVE[ei*2+1]-TOAD_TONGUE_RENDER_CURVE[pi*2+1],
+      el=Math.hypot(edx,edy)||1,tipW=widthAt(ei),tipX=TOAD_TONGUE_RENDER_CURVE[ei*2],
+      tipY=TOAD_TONGUE_RENDER_CURVE[ei*2+1];
+    g.quadraticCurveTo(tipX+edx/el*tipW*1.35,tipY+edy/el*tipW*1.35,
+      tipX+edy/el*tipW,tipY-edx/el*tipW);
+    for(let i=TOAD_TONGUE_RENDER_SEGMENTS-1;i>=0;i--){
+      const prev=Math.max(0,i-1),next=Math.min(TOAD_TONGUE_RENDER_SEGMENTS,i+1),
+        dx=TOAD_TONGUE_RENDER_CURVE[next*2]-TOAD_TONGUE_RENDER_CURVE[prev*2],
+        dy=TOAD_TONGUE_RENDER_CURVE[next*2+1]-TOAD_TONGUE_RENDER_CURVE[prev*2+1],
+        len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=widthAt(i);
+      g.lineTo(TOAD_TONGUE_RENDER_CURVE[i*2]-nx*w,
+        TOAD_TONGUE_RENDER_CURVE[i*2+1]-ny*w);
+    }
+    g.closePath();g.fill();
+  };
+  if((mode==='tongue_charge'||mode==='tongue')&&contacts.length){
+    const sourceY=effectMouthY+Math.max(2.2,effectGap*.54);
+    let visible,whip;
+    if(mode==='tongue_charge'){
+      /* Hesitate first, then fire the approved raised shape almost at once.
+         Full extension lands exactly at the telegraph/strike boundary. */
+      visible=tongueLaunch;whip=0;
+    }else if(recovering){
+      visible=1-easeInOut(clamp(recoveryT/.58,0,1));whip=1;
+    }else{
+      /* First slash beat owns the raised peak. Hold it for one 60 Hz frame,
+         then spend the remaining travel on the whip so its tip reaches the
+         rider exactly on the second beat / scheduled frame hit. */
+      visible=1;whip=easeOut(clamp((t-TOAD_TONGUE_PEAK_HOLD)/
+        (1-TOAD_TONGUE_PEAK_HOLD),0,1));
+    }
+    if(visible>.015){
+      /* No raised-tongue hesitation/tremble: emerge, reach, then whip. */
+      buildTongueCurve(0,sourceY,contacts[0],bodyY-coreSink,whip,0,0);
+      sampleVisibleTongue(visible);
+      drawTongueRibbon(2.75,tongueD,false);
+      drawTongueRibbon(2.75,tongue,true);
+      const marks=Math.floor(visible*6);
+      for(let p=1;p<marks;p++){
+        const i=Math.min(TOAD_TONGUE_SAMPLE_COUNT-1,
+          Math.round(p/6*TOAD_TONGUE_SAMPLE_COUNT));
+        R(TOAD_TONGUE_CURVE[i*2]-.45,TOAD_TONGUE_CURVE[i*2+1]-.45,
+          .9,.9,p&1?'#e98a91':tongue,.78);
+      }
+    }
+  }
+  g.restore(); /* articulated core */
+  /* Forearms are the near limb pair: render both articulated chains and their
+     four-toed hands over the torso/head pass. */
+  foreLeg(-1,false);foreLeg(1,false);
 
   const drawGlob=(cx,cy,r,angle,alpha=1)=>{
     const bx=-Math.cos(angle),by=-Math.sin(angle);
@@ -8458,12 +8932,10 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
         1.1,1.1,d&1?slime:slimeL);}
     g.globalAlpha=oldAlpha;
   };
-  if(mode==='glob_charge'){
-    const pulse=.82+.12*Math.sin(perfNow*9),r=(.5+held*3.2)*pulse;
-    drawGlob(0,mouthY-1.6,r,-Math.PI/2,held);
-  }else if((mode==='glob'||mode==='glob_burst')&&contacts.length){
-    const tx=contacts[0],ty=highY,launchX=0,launchY=mouthY-1.2;
-    if(mode==='glob'){
+  if((mode==='glob_spit'||mode==='glob_burst')&&contacts.length){
+    const tx=contacts[0],ty=highY,launchX=0,
+      launchY=effectMouthY+Math.max(2.2,effectGap*.54);
+    if(mode==='glob_spit'){
       const raw=clamp((t-.08)/.92,0,1),arcH=Math.max(20,Math.abs(ty-launchY)*.40),
         cx=lerp(launchX,tx,raw),cy=lerp(launchY,ty,raw)-Math.sin(raw*Math.PI)*arcH,
         dx=tx-launchX,dy=(ty-launchY)-Math.cos(raw*Math.PI)*Math.PI*arcH,
@@ -8471,8 +8943,9 @@ function drawMireToad(x,y,scale,state,t,hurtFlash,contactXs){
       if(explode<.02)drawGlob(cx,cy,lerp(3.2,5.6,easeOut(raw))+.18*Math.sin(perfNow*18),angle);
       else drawGlobBurst(tx,ty,lerp(5,13,easeOut(explode*.30)),1-explode*.28);
     }else{
-      const p=easeOut(recoveryT),r=lerp(7,17,p),alpha=1-p*.90;
-      drawGlobBurst(tx,ty,r,alpha);
+      const p=clamp(recoveryT/.58,0,1),e=easeOut(p),r=lerp(7,17,e),
+        alpha=Math.pow(1-p,1.7);
+      if(alpha>.004)drawGlobBurst(tx,ty,r,alpha);
     }
   }
   g.globalAlpha=worldA;g.restore();
@@ -8594,6 +9067,8 @@ function drawRangedFireAttackVisual(ctx){
     mode,t,held,recovering,recoveryT,fade,contacts,sourceX,sourceY,
     bodyY,groundY,highY,den,palette=RANGED_FIRE_PALETTE
   }=ctx,{ember,red,orange,gold,cream,white}=palette;
+  const laneGap=Math.abs(laneX(1,1)-laneX(0,1))/den,
+    adjacentPair=contacts.length===2&&Math.abs(contacts[1]-contacts[0])<laneGap*1.45;
   const pixelOrb=(cx,cy,r,alpha=1)=>{
     const flick=Math.sin(perfNow*19)*r*.10;
     g.globalAlpha=alpha*fade;
@@ -8662,8 +9137,7 @@ function drawRangedFireAttackVisual(ctx){
   };
   const drawHeat=(k,effectFade=fade)=>{
     if(!contacts.length)return;
-    const laneGap=Math.abs(laneX(1,1)-laneX(0,1))/den,pad=lerp(7,29,easeOut(k)),
-      top=groundY+2.1;
+    const pad=lerp(7,29,easeOut(k)),top=groundY+2.1;
     const bed=(left,right,seed)=>{
       const span=right-left+pad*2,cx=(left+right)*.5,rx=span*.5,
         pulse=.90+.10*Math.sin(perfNow*3.2+seed),ry=1.75+1.20*k;
@@ -8695,17 +9169,21 @@ function drawRangedFireAttackVisual(ctx){
   };
   const drawHeatLip=(k,effectFade=fade)=>{
     if(!contacts.length||k<=0)return;
-    /* Overlapping root pockets cover only each flame's cut foot. Their curved
-       crowns merge into the connected bed without a straight masking line. */
-    for(let i=0;i<contacts.length;i++){
-      const cx=contacts[i],wobble=Math.sin(perfNow*4.1+i*2.3);
+    /* Adjacent lanes share one broad, hot mouth in the ground; the outer-lane
+       variant stays split so its safe centre remains readable. */
+    const count=adjacentPair?1:contacts.length;
+    for(let i=0;i<count;i++){
+      const cx=adjacentPair?(contacts[0]+contacts[1])*.5:contacts[i],
+        span=adjacentPair?Math.abs(contacts[1]-contacts[0]):0,
+        wobble=Math.sin(perfNow*4.1+i*2.3),outerR=27+span*.5+2*k,
+        middleR=20+span*.5+2*k,innerR=10.5+span*.42+1.5*k;
       g.save();g.shadowColor=red;g.shadowBlur=3.5*U;
       g.globalAlpha=effectFade;g.fillStyle=ember;g.beginPath();
-      g.ellipse((cx+wobble*.35)*U,(groundY+1.55)*U,(27+2*k)*U,(3.15+.35*k)*U,0,0,TAU);g.fill();
+      g.ellipse((cx+wobble*.35)*U,(groundY+1.55)*U,outerR*U,(3.15+.35*k)*U,0,0,TAU);g.fill();
       g.shadowBlur=0;g.globalAlpha=(.68+.22*k)*effectFade;g.fillStyle=red;g.beginPath();
-      g.ellipse((cx-1.8+wobble*.55)*U,(groundY+.82)*U,(20+2*k)*U,(2.15+.28*k)*U,-.025,0,TAU);g.fill();
+      g.ellipse((cx-1.8+wobble*.55)*U,(groundY+.82)*U,middleR*U,(2.15+.28*k)*U,-.025,0,TAU);g.fill();
       g.globalAlpha=(.42+.26*k)*effectFade;g.fillStyle=orange;g.beginPath();
-      g.ellipse((cx+2.2-wobble*.45)*U,(groundY+.35)*U,(10.5+1.5*k)*U,(1.15+.22*k)*U,.04,0,TAU);g.fill();
+      g.ellipse((cx+2.2-wobble*.45)*U,(groundY+.35)*U,innerR*U,(1.15+.22*k)*U,.04,0,TAU);g.fill();
       g.restore();
     }
     g.globalAlpha=worldA;
@@ -8729,9 +9207,13 @@ function drawRangedFireAttackVisual(ctx){
       g.bezierCurveTo(X(.39,right-.08),Y(right-.08),X(.46,.30),Y(.30),X(.50,0),Y(0));
       g.closePath();g.fill();
     };
-    for(let i=0;i<contacts.length;i++){
+    const count=adjacentPair?1:contacts.length;
+    for(let i=0;i<count;i++){
       if(rise<.004)continue;
-      const cx=contacts[i],height=92*rise,width=22+36*rise,appear=clamp(rise*3,0,1);
+      const cx=adjacentPair?(contacts[0]+contacts[1])*.5:contacts[i],
+        span=adjacentPair?Math.abs(contacts[1]-contacts[0]):0,
+        height=(adjacentPair?106:92)*rise,
+        width=22+span+((adjacentPair?43:36)*rise),appear=clamp(rise*3,0,1);
       g.globalAlpha=fade*appear;
       /* One continuous set of animated flame tongues. Every hotter layer owns
          a slightly different clock, so the interior breathes instead of
@@ -8741,7 +9223,8 @@ function drawRangedFireAttackVisual(ctx){
       flameLayer(cx+Math.sin(perfNow*6.8+i*1.4)*width*.022,groundY,width*.52,height*.54,i*.7+2.5,gold);
       flameLayer(cx+Math.sin(perfNow*7.4+i*1.8)*width*.018,groundY,width*.31,height*.34,i*.7+3.7,cream);
       flameLayer(cx+Math.sin(perfNow*8.0+i*2.1)*width*.012,groundY,width*.15,height*.18,i*.7+4.6,white);
-      fireSparks(cx,groundY-height*.40,width*1.15,height*.68,301+i*47,10,fade*appear);
+      fireSparks(cx,groundY-height*.40,width*1.15,height*.68,301+i*47,
+        adjacentPair?16:10,fade*appear);
     }
     g.globalAlpha=worldA;
   };
