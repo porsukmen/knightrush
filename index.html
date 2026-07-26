@@ -542,7 +542,7 @@ function toggleBearTurntableMouth(){
 function handleAction(a,pt){
   SFX.init();
   if(!paused&&debugParryInputFrozen){
-    if(a==='parry'){
+    if(a==='parry'||a==='tap'){
       debugParryInputFrozen=false;debugParryInputMark=null;SFX.swipe();
     }
     return;
@@ -697,12 +697,8 @@ addEventListener('touchstart',e=>{e.preventDefault();
   SFX.unlock();
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); tStart=null; return; }
   const t=e.changedTouches[0];
-  /* a touch born in the bottom system-gesture strip is the iOS home-swipe, not
-     input: it must NEVER fire a jump — the game just pauses when the system
-     steals it a moment later */
-  const sys=t.clientY>innerHeight-36;
-  const levelHold=!sys&&beginDebugStageHold(t.clientX,t.clientY);
-  tStart={x:t.clientX,y:t.clientY,done:sys||levelHold};
+  const levelHold=beginDebugStageHold(t.clientX,t.clientY);
+  tStart={x:t.clientX,y:t.clientY,done:levelHold};
 },{passive:false});
 addEventListener('touchmove',e=>{ e.preventDefault();
   const t=e.changedTouches[0]; trySwipe(t.clientX,t.clientY);
@@ -716,10 +712,7 @@ addEventListener('touchend',e=>{e.preventDefault();
     handleAction('tap',toGame(t.clientX,t.clientY));
   tStart=null;
 },{passive:false});
-/* the system STEALING a touch (the swipe-up into the iOS app switcher, control
-   center, notification pull) fires touchcancel — pause right there, so the game
-   is already frozen while it sits in the switcher */
-addEventListener('touchcancel',()=>{ clearDebugStageHold(); tStart=null; autoPause(); },{passive:true});
+addEventListener('touchcancel',()=>{ clearDebugStageHold(); tStart=null; },{passive:true});
 let mDown=false;
 addEventListener('mousedown',e=>{
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); mDown=false; tStart=null; return; }
@@ -5725,7 +5718,7 @@ function drawDebugParryInputMark(){
   g.fillStyle='#ffffff';g.fillText(debugParryInputFrozen?'PARRY INPUT FROZEN':'PARRY INPUT',VW/2,y+23);
   if(debugParryInputFrozen){
     g.font='bold 11px monospace';g.fillStyle='#eadcff';
-    g.fillText('PRESS SPACE TO CONTINUE',VW/2,y+45);
+    g.fillText('SPACE / TAP TO CONTINUE',VW/2,y+45);
   }
   g.restore();
 }
