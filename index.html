@@ -654,8 +654,8 @@ addEventListener('keydown',e=>{
    and each touch is exactly ONE action: after it fires, the rest of that drag is
    ignored until the finger lifts. No hold-and-slide steering, no double-lane hops. */
 let tStart=null;
-const SWIPE_TH=4;
-const TAP_INTENT_DELAY_MS=75,TAP_MOVE_CANCEL=SWIPE_TH;
+const SWIPE_TH=24;
+const TAP_INTENT_DELAY_MS=75,TAP_MOVE_CANCEL=4;
 let tapIntentSimulationFrozen=false;
 let debugStageHoldTimer=0,debugStageHoldDir=0,debugStageHoldBegan=0;
 function debugStageDeltaAt(pt){
