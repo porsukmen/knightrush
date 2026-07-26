@@ -6625,6 +6625,14 @@ function resolveModelHazard(h){
   }
   const parryContact=lethalCore||pincerParryContact||h.lethalPending;
   const parried=parryContact&&h.parryInputEligible===true;
+  /* Touchstart already owns the authoritative model snapshot. If it landed in
+     violet/burgundy, do not let the lethal grace expire while the shared
+     tap-versus-swipe timer is still deciding the gesture. A real swipe clears
+     this provisional hold immediately; a tap applies the saved parry record
+     before the next collision frame. The attack animation and game clock keep
+     moving throughout—only this one irreversible hit verdict waits. */
+  const pendingTouchstartParry=h.lethalPending&&
+    unresolvedSuccessfulModelParryIntentFor(h);
   if(h.lethalPending){contactX=h.lethalContactX;contactY=h.lethalContactY;}
   h.lastProgress=raw; h.lastInputAge=age; h.lastCore=frontCore; h.lastCoreJoint=coreJoint;
   h.lastContactX=frontCore?contactX:NaN;h.lastContactY=frontCore?contactY:NaN;
@@ -6663,7 +6671,8 @@ function resolveModelHazard(h){
       moveLabResult('PARRY',contactX,contactY,h.lastReason);
     } else doParry(h.src,contactX,contactY);
   }
-  if(!h.done&&h.lethalPending&&perfNow>=h.lethalAt+parryWindow(h)){
+  if(!h.done&&h.lethalPending&&!pendingTouchstartParry&&
+     perfNow>=h.lethalAt+parryWindow(h)){
     h.done=true;
     burst(contactX,contactY,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
     spawnSlash(contactX,contactY-9,.25,'#e8e2d0'); SFX.slash(); shake(4,.18);
@@ -6809,13 +6818,19 @@ function unresolvedTapParryIntentFor(h){
   const start=tStart,intent=start&&start.parryIntent;
   return start&&!start.done&&!start.intentMoved&&tapParryIntentHasHazard(intent,h)?intent:null;
 }
+function unresolvedSuccessfulModelParryIntentFor(h){
+  const intent=unresolvedTapParryIntentFor(h);
+  if(!intent) return null;
+  const record=tapParryModelRecord(intent,h);
+  return record&&!record.done&&record.check&&record.check.success?intent:null;
+}
 function registerModelParryInput(intent=null){
   for(let i=hazards.length-1;i>=0;i--){
     const h=hazards[i];
     if(h.kind!=='model'||(h.done&&!debugMoveLabActive())) continue;
     const record=tapParryModelRecord(intent,h);
     /* A buffered touch may only affect hazards that existed at touchstart.
-       Never let the 45 ms gesture decision migrate onto a newly spawned move. */
+       Never let the gesture decision migrate onto a newly spawned move. */
     if(intent&&!record) continue;
     const check=record?record.check:evaluateModelParryInput(h);
     /* A clean guard is latched. Mashing after success must not retroactively
