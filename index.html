@@ -539,7 +539,7 @@ function toggleBearTurntableMouth(){
   const lab=activeBearTurntableLab();if(!lab)return false;
   lab.bearMouthOpen=lab.bearMouthOpen===true?false:true;SFX.swipe();return true;
 }
-function handleAction(a,pt){
+function handleAction(a,pt,parryIntent=null){
   SFX.init();
   if(!paused&&debugParryInputFrozen){
     if(a==='parry'||a==='tap'){
@@ -613,7 +613,7 @@ function handleAction(a,pt){
   }
   if(a==='tap' && pt && debugRun && boss && !boss._moveLab && mode==='boss'
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
-  if(a==='tap'&&(mode==='boss'||mode==='miniboss')){ playerAction('parry'); return; }
+  if(a==='tap'&&(mode==='boss'||mode==='miniboss')){ playerAction('parry',parryIntent); return; }
   if(a==='tap') return;
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a);
 }
@@ -690,6 +690,7 @@ function trySwipe(cx,cy){
   if(!tStart||tStart.done) return false;
   const dx=cx-tStart.x, dy=cy-tStart.y;
   if(Math.abs(dx)<SWIPE_TH && Math.abs(dy)<SWIPE_TH) return false;
+  clearProvisionalDebugParryMark(tStart);
   clearTapIntent(tStart);
   if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left');
   else handleAction(dy>0?'down':'up');
@@ -707,23 +708,65 @@ function immediateParryTapEligible(pt){
      pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop) return false;
   return true;
 }
+function debugParryFreezeRequested(){
+  return debugParryFreezeEnabled&&(debugRun||debugMoveLabActive());
+}
+function markDebugParryTouchStart(intent){
+  if((!debugRun&&!debugMoveLabActive())||!intent) return;
+  debugParryInputMark={
+    at:intent.at,atReal:intent.atReal,holdGeometry:false,
+    provisional:true,intent
+  };
+}
+function clearProvisionalDebugParryMark(start){
+  const intent=start&&start.parryIntent;
+  if(debugParryInputMark&&debugParryInputMark.provisional&&
+     debugParryInputMark.intent===intent) debugParryInputMark=null;
+}
+function copyTapParryModelState(h,check){
+  const record={hazard:h,done:h.done,check:{...check},circles:[],player:createPlayerHurtVolumes()};
+  const pose=h.parryPose,presentation=h.parryPresentation;
+  for(let i=0;i<h.profile.joints.length;i++){
+    const joint=pose[h.profile.joints[i]];
+    record.circles.push({x:joint.x,y:joint.y,
+      core:modelJointRadius(h.profile,joint,presentation),
+      shell:modelJointRadius(h.profile,joint,presentation,true)});
+  }
+  samplePlayerHurtVolumes(record.player);
+  return record;
+}
+function captureTapParryIntent(){
+  const intent={at:perfNow,atReal:performance.now(),models:[],hazards:[]};
+  for(let i=hazards.length-1;i>=0;i--){
+    const h=hazards[i];
+    intent.hazards.push(h);
+    if(h.kind==='model'){
+      const record=copyTapParryModelState(h,evaluateModelParryInput(h));
+      intent.models.push(record);
+    }
+  }
+  return intent;
+}
 function armTapIntent(start,cx,cy){
   const pt=toGame(cx,cy);
   if(!immediateParryTapEligible(pt)||start.done) return;
-  /* Gesture intent is unknowable on touchstart. Freeze simulation—not real
-     input handling—during this tiny arbitration window, so a confirmed tap is
-     evaluated at the exact touchstart combat frame with zero gameplay latency. */
-  tapIntentSimulationFrozen=true;
+  start.parryIntent=captureTapParryIntent();
+  markDebugParryTouchStart(start.parryIntent);
+  /* With the explicit debug freeze enabled, every possible tap holds its exact
+     touchstart frame; a swipe releases that hold as soon as intent movement is
+     visible. With it disabled, combat never stops and this buffered state alone
+     remains authoritative after the 45 ms gesture decision. */
+  tapIntentSimulationFrozen=debugParryFreezeRequested();
   start.tapTimer=setTimeout(()=>{
     if(tStart!==start||start.done||start.intentMoved) return;
     start.tapTimer=0;start.done=true;tapIntentSimulationFrozen=false;
-    handleAction('tap',pt);
+    handleAction('tap',pt,start.parryIntent);
   },TAP_INTENT_DELAY_MS);
 }
 function noteTapIntentMovement(start,cx,cy){
   if(!start||start.intentMoved) return;
   if(Math.abs(cx-start.x)>TAP_MOVE_CANCEL||Math.abs(cy-start.y)>TAP_MOVE_CANCEL){
-    start.intentMoved=true;clearTapIntent(start);
+    start.intentMoved=true;clearProvisionalDebugParryMark(start);clearTapIntent(start);
   }
 }
 addEventListener('touchstart',e=>{e.preventDefault();
@@ -747,11 +790,13 @@ addEventListener('touchend',e=>{e.preventDefault();
   clearDebugStageHold();
   if(!tStart) return; const t=e.changedTouches[0];
   clearTapIntent(tStart);
-  if(!tStart.done && !trySwipe(t.clientX,t.clientY))
-    handleAction('tap',toGame(t.clientX,t.clientY));
+  if(!tStart.done && !trySwipe(t.clientX,t.clientY) && !tStart.intentMoved)
+    handleAction('tap',toGame(t.clientX,t.clientY),tStart.parryIntent);
   tStart=null;
 },{passive:false});
-addEventListener('touchcancel',()=>{ clearDebugStageHold();clearTapIntent(tStart);tStart=null; },{passive:true});
+addEventListener('touchcancel',()=>{
+  clearDebugStageHold();clearProvisionalDebugParryMark(tStart);clearTapIntent(tStart);tStart=null;
+},{passive:true});
 let mDown=false;
 addEventListener('mousedown',e=>{
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); mDown=false; tStart=null; return; }
@@ -768,7 +813,8 @@ addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(!tStart) return;
   clearTapIntent(tStart);
-  if(!tStart.done && !trySwipe(e.clientX,e.clientY)) handleAction('tap',toGame(e.clientX,e.clientY));
+  if(!tStart.done && !trySwipe(e.clientX,e.clientY) && !tStart.intentMoved)
+    handleAction('tap',toGame(e.clientX,e.clientY),tStart.parryIntent);
   tStart=null;
 });
 /* the game must NOT run in the background: pause when the tab/app is hidden
@@ -5690,12 +5736,18 @@ const player={
 };
 const DEBUG_PARRY_INPUT_HOLD=.32;
 let debugParryInputMark=null,debugParryFreezeEnabled=true,debugParryInputFrozen=false;
-function markDebugParryInput(){
+function markDebugParryInput(inputAt=perfNow,allowFreeze=true,intent=null){
   if(!debugRun&&!debugMoveLabActive()) return;
-  debugParryInputMark={at:perfNow,atReal:performance.now()};
-  if(debugParryFreezeEnabled) debugParryInputFrozen=true;
+  const holdGeometry=debugParryFreezeEnabled&&allowFreeze;
+  const provisional=intent&&debugParryInputMark&&debugParryInputMark.provisional&&
+    debugParryInputMark.intent===intent?debugParryInputMark:null;
+  debugParryInputMark={
+    at:inputAt,atReal:provisional?provisional.atReal:performance.now(),
+    holdGeometry,provisional:false,intent:null
+  };
+  if(holdGeometry) debugParryInputFrozen=true;
 }
-function playerAction(a){
+function playerAction(a,parryIntent=null){
   if(!player.alive) return;
   if(a==='left'&&player.lane>0){ player.laneFrom=player.lane; player.lane--; player.lastLaneChange=perfNow; SFX.swipe(); }
   else if(a==='right'&&player.lane<2){ player.laneFrom=player.lane; player.lane++; player.lastLaneChange=perfNow; SFX.swipe(); }
@@ -5708,10 +5760,12 @@ function playerAction(a){
     else { player.duckT=0; player.lastDuck=perfNow; SFX.duck(); }   // duck — or refresh mid-duck
   }
   else if(a==='parry'&&(mode==='boss'||mode==='miniboss')){
-    markDebugParryInput();
-    player.lastParry=perfNow; player.parryAnim=1; SFX.swipe();
-    registerModelParryInput();
-    captureMoveLabParryInputSnapshot();
+    const inputAt=parryIntent?parryIntent.at:perfNow;
+    markDebugParryInput(inputAt,true,parryIntent);
+    player.lastParry=inputAt; player.parryAnim=1; SFX.swipe();
+    registerModelParryInput(parryIntent);
+    registerLegacyParryInput(parryIntent);
+    captureMoveLabParryInputSnapshot(parryIntent);
   }
 }
 function jumpHeight(){ return player.jumpT<0?0:Math.sin(Math.PI*clamp(player.jumpT/jumpDur(),0,1))*CFG.JUMP_H; }
@@ -5887,7 +5941,8 @@ function spawnSweepHazard(sweep,height,travel,src,group=null,move=null){
     duration:travel,from:sweepEntryLane(sweep),authoredFrom:sweep.from,to:sweep.to,
     entryFrom:sweepEntryLane(sweep),activeFrom:sweep.activeFrom===undefined?.24:sweep.activeFrom,
     hitHalf:sweep.hitHalf||34,perfectHalf:sweep.perfectHalf||70,
-    collisionMode:sweep.collision||'',group,move,done:false,src});
+    collisionMode:sweep.collision||'',group,move,done:false,src,
+    lastX:laneX(sweepEntryLane(sweep),1)});
 }
 function spawnSweepHazards(sweeps,height,travel,src,move=null){
   const group={resolved:false};
@@ -5986,14 +6041,15 @@ function spawnModelHazard(actor,move,def,src){
   const h={kind:'model',actor,move,def,rig,profile,baseProfile:profile,contactId:move.contactId,height:move.height,
     born:perfNow,impact:perfNow+move.travel,duration:move.travel,lastProgress:0,done:false,src,
     prevPresentation,currPresentation,prevPose,currPose,predictPresentation,predictPose,
-    prevPlayerVolumes,currPlayerVolumes,timerPlayerVolumes,contactScratch:{},lastReason:'ACTIVE'};
+    prevPlayerVolumes,currPlayerVolumes,timerPlayerVolumes,contactScratch:{},
+    motionX:new Float32Array(profile.joints.length),motionY:new Float32Array(profile.joints.length),
+    lastReason:'ACTIVE'};
   configureModelDodgeViability(h); hazards.push(h);
 }
 function modelInputAge(h){
   return h.profile.pincer||h.height==='low'?perfNow-player.lastJump:
     h.height==='high'?perfNow-player.lastDuck:perfNow-player.lastLaneChange;
 }
-function parryInputAge(){ return perfNow-player.lastParry; }
 function parryTimingBonusForMove(move){
   if(!move) return 0;
   const reference=move._parryReferenceTravel||move.travel||0,current=move.travel||reference;
@@ -6035,6 +6091,19 @@ function encounterImpactHold(move){
 function modelJointRadius(profile,joint,presentation,shell=false){
   if(profile.visualBounds) return joint.r*(shell?profile.shellScale:profile.coreScale);
   return (profile.radius+(shell?profile.near:0))*presentation.scale*U*joint.depth;
+}
+function modelJointFacesPlayer(joint,volumes,dx,dy){
+  if(dx*dx+dy*dy<1e-5) return true;
+  let bestSq=Infinity,playerX=joint.x,playerY=joint.y;
+  for(let i=0;i<volumes.count;i++){
+    const v=volumes.capsules[i],vx=v.x2-v.x1,vy=v.y2-v.y1,lenSq=vx*vx+vy*vy;
+    const t=lenSq?clamp(((joint.x-v.x1)*vx+(joint.y-v.y1)*vy)/lenSq,0,1):0;
+    const px=v.x1+vx*t,py=v.y1+vy*t,ox=px-joint.x,oy=py-joint.y,sq=ox*ox+oy*oy;
+    if(sq<bestSq){bestSq=sq;playerX=px;playerY=py;}
+  }
+  /* Motion points toward the leading face. Once this dot becomes negative the
+     model centre has passed the closest player plane; rear overlap is inert. */
+  return dx*(playerX-joint.x)+dy*(playerY-joint.y)>=-.01;
 }
 function sweptModelJointRadius(profile,a,b,prevPresentation,currPresentation,shell=false){
   return Math.max(modelJointRadius(profile,a,prevPresentation,shell),modelJointRadius(profile,b,currPresentation,shell));
@@ -6140,20 +6209,28 @@ function resolveModelHazard(h){
   h.rig.samplePose(h.currPresentation,h.currPose);
   const volumes=samplePlayerHurtVolumes(h.currPlayerVolumes),joints=h.profile.joints;
   const snapped=modelPincerSnapped(h,h.currPose,h.currPresentation);
-  let core=false,near=false,nearCount=0,coreJoint=-1,contactX=laneX(player.x,1),contactY=attackImpactY(h.height);
+  let core=false,near=false,frontCore=false,frontNear=false,frontNearCount=0,
+    nearCount=0,coreJoint=-1,contactX=laneX(player.x,1),contactY=attackImpactY(h.height);
   for(let i=0;i<joints.length;i++){
     const name=joints[i],a=h.prevPose[name],b=h.currPose[name];
+    const motionX=b.x-a.x,motionY=b.y-a.y;
+    h.motionX[i]=motionX;h.motionY[i]=motionY;
+    /* Test the leading side at the beginning of this swept step. If a fast
+       frame crosses the player completely, the approach still counts once. */
+    const facesPlayer=modelJointFacesPlayer(a,volumes,motionX,motionY);
     const coreR=sweptModelJointRadius(h.profile,a,b,h.prevPresentation,h.currPresentation);
     const shellR=sweptModelJointRadius(h.profile,a,b,h.prevPresentation,h.currPresentation,true);
     if(sweptCircleTouchesVolumes(a.x,a.y,b.x,b.y,coreR,volumes,h.contactScratch)){
       core=true;
-      if(coreJoint<0){
+      if(facesPlayer){frontCore=true;}
+      if(facesPlayer&&coreJoint<0){
         coreJoint=i;contactX=h.contactScratch.x;contactY=h.contactScratch.y;
       }
     }
     if(sweptCircleTouchesVolumes(a.x,a.y,b.x,b.y,shellR,volumes)){
       near=true; nearCount++;
-      if(!core){ contactX=b.x; contactY=b.y; }
+      if(facesPlayer){frontNear=true;frontNearCount++;}
+      if(facesPlayer&&!frontCore){ contactX=b.x; contactY=b.y; }
     }
   }
   /* Model hazards are boss-exclusive; only the contact profile can extend their
@@ -6173,9 +6250,9 @@ function resolveModelHazard(h){
   /* At the clap, posture owns the normal clear. PERFECT remains stricter: both
      gold shells must touch the airborne knight inside the input window. */
   const perfectContact=h.profile.pincer
-    ? pincerAirClear&&nearCount===joints.length&&age<=W
-    : !core&&near&&snapped&&age<=W;
-  const lethalCore=core&&!(pincerAirborne&&!snapped)&&!pincerAirClear;
+    ? pincerAirClear&&frontNearCount===joints.length&&age<=W
+    : !frontCore&&frontNear&&snapped&&age<=W;
+  const lethalCore=frontCore&&!(pincerAirborne&&!snapped)&&!pincerAirClear;
   if(lethalCore&&!h.lethalPending){
     /* Lock the first physical red contact immediately. Movement after this
        frame cannot turn it back into a dodge; the short delay exists solely so
@@ -6189,17 +6266,17 @@ function resolveModelHazard(h){
     }
   }
   const parryContact=lethalCore||pincerParryContact||h.lethalPending;
-  const parried=parryContact&&h.parryInputAt===player.lastParry&&h.parryInputEligible===true;
+  const parried=parryContact&&h.parryInputEligible===true;
   if(h.lethalPending){contactX=h.lethalContactX;contactY=h.lethalContactY;}
-  h.lastProgress=raw; h.lastInputAge=age; h.lastCore=core; h.lastCoreJoint=coreJoint;
-  h.lastContactX=core?contactX:NaN;h.lastContactY=core?contactY:NaN;
-  h.lastNear=near; h.lastNearCount=nearCount; h.lastSnapped=snapped;
+  h.lastProgress=raw; h.lastInputAge=age; h.lastCore=frontCore; h.lastCoreJoint=coreJoint;
+  h.lastContactX=frontCore?contactX:NaN;h.lastContactY=frontCore?contactY:NaN;
+  h.lastNear=frontNear; h.lastNearCount=frontNearCount; h.lastSnapped=snapped;
   h.lastReason=h.lethalPending?'locked red contact awaiting parry grace':
     lethalCore?'visible core crossed player hurt capsule':perfectContact?'perfect contact':
     pincerAirClear?'airborne at physical paw clap':
     pincerAirborne?'airborne centre jump awaiting paw clap':
     h.perfectPending?'perfect pending; attack still crossing':
-    near?'near shell, input not valid':'visible geometry clear';
+    frontNear?'leading shell, input not valid':near||core?'rear geometry already passed player':'visible geometry clear';
   if(perfectContact&&!h.perfectPending&&!h.lethalPending){
     if(h.profile.pincer){
       /* The central clap is the pinch's terminal dodge event. Once valid gold is
@@ -6250,7 +6327,8 @@ function resolveModelHazard(h){
     if(h.perfectPending){
       confirmModelPerfect(h,h.pendingContactX,h.pendingContactY,'gold contact survived the complete red sweep',true);
     } else {
-      h.lastReason=near?'near miss without valid input':'visible geometry cleared player';
+      h.lastReason=frontNear?'leading near miss without valid input':
+        near||core?'rear geometry passed without a second result':'visible geometry cleared player';
       if(debugMoveLabActive()) moveLabResult('SAFE',laneX(player.x,1),PLAYER_Y-jumpHeight()-42,h.lastReason);
     }
   }
@@ -6315,16 +6393,18 @@ function evaluateModelParryInput(h){
   h.rig.samplePose(presentation,pose);
   const volumes=samplePlayerHurtVolumes(MODEL_PARRY_INPUT_VOLUMES),joints=h.profile.joints;
   let zone='OUTSIDE',rank=0,markerX=laneX(player.x,1),markerY=PLAYER_Y-jumpHeight()-42,markerJoint=-1;
-  const ranks={OUTSIDE:0,YELLOW:1,VIOLET:2,BURGUNDY:3,RED:4};
+  const ranks={OUTSIDE:0,YELLOW:1,PASSED:2,VIOLET:3,BURGUNDY:4,RED:5};
   for(let i=0;i<joints.length;i++){
     const joint=pose[joints[i]],core=modelJointRadius(h.profile,joint,presentation);
     const shell=modelJointRadius(h.profile,joint,presentation,true);
     const bands=modelParryBands(h,core,shell);
+    const facesPlayer=modelJointFacesPlayer(joint,volumes,h.motionX[i],h.motionY[i]);
     let candidate='OUTSIDE';
     if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,bands.redInner,volumes)) candidate='RED';
     else if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,core,volumes)) candidate='BURGUNDY';
     else if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,bands.parryOuter,volumes)) candidate='VIOLET';
     else if(sweptCircleTouchesVolumes(joint.x,joint.y,joint.x,joint.y,shell,volumes)) candidate='YELLOW';
+    if(!facesPlayer&&candidate!=='OUTSIDE') candidate='PASSED';
     if(ranks[candidate]>rank){
       rank=ranks[candidate];zone=candidate;markerJoint=i;
       /* Mark the exact point on the coloured attack disc nearest the knight,
@@ -6349,32 +6429,75 @@ function evaluateModelParryInput(h){
   }
   return {zone,success:modelParryZoneSucceeds(zone),markerX,markerY,markerJoint};
 }
-function registerModelParryInput(){
+function tapParryModelRecord(intent,h){
+  if(!intent||!intent.models) return null;
+  for(let i=0;i<intent.models.length;i++) if(intent.models[i].hazard===h) return intent.models[i];
+  return null;
+}
+function tapParryIntentHasHazard(intent,h){
+  return !!(intent&&intent.hazards&&intent.hazards.includes(h));
+}
+function unresolvedTapParryIntentFor(h){
+  const start=tStart,intent=start&&start.parryIntent;
+  return start&&!start.done&&!start.intentMoved&&tapParryIntentHasHazard(intent,h)?intent:null;
+}
+function registerModelParryInput(intent=null){
   for(let i=hazards.length-1;i>=0;i--){
     const h=hazards[i];
     if(h.kind!=='model'||(h.done&&!debugMoveLabActive())) continue;
-    const check=evaluateModelParryInput(h);
+    const record=tapParryModelRecord(intent,h);
+    /* A buffered touch may only affect hazards that existed at touchstart.
+       Never let the 45 ms gesture decision migrate onto a newly spawned move. */
+    if(intent&&!record) continue;
+    const check=record?record.check:evaluateModelParryInput(h);
     /* A clean guard is latched. Mashing after success must not retroactively
        turn that successful parry into an EARLY/LATE failure. */
     if(h.parryInputEligible===true) continue;
-    h.parryInputAt=player.lastParry; h.parryInputEligible=!h.done&&check.success;
+    h.parryInputAt=player.lastParry; h.parryInputEligible=!(record?record.done:h.done)&&check.success;
     h.parryInputZone=check.zone; h.parryInputMarkerX=check.markerX;
     h.parryInputMarkerY=check.markerY; h.parryInputMarkerJoint=check.markerJoint;
   }
 }
-function captureMoveLabParryInputSnapshot(){
+function registerLegacyParryInput(intent=null){
+  const inputAt=intent?intent.at:player.lastParry;
+  for(let i=hazards.length-1;i>=0;i--){
+    const h=hazards[i];
+    if(h.kind==='model'||h.done||(intent&&!tapParryIntentHasHazard(intent,h))) continue;
+    if(h.kind==='sweep'){
+      if(h.parryInputEligible===true) continue;
+      h.parryInputAt=inputAt;h.parryInputIntent=intent;
+      const contact=h.tapContactPending;
+      const age=contact&&contact.intent===intent?contact.at-inputAt:Infinity;
+      h.parryInputEligible=age>=0&&age<=parryWindow(h);
+      continue;
+    }
+    /* Frame attacks already preserve their impact pose through the full 75 ms
+       parry grace. Latch a valid touchstart so later taps cannot erase it. */
+    if(h.parryInputEligible===true) continue;
+    h.parryInputAt=inputAt;
+    h.parryInputEligible=Math.abs(inputAt-h.impact)<=parryWindow(h);
+  }
+}
+function captureMoveLabParryInputSnapshot(intent=null){
   const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
   if(!actor) return;
-  let h=null;
-  for(let i=hazards.length-1;i>=0;i--)
-    if(hazards[i].kind==='model'&&hazards[i].actor===actor){ h=hazards[i]; break; }
+  let h=null,record=null;
+  if(intent){
+    for(let i=intent.models.length-1;i>=0;i--)
+      if(intent.models[i].hazard.actor===actor){ record=intent.models[i];h=record.hazard;break; }
+  } else {
+    for(let i=hazards.length-1;i>=0;i--)
+      if(hazards[i].kind==='model'&&hazards[i].actor===actor){ h=hazards[i]; break; }
+  }
   if(!h) return;
   if(h.parryInputEligible===true&&h.parryInputAt!==player.lastParry) return;
-  const check=h.parryInputAt===player.lastParry?
+  const check=record?record.check:h.parryInputAt===player.lastParry?
     {zone:h.parryInputZone,success:h.parryInputEligible,markerX:h.parryInputMarkerX,
       markerY:h.parryInputMarkerY,markerJoint:h.parryInputMarkerJoint}:
     evaluateModelParryInput(h);
-  const grade=h.done?'LATE':check.success?'SUCCESS':check.zone==='RED'?'LATE':'EARLY';
+  const inputWasDone=record?record.done:h.done;
+  const grade=inputWasDone?'LATE':check.success?'SUCCESS':
+    check.zone==='RED'||check.zone==='PASSED'?'LATE':'EARLY';
   const lab=actor._moveLab,snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
   snap.kind='PARRY INPUT'; snap.parryGrade=grade; snap.parryZone=check.zone;
   snap.move=h.move;snap.inputAt=player.lastParry;
@@ -6384,16 +6507,25 @@ function captureMoveLabParryInputSnapshot(){
   snap.hitJoint=-1; snap.hasContact=false;
   const pose=h.parryPose,presentation=h.parryPresentation;
   for(let i=0;i<snap.circleCount;i++){
-    /* evaluateModelParryInput sampled this exact actor.stateT through the same
-       render contract immediately before the snapshot was requested. */
-    const joint=pose[h.profile.joints[i]];
     const circle=snap.circles[i]||(snap.circles[i]={x:0,y:0,fromX:0,fromY:0,core:0,shell:0});
-    circle.fromX=circle.x=joint.x; circle.fromY=circle.y=joint.y;
-    circle.core=modelJointRadius(h.profile,joint,presentation);
-    circle.shell=modelJointRadius(h.profile,joint,presentation,true);
+    if(record){
+      const saved=record.circles[i];
+      circle.fromX=circle.x=saved.x; circle.fromY=circle.y=saved.y;
+      circle.core=saved.core;circle.shell=saved.shell;
+    } else {
+      /* evaluateModelParryInput sampled this exact actor.stateT through the same
+         render contract immediately before the snapshot was requested. */
+      const joint=pose[h.profile.joints[i]];
+      circle.fromX=circle.x=joint.x; circle.fromY=circle.y=joint.y;
+      circle.core=modelJointRadius(h.profile,joint,presentation);
+      circle.shell=modelJointRadius(h.profile,joint,presentation,true);
+    }
   }
-  samplePlayerHurtVolumes(snap.player);
-  h.parryInputCapturedAt=perfNow;
+  if(record){
+    snap.player.count=record.player.count;
+    for(let i=0;i<record.player.count;i++) Object.assign(snap.player.capsules[i],record.player.capsules[i]);
+  } else samplePlayerHurtVolumes(snap.player);
+  h.parryInputCapturedAt=player.lastParry;
   const reason=grade==='SUCCESS'?'input touched '+check.zone.toLowerCase()+' parry band':
     grade==='LATE'?'input reached red lethal core':'input touched '+check.zone.toLowerCase()+' before parry bands';
   lab.lastResult={kind:'PARRY '+grade,col:grade==='SUCCESS'?'#b56cff':grade==='LATE'?'#ff4d3a':'#ffbf62',
@@ -6410,10 +6542,35 @@ function moveLabResult(kind,x,y,reason='legacy resolver'){
   actor._moveLab.lastResult={kind,col,reason,until:perfNow+.9};
   floater(x,y-34,'TEST: '+kind,col,18);
 }
+function finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab){
+  h.done=true; if(h.group) h.group.resolved=true;
+  const iy=attackImpactY(effectiveHeight);
+  burst(hitX,iy,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
+  spawnSlash(hitX,iy-9,h.to>h.from ? .25 : -.25,'#e8e2d0');
+  SFX.slash(); shake(4,.18);
+  if(lab){ moveLabResult(parried?'PARRY':collides?'HIT':'PERFECT',hitX,iy); return; }
+  if(parried){ doParry(h.src,hitX,iy); return; }
+  if(collides){ damagePlayer(combatHitText(h.src)); return; }
+  floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
+  burst(laneX(player.x,1),PLAYER_Y-jumpHeight()-50,10,['#ffe37a','#fff'],160,80,3,.6);
+  doPerfectDodge(h.src);
+}
 function resolveSweepHazard(h){
   const elapsed=perfNow-h.born, raw=clamp(elapsed/h.duration,0,1), hitX=sweepScreenX(h,elapsed);
   if(h.group&&h.group.resolved){ h.done=true; return; }
   const lab=debugMoveLabActive();
+  if(h.tapContactPending){
+    /* The sweep keeps animating while an OFF-mode touch is classified. Only
+       the first physical contact verdict is held, never the simulation. */
+    h.lastX=hitX;
+    const contact=h.tapContactPending;
+    if(unresolvedTapParryIntentFor(h)===contact.intent) return;
+    const age=contact.at-h.parryInputAt;
+    const parried=h.parryInputEligible===true||
+      (h.parryInputIntent===contact.intent&&age>=0&&age<=parryWindow(h));
+    finishSweepContact(h,contact.x,contact.height,parried,true,lab);
+    return;
+  }
   /* The limb may be visible entering from off-road while it descends into its
      attack plane. It cannot hurt until that physical settling motion completes. */
   if(raw<h.activeFrom){ h.lastX=hitX; return; }
@@ -6421,6 +6578,9 @@ function resolveSweepHazard(h){
      fast paw/head tunnelling through the knight on an older low-FPS device. */
   const previousX=h.lastX===undefined?hitX:h.lastX, playerX=laneX(player.x,1);
   h.lastX=hitX;
+  const travelX=hitX-previousX;
+  const facesPlayer=Math.abs(travelX)<1e-5||
+    travelX*(playerX-previousX)>=-.01;
   const sweepMin=Math.min(previousX,hitX), sweepMax=Math.max(previousX,hitX);
   const dx=playerX<sweepMin?sweepMin-playerX:playerX>sweepMax?playerX-sweepMax:0;
   const W=perfectWin();
@@ -6432,26 +6592,24 @@ function resolveSweepHazard(h){
   const pincerSnap=pincer&&Math.abs(sweepLaneAt(h,raw)-h.to)<=.34;
   const effectiveHeight=pincer?(pincerSnap?'low':'mid'):h.height;
   const postureSafe=effectiveHeight==='low'?isAirborne():effectiveHeight==='high'?isDucking():false;
-  const collides=dx<=h.hitHalf&&(effectiveHeight==='mid'||!postureSafe);
-  const parried=collides&&parryInputAge()<=parryWindow(h);
+  const collides=facesPlayer&&dx<=h.hitHalf&&(effectiveHeight==='mid'||!postureSafe);
+  const storedParryAge=perfNow-h.parryInputAt;
+  const parried=collides&&(h.parryInputEligible===true||
+    (storedParryAge>=0&&storedParryAge<=parryWindow(h)));
   const recent=effectiveHeight==='low'?perfNow-player.lastJump<=W:
                effectiveHeight==='high'?perfNow-player.lastDuck<=W:perfNow-player.lastLaneChange<=W;
   const postureAttack=effectiveHeight==='low'||effectiveHeight==='high';
-  const perfect=(!pincer||pincerSnap)&&recent&&(postureAttack
+  const perfect=facesPlayer&&(!pincer||pincerSnap)&&recent&&(postureAttack
     ? postureSafe&&dx<=h.perfectHalf
     : dx>h.hitHalf&&dx<=h.perfectHalf);
   if(collides||perfect){
-    h.done=true; if(h.group) h.group.resolved=true;
-    const iy=attackImpactY(effectiveHeight);
-    burst(hitX,iy,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
-    spawnSlash(hitX,iy-9,h.to>h.from ? .25 : -.25,'#e8e2d0');
-    SFX.slash(); shake(4,.18);
-    if(lab){ moveLabResult(parried?'PARRY':collides?'HIT':'PERFECT',hitX,iy); return; }
-    if(parried){ doParry(h.src,hitX,iy); return; }
-    if(collides){ damagePlayer(combatHitText(h.src)); return; }
-    floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
-    burst(laneX(player.x,1),PLAYER_Y-jumpHeight()-50,10,['#ffe37a','#fff'],160,80,3,.6);
-    doPerfectDodge(h.src);
+    const pendingIntent=collides&&!parried?unresolvedTapParryIntentFor(h):null;
+    const pendingAge=pendingIntent?perfNow-pendingIntent.at:Infinity;
+    if(pendingIntent&&pendingAge>=0&&pendingAge<=parryWindow(h)){
+      h.tapContactPending={intent:pendingIntent,at:perfNow,x:hitX,height:effectiveHeight};
+      return;
+    }
+    finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab);
   } else if(raw>=1){
     h.done=true;
     if(lab){
@@ -6511,7 +6669,7 @@ function resolveHazard(h){
     hit=inLane&&!ducking;
     if(inLane&&!hit&&h.impact-lastDuck<=W) perfect=true;
   }
-  const parried=hit&&Math.abs(player.lastParry-h.impact)<=parryWindow(h);
+  const parried=hit&&h.parryInputEligible===true;
   /* impact: torn earth + claw rakes — a physical strike, not an energy beam */
   for(const ln of h.lanes){
     const x=laneX(ln,1), iy=attackImpactY(h.height);
@@ -8042,7 +8200,8 @@ function playEncounterSound(def=activeMinibossDefinition()){
 function validateEncounterHierarchy(){
   const tempo=CFG.ENCOUNTER_TEMPO;
   if(!modelParryZoneSucceeds('VIOLET')||!modelParryZoneSucceeds('BURGUNDY')||
-     modelParryZoneSucceeds('YELLOW')||modelParryZoneSucceeds('RED'))
+     modelParryZoneSucceeds('YELLOW')||modelParryZoneSucceeds('RED')||
+     modelParryZoneSucceeds('PASSED'))
     throw new Error('Model parry must accept only violet and burgundy input zones');
   if(!(MODEL_PARRY_BAND_RATIO>.2&&MODEL_PARRY_BAND_RATIO<.3))
     throw new Error('MODEL_PARRY_BAND_RATIO must remain a narrow proportional contact band');
@@ -10297,6 +10456,8 @@ function moveLabPerfectContactTime(h){
   }
   if(h.kind!=='sweep') return h.impact;
   const playerX=laneX(player.x,1), start=sweepProgress(h);
+  const currentX=sweepScreenX(h),direction=h.to-h.from;
+  if(Math.abs(direction)>1e-5&&direction*(playerX-currentX)<0) return Infinity;
   /* Sweeps can contact before their nominal endpoint. Sample their same eased
      physical path to find the next frame entering the gold footprint; pinches
      additionally wait for the shared central-snap distance. */
@@ -10324,7 +10485,7 @@ function drawMoveLabPerfectTimer(actor){
   g.save(); g.textAlign='center'; g.globalAlpha=pulse;
   const modelZone=activeHazard&&activeHazard.kind==='model'?evaluateModelParryInput(activeHazard).zone:null;
   const parryNow=modelZone!==null?modelParryZoneSucceeds(modelZone):remaining<=activeParryWindow;
-  const tooLate=modelZone==='RED';
+  const tooLate=modelZone==='RED'||modelZone==='PASSED';
   g.fillStyle=tooLate?'#ff4d3a':parryNow?'#b56cff':'#ffe37a'; g.shadowColor=g.fillStyle; g.shadowBlur=18;
   g.beginPath(); g.ellipse(x,y,34,13,0,0,TAU); g.fill();
   g.shadowBlur=0; g.globalAlpha=1; g.font='bold 12px monospace';
@@ -10464,7 +10625,8 @@ function drawMoveLabDodgeSnapshot(actor){
 function drawMoveLabModelGeometry(h){
   const markAge=debugParryInputMark?(performance.now()-debugParryInputMark.atReal)/1000:Infinity;
   const frozenInput=h.parryInputCapturedAt===debugParryInputMark?.at&&
-    markAge>=0&&(debugParryInputFrozen||markAge<=DEBUG_PARRY_INPUT_HOLD)&&h.parryPose&&h.parryPresentation;
+    debugParryInputMark?.holdGeometry&&markAge>=0&&
+    (debugParryInputFrozen||markAge<=DEBUG_PARRY_INPUT_HOLD)&&h.parryPose&&h.parryPresentation;
   const current=frozenInput?h.parryPose:h.prevPose,previous=frozenInput?h.parryPose:h.currPose;
   const presentation=frozenInput?h.parryPresentation:h.prevPresentation;
   const previousPresentation=frozenInput?h.parryPresentation:h.currPresentation;
@@ -10659,7 +10821,9 @@ function settingsTap(pt){
   const showDebugFreeze=debugRun||debugMoveLabActive();
   if(showDebugFreeze&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+30&&pt.y<VH/2+72){
     debugParryFreezeEnabled=!debugParryFreezeEnabled;
-    if(!debugParryFreezeEnabled){debugParryInputFrozen=false;debugParryInputMark=null;}
+    if(!debugParryFreezeEnabled){
+      debugParryInputFrozen=false;debugParryInputMark=null;tapIntentSimulationFrozen=false;
+    }
     SFX.coin();return;
   }
   const backY=showDebugFreeze?VH/2+92:VH/2+44;
@@ -11309,154 +11473,4 @@ function drawActiveMinibossWorld(){
     zD=minibossFight.z-(1-easeInOut(clamp(minibossFight.stateT/miniRecoverAnimTime,0,1)))*miniContactReach;
   if(miniComboRecovering&&miniMove)
     zD=minibossFight.z-(1-easeInOut(clamp(minibossFight.stateT/miniComboRecoverTime,0,1)))*miniContactReach;
-  const p=proj(zD);let wx=laneX(ranged?1:minibossFight.x,p.t);
-  if(!ranged&&minibossFight.state==='strike'&&miniMove)
-    wx=lerp(wx,laneX(minibossFight.xTarget,1),easeOut(clamp(minibossFight.stateT/miniMove.travel,0,1)));
-  else if(!ranged&&minibossFight.state==='recover'&&miniMove)
-    wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniRecoverAnimTime,0,1)));
-  else if(!ranged&&miniComboRecovering&&miniMove)
-    wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniComboRecoverTime,0,1)));
-  let anim=minibossFight.state==='tele'?minibossFight.attack.anim:
-    minibossFight.state==='intro'?miniDef.introAnim:
-    minibossFight.state==='dying'?(minibossFight.stateT<1.1?miniDef.introAnim:miniDef.exitAnim):minibossFight.state;
-  if(miniMove&&(minibossFight.state==='tele'||minibossFight.state==='strike'||minibossFight.state==='recover'||miniComboRecovering))
-    anim=minibossFight.state==='tele'?miniMove.anim:minibossFight.state==='strike'?miniMove.strike:comboStepRecoveryAnim(miniMove);
-  const miniContacts=moveContactXs(minibossFight,miniMove,minibossFight.hazardLanes);
-  miniDef.draw(wx,p.y,p.s*miniDef.scale,anim,
-    clamp(minibossFight.stateT/(minibossFight.state==='tele'?(minibossFight.teleTime||miniMove.tele):minibossFight.state==='strike'&&miniMove?miniMove.travel:miniComboRecovering?miniComboRecoverTime:minibossFight.state==='recover'?miniRecoverAnimTime:minibossFight.state==='dying'?1.8:.6),0,1),
-    minibossFight.hurtT>0,miniContacts);
-}
-function render(){
-  const stage=BIO();
-  g.setTransform(1,0,0,1,0,0);
-  g.fillStyle='#05070c'; g.fillRect(0,0,cvs.width,cvs.height);
-  g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-  /* the world never spills into the letterbox — wide desktop screens stay calm */
-  g.save();
-  g.beginPath(); g.rect(0,-PAD_TOP,VW,VH+PAD_TOT); g.clip();
-  /* screen shake offset (inside the clip so shakes can't leak either) */
-  if(shakeMag>0){
-    const shakeFrame=(perfNow*60)|0;
-    g.translate(lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1701)),
-      lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702)));
-  }
-
-  if(env==='cave'){ stage.arena(); }
-  else { stage.bg(); }
-  drawParticles(true);       // arena emissions are occluded by bosses and world actors
-  updateEffHorizon();          // obstacles/items enter under the lair when it looms
-  /* depth-sorted world drawables (far → near) */
-  const dr=DRAW_QUEUE; dr.length=0; drawItemCount=0;
-  if(env==='forest'&&mode==='run'&&stageDistance()-dist<SPAWN_FAR){
-    const mz=stageDistance()-dist;
-    /* the end-of-world sheet (water/lava) draws BEHIND everything, so the groves
-       and columns marching in past the lair stand IN it. The lair itself renders
-       from the same far distance as the trees around it. */
-    if(stage.beyondDraw) queueWorldDraw(9999,drawStageBeyond,mz);
-    queueWorldDraw(mz,drawStageMouth,mz);
-  }
-  if(env==='forest') for(const t of roadsideScenery) queueWorldDraw(t.z,drawRoadsideSceneryEntity,t);
-  const frontObs=FRONT_OBSTACLES; frontObs.length=0; // arches the knight rides UNDER
-  /* GRIFFIN GREAVES exception: while the jump carries him over a duck-arch, the
-     knight renders ON TOP of the root instead of slipping beneath it */
-  const overArch=hasRelic('greaves')&&isAirborne();
-  for(const o of obstacles){
-    if(o.type.frontLayer&&o.z<1.3&&o.z>o.type.cullZ-.2&&!(overArch&&o.z>-2.2)){ frontObs.push(o); continue; }
-    queueWorldDraw(o.z,drawObstacleEntity,o);
-  }
-  for(const c of pickups) queueWorldDraw(c.z,drawPickupEntity,c);
-  if(boss)queueWorldDraw(boss.z,drawActiveBossWorld);
-  if(minibossFight)queueWorldDraw(minibossFight.z,drawActiveMinibossWorld);
-  dr.sort((a,b)=>b.z-a.z);
-  for(const d of dr) d.draw(d.ref,stage);
-
-  drawTelegraphs();
-  if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
-    if(player.alive) drawPlayer();
-    drawPackAllies();
-    drawProjectiles();
-    drawPackLeap();
-  }
-  if(pausePhotoMode){
-    drawMoveLabPhotoHitboxes();
-    const photoLabActor=boss&&boss._moveLab?boss:
-      (minibossFight&&minibossFight._moveLab?minibossFight:null);
-    if(photoLabActor){
-      drawMoveLabLivePlayerGeometry();
-      drawMoveLabDodgeSnapshot(photoLabActor);
-    }
-  } else drawMoveLabMarkers();
-  /* NOW the near arches: the knight visibly ducks UNDER them */
-  frontObs.sort((a,b)=>b.z-a.z);
-  for(const o of frontObs) drawObstacle(o,proj(o.z));
-  drawParticles(); drawSlashes();
-  drawAmbient();
-  drawVignette();
-
-  /* Screenshot mode keeps only the frozen world artwork: no HUD, debug markers,
-     labels, floaters or lab-only buttons. */
-  if(!pausePhotoMode){
-    if(mode==='menu') drawMenu();
-    else if(mode==='relicdex') drawRelicDex();
-    else if(mode==='changelog') drawChangelog();
-    else if(mode==='debugcfg') drawDebugCfg();
-    else if(mode==='bosslabselect') drawBossLabSelect();
-    else if(mode==='bosslabmoves') drawBossLabMoves();
-    else if(mode==='charsel') drawCharSel();
-    else if(mode==='score') drawScore();
-    else {
-      drawHUD();drawBearTurntableMouthButton();
-      if(mode==='bossintro') drawBossIntro();
-      if(mode==='relic') drawRelicScreen();
-      if(mode==='shop') drawShop();
-      if(mode==='miniboss') drawMinibossIntro();
-    }
-    drawDebugParryInputMark();
-  }
-  if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
-    g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-    if(debugMoveLabActive()) drawMoveLabPauseControls();
-    g.textAlign='center'; g.font='bold 34px monospace'; g.fillStyle='#e8e2d0';
-    g.fillText('PAUSED',VW/2,VH/2-58);
-    g.font='15px monospace'; g.fillStyle='#aeb2c2';
-    g.fillText('tap outside buttons or press P to resume',VW/2,VH/2-22);
-    g.strokeStyle='#ffe37a'; g.lineWidth=2; g.strokeRect(VW/2-90,VH/2+20,180,46);
-    g.font='bold 15px monospace'; g.fillStyle='#ffe37a'; g.fillText('▣ SCREENSHOT',VW/2,VH/2+50);
-    g.strokeStyle='#8b8fa0'; g.strokeRect(VW/2-90,VH/2+78,180,46);
-    g.fillStyle='#aeb2c2'; g.fillText('⚙ SETTINGS',VW/2,VH/2+108);
-    g.strokeStyle='#e8e2d0'; g.strokeRect(VW/2-90,VH/2+136,180,46);
-    g.fillStyle='#e8e2d0'; g.fillText('MAIN MENU',VW/2,VH/2+166);
-  }
-  if(settingsOpen) drawSettings();                  // the settings sheet floats over it all
-  /* fullscreen flash */
-  if(flashA>0){ g.globalAlpha=flashA; g.fillStyle=flashCol; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT); g.globalAlpha=1; }
-  g.restore();                                      // lift the stage clip
-}
-
-/* ============================== 13. MAIN LOOP ============================== */
-let lastTime=performance.now();
-let hadFocus=true;
-let debugFps=60;
-function frame(now){
-  requestAnimationFrame(frame);
-  const gap=(now-lastTime)/1000;
-  if(gap>0&&gap<.6) debugFps=lerp(debugFps,1/gap,.08);
-  /* watchdog: a long frame gap means the browser suspended us — freeze the run.
-     Focus is checked EDGE-triggered (only the moment it is lost pauses; some mobile
-     browsers report no focus at all, and a level check locked the game on pause) */
-  if(gap>0.6&&GAMEPLAY_MODES.includes(mode)) paused=true;
-  const foc=document.hasFocus();
-  if(hadFocus&&!foc&&GAMEPLAY_MODES.includes(mode)) paused=true;
-  hadFocus=foc;
-  let dt=Math.min(gap,1/25); lastTime=now;
-  if(paused){ render(); return; }                   // paused: keep drawing, freeze the sim
-  if(tapIntentSimulationFrozen){ render(); return; }// tap/swipe arbitration costs zero combat time
-  if(debugParryInputFrozen){ render(); return; }    // first debug parry freezes until the second Space
-  if(hitstop>0){ hitstop-=dt; render(); return; }   // hit-stop: freeze the sim, keep drawing
-  update(dt*moveLabTimeScale());
-  render();
-}
-requestAnimationFrame(frame);
-</script>
-</body>
-</html>
+  const p=proj(zD);let wx=laneX(ranged?1:minibossFight.x,
