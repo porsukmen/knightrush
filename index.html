@@ -5943,24 +5943,6 @@ function drawPlayer(){
   g.globalAlpha=0.3*(1-jumpHeight()/CFG.JUMP_H*.7); g.fillStyle='#000';
   g.beginPath(); g.ellipse(laneX(player.x,1),PLAYER_Y+12,23,6,0,0,TAU); g.fill(); g.globalAlpha=1;
 }
-function drawDebugParryInputMark(){
-  const mark=debugParryInputMark;
-  if(!mark||pausePhotoMode||(!debugRun&&!debugMoveLabActive())) return;
-  const age=(performance.now()-mark.atReal)/1000,duration=DEBUG_PARRY_INPUT_HOLD;
-  if(age<0||(!debugParryInputFrozen&&age>duration)) return;
-  const x=36,y=VH-uiTop-94,w=VW-72,h=60;
-  g.save();
-  g.fillStyle='rgba(86,16,140,.94)';g.fillRect(x,y,w,h);
-  g.strokeStyle='#d8b6ff';g.lineWidth=4;g.strokeRect(x+2,y+2,w-4,h-4);
-  g.textAlign='center';g.textBaseline='middle';g.font='bold 20px monospace';
-  g.fillStyle='#ffffff';g.fillText(debugParryInputFrozen?'PARRY INPUT FROZEN':'PARRY INPUT',VW/2,y+23);
-  if(debugParryInputFrozen){
-    g.font='bold 11px monospace';g.fillStyle='#eadcff';
-    g.fillText('SPACE / TAP TO CONTINUE',VW/2,y+45);
-  }
-  g.restore();
-}
-
 /* ============================== collisions (run mode) ============================== */
 function updateRunCollisions(){
   const REASON=BIO().reasons;
@@ -12079,7 +12061,6 @@ function render(){
       if(mode==='shop') drawShop();
       if(mode==='miniboss') drawMinibossIntro();
     }
-    drawDebugParryInputMark();
   }
   if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
     g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
