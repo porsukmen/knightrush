@@ -613,7 +613,7 @@ function handleAction(a,pt){
   }
   if(a==='tap' && pt && debugRun && boss && !boss._moveLab && mode==='boss'
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
-  if(a==='tap'&&GAMEPLAY_MODES.includes(mode)){ playerAction('parry'); return; }
+  if(a==='tap'&&(mode==='boss'||mode==='miniboss')){ playerAction('parry'); return; }
   if(a==='tap') return;
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a);
 }
@@ -654,6 +654,8 @@ addEventListener('keydown',e=>{
    ignored until the finger lifts. No hold-and-slide steering, no double-lane hops. */
 let tStart=null;
 const SWIPE_TH=24;
+const TAP_INTENT_DELAY_MS=45,TAP_MOVE_CANCEL=4;
+let tapIntentSimulationFrozen=false;
 let debugStageHoldTimer=0,debugStageHoldDir=0,debugStageHoldBegan=0;
 function debugStageDeltaAt(pt){
   if(mode!=='debugcfg'||!pt||pt.y<=152||pt.y>=192) return 0;
@@ -688,41 +690,84 @@ function trySwipe(cx,cy){
   if(!tStart||tStart.done) return false;
   const dx=cx-tStart.x, dy=cy-tStart.y;
   if(Math.abs(dx)<SWIPE_TH && Math.abs(dy)<SWIPE_TH) return false;
+  clearTapIntent(tStart);
   if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left');
   else handleAction(dy>0?'down':'up');
   tStart.done=true;                           // this touch is spent — lift to act again
   return true;
 }
+function clearTapIntent(start=tStart){
+  if(start&&start.tapTimer) clearTimeout(start.tapTimer);
+  if(start) start.tapTimer=0;
+  tapIntentSimulationFrozen=false;
+}
+function immediateParryTapEligible(pt){
+  if(paused||settingsOpen||(mode!=='boss'&&mode!=='miniboss')) return false;
+  if(pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&
+     pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop) return false;
+  return true;
+}
+function armTapIntent(start,cx,cy){
+  const pt=toGame(cx,cy);
+  if(!immediateParryTapEligible(pt)||start.done) return;
+  /* Gesture intent is unknowable on touchstart. Freeze simulation—not real
+     input handling—during this tiny arbitration window, so a confirmed tap is
+     evaluated at the exact touchstart combat frame with zero gameplay latency. */
+  tapIntentSimulationFrozen=true;
+  start.tapTimer=setTimeout(()=>{
+    if(tStart!==start||start.done||start.intentMoved) return;
+    start.tapTimer=0;start.done=true;tapIntentSimulationFrozen=false;
+    handleAction('tap',pt);
+  },TAP_INTENT_DELAY_MS);
+}
+function noteTapIntentMovement(start,cx,cy){
+  if(!start||start.intentMoved) return;
+  if(Math.abs(cx-start.x)>TAP_MOVE_CANCEL||Math.abs(cy-start.y)>TAP_MOVE_CANCEL){
+    start.intentMoved=true;clearTapIntent(start);
+  }
+}
 addEventListener('touchstart',e=>{e.preventDefault();
   SFX.unlock();
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); tStart=null; return; }
   const t=e.changedTouches[0];
+  if(debugParryInputFrozen&&!paused){
+    handleAction('tap',toGame(t.clientX,t.clientY));
+    tStart={x:t.clientX,y:t.clientY,done:true};return;
+  }
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
   tStart={x:t.clientX,y:t.clientY,done:levelHold};
+  armTapIntent(tStart,t.clientX,t.clientY);
 },{passive:false});
 addEventListener('touchmove',e=>{ e.preventDefault();
-  const t=e.changedTouches[0]; trySwipe(t.clientX,t.clientY);
+  const t=e.changedTouches[0];noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
 },{passive:false});
 addEventListener('gesturestart',e=>e.preventDefault());
 addEventListener('gesturechange',e=>e.preventDefault());
 addEventListener('touchend',e=>{e.preventDefault();
   clearDebugStageHold();
   if(!tStart) return; const t=e.changedTouches[0];
+  clearTapIntent(tStart);
   if(!tStart.done && !trySwipe(t.clientX,t.clientY))
     handleAction('tap',toGame(t.clientX,t.clientY));
   tStart=null;
 },{passive:false});
-addEventListener('touchcancel',()=>{ clearDebugStageHold(); tStart=null; },{passive:true});
+addEventListener('touchcancel',()=>{ clearDebugStageHold();clearTapIntent(tStart);tStart=null; },{passive:true});
 let mDown=false;
 addEventListener('mousedown',e=>{
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); mDown=false; tStart=null; return; }
+  if(debugParryInputFrozen&&!paused){
+    handleAction('tap',toGame(e.clientX,e.clientY));
+    mDown=true;tStart={x:e.clientX,y:e.clientY,done:true};return;
+  }
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
   tStart={x:e.clientX,y:e.clientY,done:levelHold};
+  armTapIntent(tStart,e.clientX,e.clientY);
 });
-addEventListener('mousemove',e=>{ if(mDown) trySwipe(e.clientX,e.clientY); });
+addEventListener('mousemove',e=>{ if(mDown){noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);} });
 addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(!tStart) return;
+  clearTapIntent(tStart);
   if(!tStart.done && !trySwipe(e.clientX,e.clientY)) handleAction('tap',toGame(e.clientX,e.clientY));
   tStart=null;
 });
@@ -5662,7 +5707,7 @@ function playerAction(a){
     if(player.jumpT>=0){ player.jumpT=Math.max(player.jumpT,jumpDur()*0.82); } // fast-fall
     else { player.duckT=0; player.lastDuck=perfNow; SFX.duck(); }   // duck — or refresh mid-duck
   }
-  else if(a==='parry'){
+  else if(a==='parry'&&(mode==='boss'||mode==='miniboss')){
     markDebugParryInput();
     player.lastParry=perfNow; player.parryAnim=1; SFX.swipe();
     registerModelParryInput();
@@ -11405,6 +11450,7 @@ function frame(now){
   hadFocus=foc;
   let dt=Math.min(gap,1/25); lastTime=now;
   if(paused){ render(); return; }                   // paused: keep drawing, freeze the sim
+  if(tapIntentSimulationFrozen){ render(); return; }// tap/swipe arbitration costs zero combat time
   if(debugParryInputFrozen){ render(); return; }    // first debug parry freezes until the second Space
   if(hitstop>0){ hitstop-=dt; render(); return; }   // hit-stop: freeze the sim, keep drawing
   update(dt*moveLabTimeScale());
