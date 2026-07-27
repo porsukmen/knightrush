@@ -156,6 +156,12 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const easeOut=t=>1-Math.pow(1-t,3);
 const easeIn=t=>t*t*t;
 const easeInOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+/* Exact inverse of easeInOut. Art rigs with physical endpoint values can pass
+   through an already-eased renderer without changing those endpoints. */
+const inverseEaseInOut=t=>{
+  t=clamp(t,0,1);
+  return t<.5?Math.cbrt(t/4):1-Math.cbrt((1-t)/4);
+};
 const rnd=(a=1,b)=> b===undefined ? Math.random()*a : a+Math.random()*(b-a);
 const pick=arr=>arr[(Math.random()*arr.length)|0];
 const chancePerSecond=(rate,dt)=>Math.random()<1-Math.exp(-rate*dt);
@@ -635,6 +641,9 @@ addEventListener('keydown',e=>{
       const actor=activeMoveLabActor(); restartMoveLabSelection(actor,actor._moveLab.selected||0);
       SFX.relic(); e.preventDefault(); return;
     }
+    if(e.key==='a'||e.key==='A'){
+      toggleMoveLabAutoParry(); e.preventDefault(); return;
+    }
   }
   const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',
              a:'left',d:'right',w:'up',s:'down',' ':'parry',Enter:'tap'};
@@ -710,7 +719,10 @@ function immediateParryTapEligible(pt){
   return true;
 }
 function debugParryFreezeRequested(){
-  return debugParryFreezeEnabled&&(debugRun||debugMoveLabActive());
+  /* Boss Move Lab must run the real attack through contact and recovery. Its
+     geometry panel may snapshot input, but the old manual input freeze would
+     stop the simulation before a successful parry could ever rebound. */
+  return debugParryFreezeEnabled&&debugRun&&!debugMoveLabActive();
 }
 function markDebugParryTouchStart(intent){
   if((!debugRun&&!debugMoveLabActive())||!intent) return;
@@ -799,11 +811,13 @@ function evaluateModelSwipeDodgeRecord(h,record){
   return {zone,eligible:zone==='YELLOW',markerX,markerY};
 }
 function captureMoveLabSwipeDodgeInputSnapshot(h,record,inputAt){
-  const lab=h.actor&&h.actor._moveLab;if(!lab) return;
+  if(!debugSnapshotCaptureActive(h.actor)) return;
+  const lab=debugCombatVisualState(h.actor,true);
   const snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
   snap.kind='PENDING';snap.until=perfNow+1.15;snap.circleCount=record.circles.length;
   snap.directionalPerfect=true;snap.hitJoint=-1;snap.hasContact=false;
   snap.inputAt=inputAt;snap.move=h.move;snap.height=h.height;snap.parryBandRatio=h.parryBandRatio;
+  snap.parryOuterScale=h.parryOuterScale;snap.parryVioletMaxRatio=h.parryVioletMaxRatio;
   for(let i=0;i<snap.circleCount;i++){
     const source=record.circles[i],circle=snap.circles[i]||
       (snap.circles[i]={x:0,y:0,fromX:0,fromY:0,core:0,shell:0});
@@ -889,7 +903,7 @@ function armTapIntent(start,cx,cy){
   /* With the explicit debug freeze enabled, every possible tap holds its exact
      touchstart frame; a swipe releases that hold as soon as intent movement is
      visible. With it disabled, combat never stops and this buffered state alone
-     remains authoritative after the 45 ms gesture decision. */
+     remains authoritative after the at-most 75 ms gesture decision. */
   tapIntentSimulationFrozen=debugParryFreezeRequested();
   start.tapTimer=setTimeout(()=>{
     if(tStart!==start||start.done||start.intentMoved) return;
@@ -983,6 +997,92 @@ let shakeMag=0, shakeT=0, hitstop=0, flashCol=null, flashA=0;
 function shake(m,t=0.3){ shakeMag=Math.max(shakeMag,m); shakeT=Math.max(shakeT,t); }
 function stopTime(t){ hitstop=Math.max(hitstop,t); }               // hit-stop freeze
 function flash(col,a=0.7){ flashCol=col; flashA=a; }               // fullscreen flash
+/* Successful-parry presentation is deliberately data driven. Durations are
+   simulation seconds: PARRY_REACTION.timeScale stretches them into readable
+   real-time slow motion without giving collision or combo logic a second clock. */
+const PARRY_REACTION=Object.freeze({
+  duration:.60,timeScale:.30,shake:7.5,shakeTime:.48,hitstop:.035,
+  sparks:72,sparkSpeed:120,sparkLife:.62,sparkLineLength:300,sparkRise:20,
+  sparkLineWidth:5,sparkSpike:25,
+  bodyLift:2.5,bodyKick:3.2,bodyDepthKick:1.8,
+  returnStart:.27,limbHoldEnd:.60,reboundPeak:.18,reboundEnd:.86,flickers:4,
+  bear:Object.freeze({limbBack:13.5,limbLift:22.5,laneHitOutward:3.2,
+    biteArmBack:11.5,biteArmLift:22.0,biteRear:6.2,
+    bitePullEnd:.18,biteRearStart:.08,highShoveRearStart:.015,biteRearPeak:.34,
+    doublePartnerLift:.55,doublePartnerPawPitch:.78,
+    swipePartnerLift:.32,swipePartnerPawPitch:.50,
+    lanePartnerLift:.40,lanePartnerPawPitch:.62,
+    stumbleLean:.115,stumbleShake:1.35}),
+  hydra:Object.freeze({headBack:5.5,headLift:4.2,headPitchStart:.02,headPitchPeak:.45,
+    headLowerReturnSpan:.78,otherHeadSettle:.24,headWobble:.45}),
+  turtle:Object.freeze({spinLimbRebound:false,biteRetract:.34,biteRecoilPeak:.12,biteHideStart:.09,
+    tubePeak:.11,tubeLift:24,
+    stumbleLean:.08,stumbleShake:1.0})
+});
+function activeParryReaction(){
+  const actor=mode==='miniboss'?minibossFight:boss;
+  return actor&&actor.parryReaction&&actor.parryReaction.t<=PARRY_REACTION.duration
+    ?actor.parryReaction:null;
+}
+function parryReactionClock(reaction){
+  return clamp(reaction.t/PARRY_REACTION.duration,0,1);
+}
+function parryReturnProgress(reaction){
+  const q=parryReactionClock(reaction),start=PARRY_REACTION.returnStart;
+  return easeOut(clamp((q-start)/(1-start),0,1));
+}
+function parryLimbReturnProgress(reaction){
+  const q=parryReactionClock(reaction),start=PARRY_REACTION.limbHoldEnd;
+  return easeInOut(clamp((q-start)/(1-start),0,1));
+}
+function parryLimbImpulseProgress(reaction){
+  return easeOut(clamp(parryReactionClock(reaction)/PARRY_REACTION.reboundPeak,0,1));
+}
+function parryLimbPoseAmount(reaction){
+  const returnK=parryLimbReturnProgress(reaction);
+  return returnK>0?1-returnK:parryLimbImpulseProgress(reaction);
+}
+function parryBearBitePullback(reaction){
+  return easeOut(clamp(parryReactionClock(reaction)/PARRY_REACTION.bear.bitePullEnd,0,1));
+}
+function parryBearBitePoseAmount(reaction){
+  const returnK=parryLimbReturnProgress(reaction);
+  if(returnK>0)return 1-returnK;
+  const q=parryReactionClock(reaction),profile=PARRY_REACTION.bear,
+    start=reaction.anim==='strike_high_sweep'?profile.highShoveRearStart:profile.biteRearStart;
+  return easeInOut(clamp((q-start)/(profile.biteRearPeak-start),0,1));
+}
+function parryBearHeadPitchAmount(reaction){
+  const returnK=parryLimbReturnProgress(reaction);
+  /* The skull finishes its downward roll before the long arms finish settling.
+     This avoids dwelling on foreshortened middle atlas frames during recovery. */
+  if(returnK>0)return 1-easeOut(clamp(returnK/.42,0,1));
+  if(reaction.anim==='strike_high_sweep')
+    return easeInOut(clamp(parryReactionClock(reaction)/.20,0,1));
+  return parryBearBitePoseAmount(reaction);
+}
+function parryHydraHeadPitchAmount(reaction){
+  const returnK=parryLimbReturnProgress(reaction);
+  /* Finish the visual head roll before the body completes its settle. The
+     atlas therefore crosses its imperfect middle angles more quickly while
+     the Hydra's overall stumble/recovery duration stays unchanged. */
+  if(returnK>0)return 1-clamp(returnK/
+    PARRY_REACTION.hydra.headLowerReturnSpan,0,1);
+  const q=parryReactionClock(reaction),profile=PARRY_REACTION.hydra;
+  return easeInOut(clamp((q-profile.headPitchStart)/
+    (profile.headPitchPeak-profile.headPitchStart),0,1));
+}
+function parryReboundAmount(reaction){
+  const q=parryReactionClock(reaction),peak=PARRY_REACTION.reboundPeak,
+    hold=PARRY_REACTION.limbHoldEnd,end=PARRY_REACTION.reboundEnd;
+  if(q<peak) return easeOut(q/peak);
+  if(q<hold) return lerp(1,.88,(q-peak)/(hold-peak));
+  return q<end ? .88*(1-easeInOut((q-hold)/(end-hold))) : 0;
+}
+function parryFlickerOn(reaction){
+  const q=parryReactionClock(reaction);
+  return q<PARRY_REACTION.reboundEnd&&Math.floor(q*PARRY_REACTION.flickers*2)%2===0;
+}
 const particles=[], floaters=[];
 /* generic particle: {x,y,vx,vy,life,maxLife,size,col,grav,glow,behindBoss}
    Arena emissions opt into the background layer; combat feedback stays in front. */
@@ -990,6 +1090,35 @@ function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
   for(let i=0;i<n;i++){ const a=rnd(TAU), s=rnd(spd*0.3,spd);
     particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-40,life,maxLife:life,
       size:rnd(size*0.5,size),col:pick(cols),grav}); }
+}
+/* Edge-on galaxy: the attack vector defines the normal, then a long thin spark
+   disc runs 90 degrees across it. Both arms grow from the knight/contact centre
+   and a restrained symmetric bulge gives the middle its galactic core. */
+function parrySparkCloud(x,y){
+  const knightX=laneX(player.x,1),knightY=PLAYER_Y-jumpHeight()-58,
+    centreX=(knightX+x)*.5,centreY=(knightY+y)*.5-PARRY_REACTION.sparkRise;
+  let attackX=x-knightX,attackY=y-knightY,attackLen=Math.hypot(attackX,attackY);
+  if(attackLen<1){attackX=0;attackY=-1;attackLen=1;}
+  const normalX=attackX/attackLen,normalY=attackY/attackLen,
+    axisX=-normalY,axisY=normalX,half=PARRY_REACTION.sparkLineLength*.5,
+    cols=['#fffdf0','#fff1a8','#ffe37a','#ffb13b'];
+  for(let i=0;i<PARRY_REACTION.sparks;i++){
+    const u=((i+.35+sRnd(i*19+7)*.3)/PARRY_REACTION.sparks)*2-1,
+      core=1-Math.abs(u),bulge=Math.pow(core,3.2)*PARRY_REACTION.sparkSpike,
+      thin=PARRY_REACTION.sparkLineWidth*(.2+sRnd(i*31+3)*.8),
+      side=sRnd(i*47+11)<.5?-1:1,
+      thickness=side*(sRnd(i*13+5)*thin+sRnd(i*23+9)*bulge),
+      px2=centreX+axisX*u*half+normalX*thickness,
+      py2=centreY+axisY*u*half+normalY*thickness,
+      outward=(u<0?-1:1)*rnd(24,PARRY_REACTION.sparkSpeed),
+      corePush=side*rnd(4,22)*core;
+    particles.push({kind:'parrySpark',x:px2,y:py2,
+      vx:axisX*outward+normalX*corePush,
+      vy:axisY*outward+normalY*corePush-10,
+      life:PARRY_REACTION.sparkLife*rnd(.55,1),maxLife:PARRY_REACTION.sparkLife,
+      size:rnd(3.2,7.0)*(1+core*.18),
+      col:pick(cols),grav:70});
+  }
 }
 function floater(x,y,txt,col='#ffe37a',size=18){
   floaters.push({x,y,txt,col,size,life:1,maxLife:1});
@@ -1245,6 +1374,15 @@ function bearPawToScreen(out,leg,presentation,lean){
 function sampleBearPose(presentation,out){
   out=out||createBearPose();
   let state=presentation.anim,t=presentation.t;
+  const parryRecovery=state.startsWith('parry_bear_from:'),
+    parryReaction=presentation.actor&&presentation.actor.parryReaction,
+    parryRecoveryT=parryRecovery?clamp(t,0,1):0;
+  if(parryRecovery){
+    const returnK=parryReaction?parryLimbReturnProgress(parryReaction):easeInOut(parryRecoveryT);
+    state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
+    const origin=parryReaction?parryReaction.strikeT:1;
+    t=origin*(1-returnK);
+  }
   const poseRecovery=state.startsWith('recover_bear_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
   if(poseRecovery){ state=state.slice(state.indexOf(':')+1); t=1-easeInOut(poseRecoveryT); }
@@ -1343,6 +1481,18 @@ function sampleBearPose(presentation,out){
   } else if(state==='recover'){ crouch=-1; headY=2; }
   else if(state==='volley'){ crouch=2; jaw=.2; }
   else { headY=Math.sin(perfNow*1.4)*.35; }
+  /* One species-wide mouth clock: hesitation keeps its approved restrained
+     opening while every strike begins at the enlarged maximum. Bite strikes then
+     keep their authored impact snap; recovery below owns the final close. */
+  if(state.startsWith('tele_')){
+    const physicalOpen=easeInOut(clamp(t,0,1))*
+      (BEAR_MOUTH_2D.hesitationDrop/BEAR_MOUTH_2D.maxDrop);
+    /* drawBearMouth2D eases `jaw` once more. Invert that second ease so the
+       photographed old maximum remains exactly 5.2U. */
+    jaw=inverseEaseInOut(physicalOpen);
+  }
+  if(state.startsWith('strike_')) jaw=1;
+  if(state==='strike_bite') jaw=biteJaw;
   if(swipeRecovery){
     /* Swipe recovery has its own joint path. Release physical contact first,
        fold the elbow, then lower the paw beside the shoulder. Reversing the
@@ -1354,16 +1504,20 @@ function sampleBearPose(presentation,out){
     rightSlam=(ltr||pincer)?slam:0; leftSlam=(rtl||pincer)?slam:0;
     if(state.includes('_high_')){ rightTargetY=leftTargetY=highContactY; headY=lerp(-2,0,r); }
     else { crouch=lerp(-1,0,r); headY=lerp(pincer?-1:0,0,r); }
-    headOut=lerp(pincer ? 1.5 : 0,0,r); jaw=lerp(pincer ? .55 : 0,0,r); snarl=1-r;
+    headOut=lerp(pincer ? 1.5 : 0,0,r); jaw=1-r; snarl=1-r;
     lean=0; highThrust=0;
   }
-  else if(poseRecovery){
+  else if(poseRecovery||parryRecovery){
     /* Reverse the completed limb path, then settle every articulated part into
        neutral during the last few frames. This is a true pose recovery, not a
        hidden delay or a teleport before the next combo tell. */
-    const s=easeInOut(clamp((poseRecoveryT-.54)/.46,0,1));
+    const recoveryClock=parryRecovery&&parryReaction?parryLimbReturnProgress(parryReaction):
+      parryRecovery?parryRecoveryT:poseRecoveryT;
+    const s=easeInOut(clamp((recoveryClock-.50)/.50,0,1));
     crouch=lerp(crouch,0,s); lean=lerp(lean,0,s); headY=lerp(headY,0,s);
-    headOut=lerp(headOut,0,s); jaw=lerp(jaw,0,s); snarl=lerp(snarl,0,s);
+    headOut=lerp(headOut,0,s);
+    jaw=lerp(jaw,0,easeInOut(clamp(recoveryClock,0,1)));
+    snarl=lerp(snarl,0,s);
     rightLift=lerp(rightLift,0,s); leftLift=lerp(leftLift,0,s);
     rightSlam=lerp(rightSlam,0,s); leftSlam=lerp(leftSlam,0,s);
     highThrust=lerp(highThrust,0,s);
@@ -1405,7 +1559,8 @@ function sampleBearPose(presentation,out){
   bearPawToScreen(out.rightPaw,out.rightLeg,presentation,lean);
   bearPawToScreen(out.leftPaw,out.leftLeg,presentation,lean);
   const hy=-1+headY-crouch,snoutY=hy+9+headOut*.25;
-  const jawLocalX=22,jawLocalY=snoutY+12+jaw*3;
+  const visualJawOpen=Math.max(easeInOut(clamp(jaw,0,1)),clamp(snarl,0,1)*.18),
+    jawLocalX=22,jawLocalY=snoutY+11.7+visualJawOpen*5.2;
   const jdx=(jawLocalX-22)*U,jdy=(jawLocalY-55)*U,jc=Math.cos(lean),js=Math.sin(lean);
   out.jaw.x=presentation.x+(jdx*jc-jdy*js)*presentation.scale;
   out.jaw.y=presentation.y+(jdx*js+jdy*jc)*presentation.scale; out.jaw.depth=1;
@@ -1419,6 +1574,7 @@ function sampleBearPose(presentation,out){
   return out;
 }
 const BEAR_RENDER_POSE=createBearPose();
+let BEAR_PARRY_IDLE_POSE=null;
 const BEAR_CONTACT_PROFILES=Object.freeze({
   /* Red is the square-inscribed palm circle. Gold reaches past every 7.7px corner
      and leaves another pixel of breathing room as a readable aura. */
@@ -1481,32 +1637,302 @@ function sampleHydraContactPose(presentation,out){
   return out;
 }
 const HYDRA_CONTACT_PROFILES=Object.freeze({
-  hydraLeftHead:Object.freeze({joints:Object.freeze(['leftHead']),visualBounds:true,coreScale:1,shellScale:1.58,
-    viabilityTarget:.15,preserveReference:false,maxShellScale:1.72}),
-  hydraRightHead:Object.freeze({joints:Object.freeze(['rightHead']),visualBounds:true,coreScale:1,shellScale:1.58,
-    viabilityTarget:.15,preserveReference:false,maxShellScale:1.72}),
+  /* Hydra heads are visibly smaller than Bear palms. Keep that truthful red core,
+     but give their approaching violet edge the same practical screen-space reach
+     and preserve a small yellow dodge rim outside it. */
+  hydraLeftHead:Object.freeze({joints:Object.freeze(['leftHead']),visualBounds:true,coreScale:1,shellScale:2.15,
+    parryOuterScale:2,parryVioletMaxRatio:1.05,
+    viabilityTarget:.15,preserveReference:false,maxShellScale:2.30}),
+  hydraRightHead:Object.freeze({joints:Object.freeze(['rightHead']),visualBounds:true,coreScale:1,shellScale:2.15,
+    parryOuterScale:2,parryVioletMaxRatio:1.05,
+    viabilityTarget:.15,preserveReference:false,maxShellScale:2.30}),
   hydraPinchHeads:Object.freeze({joints:Object.freeze(['leftHead','rightHead']),visualBounds:true,coreScale:1,shellScale:1.78,
     pincer:true,perfectBonus:.04,normalClearHeight:70})
 });
 const HYDRA_CONTACT_RIG=Object.freeze({profiles:HYDRA_CONTACT_PROFILES,createPose:createHydraContactPose,samplePose:sampleHydraContactPose});
+/* Bear bite-parry underside. The lazy cached clip owns only the skull/neck plane
+   that changes perspective; the approved live body and articulated forelegs
+   remain the source of truth. Frame zero repeats the frontal skull and the last
+   frame hides the eyes behind an upturned muzzle, exposing throat and jaw base. */
+let BEAR_PARRY_HEAD_PITCH_CLIP=null,BEAR_PARRY_HEAD_PITCH_HURT_CLIP=null;
+/* Cached angle art needs more source pixels than the live U=3 block grid because
+   the boss often enlarges it again through depth and rebound transforms. A 6x
+   source stays crisp with nearest-neighbour compositing instead of reading like
+   a small texture stretched over the paws and teeth. */
+const BEAR_ANGLE_ATLAS_SCALE=6;
+function paintBearParryHeadPitch(c,index,count,hurt=false){
+  /* One opaque authored view per frame. Cross-fading the frontal and underside
+     faces made moving teeth softer than live idle rectangles. */
+  const k=index/(count-1),front=index===0?1:0,
+    fur=hurt?'#fff8ef':'#4a3020',dark=hurt?'#eee7df':'#20150f',
+    shadeC=hurt?'#fff':'#302015',mid=hurt?'#fff':'#68452d',
+    sun=hurt?'#fff':'#936645',muzzle=hurt?'#eee':'#9b795b',
+    muzzleShade=hurt?'#fff':'#80604a',mouth=hurt?'#fff':'#6f202c',
+    tongue=hurt?'#fff':'#9b3543',nose=hurt?'#fff':'#171112',
+    claw=hurt?'#fff':'#ddd4c2',gum=hurt?'#fff':'#2a0c11',
+    /* Snap both endpoints to the cache pixel grid so no fractional source
+       coverage softens teeth before the atlas reaches the game canvas. */
+    P=(x,y,w,h,col,a=1)=>{
+      const S=BEAR_ANGLE_ATLAS_SCALE,
+        x0=Math.round(x*S)/S,y0=Math.round(y*S)/S,
+        x1=Math.round((x+w)*S)/S,y1=Math.round((y+h)*S)/S;
+      c.globalAlpha=a;c.fillStyle=col;
+      c.fillRect(x0,y0,Math.max(1/S,x1-x0),Math.max(1/S,y1-y0));
+      c.globalAlpha=1;
+    },
+    /* Stepped fillRect wedges keep teeth on the same coarse pixel grid as fur. */
+    Tooth=(cx,root,w,h,down=true,a=1)=>{
+      const bands=h>2.2?3:2,step=h/bands;
+      for(let i=0;i<bands;i++){
+        const width=w*(1-i/(bands+.15)),
+          y=down?root+i*step:root-(i+1)*step;
+        /* Generous logical overlap prevents a one-pixel seam between the stepped
+           rectangles after nearest-neighbour rounding. */
+        P(cx-width*.5,y,width,step+.38,claw,a);
+      }
+      /* A continuous narrow core bridges every stair band. */
+      const spineW=Math.min(.44,Math.max(.24,w*.36));
+      P(cx-spineW*.5,down?root:root-h,spineW,h,claw,a);
+    };
+  c.imageSmoothingEnabled=false;
+  /* Stable neck socket and rear skull mass. */
+  P(5,12,14,13,shadeC);P(5,6,14,11,fur);P(7,3,10,4,mid);
+  P(4,5,3,3,dark);P(17,5,3,3,dark);
+  if(front>.01){
+    P(6,10,5,2,dark,front);P(13,10,5,2,dark,front);
+    P(8,11,1.2,1.1,'#ff3b35',front);P(15,11,1.2,1.1,'#ff3b35',front);
+    P(8,15,8,10,muzzle,front);P(9,14,6,3,sun,front);
+    P(9.5,18,5,6,muzzleShade,front);
+    /* No separator stripe under the nose. Tooth roots are placed first, then
+       the dark closed-mouth-colour gums cover them from the front. */
+    /* Frame zero now matches the enlarged live maximum instead of beginning
+       with the former compressed mouth and stretching on the first pitch. */
+    const frontMouthTop=24.82,frontMouthH=7.30,
+      frontLowerRoot=frontMouthTop+frontMouthH-.28,
+      frontJawY=frontMouthTop+frontMouthH-.05;
+    P(8,frontMouthTop,8,frontMouthH,mouth,front);
+    P(9.4,frontMouthTop+frontMouthH*.48,5.2,frontMouthH*.34,tongue,front);
+    Tooth(8.8,frontMouthTop,1.35,3.25,true,front);Tooth(15.2,frontMouthTop,1.35,3.25,true,front);
+    for(const x of [10.55,11.55,12.45,13.45])Tooth(x,frontMouthTop,.7,1.6,true,front);
+    Tooth(9.45,frontLowerRoot,1.05,2.4,false,front);Tooth(14.55,frontLowerRoot,1.05,2.4,false,front);
+    Tooth(11.2,frontLowerRoot,.68,1.3,false,front);Tooth(12.8,frontLowerRoot,.68,1.3,false,front);
+    /* Both full rows stay visible. The lower row ends exactly on the articulated
+       chin edge, so it covers the tooth bases without floating above the jaw. */
+    P(8,frontMouthTop,8,.34,gum,front);
+    P(8,frontJawY-.34,8,.34,gum,front);
+    P(8,frontJawY,8,3.35,muzzle,front);
+    P(8.55,frontJawY+2.65,6.9,1.5,muzzle,front);
+    P(9.2,frontJawY+.65,5.6,1.8,muzzleShade,front);
+    /* Nose owns the foreground and cannot be clipped by mouth/gum pixels. */
+    P(9,22,6,2.8,nose,front);
+  }
+  if(k>.01){
+    const pitch=easeOut(k),under=1,snoutTop=lerp(14,1.8,pitch),
+      snoutH=lerp(9,10.8,pitch),
+      mouthTop=lerp(24.82,6.55,pitch),mouthH=lerp(7.30,8.10,pitch),
+      mouthW=lerp(8,9.4,pitch),mouthX=12-mouthW*.5,toothScale=mouthW/8,
+      /* Cavity and upper tooth roots share one edge. The former +.48 gap was
+         the stray full-width red line visible above the pitched teeth. */
+      upperRoot=mouthTop,lowerRoot=mouthTop+mouthH-.28,
+      jawY=mouthTop+mouthH-.05;
+    /* Re-authored upturned head: nose remains on the far/top edge, while the
+       approved live mouth stays present and foreshortens with the skull. */
+    P(7.2,lerp(13,7.2,pitch),9.6,11.5,muzzle,under);
+    P(8.3,snoutTop,7.4,3.2,nose,under);
+    P(9.2,snoutTop+2.5,5.6,snoutH-2.2,muzzleShade,under);
+
+    P(mouthX,mouthTop,mouthW,mouthH,mouth,under);
+    P(mouthX+mouthW*.17,mouthTop+mouthH*.48,mouthW*.66,mouthH*.34,tongue,under);
+    const toothX=offset=>mouthX+offset*toothScale;
+    Tooth(toothX(.8),upperRoot,1.35*toothScale,3.05,true,under);
+    Tooth(toothX(7.2),upperRoot,1.35*toothScale,3.05,true,under);
+    for(const offset of [2.55,3.55,4.45,5.45])
+      Tooth(toothX(offset),upperRoot,.7*toothScale,1.45,true,under);
+    Tooth(toothX(1.45),lowerRoot,1.05*toothScale,2.2,false,under);
+    Tooth(toothX(6.55),lowerRoot,1.05*toothScale,2.2,false,under);
+    Tooth(toothX(3.15),lowerRoot,.68*toothScale,1.2,false,under);
+    Tooth(toothX(4.85),lowerRoot,.68*toothScale,1.2,false,under);
+    P(mouthX,upperRoot,mouthW,.34,gum,under);
+    P(mouthX,jawY-.34,mouthW,.34,gum,under);
+    /* The current light chin and nose-adjacent centre shade replace the former
+       closed tapered underside. No obsolete sun inset returns here. */
+    P(mouthX,jawY,mouthW,3.5,muzzle,under);
+    P(mouthX+.6,jawY+2.75,mouthW-1.2,1.55,muzzle,under);
+    P(mouthX+mouthW*.15,jawY+.65,mouthW*.7,1.8,muzzleShade,under);
+    P(6.1,jawY+3.75,11.8,6.4,shadeC,under);
+    P(8,jawY+4.35,8,5.5,fur,under);
+  }
+}
+function bearParryHeadPitchClip(hurt=false){
+  if(hurt)
+    return BEAR_PARRY_HEAD_PITCH_HURT_CLIP||(BEAR_PARRY_HEAD_PITCH_HURT_CLIP=
+      createAngleClip(10,24,40,12,5,(c,i,n)=>paintBearParryHeadPitch(c,i,n,true),BEAR_ANGLE_ATLAS_SCALE));
+  return BEAR_PARRY_HEAD_PITCH_CLIP||(BEAR_PARRY_HEAD_PITCH_CLIP=
+    createAngleClip(10,24,40,12,5,(c,i,n)=>paintBearParryHeadPitch(c,i,n,false),BEAR_ANGLE_ATLAS_SCALE));
+}
+/* Raised Bear paws use a second tiny cached angle clip. The socket and both arm
+   bones remain live; only the paw plane rolls until its pads face the camera. */
+let BEAR_PARRY_PAW_PITCH_CLIP=null,BEAR_PARRY_PAW_PITCH_HURT_CLIP=null;
+function paintBearParryPawPitch(c,index,count,hurt=false){
+  const k=easeInOut(index/(count-1)),front=index===0?1:0,
+    fur=hurt?'#fff8ef':'#4a3020',dark=hurt?'#eee7df':'#20150f',
+    mid=hurt?'#fff':'#68452d',shade=hurt?'#f4f0eb':'#302015',
+    pad=hurt?'#ddd7d1':'#241611',padHi=hurt?'#f0edeb':'#3b2319',
+    pawLit=hurt?'#fff':'#604029',claw='#ddd4c2',
+    P=(x,y,w,h,col,a=1)=>{
+      const S=BEAR_ANGLE_ATLAS_SCALE,
+        x0=Math.round(x*S)/S,y0=Math.round(y*S)/S,
+        x1=Math.round((x+w)*S)/S,y1=Math.round((y+h)*S)/S;
+      c.globalAlpha=a;c.fillStyle=col;
+      c.fillRect(x0,y0,Math.max(1/S,x1-x0),Math.max(1/S,y1-y0));
+      c.globalAlpha=1;
+    };
+  c.imageSmoothingEnabled=false;
+  if(front>.01){
+    P(5.5,4.9,9,6.2,dark,front);P(4.8,7,10.4,5.8,fur,front);
+    P(5.7,7,2.2,4.8,mid,front);P(4.8,11.2,10.4,2.3,shade,front);
+    for(let i=0;i<4;i++)P(5.3+i*2.7,12.6,1.15,3.5,claw,front);
+  }
+  if(k>.01){
+    const pitch=easeOut(k),under=1,top=lerp(6.5,2.2,pitch),
+      bottom=lerp(14.2,16.2,pitch),h=bottom-top;
+    /* Opaque stepped silhouettes match the hard-edged live idle art. */
+    P(5.2,top,9.6,h-2.6,fur,under);
+    P(4.5,top+2.1,11,h-5.1,fur,under);
+    P(5.5,bottom-3.1,9,3.1,fur,under);
+    P(5.2,top+1,2.1,h-3,pawLit,under);
+    /* Four digital pads plus the broad metacarpal pad make the underside read
+       immediately as a paw print, even through the white damage flicker. */
+    for(let i=0;i<4;i++)P(5.1+i*2.55,top+1.3+(i===0||i===3?.7:0),1.85,2.15,pad,under);
+    P(6.2,top+5,7.6,3.2,pad,under);
+    P(5.4,top+7.6,9.2,2.1,pad,under);
+    P(7.2,top+9.2,5.6,Math.max(.8,h-11.2),pad,under);
+    P(7.3,top+6.1,5.4,1.2,padHi,under);
+    for(let i=0;i<4;i++)P(5.25+i*2.55,top-.6,1.45,2.1,claw,under);
+  }
+}
+function bearParryPawPitchClip(hurt=false){
+  if(hurt)
+    return BEAR_PARRY_PAW_PITCH_HURT_CLIP||(BEAR_PARRY_PAW_PITCH_HURT_CLIP=
+      createAngleClip(8,20,20,10,8,(c,i,n)=>paintBearParryPawPitch(c,i,n,true),BEAR_ANGLE_ATLAS_SCALE));
+  return BEAR_PARRY_PAW_PITCH_CLIP||(BEAR_PARRY_PAW_PITCH_CLIP=
+    createAngleClip(8,20,20,10,8,(c,i,n)=>paintBearParryPawPitch(c,i,n,false),BEAR_ANGLE_ATLAS_SCALE));
+}
+/* Bear mouth art is a small articulated rig. Its pointed teeth and tapered jaw
+   are built from stepped rectangles so they stay inside the model's pixel
+   language. All dimensions remain editable independently from combat timing. */
+const BEAR_MOUTH_2D=Object.freeze({
+  /* Upper muzzle, cavity and lower jaw all own this exact 8U centre line. */
+  x:18,width:8,cavityTop:9.1,hesitationDrop:5.2,maxDrop:7.2,gum:'#2a0c11',
+  upper:Object.freeze([
+    Object.freeze({x:18.8,w:1.35,h:3.35}),Object.freeze({x:20.55,w:.72,h:1.75}),
+    Object.freeze({x:21.55,w:.68,h:1.55}),Object.freeze({x:22.45,w:.68,h:1.55}),
+    Object.freeze({x:23.45,w:.72,h:1.75}),Object.freeze({x:25.2,w:1.35,h:3.35})
+  ]),
+  lower:Object.freeze([
+    Object.freeze({x:19.45,w:1.08,h:2.55}),Object.freeze({x:21.15,w:.68,h:1.35}),
+    Object.freeze({x:22.85,w:.68,h:1.35}),Object.freeze({x:24.55,w:1.08,h:2.55})
+  ])
+});
+function bearPixelTooth2D(P,spec,rootY,pointsDown,color,alpha=1){
+  const previousAlpha=g.globalAlpha,bands=spec.h>2.2?3:2,step=spec.h/bands;
+  g.globalAlpha=previousAlpha*alpha;
+  for(let i=0;i<bands;i++){
+    const width=spec.w*(1-i/(bands+.15)),
+      y=pointsDown?rootY+i*step:rootY-(i+1)*step;
+    /* Overlap adjacent stair bands enough to survive independent pixel rounding. */
+    P(spec.x-width*.5,y,width,step+.38,color);
+  }
+  /* The spine makes each stepped silhouette one continuous tooth even when
+     neighbouring band bounds round in opposite directions. */
+  const spineW=Math.min(.44,Math.max(.24,spec.w*.36));
+  P(spec.x-spineW*.5,pointsDown?rootY:rootY-spec.h,spineW,spec.h,color);
+  g.globalAlpha=previousAlpha;
+}
+function drawBearMouth2D(snoutY,jaw,snarl,jawColor,jawShade,tooth,hurt=false){
+  /* Endpoint-rounded rectangles and shared snapped anchors make the entire mouth
+     cross each physical pixel on the same animation frame. */
+  const R=(x,y,w,h,color)=>{
+      const x0=Math.round(x*U),y0=Math.round(y*U),
+        x1=Math.round((x+w)*U),y1=Math.round((y+h)*U);
+      g.fillStyle=color;g.fillRect(x0,y0,Math.max(1,x1-x0),Math.max(1,y1-y0));
+    },
+    snap=v=>Math.round(v*U)/U,
+    art=BEAR_MOUTH_2D,authored=easeInOut(clamp(jaw,0,1)),
+    cavityColor=hurt?'#fff':'#6f202c',
+    tongueColor=hurt?'#fff':'#9b3543',
+    gumColor=hurt?'#fff':art.gum,
+    /* A snarl lifts the lips enough to show canines without replacing the
+       authored bite clock. Actual bites still own the large jaw travel. */
+    open=Math.max(authored,clamp(snarl,0,1)*.18),
+    drop=open*art.maxDrop,top=snap(snoutY+art.cavityTop),
+    jawY=snap(top+.62+drop),cavityBottom=snap(jawY+.18),
+    cavityH=cavityBottom-top,gumH=1/U,
+    /* Exact live nose endpoint: no independently rounded brown gap can flicker. */
+    upperRoot=snap(snoutY+9.8),lowerRoot=snap(jawY-.08),
+    upperGumY=upperRoot,lowerGumY=snap(jawY-.40),
+    reveal=clamp((open-.025)/.16,0,1),
+    lowerReveal=clamp((open-.10)/.34,0,1);
+
+  /* Idle owns only one physical dark pixel. Once open, draw the complete cavity;
+     the live nose is repainted afterward and remains visually authoritative. */
+  if(open>.035) R(art.x,upperRoot,art.width,cavityBottom-upperRoot,cavityColor);
+  else R(art.x,snap(jawY-gumH),art.width,gumH,gumColor);
+  if(open>.035){
+    const tongueTop=snap(top+.7+drop*.30),
+      tongueBottom=snap(Math.max(tongueTop+.5,jawY-.65));
+    R(art.x+1.15,tongueTop,art.width-2.3,tongueBottom-tongueTop,tongueColor);
+  }
+  for(const spec of art.upper)bearPixelTooth2D(R,spec,upperRoot,true,tooth,reveal);
+
+  for(const spec of art.lower)bearPixelTooth2D(R,spec,lowerRoot,false,tooth,lowerReveal);
+  /* Full-width foreground gums sit directly on the bases of both tooth sets. */
+  if(open>.035){
+    R(art.x,upperGumY,art.width,gumH,gumColor);
+    R(art.x,lowerGumY,art.width,gumH,gumColor);
+  }
+  R(art.x,jawY,art.width,3.35,jawColor);
+  /* Deliberate .7U overlap prevents a raster gap between the two chin tiers. */
+  R(art.x+.55,jawY+2.65,art.width-1.1,1.5,jawColor);
+  /* Nose-adjacent shade remains the sole centre plane. */
+  R(art.x+1.2,jawY+.65,art.width-2.4,1.8,jawShade);
+}
 /* ---- THE CAVE BEAR NATURAL: low, humped brown-bear anatomy; no humanoid chest ---- */
 function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   if(state==='lab_bear_turn'){ drawBearModelTurntable(x,y,scale,hurtFlash);return; }
   const pose=sampledPose||sampleBearPose({x,y,scale,anim:state,t,contactXs},BEAR_RENDER_POSE);
   ({state,t}=pose);
-  const {poseRecovery,crouch,lean,headY,headOut,jawOpen:jaw,snarl,
-    groundContactY,bearGroundY}=pose;
+  let {crouch}=pose;
+  const {poseRecovery,lean,headY,headOut,jawOpen:jaw,snarl,groundContactY,bearGroundY}=pose;
+  const reaction=sampledPose&&sampledPose.parryReaction;
+  const reactionAnim=reaction&&reaction.anim||'',
+    highShoveParry=!!reaction&&reactionAnim==='strike_high_sweep',
+    biteParry=!!reaction&&(reactionAnim.includes('bite')||highShoveParry),
+    bitePullback=biteParry?parryBearBitePullback(reaction):0,
+    biteRear=biteParry?parryBearBitePoseAmount(reaction):0,
+    biteHeadPitch=biteParry?parryBearHeadPitchAmount(reaction):0,
+    biteArmPose=highShoveParry?biteHeadPitch:biteRear;
+  if(biteRear)crouch+=PARRY_REACTION.bear.biteRear*biteRear;
   g.save(); g.translate(x,y); g.scale(scale,scale);
+  if(biteRear)g.scale(1,1+biteRear*.075);
   const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U),Math.round(b*U),Math.round(w*U),Math.round(h*U)); };
   if(state==='dying'){
     if(t<.42) g.translate(rnd(-2,2)*t*8,0);
     else { const k=(t-.42)/.58; g.rotate(easeOut(k)*.68); g.translate(0,easeOut(k)*34); g.globalAlpha=1-k*k; }
   }
-  g.rotate(lean); g.translate(-22*U,(-55)*U);
+  let stumbleLean=0;
+  if(reaction){
+    const q=parryReactionClock(reaction),k=parryReboundAmount(reaction),
+      profile=PARRY_REACTION.bear,dir=reaction.reboundDir||(reaction.side?-reaction.side:0);
+    stumbleLean=dir*profile.stumbleLean*k+
+      Math.sin(q*TAU*3)*profile.stumbleLean*.34*(1-q);
+    g.translate(Math.sin(q*TAU*4)*profile.stumbleShake*k*U,-k*.65*U);
+  }
+  g.rotate(lean+stumbleLean); g.translate(-22*U,(-55)*U);
   const fur=hurtFlash?'#fff8ef':'#4a3020', dark=hurtFlash?'#eee7df':'#20150f',
         shadeC=hurtFlash?'#fff':'#302015', mid=hurtFlash?'#fff':'#68452d',
         sun=hurtFlash?'#fff':'#936645', muzzle=hurtFlash?'#eee':'#9b795b',
-        nose='#171112', mouth='#301418', scar='#6c292c', claw='#ddd4c2';
+        nose='#171112', scar='#6c292c', claw='#ddd4c2';
 
   /* A shoulder-heavy wild bear: broad hump, pulled-in waist, narrow skull. */
   g.globalAlpha=.42; g.fillStyle='#050405'; g.beginPath(); g.ellipse(22*U,53*U,19*U,3*U,0,0,TAU); g.fill(); g.globalAlpha=1;
@@ -1530,7 +1956,7 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
     P(-w*.5,0,w,len,base); P(-w*.5,0,w*.28,len,lit); P(w*.22,1,w*.18,len-2,dark);
     g.restore();
   };
-  const foreleg=(leg,side)=>{
+  const foreleg=(leg,side,pawPitch=0)=>{
     const sx=leg.sx,sy=leg.sy,ex=leg.ex,ey=leg.ey,px2=leg.px,py2=leg.py,
       swipeDir=leg.swipeDir,depth=leg.depth,fall=leg.fall,punch=leg.punch;
     limb(sx,sy,ex,ey,5.8,side<0?sun:mid,side<0?mid:sun);
@@ -1538,21 +1964,123 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
     limb(ex,ey,px2,py2,swipeDir?6.8:6.2+fall*2.4+punch*2.8,fur,side<0?sun:mid);
     g.save(); g.translate(px2*U,py2*U);
     if(swipeDir){
-      g.rotate(-swipeDir*Math.PI/2*leg.pawTurn);
+      g.rotate(-swipeDir*Math.PI/2*leg.pawTurn*(1-pawPitch));
     }
     g.scale(depth,depth);
-    P(-4.5,-3.1,9,6.2,dark); P(-5.2,-1,10.4,5.8,fur); P(-4.3,-1,2.2,4.8,side<0?sun:mid);
-    P(-5.2,3.2,10.4,2.3,shadeC);
-    for(let i=0;i<4;i++) P(-4.7+i*2.7,4.6,1.15,3.5,claw);
+    if(pawPitch>.015){
+      drawAngleClip(bearParryPawPitchClip(hurtFlash),pawPitch*.999,
+        0,0,20*U,20*U,false);
+    }else{
+      P(-4.5,-3.1,9,6.2,dark); P(-5.2,-1,10.4,5.8,fur); P(-4.3,-1,2.2,4.8,side<0?sun:mid);
+      P(-5.2,3.2,10.4,2.3,shadeC);
+      for(let i=0;i<4;i++) P(-4.7+i*2.7,4.6,1.15,3.5,claw);
+    }
     g.restore();
   };
-  foreleg(pose.rightLeg,-1);
-  foreleg(pose.leftLeg,1);
+  /* Capture the exact first parry frame once. Every articulated return is then
+     start -> reflected target -> idle, never a repeatedly re-sampled strike.
+     This removes the old contact-frame jump and the down/up/down oscillation
+     caused by mixing a reversing attack clock with a decaying recoil offset. */
+  if(reaction&&!reaction.turtleSpin){
+    const profile=PARRY_REACTION.bear,contactId=reaction.move&&reaction.move.contactId||'',
+      anim=reaction.anim||'',
+      impulse=parryLimbImpulseProgress(reaction),returnK=parryLimbReturnProgress(reaction),
+      fields=['sx','sy','ex','ey','px','py','depth','fall','punch','swipeDir','pawTurn'];
+    if(!reaction.bearStart){
+      reaction.bearStart={rightLeg:Object.assign({},pose.rightLeg),leftLeg:Object.assign({},pose.leftLeg)};
+    }
+    if(!BEAR_PARRY_IDLE_POSE)
+      BEAR_PARRY_IDLE_POSE=sampleBearPose(
+        {x:0,y:0,scale:1,anim:'idle',t:0,contactXs:[]},createBearPose());
+    let rightPawPitch=0,leftPawPitch=0;
+    /* Ordinary one/two-lane paws arrive straight down from above. Their
+       reflected hit arm must therefore travel straight back up, not inherit the
+       generic body-side diagonal used by swipes and other attacks. */
+    const verticalLaneHit=anim==='strike_paw_right'||anim==='strike_paw_left'||
+      anim==='strike_double_paw';
+    const placeLeg=(leg,start,idle,recoilStrength=1,vertical=false,verticalOutward=0)=>{
+      const sweep=reaction.move&&reaction.move.sweep,
+        incomingDir=vertical?0:sweep?Math.sign(sweep.from-sweep.to):Math.sign(leg.sx-22)||1,
+        special=biteParry,
+        back=(special?profile.biteArmBack:profile.limbBack)*recoilStrength,
+        lift=(special?profile.biteArmLift:profile.limbLift)*recoilStrength,
+        poseImpulse=special?biteArmPose:impulse,
+        legReturnK=highShoveParry&&special&&returnK>0?1-biteHeadPitch:returnK,
+        baseSx=vertical?idle.sx:start.sx,baseSy=vertical?idle.sy:start.sy,
+        target={sx:baseSx,sy:baseSy,
+          ex:baseSx,ey:baseSy,
+          px:baseSx+incomingDir*back+verticalOutward,py:baseSy-lift,
+          depth:Math.min(start.depth,.92),fall:start.fall,punch:start.punch,
+          swipeDir:start.swipeDir,pawTurn:start.pawTurn};
+      /* A hard rebound locks shoulder, elbow and paw onto one diagonal/upward
+         line. The elbow is not an independent offset: it sits on the reflected
+         shoulder-to-paw segment, so the raised arm reads completely straight. */
+      target.ex=lerp(target.sx,target.px,.50);
+      target.ey=lerp(target.sy,target.py,.50);
+      if(legReturnK>0){
+        for(const field of fields)leg[field]=lerp(target[field],idle[field],legReturnK);
+      }else{
+        for(const field of fields)leg[field]=lerp(start[field],target[field],poseImpulse);
+      }
+    };
+    let hitRight=false,hitLeft=false,liftDoublePartner=false;
+    if(biteParry||anim.includes('cave_quake')||contactId==='pincerPaws')
+      hitRight=hitLeft=true;
+    else if(contactId==='bothPaws'){
+      /* A two-lane crush rebounds only the hand the knight actually parried.
+         Its partner follows the same straight reflected chain at half height
+         and rolls enough to expose its sole instead of remaining planted. */
+      hitRight=reaction.side<=0;hitLeft=reaction.side>0;liftDoublePartner=true;
+    }else if(contactId==='pawLeft'||contactId==='leftPaw'||contactId==='swipePawLeft')hitLeft=true;
+    else if(contactId==='pawRight'||contactId==='rightPaw'||contactId==='swipePawRight')hitRight=true;
+    else if(!anim.includes('bite')){
+      hitRight=reaction.side<=0;hitLeft=reaction.side>=0;
+    }
+    if(hitRight){
+      placeLeg(pose.rightLeg,reaction.bearStart.rightLeg,BEAR_PARRY_IDLE_POSE.rightLeg,
+        1,verticalLaneHit,verticalLaneHit?-profile.laneHitOutward:0);
+      rightPawPitch=biteParry?biteArmPose:parryLimbPoseAmount(reaction);
+    }else if(liftDoublePartner){
+      placeLeg(pose.rightLeg,reaction.bearStart.rightLeg,BEAR_PARRY_IDLE_POSE.rightLeg,
+        profile.doublePartnerLift,true);
+      rightPawPitch=parryLimbPoseAmount(reaction)*profile.doublePartnerPawPitch;
+    }else if(reaction.move&&reaction.move.sweep){
+      placeLeg(pose.rightLeg,reaction.bearStart.rightLeg,BEAR_PARRY_IDLE_POSE.rightLeg,
+        profile.swipePartnerLift,true);
+      rightPawPitch=parryLimbPoseAmount(reaction)*profile.swipePartnerPawPitch;
+    }else if(hitLeft&&!biteParry){
+      placeLeg(pose.rightLeg,reaction.bearStart.rightLeg,BEAR_PARRY_IDLE_POSE.rightLeg,
+        profile.lanePartnerLift,true);
+      rightPawPitch=parryLimbPoseAmount(reaction)*profile.lanePartnerPawPitch;
+    }
+    if(hitLeft){
+      placeLeg(pose.leftLeg,reaction.bearStart.leftLeg,BEAR_PARRY_IDLE_POSE.leftLeg,
+        1,verticalLaneHit,verticalLaneHit?profile.laneHitOutward:0);
+      leftPawPitch=biteParry?biteArmPose:parryLimbPoseAmount(reaction);
+    }else if(liftDoublePartner){
+      placeLeg(pose.leftLeg,reaction.bearStart.leftLeg,BEAR_PARRY_IDLE_POSE.leftLeg,
+        profile.doublePartnerLift,true);
+      leftPawPitch=parryLimbPoseAmount(reaction)*profile.doublePartnerPawPitch;
+    }else if(reaction.move&&reaction.move.sweep){
+      placeLeg(pose.leftLeg,reaction.bearStart.leftLeg,BEAR_PARRY_IDLE_POSE.leftLeg,
+        profile.swipePartnerLift,true);
+      leftPawPitch=parryLimbPoseAmount(reaction)*profile.swipePartnerPawPitch;
+    }else if(hitRight&&!biteParry){
+      placeLeg(pose.leftLeg,reaction.bearStart.leftLeg,BEAR_PARRY_IDLE_POSE.leftLeg,
+        profile.lanePartnerLift,true);
+      leftPawPitch=parryLimbPoseAmount(reaction)*profile.lanePartnerPawPitch;
+    }
+    foreleg(pose.rightLeg,-1,rightPawPitch);
+    foreleg(pose.leftLeg,1,leftPawPitch);
+  }else{
+    foreleg(pose.rightLeg,-1);
+    foreleg(pose.leftLeg,1);
+  }
 
   /* CAVE QUAKE: after both paws plant, a broad dirt ridge travels from the Bear
      down all three lanes. Its centre bows toward the rider into a U rather than
      arching away like an n. The leading edge reaches groundContactY at t=1. */
-  if(!poseRecovery&&state==='strike_cave_quake'&&t>=.30){
+  if(!reaction&&!poseRecovery&&state==='strike_cave_quake'&&t>=.30){
     const waveK=easeOut(clamp((t-.30)/.70,0,1));
     const laneHalf=pose.contactCount>1?(pose.contactMax-pose.contactMin)*.5+7:30;
     const half=lerp(11,laneHalf,waveK), curve=2.2+Math.sin(waveK*Math.PI)*2.6;
@@ -1578,30 +2106,199 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   }
 
   /* A true bear skull: tiny ears, a narrow brow, then a long tapering muzzle. */
-  const hy=-1+headY-crouch, snoutY=hy+9+headOut*.25;
-  P(15,hy+7,14,12,shadeC);                 // thick neck under the small head
-  P(15,hy+1,14,10,fur); P(17,hy-2,10,4,mid); P(19,hy-3,6,2,sun);
-  P(14,hy,3,3,dark); P(27,hy,3,3,dark);    // small, high-set ears
-  P(14.7,hy+.5,1.5,1.3,mid); P(27.8,hy+.5,1.4,1.3,mid);
-  P(16,hy+5,5,2,dark); P(23,hy+5,5,2,dark);
-  g.fillStyle='#ff3b35'; g.shadowColor='#ff2638'; g.shadowBlur=6*scale;
-  g.fillRect(18*U,(hy+6)*U,1.2*U,1.1*U); g.fillRect(25*U,(hy+6)*U,1.2*U,1.1*U); g.shadowBlur=0;
-  /* The snout is intentionally only eight pixels wide and reaches far down the chest. */
-  P(18,snoutY,8,10,muzzle); P(19,snoutY-1,6,3,sun); P(19.5,snoutY+3,5,6,'#80604a');
-  P(19,snoutY+7,6,2.8,nose); P(20,snoutY+6,4,1,'#241819');
-  P(18,snoutY+10+jaw*3,8,4.4,dark); P(19,snoutY+10+jaw*3,6,1.2,mouth);
-  if(jaw>.16||snarl>.35){
-    P(18,snoutY+9.5,1.15,3.1,claw); P(24.85,snoutY+9.5,1.15,3.1,claw);
-    P(20.3,snoutY+9.5,1.05,2.1,claw); P(22.65,snoutY+9.5,1.05,2.1,claw);
-    if(jaw>.45){ P(19.4,snoutY+12+jaw*2,1.05,2.5,claw); P(23.55,snoutY+12+jaw*2,1.05,2.5,claw); }
+  const renderHeadY=lerp(headY,0,bitePullback),
+    renderHeadOut=lerp(headOut,0,bitePullback),
+    hy=-1+renderHeadY-crouch,snoutY=hy+9+renderHeadOut*.25,
+    parryHeadHY=lerp(hy,-1-crouch,biteHeadPitch);
+  if(biteHeadPitch>.015){
+    /* Cached 2.5D underside frame: the skull pitches away while the fixed
+       body anchor and live arms continue their own articulated reaction. */
+    drawAngleClip(bearParryHeadPitchClip(hurtFlash),biteHeadPitch*.999,
+      22*U,parryHeadHY*U,24*U,40*U,false);
+  }else{
+    P(15,hy+7,14,12,shadeC);                 // thick neck under the small head
+    P(15,hy+1,14,10,fur); P(17,hy-2,10,4,mid); P(19,hy-3,6,2,sun);
+    /* Outer ear and inner square share one snapped Y anchor. Previously their
+       independent rounding made the inner colour jump upward one frame early. */
+    const earY=Math.round(hy*U)/U;
+    P(14,earY,3,3,dark); P(27,earY,3,3,dark);
+    P(14.7,earY+.5,1.5,1.3,mid); P(27.8,earY+.5,1.4,1.3,mid);
+    P(16,hy+5,5,2,dark); P(23,hy+5,5,2,dark);
+    g.fillStyle='#ff3b35'; g.shadowColor='#ff2638'; g.shadowBlur=6*scale;
+    g.fillRect(18*U,(hy+6)*U,1.2*U,1.1*U); g.fillRect(25*U,(hy+6)*U,1.2*U,1.1*U); g.shadowBlur=0;
+    /* The snout is intentionally only eight pixels wide and reaches far down the chest. */
+    P(18,snoutY,8,10,muzzle); P(19,snoutY-1,6,3,sun);
+    P(19.5,snoutY+3,5,6,hurtFlash?'#fff':'#80604a');
+    drawBearMouth2D(snoutY,jaw,snarl,
+      muzzle,hurtFlash?'#fff':'#80604a',hurtFlash?'#fff':claw,hurtFlash);
+    /* Repaint nose last with endpoint-snapped bounds shared by upperRoot. */
+    const noseTop=Math.round((snoutY+7)*U)/U,
+      noseBottom=Math.round((snoutY+9.8)*U)/U;
+    P(19,noseTop,6,noseBottom-noseTop,nose); P(20,snoutY+6,4,1,'#241819');
+    P(26.8,hy+2,1,6,scar); P(28.2,hy+4,1,4,'#572126'); P(16,hy+3,2,1,sun);
   }
-  P(26.8,hy+2,1,6,scar); P(28.2,hy+4,1,4,'#572126'); P(16,hy+3,2,1,sun);
 
   g.restore();
 }
 
+/* Hydra parry head pitch. The live segmented neck still owns the socket and
+   travel. This compact cache grows a tapered serpent skull upward from that
+   socket, rolls the face away and exposes its scaled jaw/throat underside. */
+let HYDRA_PARRY_HEAD_PITCH_CLIP=null,HYDRA_PARRY_HEAD_PITCH_HURT_CLIP=null;
+/* Explicit coarse key rows keep neighbouring pitch frames volumetrically
+   monotonic. Independent rounding of two lerps previously produced a
+   6→8→8→10→8→10 cranium-height pulse around the front transition. */
+const HYDRA_PARRY_TOP_ROWS=Object.freeze(
+  [20,18,18,16,16,14,14,12,10,10,8,6,4,4]);
+const HYDRA_PARRY_BODY_BOTTOM_ROWS=Object.freeze(
+  [26,26,26,26,26,26,26,26,24,24,24,24,22,22]);
+function paintHydraParryHeadPitch(c,index,count,hurt=false){
+  /* Authored at even angular intervals. The reaction clock already eases the
+     motion; easing the atlas a second time made reverse playback rush through
+     the middle frames when the head lowered. */
+  const k=index/(count-1),front=1-easeOut(clamp(k/.38,0,1)),
+    sc=hurt?'#ffffff':'#2e4a3a',scD=hurt?'#e8e8e8':'#1c3226',
+    /* Reuse the live neck palette so the pitched skull belongs to the same
+       creature. The underside stays restrained while remaining readable. */
+    scL=hurt?'#ffffff':'#457a5a',belly=hurt?'#eeeeee':'#7a9a72',
+    underside=hurt?'#f8f8f8':'#5f7d69',ear=hurt?'#eeeeee':'#55695d',
+    /* The live Hydra is built from broad model pixels. Quantize this larger
+       perspective cache to the same two-atlas-pixel cadence so its extra canvas
+       resolution improves the silhouette without introducing tiny pixel noise. */
+    CELL=2,
+    P=(x,y,w,h,col,a=1)=>{c.globalAlpha=a;c.fillStyle=col;
+      /* Snap inward horizontally. Rounding x and width independently expanded
+         both outer edges and made the pitched skull wider than the live head. */
+      const qx=Math.ceil(x/CELL)*CELL,qy=Math.round(y/CELL)*CELL,
+        qr=Math.floor((x+w)/CELL)*CELL,
+        qw=Math.max(CELL,qr-qx),
+        qh=Math.max(CELL,Math.round(h/CELL)*CELL);
+      c.fillRect(qx,qy,qw,qh);
+      c.globalAlpha=1;},
+    /* Front-facing facial features match the live model's fractional 1.5U
+       pixels. Keeping them off the coarse body quantizer prevents the final
+       atlas-to-live handoff from visibly resizing eyes or jaw steps. */
+    Raw=(x,y,w,h,col,a=1)=>{c.globalAlpha=a;c.fillStyle=col;
+      c.fillRect(x,y,w,h);c.globalAlpha=1;},
+    S=value=>Math.round(value/CELL)*CELL;
+  c.imageSmoothingEnabled=false;
+  /* At the front angle the upper and lower jaw rows are still skull, not
+     throat. Starting headBottom at 32 keeps the face-bearing cranium at its
+     full live height while it turns; classifying those rows as throat produced
+     a visibly half-sized head as soon as eyes and mouth appeared. */
+  const top=HYDRA_PARRY_TOP_ROWS[index],
+    bodyBottom=HYDRA_PARRY_BODY_BOTTOM_ROWS[index],
+    headBottom=S(lerp(32,22,k)),
+    /* The live seven-piece neck already reaches the skull socket. Keep only
+       one cached overlap row at full pitch; the former three-row extension
+       read as a second extra neck below the turned head. */
+    socketBottom=S(lerp(32,24,k)),underK=easeOut(clamp((k-.04)/.72,0,1)),
+    mouthY=S(lerp(26,8,k)),
+    farMouth=easeInOut(clamp((k-.22)/.40,0,1)),
+    /* Reverse playback must form the jaw on its very first descending frame.
+       A cubic front-loaded ramp makes frame 12 already clearly jaw-shaped and
+       completes the conversion before the head has lowered halfway. */
+    faceMouth=1-Math.pow(clamp((k-.45)/.55,0,1),3),
+    pitchJaw=1-faceMouth,
+    rows=Math.max(1,(bodyBottom-top)/CELL);
+
+  /* The broad cranium ends at the same live skull/jaw seam as the ordinary
+     renderer when k reaches zero. It must not continue at full width behind
+     the front jaw, which made middle frames look thick before a final pop. */
+  for(let y=top,row=0;y<bodyBottom;y+=CELL,row++){
+    const v=rows<=1?0:row/(rows-1);
+    let half=6;
+    if(row===0)half=S(lerp(6,4,k));
+    else if(v>.72)half=S(lerp(6,lerp(6,4,k),(v-.72)/.28));
+    const outer=v<.28?sc:scD;
+    P(12-half,y,half*2,CELL,outer);
+  }
+  /* The pitched lower skull exists only while the underside owns the angle.
+     As the fixed front jaw appears, this section fades away instead of staying
+     behind it as a second full-width chin. */
+  const pitchRows=Math.max(1,(headBottom-bodyBottom)/CELL);
+  for(let y=bodyBottom,row=0;y<headBottom;y+=CELL,row++){
+    const q=pitchRows<=1?1:row/(pitchRows-1),
+      half=S(lerp(5,4,q));
+    P(12-half,y,half*2,CELL,scD,pitchJaw);
+  }
+  /* Closed lower jaw flows into a short throat and always overlaps the final
+     live neck joint. Its row count changes gradually instead of collapsing. */
+  const throatRows=Math.max(1,(socketBottom-headBottom)/CELL);
+  for(let y=headBottom,row=0;y<socketBottom;y+=CELL,row++){
+    const q=throatRows<=1?1:row/(throatRows-1),
+      half=S(lerp(4,lerp(4,2,k),q));
+    P(12-half,y,half*2,CELL,scD,pitchJaw);
+  }
+
+  /* The visible underside is one fixed-height jaw plane, never a fill that
+     expands with the changing skull rows. On reverse playback it translates
+     from the high underside position toward the face centre, then crossfades
+     into the ordinary stepped jaw below. */
+  const jawPlaneY=S(lerp(22,8,k)),jawPlaneH=10;
+  const jawPlaneAlpha=underK*pitchJaw;
+  if(jawPlaneAlpha>.01)P(8,jawPlaneY,8,jawPlaneH,underside,jawPlaneAlpha*.94);
+
+  /* Side frills keep the live model's exact 1.8U x 2U screen footprint at
+     every angle. Source height compensates for the clip's changing draw height,
+     so lowering cannot shrink an ear before the final live-frame handoff. */
+  const frillY=S(lerp(22,12,k)),frillW=3.6,
+    frillH=68/lerp(20,16,k);
+  Raw(3.2,frillY,frillW,frillH,scD);
+  Raw(5.2,frillY+.7,1.6,Math.max(2,frillH-1.4),ear,k*.74);
+  Raw(17.2,frillY,frillW,frillH,scD);
+  Raw(17.2,frillY+.7,1.6,Math.max(2,frillH-1.4),ear,k*.74);
+
+  /* The far closed mouth keeps the same six-unit width as the live skull and
+     travels upward one row at a time. During lowering it yields early to the
+     ordinary two-step upper/lower jaw instead of waiting for the live handoff. */
+  if(farMouth>.01)P(6,mouthY,12,CELL,scD,farMouth);
+  if(faceMouth>.01){
+    const faceTurn=easeInOut(clamp(k/.70,0,1)),
+      /* Both fixed-size jaw pieces must finish inside the cranium. Without
+         this cap, their 5.1px combined height crossed headBottom on middle
+         angles and looked like a chin growing down the neck. */
+      upperY=Math.min(lerp(27,mouthY,faceTurn),headBottom-5.1);
+    Raw(7,upperY,10,2.7,scD,faceMouth);
+    Raw(8.5,upperY+2.7,7,2.4,scD,faceMouth);
+  }
+
+  /* Three plates travel with the fixed jaw plane; their spacing and total
+     extent cannot stretch downward while the head lowers. */
+  if(jawPlaneAlpha>.01){
+    for(let i=0;i<3;i++){
+      const py=jawPlaneY+CELL*(i+1);
+      P(8,py,8,CELL,i===1?belly:scL,jawPlaneAlpha*.8);
+    }
+  }
+
+  /* Eyes stay embedded in the face during the first quarter-turn, then roll
+     out of view. Their 3 x 2.55 atlas footprint is exactly 1.5U at the live
+     handoff, so reverse playback fades them in without any size growth. */
+  if(front>.01){
+    const eyeY=lerp(22,16,k);
+    Raw(8,eyeY,3,2.55,'#c9f74a',front);
+    Raw(13.2,eyeY,3,2.55,'#c9f74a',front);
+  }
+}
+function hydraParryHeadPitchClip(hurt=false){
+  if(hurt)
+    return HYDRA_PARRY_HEAD_PITCH_HURT_CLIP||(HYDRA_PARRY_HEAD_PITCH_HURT_CLIP=
+      createAngleClip(14,24,34,12,26,(c,i,n)=>paintHydraParryHeadPitch(c,i,n,true),5));
+  return HYDRA_PARRY_HEAD_PITCH_CLIP||(HYDRA_PARRY_HEAD_PITCH_CLIP=
+    createAngleClip(14,24,34,12,26,(c,i,n)=>paintHydraParryHeadPitch(c,i,n,false),5));
+}
+
 /* ---- THE HYDRA: three necks out of one drowned bulk (the original design) ---- */
 function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
+  const parryRecovery=state.startsWith('parry_hydra_from:'),
+    parryRecoveryT=parryRecovery?clamp(t,0,1):0,
+    parryReaction=sampledPose&&sampledPose.parryReaction;
+  if(parryRecovery){
+    const returnK=parryReaction?parryLimbReturnProgress(parryReaction):easeInOut(parryRecoveryT);
+    state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
+    t=(parryReaction?parryReaction.strikeT:1)*(1-returnK);
+  }
   const poseRecovery=state.startsWith('recover_hydra_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
   if(poseRecovery){ state=state.slice(state.indexOf(':')+1); t=1-easeInOut(poseRecoveryT); }
@@ -1621,6 +2318,12 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   if(state==='dying'){
     if(t<0.4){ g.translate(rnd(-3,3)*t*10,0); }
     else { const c=(t-0.4)/0.6; g.rotate(easeOut(c)*0.5); g.globalAlpha=1-c*c; g.translate(0,easeOut(c)*48); }
+  }
+  if(parryReaction){
+    const q=parryReactionClock(parryReaction),k=parryReboundAmount(parryReaction),
+      dir=parryReaction.reboundDir||(parryReaction.side?-parryReaction.side:0);
+    g.translate(Math.sin(q*TAU*3.5)*.9*k*U,-.55*k*U);
+    g.rotate(dir*.075*k+Math.sin(q*TAU*2.5)*.016*(1-q));
   }
   g.translate(-16*U,-42*U);
   const sc=hurtFlash?'#ffffff':'#2e4a3a', scD=hurtFlash?'#e8e8e8':'#1c3226',
@@ -1673,8 +2376,28 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   else if(state==='tele_lunge') P=[[-4,-2,0],[0,12,1],[4,-2,0]];
   else if(state==='tele_pounce')P=[[-6,-9,0.3],[0,-10,0.6],[6,-9,0.3]];
   else if(state==='howl'||state==='tele_combo') P=[[-5,10,1],[0,13,1],[5,10,1]];
-  if(poseRecovery){
-    const s=easeInOut(poseRecoveryT);
+  /* Hydra rebound stays inside the segmented-neck pose. Only heads involved in
+     the parried move are lifted and folded toward their own body sockets. */
+  const reaction=sampledPose&&sampledPose.parryReaction;
+  let parryHeads=[false,false,false];
+  if(reaction){
+    const name=reaction.anim||'';
+    if(name.includes('_wave')||name.includes('_spit'))parryHeads=[true,true,true];
+    else if(name.includes('_pincer'))parryHeads=[true,false,true];
+    else if(name.includes('_twin'))
+      parryHeads[reaction.contactLane===0?0:2]=true;
+    else if(name.includes('_pair_left'))
+      parryHeads[reaction.contactLane===0?0:1]=true;
+    else if(name.includes('_pair_right'))
+      parryHeads[reaction.contactLane===2?2:1]=true;
+    else if(name.includes('_center'))parryHeads[1]=true;
+    else if(name.includes('_left')||name.endsWith('_ltr'))parryHeads[0]=true;
+    else if(name.includes('_right')||name.endsWith('_rtl'))parryHeads[2]=true;
+    else parryHeads=[true,true,true];
+  }
+  if(poseRecovery||parryRecovery){
+    const s=easeInOut(parryRecovery&&parryReaction?parryLimbReturnProgress(parryReaction):
+      parryRecovery?parryRecoveryT:poseRecoveryT);
     const home=[[-3,0,0],[0,2,0],[3,0,0]];
     for(let i=0;i<3;i++) for(let j=0;j<3;j++) P[i][j]=lerp(P[i][j],home[i][j],s);
   }
@@ -1696,7 +2419,9 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   /* three necks: segmented columns, each with its own pose */
   const bases=[[8,25],[16,23],[24,25]];
   for(let n=0;n<3;n++){
-    const [bx,by]=bases[n], [ln,rise,jaw]=P[n];
+    const [bx,by]=bases[n], [ln,rise]=P[n];
+    let jaw=P[n][2];
+    let parryHeadPitch=0;
     let topX=bx+ln+sway(n)*0.6, topY=6-rise;
     /* At the contact frame the attacking head reaches the real lane marker, so
        its segmented neck bends into the bite instead of swiping off-screen. */
@@ -1775,6 +2500,43 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
       topX=16+(modelHead.x-x)/(hitScale*U);
       topY=42+(modelHead.y-y)/(scale*(1-breathe)*U)-1.3;
     }
+    /* Apply parry recoil after every contact/aim override. Doing it earlier let
+       bite and model-swipe targeting pin the skull back onto the knight and
+       visually erase the rebound. The full segmented neck follows this endpoint. */
+    if(reaction){
+      if(!reaction.hydraStart)reaction.hydraStart=[null,null,null];
+      if(!reaction.hydraStart[n])
+        reaction.hydraStart[n]={x:topX,y:topY,jaw};
+      const start=reaction.hydraStart[n],profile=PARRY_REACTION.hydra,
+        q=parryReactionClock(reaction),impulse=parryHydraHeadPitchAmount(reaction),
+        returnK=parryLimbReturnProgress(reaction),restLean=[-3,0,3][n],
+        /* Match the live idle endpoint, including its current restrained sway.
+           Returning to an unswayed socket caused a visible last-frame teleport
+           when parryReaction cleared and live idle resumed. */
+        homeX=bx+restLean+sway(n)*.6,homeY=6-[0,2,0][n];
+      if(parryHeads[n]){
+        const sweep=reaction.move&&reaction.move.sweep,
+          pincer=(reaction.anim||'').includes('_pincer'),
+          incomingDir=sweep?Math.sign(sweep.from-sweep.to):pincer?(n===0?-1:1):0,
+          targetX=homeX+incomingDir*profile.headBack,
+          verticalWobble=Math.sin(q*TAU*2.4)*profile.headWobble*(1-returnK)*impulse,
+          targetY=homeY-profile.headLift+verticalWobble;
+        if(returnK>0){
+          topX=lerp(targetX,homeX,returnK);topY=lerp(targetY,homeY,returnK);
+          jaw=lerp(0,.14,returnK);
+        }else{
+          topX=lerp(start.x,targetX,impulse);topY=lerp(start.y,targetY,impulse);
+          jaw=lerp(start.jaw,0,impulse);
+        }
+        parryHeadPitch=parryHydraHeadPitchAmount(reaction);
+      }else{
+        /* On two-head bites only the contacted skull rebounds. Its partner
+           leaves the captured attack frame on a short organic path to idle. */
+        const settle=easeOut(clamp(q/profile.otherHeadSettle,0,1));
+        topX=lerp(start.x,homeX,settle);topY=lerp(start.y,homeY,settle);
+        jaw=lerp(start.jaw,.14,settle);
+      }
+    }
     for(let k2=0;k2<7;k2++){
       const f=k2/6, nx=lerp(bx,topX,f)+Math.sin(f*Math.PI)*ln*0.35;
       const ny=lerp(by,topY,f);
@@ -1788,16 +2550,22 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
       px(lerp(bx,topX,f)+Math.sin(f*Math.PI)*ln*0.35-0.8,lerp(by,topY,f)+1.4,1.8,1.6,belly); }
     /* the head: wedge skull, jaw, frill, glowing eyes */
     const hx2=topX, hy2=topY-3;
-    px(hx2-3,hy2,6,3.6,sc); px(hx2-3,hy2,6,1.2,scL);
-    px(hx2-4.4,hy2+0.6,1.8,2,sc); px(hx2+2.6,hy2+0.6,1.8,2,sc);       // frill horns
-    px(hx2-2.4,hy2+3.4,4.8,1.6,scD);                                   // upper jaw
-    px(hx2-1.8,hy2+5+jaw*2.2,3.6,1.4,scD);                             // lower jaw drops
-    if(jaw>0.2){ g.fillStyle='#e8e2d0';
-      g.fillRect((hx2-1.8)*U,(hy2+4.6)*U,U*0.7,U*1.1); g.fillRect((hx2+1.1)*U,(hy2+4.6)*U,U*0.7,U*1.1);
-      g.fillStyle='#7a2a3a'; g.fillRect((hx2-1)*U,(hy2+4.8+jaw)*U,U*2,U*0.9); }
-    g.fillStyle='#c9f74a'; g.shadowColor='#c9f74a'; g.shadowBlur=7*scale;   // acid-green eyes
-    g.fillRect((hx2-2)*U,(hy2+1.4)*U,1.5*U,1.5*U); g.fillRect((hx2+0.6)*U,(hy2+1.4)*U,1.5*U,1.5*U);
-    g.shadowBlur=0;
+    if(parryHeadPitch>.015){
+      drawAngleClip(hydraParryHeadPitchClip(hurtFlash),parryHeadPitch*.999,
+        hx2*U,(topY+parryHeadPitch)*U,12*U,
+        lerp(20,16,parryHeadPitch)*U,false);
+    }else{
+      px(hx2-3,hy2,6,3.6,sc); px(hx2-3,hy2,6,1.2,scL);
+      px(hx2-4.4,hy2+0.6,1.8,2,sc); px(hx2+2.6,hy2+0.6,1.8,2,sc);       // frill horns
+      px(hx2-2.4,hy2+3.4,4.8,1.6,scD);                                   // upper jaw
+      px(hx2-1.8,hy2+5+jaw*2.2,3.6,1.4,scD);                             // lower jaw drops
+      if(jaw>0.2){ g.fillStyle='#e8e2d0';
+        g.fillRect((hx2-1.8)*U,(hy2+4.6)*U,U*0.7,U*1.1); g.fillRect((hx2+1.1)*U,(hy2+4.6)*U,U*0.7,U*1.1);
+        g.fillStyle='#7a2a3a'; g.fillRect((hx2-1)*U,(hy2+4.8+jaw)*U,U*2,U*0.9); }
+      g.fillStyle='#c9f74a'; g.shadowColor='#c9f74a'; g.shadowBlur=7*scale;   // acid-green eyes
+      g.fillRect((hx2-2)*U,(hy2+1.4)*U,1.5*U,1.5*U); g.fillRect((hx2+0.6)*U,(hy2+1.4)*U,1.5*U,1.5*U);
+      g.shadowBlur=0;
+    }
   }
   if(!poseRecovery&&(state==='strike_hydra_wave'||state==='strike_hydra_spit')&&t>.45){
     const a=(1-t)*.7; g.globalAlpha=a;
@@ -1982,6 +2750,8 @@ const TURTLE_SPIN_TUCK=30;
 const TURTLE_SPIN_RETURN_START=.08;
 const TURTLE_SPIN_RETURN_DURATION=.70;
 const TURTLE_SPIN_RETURN_TIME_SCALE=1.15;
+const TURTLE_TUBE_POINT_SCRATCH=[
+  {x:0,y:0,reach:1},{x:0,y:0,reach:1},{x:0,y:0,reach:1}];
 function turtleSpinReturnProgress(t){
   t=clamp(t,0,1);
   /* Start at the strike's exact angular speed, keep it through most of the trip,
@@ -2024,6 +2794,14 @@ function drawTurtleSpinDust(visibility,speed=1,behind=false){
   g.restore();
 }
 function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
+  const actorReaction=boss&&boss.parryReaction;
+  const parryRecovery=state.startsWith('parry_turtle_from:'),
+    parryRecoveryT=parryRecovery?clamp(t,0,1):0;
+  if(parryRecovery){
+    const returnK=actorReaction?parryLimbReturnProgress(actorReaction):easeInOut(parryRecoveryT);
+    state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
+    t=(actorReaction?actorReaction.strikeT:1)*(1-returnK);
+  }
   const poseRecovery=state.startsWith('recover_turtle_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
   if(poseRecovery){
@@ -2033,8 +2811,15 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   }
   const spinRecovery=poseRecovery&&state==='strike_turtle_spin';
   g.save(); g.translate(x,y); g.scale(scale,scale);
-  const breathe=Math.sin(perfNow*1.5)*0.012;
+  const breathe=Math.sin(perfNow*1.5)*.012;
   g.scale(1+breathe,1-breathe);
+  if(actorReaction&&!actorReaction.turtleSpin){
+    const q=parryReactionClock(actorReaction),k=parryReboundAmount(actorReaction),
+      profile=PARRY_REACTION.turtle,
+      dir=actorReaction.reboundDir||(actorReaction.side?-actorReaction.side:0);
+    g.translate(Math.sin(q*TAU*4)*profile.stumbleShake*k*U,-.45*k*U);
+    g.rotate(dir*profile.stumbleLean*k+Math.sin(q*TAU*2.5)*.012*(1-q));
+  }
   const hitScale=Math.max(.001,scale*(1+breathe));
   const contactLocal=fillLocalContacts(LOCAL_CONTACT_SCRATCH_A,contactXs,x,hitScale*U,16);
   const biteY=42+(BODY_ATTACK_Y-y)/(hitScale*U);
@@ -2054,7 +2839,7 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   /* pose: headOut (0=in the shell, 1=out, 2=SNAPPED at your face), squash, tilt, legs, jaw */
   let headOut=0.58, squash=0, tilt=0, legL=0, legR=0, jaw=0.14, rear=0, shellSpin=0,
     spinRetract=1,shellBack=false,flameCharge=0;
-  const held=hesitationPose(t);
+  const held=hesitationPose(t),tubeHeld=hesitationBasePose(t);
   const headTremble=Math.sin(t*70)*(.002+held*.006);
   /* Keep the beak visibly open through the lunge. It closes only during the last
      16% and reaches its shut pose on t=1, the exact hazard-impact frame. */
@@ -2147,8 +2932,35 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     rear=lerp(side===0?-1:-.5,0,k); tilt=0;
   }
   else if(state==='recover'){ headOut=.55; jaw=.10; }
-  if(poseRecovery&&!spinRecovery){
-    const s=easeInOut(clamp((poseRecoveryT-.58)/.42,0,1));
+  const turtleParryAnim=actorReaction&&actorReaction.anim||'',
+    turtleBiteParry=!!actorReaction&&turtleParryAnim.startsWith('strike_turtle_bite');
+  let turtleBiteHide=0,turtleBiteKnockback=0,turtleBiteReturning=false;
+  if(turtleBiteParry){
+    const q=parryReactionClock(actorReaction),profile=PARRY_REACTION.turtle,
+      returnK=parryLimbReturnProgress(actorReaction);
+    if(returnK>0){
+      headOut=lerp(.02,.58,returnK);jaw=lerp(0,.14,returnK);
+      turtleBiteHide=1-returnK;
+      turtleBiteKnockback=1-returnK;
+      turtleBiteReturning=true;
+    }else{
+      const recoil=easeOut(clamp(q/profile.biteRecoilPeak,0,1)),
+        hide=easeInOut(clamp((q-profile.biteHideStart)/
+          (profile.biteRetract-profile.biteHideStart),0,1)),
+        recoiledHead=lerp(headOut,1.38,recoil);
+      /* Contact -> short physical neck knockback -> shell retraction. Keeping
+         the skull large through the first stage removes the old contact-to-idle
+         teleport; shrink begins only as it crosses the shell mouth. */
+      headOut=lerp(recoiledHead,.02,hide);jaw=lerp(jaw,0,Math.max(recoil*.55,hide));
+      turtleBiteHide=hide;
+      turtleBiteKnockback=recoil;
+    }
+    rear=lerp(rear,0,turtleBiteKnockback);tilt=lerp(tilt,0,turtleBiteKnockback);
+  }
+  if((poseRecovery||parryRecovery)&&!spinRecovery){
+    const recoveryClock=parryRecovery&&actorReaction?parryLimbReturnProgress(actorReaction):
+      parryRecovery?parryRecoveryT:poseRecoveryT;
+    const s=easeInOut(clamp((recoveryClock-.58)/.42,0,1));
     headOut=lerp(headOut,.58,s); squash=lerp(squash,0,s); tilt=lerp(tilt,0,s);
     legL=lerp(legL,0,s); legR=lerp(legR,0,s); jaw=lerp(jaw,.14,s);
     rear=lerp(rear,0,s); shellSpin=lerp(shellSpin,0,s); flameCharge=lerp(flameCharge,0,s);
@@ -2208,8 +3020,10 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   /* A living lava carapace: cooled basalt plates sit above irregular molten
      fissures. It is a shell with volume, not a flat furnace-door grid. */
   /* Only the short lower-side rim tabs remain; no tall side-thickness panels. */
-  px(.2,sy(28.6),1.8,1.8,hurtFlash?'#ffffff':'#251b20');
-  px(30,sy(28.6),1.8,1.8,hurtFlash?'#ffffff':'#251b20');
+  /* These side tabs are shell rim, not flesh: keep them dark during the
+     damage flash so detached white squares never appear beside the shell. */
+  px(.2,sy(28.6),1.8,1.8,'#251b20');
+  px(30,sy(28.6),1.8,1.8,'#251b20');
   g.fillStyle='#140f12';
   g.beginPath();g.moveTo(TURTLE_SHELL_OUTLINE[0]*U,sy(TURTLE_SHELL_OUTLINE[1])*U);
   for(let i=2;i<TURTLE_SHELL_OUTLINE.length;i+=2)g.lineTo(TURTLE_SHELL_OUTLINE[i]*U,sy(TURTLE_SHELL_OUTLINE[i+1])*U);
@@ -2238,13 +3052,21 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
      snapping-turtle silhouette without reading as a row of fantasy teeth. */
   for(const rim of TURTLE_SHELL_RIM){g.globalAlpha=rim.a===undefined?1:glow*rim.a;scute(rim.p,rim.c);}g.globalAlpha=1;
   /* THE HEAD — under the rim, looking straight at you; it can vanish, or SNAP OUT */
-  const hs=0.68+Math.max(0,headOut)*0.46;                    // larger than before, still subordinate to shell
+  const biteHideScale=lerp(1,.87,turtleBiteHide);
+  const hs=(0.68+Math.max(0,headOut)*0.46)*biteHideScale;     // skull compresses slightly as it crosses the shell mouth
   const hyB=sy(25)-Math.max(0,headOut)*6.2;                  // neck rises clearly above the front opening
   const isSnap=state==='strike_turtle_bite'||state==='strike_turtle_bite_left'||state==='strike_turtle_bite_right';
   const recoveringSnap=state.startsWith('recover_turtle_bite');
   const neckRecover=recoveringSnap?easeInOut(clamp((t-.08)/.84,0,1)):0;
   let neckK=isSnap?easeOut(clamp(t,0,1)):recoveringSnap?1-neckRecover:0,
       neckTarget=contactLocal.length?contactLocal[0]:16;
+  if(turtleBiteParry){
+    /* First recoil one quarter of the extended neck, then withdraw the rest.
+       During return the ordinary centre idle neck re-emerges without replaying
+       the attack lane, so the final frame and live idle share one socket. */
+    neckK=turtleBiteReturning?0:
+      neckK*Math.max(0,1-turtleBiteKnockback*.25-turtleBiteHide*.75);
+  }
   if(state==='finisher'&&t>.52&&contactLocal.length){
     /* Three deliberate executions: left bite, right bite, then a held centre snap. */
     if(t<.68){ const q=clamp((t-.52)/.16,0,1); neckTarget=contactLocal[0]; neckK=Math.sin(q*Math.PI); }
@@ -2252,7 +3074,7 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     else { neckTarget=contactLocal[Math.min(1,contactLocal.length-1)]; neckK=easeOut(clamp((t-.84)/.16,0,1)); }
   }
   const headX=lerp(16,neckTarget,neckK);
-  const snapHeadScale=0.68+Math.max(0,headOut)*0.46;
+  const snapHeadScale=(0.68+Math.max(0,headOut)*0.46)*biteHideScale;
   const headY=lerp(hyB,biteY-5.2*snapHeadScale,neckK)-(recoveringSnap?Math.sin(neckRecover*Math.PI)*4.2:0);
   if(neckK>0.02){
     /* The neck originates in the front-lower shell opening, then bends upward
@@ -2341,6 +3163,9 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
        remains a truthful model-hitbox while looking loose enough to be whipped. */
     for(let j=1;j<=12;j++){
       const q=j/12,envelope=Math.sin(q*Math.PI);
+      /* Full live heat ripple is intentional during hesitation, strike and
+         slow-motion parry. Its wall-time phase keeps the loose rope visibly
+         waving even while the authored attack clock is held. */
       const heat=Math.sin(q*TAU*1.55+perfNow*15+seed*2.4)*envelope*2.35*shapeK;
       const sag=envelope*slack;
       /* Pincer-only bow keeps the exact mouth and collision-tip endpoints while
@@ -2352,11 +3177,68 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     g.stroke(); g.shadowBlur=0;
     g.restore();
   };
+  const turtleTubeParry=!!actorReaction&&!actorReaction.turtleSpin&&
+    (turtleParryAnim.includes('turtle_tube_')||turtleParryAnim.includes('turtle_flame_')||
+     turtleParryAnim==='strike_turtle_steam');
+  const rememberTurtleTubeHesitation=(index,mouthX,mouthY,targetX,targetY,reach)=>{
+    if(actorReaction||!state.startsWith('tele_turtle_')||!boss) return;
+    const move=boss.currentMove();
+    if(!move||move.anim!==state) return;
+    let memory=boss._turtleTubeHesitation;
+    if(!memory||memory.move!==move)
+      memory=boss._turtleTubeHesitation={move,points:[]};
+    const heldReach=clamp(reach,0,1);
+    memory.points[index]={
+      x:lerp(mouthX,targetX,heldReach),
+      y:lerp(mouthY,targetY,heldReach)
+    };
+  };
+  const parryTubePoint=(index,targetX,targetY)=>{
+    if(!turtleTubeParry){
+      const out=TURTLE_TUBE_POINT_SCRATCH[index]||TURTLE_TUBE_POINT_SCRATCH[0];
+      out.x=targetX;out.y=targetY;out.reach=1;return out;
+    }
+    if(!actorReaction.turtleTubeStart)actorReaction.turtleTubeStart=[];
+    if(!actorReaction.turtleTubeRender)actorReaction.turtleTubeRender=[];
+    const start=actorReaction.turtleTubeStart[index]||
+      (actorReaction.turtleTubeStart[index]={x:targetX,y:targetY});
+    const out=actorReaction.turtleTubeRender[index]||
+      (actorReaction.turtleTubeRender[index]={x:start.x,y:start.y,reach:1});
+    const profile=PARRY_REACTION.turtle,move=actorReaction.move,
+      remembered=actorReaction.turtleTubeHesitation&&
+        actorReaction.turtleTubeHesitation[index],
+      authoredSweep=move&&(move.sweep||(move.sweeps&&move.sweeps[index])),
+      fallbackX=authoredSweep
+        ?16+(laneX(sweepLaneAt(authoredSweep,0),1)-x)/(hitScale*U)
+        :start.x,
+      pairOrSteam=(actorReaction.anim||'').includes('turtle_tube_pair_')||
+        actorReaction.anim==='strike_turtle_steam',
+      /* Rebound returns to the rope tip's last actually rendered hesitation
+         endpoint. A small authored fallback covers a parry on the first frame
+         before the tell has ever rendered (e.g. synthetic test harnesses). */
+      reboundX=remembered?remembered.x:fallbackX,
+      reboundY=remembered?remembered.y:
+        pairOrSteam?4:start.y-profile.tubeLift,
+      /* Rope tips need a visibly sharp wall-hit before the longer anatomy hold.
+         Wiggle remains independent; this clock owns only endpoint displacement. */
+      impulse=easeOut(clamp(parryReactionClock(actorReaction)/profile.tubePeak,0,1)),
+      returnK=parryLimbReturnProgress(actorReaction);
+    if(returnK>0){
+      out.x=reboundX;out.y=reboundY;out.reach=1-returnK;
+    }else{
+      out.x=lerp(start.x,reboundX,impulse);
+      out.y=lerp(start.y,reboundY,impulse);out.reach=1;
+    }
+    return out;
+  };
   /* The boiler attack comes from the snapper's mouth and reaches the real
      head-height contact points across the road, instead of being only a cue. */
   if(state==='strike_turtle_steam'&&contactLocal.length){
     const k=easeOut(clamp(t,0,1)), mouthX=headX, mouthY=headY+5*hs;
-    for(let i=0;i<contactLocal.length;i++) drawBoilerTube(mouthX,mouthY,contactLocal[i],steamY,k,i);
+    for(let i=0;i<contactLocal.length;i++){
+      const point=parryTubePoint(i,contactLocal[i],steamY);
+      drawBoilerTube(mouthX,mouthY,point.x,point.y,k*point.reach,i);
+    }
   }
   /* Boiler lashes remain physically attached to the moving mouth. Their traveling
      ends own the hitboxes, so the turtle visibly spits, hesitates, then whips them. */
@@ -2370,20 +3252,33 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     const flameY=pair?lerp(pairLiftY,groundY,pairSlam):(high?steamY:groundY);
     const deploying=state.startsWith('tele_');
     const recoveryReach=1-easeInOut(poseRecoveryT);
-    const reach=poseRecovery?recoveryReach:deploying?held:1;
+    const reach=poseRecovery?recoveryReach:deploying?tubeHeld:1;
     if(pincer){
       /* The bow grows as the damaging tips converge. The rope middles therefore
          stay visibly outside the knight until after the tips arrive, preventing
          the non-colliding artwork from baiting an early jump. */
       const closeK=state.startsWith('strike_')?easeInOut(clamp(t,0,1)):0;
       const pincerBow=1.25+closeK*2.35;
-      drawBoilerTube(mouthX-.7,mouthY+.3,contactLocal[0],flameY,reach,0,-pincerBow);
-      drawBoilerTube(mouthX+.7,mouthY+.3,contactLocal[contactLocal.length-1],flameY,reach,1,pincerBow);
+      const left=parryTubePoint(0,contactLocal[0],flameY),
+        right=parryTubePoint(1,contactLocal[contactLocal.length-1],flameY);
+      rememberTurtleTubeHesitation(0,mouthX-.7,mouthY+.3,contactLocal[0],flameY,reach);
+      rememberTurtleTubeHesitation(1,mouthX+.7,mouthY+.3,
+        contactLocal[contactLocal.length-1],flameY,reach);
+      drawBoilerTube(mouthX-.7,mouthY+.3,left.x,left.y,reach*left.reach,0,-pincerBow);
+      drawBoilerTube(mouthX+.7,mouthY+.3,right.x,right.y,reach*right.reach,1,pincerBow);
     } else if(pair){
-      for(let i=0;i<contactLocal.length;i++)
-        drawBoilerTube(mouthX+(i?0.55:-0.55),mouthY+.3,contactLocal[i],flameY,reach,i);
+      for(let i=0;i<contactLocal.length;i++){
+        const tubeMouthX=mouthX+(i?0.55:-0.55),
+          point=parryTubePoint(i,contactLocal[i],flameY);
+        rememberTurtleTubeHesitation(i,tubeMouthX,mouthY+.3,
+          contactLocal[i],flameY,reach);
+        drawBoilerTube(tubeMouthX,mouthY+.3,point.x,point.y,reach*point.reach,i);
+      }
     } else {
-      drawBoilerTube(mouthX,mouthY+.3,contactLocal[0],flameY,reach,0);
+      const point=parryTubePoint(0,contactLocal[0],flameY);
+      rememberTurtleTubeHesitation(0,mouthX,mouthY+.3,
+        contactLocal[0],flameY,reach);
+      drawBoilerTube(mouthX,mouthY+.3,point.x,point.y,reach*point.reach,0);
     }
   }
   /* embers shed from the seams */
@@ -5869,10 +6764,11 @@ const player={
   attackAnim:0, counterAnim:0, parryAnim:0, invuln:0,
 };
 const DEBUG_PARRY_INPUT_HOLD=.32;
-let debugParryInputMark=null,debugParryFreezeEnabled=true,debugParryInputFrozen=false;
+let debugParryInputMark=null,debugParryFreezeEnabled=false,debugParryInputFrozen=false;
+let debugHitboxesEnabled=false,debugSnapshotsEnabled=true;
 function markDebugParryInput(inputAt=perfNow,allowFreeze=true,intent=null){
   if(!debugRun&&!debugMoveLabActive()) return;
-  const holdGeometry=debugParryFreezeEnabled&&allowFreeze;
+  const holdGeometry=debugParryFreezeEnabled&&allowFreeze&&!debugMoveLabActive();
   const provisional=intent&&debugParryInputMark&&debugParryInputMark.provisional&&
     debugParryInputMark.intent===intent?debugParryInputMark:null;
   debugParryInputMark={
@@ -6025,11 +6921,17 @@ function damagePlayer(reason,unstoppable=false){
    the physical hitbox begins only when telegraph becomes strike. Future animation,
    timing, optimization, or cleanup must preserve the readable pull / hang / tremble /
    release rhythm and its deliberate uncertainty. */
-function hesitationPose(t){
+function hesitationBasePose(t){
   t=clamp(t,0,1);
   if(t<.40) return easeOut(t/.40)*.74;
   const q=(t-.40)/.60;
-  const creep=.74+easeInOut(q)*.26;
+  return .74+easeInOut(q)*.26;
+}
+function hesitationPose(t){
+  t=clamp(t,0,1);
+  const creep=hesitationBasePose(t);
+  if(t<.40) return creep;
+  const q=(t-.40)/.60;
   const strain=Math.sin(q*Math.PI)*(.006+q*.012)*Math.sin(t*76);
   return clamp(creep+strain,0,1.02);
 }
@@ -6177,6 +7079,8 @@ function createModelHazard(actor,move,def,src){
   sampleBossPresentation(actor,def,prevPresentation,'strike',0); rig.samplePose(prevPresentation,prevPose);
   const h={kind:'model',actor,move,def,rig,profile,baseProfile:profile,contactId:move.contactId,height:move.height,
     born:perfNow,impact:perfNow+move.travel,duration:move.travel,lastProgress:0,done:false,src,
+    parryOuterScale:profile.parryOuterScale||1,
+    parryVioletMaxRatio:profile.parryVioletMaxRatio||MODEL_PARRY_VIOLET_MAX_RATIO,
     prevPresentation,currPresentation,prevPose,currPose,predictPresentation,predictPose,
     prevPlayerVolumes,currPlayerVolumes,timerPlayerVolumes,contactScratch:{},
     motionX:new Float32Array(profile.joints.length),motionY:new Float32Array(profile.joints.length),
@@ -6238,11 +7142,13 @@ function modelParryBands(h,core,shell,ratioOverride=null){
   const scale=clamp(reference/current,1,MODEL_DODGE_VIABILITY.maxShellScale);
   const ratio=ratioOverride===null?(h&&h.parryBandRatio||MODEL_PARRY_BAND_RATIO):ratioOverride;
   const width=core*ratio*scale;
+  const outerScale=h&&h.parryOuterScale||1;
+  const violetMax=h&&h.parryVioletMaxRatio||MODEL_PARRY_VIOLET_MAX_RATIO;
   /* Deep tempo compensation may not consume the dodge shell or erase the red
      centre. Violet and burgundy grow within nearby caps; at least half of the
      unchanged lethal core remains visibly red. Without a parry input burgundy
      remains fully damaging. */
-  const violetWidth=Math.min(width,core*MODEL_PARRY_VIOLET_MAX_RATIO);
+  const violetWidth=Math.min(width*outerScale,core*violetMax);
   const burgundyWidth=Math.min(width,core*MODEL_PARRY_BURGUNDY_MAX_RATIO);
   return {
     scale,ratio,
@@ -6549,9 +7455,12 @@ function modelPincerSnapped(h,pose,presentation){
 }
 function confirmModelPerfect(h,x,y,reason,preserveSnapshot=false){
   h.done=true; h.lastReason=reason;
-  if(debugMoveLabActive()){
+  const labActive=debugMoveLabActive();
+  if(debugSnapshotCaptureActive(h.actor)){
     if(preserveSnapshot) setMoveLabModelSnapshotKind(h,'PERFECT');
     else captureMoveLabModelSnapshot(h,'PERFECT');
+  }
+  if(labActive){
     moveLabResult('PERFECT',x,y,reason);
   } else {
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
@@ -6561,6 +7470,7 @@ function confirmModelPerfect(h,x,y,reason,preserveSnapshot=false){
 }
 function resolveModelHazard(h){
   if(h.done) return;
+  const labActive=debugMoveLabActive(),snapshotActive=debugSnapshotCaptureActive(h.actor);
   const raw=clamp((perfNow-h.born)/h.duration,0,1);
   sampleBossPresentation(h.actor,h.def,h.currPresentation,'strike',raw*h.duration);
   h.rig.samplePose(h.currPresentation,h.currPose);
@@ -6591,6 +7501,11 @@ function resolveModelHazard(h){
       if(facesPlayer&&!frontCore){ contactX=b.x; contactY=b.y; }
     }
   }
+  /* Auto Parry is a Boss Lab input assistant, not a separate verdict path.
+     It presses the normal parry action only when the live spatial evaluator says
+     the knight is touching the authored violet/burgundy band in the correct lane. */
+  if(moveLabAutoParryCanTrigger(h)&&evaluateModelParryInput(h).success)
+    triggerMoveLabAutoParry(h);
   /* Model hazards are boss-exclusive; only the contact profile can extend their
      shared perfect window. Miniboss timing remains in the frame resolver. */
   const W=perfectWin()+(h.profile.perfectBonus||0),age=modelInputAge(h);
@@ -6617,7 +7532,7 @@ function resolveModelHazard(h){
        a visibly presented burgundy frame can accept its promised parry input. */
     h.lethalPending=true;h.lethalAt=perfNow;h.lethalContactX=contactX;h.lethalContactY=contactY;
     h.lethalCoreJoint=coreJoint;
-    if(debugMoveLabActive()){
+    if(snapshotActive){
       h.lethalSnapshot={circles:[],player:createPlayerHurtVolumes()};
       writeMoveLabModelSnapshotPose(h,h.lethalSnapshot,h.perfectPending?'LATE HIT':'HIT',h.currPlayerVolumes,true);
       h.lethalSnapshot.hitJoint=coreJoint;
@@ -6651,43 +7566,46 @@ function resolveModelHazard(h){
     } else {
       h.perfectPending=true; h.pendingContactX=contactX; h.pendingContactY=contactY; h.pendingAt=perfNow;
       h.lastReason='perfect pending; red remains lethal';
-      if(debugMoveLabActive()){
+      if(snapshotActive)
         captureMoveLabModelSnapshot(h,'PENDING');
+      if(labActive)
         moveLabResult('PENDING',contactX,contactY,'gold contact armed; red remains lethal');
-      }
     }
   }
   if(!h.done&&pincerAirClear&&!h.lethalPending){
     h.done=true; h.lastReason='airborne at physical paw clap';
-    if(debugMoveLabActive()){
+    if(snapshotActive)
       captureMoveLabModelSnapshot(h,'AIR CLEAR');
+    if(labActive)
       moveLabResult('SAFE',playerX,PLAYER_Y-jumpHeight()-42,h.lastReason);
-    }
   }
   if(!h.done&&parried){
     h.done=true; h.lastReason=h.profile.pincer?'parry met the physical paw clap':'parry met the visible lethal core';
-    if(debugMoveLabActive()){
-      if(!Number.isFinite(h.parryInputCapturedAt)) captureMoveLabModelSnapshot(h,'PARRY');
+    if(snapshotActive&&
+       !Number.isFinite(h.parryInputCapturedAt)) captureMoveLabModelSnapshot(h,'PARRY');
+    if(labActive){
       moveLabResult('PARRY',contactX,contactY,h.lastReason);
-    } else doParry(h.src,contactX,contactY);
+      doMoveLabParry(h.src,contactX,contactY,h.move,h.lastProgress);
+    } else doParry(h.src,contactX,contactY,h.move,h.lastProgress);
   }
   if(!h.done&&h.lethalPending&&!pendingTouchstartParry&&
      perfNow>=h.lethalAt+parryWindow(h)){
     h.done=true;
     burst(contactX,contactY,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
     spawnSlash(contactX,contactY-9,.25,'#e8e2d0'); SFX.slash(); shake(4,.18);
-    if(debugMoveLabActive()){
+    if(snapshotActive){
       /* Every death gets its exact frame. If gold was armed first this replaces
          the pending picture and explains precisely where red caught the knight. */
       if(!Number.isFinite(h.parryInputCapturedAt)){
-        const lab=h.actor&&h.actor._moveLab;
-        if(lab&&h.lethalSnapshot){
+        const visualState=debugCombatVisualState(h.actor,true);
+        if(visualState&&h.lethalSnapshot){
           h.lethalSnapshot.kind=h.perfectPending?'LATE HIT':'HIT';
-          h.lethalSnapshot.until=perfNow+1.15;lab.modelSnapshot=h.lethalSnapshot;
+          h.lethalSnapshot.until=perfNow+1.15;visualState.modelSnapshot=h.lethalSnapshot;
         } else captureMoveLabModelSnapshot(h,h.perfectPending?'LATE HIT':'HIT');
       }
-      moveLabResult('HIT',contactX,contactY,h.perfectPending?'late red contact caught the pending dodge':h.lastReason);
     }
+    if(labActive)
+      moveLabResult('HIT',contactX,contactY,h.perfectPending?'late red contact caught the pending dodge':h.lastReason);
     else damagePlayer(combatHitText(h.src));
   } else if(!h.done&&!h.lethalPending&&raw>=1){
     h.done=true;
@@ -6696,7 +7614,7 @@ function resolveModelHazard(h){
     } else {
       h.lastReason=frontNear?'leading near miss without valid input':
         near||core?'rear geometry passed without a second result':'visible geometry cleared player';
-      if(debugMoveLabActive()) moveLabResult('SAFE',laneX(player.x,1),PLAYER_Y-jumpHeight()-42,h.lastReason);
+      if(labActive) moveLabResult('SAFE',laneX(player.x,1),PLAYER_Y-jumpHeight()-42,h.lastReason);
     }
   }
   const swapPose=h.prevPose; h.prevPose=h.currPose; h.currPose=swapPose;
@@ -6726,7 +7644,8 @@ function moveLabParryInputSnapshotOwns(h,snap){
     snap.inputAt===h.parryInputCapturedAt;
 }
 function captureMoveLabModelSnapshot(h,kind){
-  const lab=h.actor&&h.actor._moveLab; if(!lab) return;
+  if(!debugSnapshotCaptureActive(h.actor)) return;
+  const lab=debugCombatVisualState(h.actor,true);
   if(kind!=='PARRY'&&moveLabParryInputSnapshotOwns(h,lab.modelSnapshot)) return;
   const snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
   writeMoveLabModelSnapshotPose(h,snap,kind,h.currPlayerVolumes,true);
@@ -6739,6 +7658,7 @@ function writeMoveLabModelSnapshotPose(h,snap,kind,playerVolumes,swept){
   snap.hasContact=hit&&Number.isFinite(h.lastContactX)&&Number.isFinite(h.lastContactY);
   snap.contactX=h.lastContactX;snap.contactY=h.lastContactY;
   snap.inputAt=perfNow;snap.move=h.move;snap.parryBandRatio=h.parryBandRatio;
+  snap.parryOuterScale=h.parryOuterScale;snap.parryVioletMaxRatio=h.parryVioletMaxRatio;
   snap.height=h.height;
   for(let i=0;i<snap.circleCount;i++){
     const name=h.profile.joints[i],from=h.prevPose[name],joint=h.currPose[name];
@@ -6824,6 +7744,10 @@ function unresolvedSuccessfulModelParryIntentFor(h){
   const record=tapParryModelRecord(intent,h);
   return record&&!record.done&&record.check&&record.check.success?intent:null;
 }
+function unresolvedSuccessfulFrameParryIntentFor(h){
+  const intent=unresolvedTapParryIntentFor(h);
+  return intent&&Math.abs(intent.at-h.impact)<=parryWindow(h)?intent:null;
+}
 function registerModelParryInput(intent=null){
   for(let i=hazards.length-1;i>=0;i--){
     const h=hazards[i];
@@ -6862,8 +7786,9 @@ function registerLegacyParryInput(intent=null){
   }
 }
 function captureMoveLabParryInputSnapshot(intent=null){
-  const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
-  if(!actor) return;
+  if(!debugSnapshotsEnabled) return;
+  const actor=activeDebugCombatActor();
+  if(!actor||!debugSnapshotCaptureActive(actor)) return;
   let h=null,record=null;
   if(intent){
     /* captureTapParryIntent stores newest hazards first. Prefer the newest live
@@ -6893,9 +7818,11 @@ function captureMoveLabParryInputSnapshot(intent=null){
   const inputWasDone=record?record.done:h.done;
   const grade=inputWasDone?'LATE':check.success?'SUCCESS':
     check.zone==='RED'||check.zone==='PASSED'?'LATE':'EARLY';
-  const lab=actor._moveLab,snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
+  const lab=debugCombatVisualState(actor,true),
+    snap=lab.modelSnapshot||(lab.modelSnapshot={circles:[],player:createPlayerHurtVolumes()});
   snap.kind='PARRY INPUT'; snap.parryGrade=grade; snap.parryZone=check.zone;
   snap.move=h.move;snap.height=h.height;snap.parryBandRatio=h.parryBandRatio;snap.inputAt=player.lastParry;
+  snap.parryOuterScale=h.parryOuterScale;snap.parryVioletMaxRatio=h.parryVioletMaxRatio;
   snap.directionalPerfect=h.profile.preserveReference===false;
   snap.pressX=check.markerX; snap.pressY=check.markerY; snap.pressJoint=check.markerJoint;
   snap.hasPress=Number.isFinite(check.markerX)&&Number.isFinite(check.markerY);
@@ -6951,7 +7878,7 @@ function captureMoveLabParryInputSnapshot(intent=null){
     reason,until:perfNow+1.5};
 }
 function setMoveLabModelSnapshotKind(h,kind){
-  const snap=h.actor&&h.actor._moveLab&&h.actor._moveLab.modelSnapshot;
+  const state=debugCombatVisualState(h.actor,false),snap=state&&state.modelSnapshot;
   if(moveLabParryInputSnapshotOwns(h,snap)) return;
   if(snap){ snap.kind=kind; snap.until=perfNow+1.15; }
 }
@@ -6962,14 +7889,18 @@ function moveLabResult(kind,x,y,reason='legacy resolver'){
   actor._moveLab.lastResult={kind,col,reason,until:perfNow+.9};
   floater(x,y-34,'TEST: '+kind,col,18);
 }
-function finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab){
+function finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab,strikeT){
   h.done=true; if(h.group) h.group.resolved=true;
   const iy=attackImpactY(effectiveHeight);
   burst(hitX,iy,10,['#e8e2d0','#8a744f','#ff4d3a'],180,130,4,.5);
   spawnSlash(hitX,iy-9,h.to>h.from ? .25 : -.25,'#e8e2d0');
   SFX.slash(); shake(4,.18);
-  if(lab){ moveLabResult(parried?'PARRY':collides?'HIT':'PERFECT',hitX,iy); return; }
-  if(parried){ doParry(h.src,hitX,iy); return; }
+  if(lab){
+    moveLabResult(parried?'PARRY':collides?'HIT':'PERFECT',hitX,iy);
+    if(parried) doMoveLabParry(h.src,hitX,iy,h.move,strikeT);
+    return;
+  }
+  if(parried){ doParry(h.src,hitX,iy,h.move,strikeT); return; }
   if(collides){ damagePlayer(combatHitText(h.src)); return; }
   floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
   burst(laneX(player.x,1),PLAYER_Y-jumpHeight()-50,10,['#ffe37a','#fff'],160,80,3,.6);
@@ -6988,7 +7919,7 @@ function resolveSweepHazard(h){
     const age=contact.at-h.parryInputAt;
     const parried=h.parryInputEligible===true||
       (h.parryInputIntent===contact.intent&&age>=0&&age<=parryWindow(h));
-    finishSweepContact(h,contact.x,contact.height,parried,true,lab);
+    finishSweepContact(h,contact.x,contact.height,parried,true,lab,contact.strikeT);
     return;
   }
   /* The limb may be visible entering from off-road while it descends into its
@@ -7013,6 +7944,10 @@ function resolveSweepHazard(h){
   const effectiveHeight=pincer?(pincerSnap?'low':'mid'):h.height;
   const postureSafe=effectiveHeight==='low'?isAirborne():effectiveHeight==='high'?isDucking():false;
   const collides=facesPlayer&&dx<=h.hitHalf&&(effectiveHeight==='mid'||!postureSafe);
+  /* Legacy traveling swipes have no model-band evaluator. Trigger at their first
+     truthful physical contact; the ordinary stored-input-age resolver below
+     still owns whether the parry succeeds. Wrong-lane swipes never reach here. */
+  if(collides&&moveLabAutoParryCanTrigger(h)) triggerMoveLabAutoParry(h);
   const storedParryAge=perfNow-h.parryInputAt;
   const parried=collides&&(h.parryInputEligible===true||
     (storedParryAge>=0&&storedParryAge<=parryWindow(h)));
@@ -7026,10 +7961,10 @@ function resolveSweepHazard(h){
     const pendingIntent=collides&&!parried?unresolvedTapParryIntentFor(h):null;
     const pendingAge=pendingIntent?perfNow-pendingIntent.at:Infinity;
     if(pendingIntent&&pendingAge>=0&&pendingAge<=parryWindow(h)){
-      h.tapContactPending={intent:pendingIntent,at:perfNow,x:hitX,height:effectiveHeight};
+      h.tapContactPending={intent:pendingIntent,at:perfNow,x:hitX,height:effectiveHeight,strikeT:raw};
       return;
     }
-    finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab);
+    finishSweepContact(h,hitX,effectiveHeight,parried,collides,lab,raw);
   } else if(raw>=1){
     h.done=true;
     if(lab){
@@ -7046,7 +7981,13 @@ function updateHazards(){
       continue;
     }
     if(h.kind==='sweep'){ if(!h.done) resolveSweepHazard(h); continue; }
-    if(h.done||perfNow<h.impact) continue;
+    if(h.done) continue;
+    /* Scheduled frame hits expose a symmetric purple timing window. Auto Parry
+       may press only while that window is live and the knight's current screen
+       lane is one of the threatened lanes. */
+    if(moveLabAutoParryCanTrigger(h)&&moveLabFrameAutoParryReady(h))
+      triggerMoveLabAutoParry(h);
+    if(perfNow<h.impact) continue;
     if(!h.frameSnapshot){
       const playerCX=laneX(player.x,1);
       h.frameSnapshot={
@@ -7057,10 +7998,18 @@ function updateHazards(){
         lastJump:player.lastJump,lastDuck:player.lastDuck
       };
     }
+    /* This is the second audible "tak": play it on the scheduled contact frame,
+       not after the post-impact parry grace has expired. A player synchronising
+       to this cue must still be inside the same frame-parry window. */
+    if(!h.impactCuePlayed){ h.impactCuePlayed=true; SFX.slash(); }
     /* Frame hits keep their exact impact snapshot, then allow the deliberately
        tiny post-contact half of the parry window. Movement during this grace
-       cannot retroactively evade the frozen strike. */
+       cannot retroactively evade the frozen strike. The tap/swipe classifier
+       uses the same 75 ms as this grace, so an already-valid touchstart must own
+       the verdict until that classifier finishes; otherwise timer/frame ordering
+       can close a fast combo hit one frame before registerLegacyParryInput runs. */
     if(perfNow<h.impact+parryWindow(h)) continue;
+    if(unresolvedSuccessfulFrameParryIntentFor(h)) continue;
     h.done=true; resolveHazard(h);
   }
   for(let i=hazards.length-1;i>=0;i--) if(hazards[i].done&&perfNow>hazards[i].impact+0.35) hazards.splice(i,1);
@@ -7089,7 +8038,11 @@ function resolveHazard(h){
     hit=inLane&&!ducking;
     if(inLane&&!hit&&h.impact-lastDuck<=W) perfect=true;
   }
-  const parried=hit&&h.parryInputEligible===true;
+  /* An explicit frame-parry owns the threatened lane even if a previous jump or
+     duck animation is still clearing this low/high strike. Directional input has
+     no parry eligibility, so ordinary PERFECT/SAFE posture resolution is unchanged. */
+  const parryThreatened=h.height==='all'||inLane;
+  const parried=parryThreatened&&h.parryInputEligible===true;
   /* impact: torn earth + claw rakes — a physical strike, not an energy beam */
   for(const ln of h.lanes){
     const x=laneX(ln,1), iy=attackImpactY(h.height);
@@ -7099,12 +8052,16 @@ function resolveHazard(h){
     spawnSlash(x,iy-10,h.height==='high'?0.35:-0.4,isMinibossSource(h.src)?'#cfd4e2':'#e8e2d0');
     if(h.height==='low') burst(x,iy,4,['#243a22'],110,90,3,.45);
   }
-  SFX.slash(); shake(4,.18);
+  /* Direct/fallback resolutions still need an impact sound, but the normal frame
+     path already played its cue at h.impact and must never produce a third "tak". */
+  if(!h.impactCuePlayed){ h.impactCuePlayed=true; SFX.slash(); }
+  shake(4,.18);
   if(debugMoveLabActive()){
     moveLabResult(parried?'PARRY':hit?'HIT':perfect?'PERFECT':'SAFE',playerCX,attackImpactY(h.height));
+    if(parried) doMoveLabParry(h.src,playerCX,attackImpactY(h.height),h.move,1);
     return;                                   // classify real contact without ending the preview
   }
-  if(parried){ doParry(h.src,playerCX,attackImpactY(h.height)); return; }
+  if(parried){ doParry(h.src,playerCX,attackImpactY(h.height),h.move,1); return; }
   if(hit){ damagePlayer(combatHitText(h.src)); return; }
   if(perfect){
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-96,'PERFECT!','#ffe37a',20);
@@ -7148,12 +8105,51 @@ function interruptParriedAttack(src){
   actor.state='recover'; actor.stateT=0;
   for(const h of hazards) if(h.src===src) h.done=true;
 }
-function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55){
+function beginParryReaction(actor,move,x,y,strikeT=null){
+  if(!actor||!move) return null;
+  const side=x<laneX(actor.x,1)?-1:x>laneX(actor.x,1)?1:0,
+    reboundDir=move.sweep?Math.sign(move.sweep.from-move.sweep.to):(side?-side:0);
+  let contactLane=0,contactLaneDistance=Infinity;
+  for(let lane=0;lane<3;lane++){
+    const distance=Math.abs(x-laneX(lane,1));
+    if(distance<contactLaneDistance){contactLaneDistance=distance;contactLane=lane;}
+  }
+  const reaction=actor.parryReaction={
+    t:0,move,anim:move.strike||'',contactX:x,contactY:y,
+    strikeT:strikeT===null?clamp(actor.stateT/Math.max(.001,move.travel||1),0,1):clamp(strikeT,0,1),
+    side,reboundDir,contactLane,
+    turtleSpin:move.strike==='strike_turtle_spin'
+  };
+  const tubeTell=actor._turtleTubeHesitation;
+  if(tubeTell&&tubeTell.move===move&&tubeTell.points)
+    reaction.turtleTubeHesitation=tubeTell.points.map(point=>
+      point?{x:point.x,y:point.y}:null);
+  return reaction;
+}
+function emitParryReactionFx(x,y){
+  SFX.counter();stopTime(PARRY_REACTION.hitstop);
+  shake(PARRY_REACTION.shake,PARRY_REACTION.shakeTime);
+  parrySparkCloud(x,y);spawnSlash(x,y,-.72,'#d8c6ff');
+}
+/* Move Labs use the real successful-parry animation and attack interruption,
+   but never apply damage, chain stacks, taming progress, or rush rewards. */
+function doMoveLabParry(src,x,y,moveOverride=null,strikeT=null){
+  const actor=src===MINIBOSS_SOURCE?minibossFight:boss;
+  const move=moveOverride||(actor&&actor.currentMove());
+  if(!actor||!move) return;
+  beginParryReaction(actor,move,x,y,strikeT);
+  player.parryAnim=1;player.counterAnim=.55;
+  emitParryReactionFx(x,y);
+  floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
+  interruptParriedAttack(src);
+}
+function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT=null){
+  const actor=src===MINIBOSS_SOURCE?minibossFight:boss;
+  const move=moveOverride||(actor&&actor.currentMove());
+  beginParryReaction(actor,move,x,y,strikeT);
   player.parryAnim=1; player.counterAnim=.55;
   addKnightRush(CFG.RUSH_PER_PARRY);
-  SFX.counter(); stopTime(.105); shake(3.5,.16); flash('#b56cff',.18);
-  burst(x,y,18,['#b56cff','#d8c6ff','#ffffff'],190,45,4,.55);
-  spawnSlash(x,y,-.72,'#d8c6ff');
+  emitParryReactionFx(x,y);
   floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
   interruptParriedAttack(src);
   if(src===MINIBOSS_SOURCE){ if(minibossFight) minibossCounterHit(); }
@@ -7174,7 +8170,26 @@ class EncounterActor{
        be renderable before it has selected its first attack. */
     Object.assign(this,{state:'idle',stateT:0,hurtT:0,lastIds:[],hazardLanes:[]},spec);
   }
-  tick(dt){ this.stateT+=dt; this.hurtT=Math.max(0,(this.hurtT||0)-dt); }
+  tick(dt){
+    this.hurtT=Math.max(0,(this.hurtT||0)-dt);
+    if(this.parryReaction){
+      /* Always render one exact q=1 neutral frame. Clearing on the same tick
+         that crossed duration skipped that frame and visibly teleported to idle. */
+      if(!this.parryReaction.finishPending){
+        this.parryReaction.t=Math.min(PARRY_REACTION.duration,this.parryReaction.t+dt);
+        if(this.parryReaction.t>=PARRY_REACTION.duration)
+          this.parryReaction.finishPending=true;
+        return;
+      }
+      this.parryReaction=null;
+      /* The reaction itself has already returned the anatomy to neutral. Finish
+         the interrupted attack's recovery clock so no old contact pose flashes
+         for one frame before the ordinary between-attack wait begins. */
+      this.stateT=encounterRecoveryTime(this.attack);
+      return;
+    }
+    this.stateT+=dt;
+  }
   currentMove(){ return !this.attack?null:this.attack.steps?this.attack.steps[this.sequenceIndex||0]:this.attack; }
   cueMove(){
     const move=this.currentMove(); if(!move) return null;
@@ -7747,7 +8762,11 @@ function sampleProjectionInto(z,out){
 /* One pure presentation contract owns the boss depth, screen origin, animation,
    normalized clock and contact targets used by both drawing and pose collision. */
 function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.stateT){
-  const move=actor.currentMove(); let zD=actor.z;
+  const reaction=actor.parryReaction;
+  /* A combo interrupt moves sequenceIndex to its terminal step for budget/state
+     completion. Presentation must nevertheless finish the exact step that was
+     parried, otherwise it silently swaps animation/contact targets mid-rebound. */
+  const move=reaction&&reaction.move||actor.currentMove(); let zD=actor.z;
   const tellReach=move&&move.stageReach!==undefined?move.stageReach:
     move&&move.bodySweep&&move.bodyLunge>8?move.bodyLunge*.88:1.8;
   const requestedReach=move?(move.bodyLunge!==undefined?move.bodyLunge:(move.lunge||(actor.attack&&actor.attack.lunge)||3)+5.2):0;
@@ -7776,6 +8795,12 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
   }
   if(comboRecovering&&move) zD=actor.z-(1-easeInOut(clamp(stateT/comboRecoverTime,0,1)))*contactReach;
   if(state==='finisher') zD=actor.z-easeOut(clamp((stateT-.62)/1.3,0,1))*def.finisherReach;
+  if(reaction&&move){
+    const strikeT=reaction.strikeT,returnK=parryReturnProgress(reaction),
+      strikeZ=actor.z-tellReach-easeOut(strikeT)*Math.max(0,contactReach-tellReach);
+    zD=lerp(strikeZ,actor.z,returnK)+
+      PARRY_REACTION.bodyDepthKick*parryReboundAmount(reaction);
+  }
   sampleProjectionInto(zD,out);
   let anim=state==='tele'&&actor.attack?actor.attack.anim:state;
   if(move) anim=state==='tele'?move.anim:state==='strike'?move.strike:comboRecovering?comboStepRecoveryAnim(move):
@@ -7792,13 +8817,36 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
     x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/recoverAnimTime,0,1)));
   else if(comboRecovering&&move)
     x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/comboRecoverTime,0,1)));
+  if(reaction&&move){
+    const returnK=parryReturnProgress(reaction),idleX=laneX(actor.x,out.tProj),
+      strikeX=move.sweep&&move.bodySweep
+        ?laneX(sweepBodyLane(move,reaction.strikeT),1)
+        :lerp(idleX,laneX(actor.xTarget,1),easeOut(reaction.strikeT));
+    x=lerp(strikeX,idleX,returnK);
+  }
   const denom=state==='tele'&&move?(actor.teleTime||move.tele):state==='strike'&&move?move.travel:
     comboRecovering?comboRecoverTime:state==='recover'?recoverAnimTime:state==='finisher'?2.15:state==='dying'?2.5:.5;
   out.actor=actor; out.def=def; out.move=move; out.state=state; out.stateT=stateT;
   out.z=zD; out.x=x; out.y=out.yProj+sink; out.scale=out.sProj*def.scale;
   out.anim=anim; out.t=clamp(stateT/denom,0,1); out.tellReach=tellReach; out.contactReach=contactReach;
+  if(reaction){
+    const q=parryReactionClock(reaction);
+    if(reaction.turtleSpin){
+      out.anim=move&&move.recoverAnim||anim;out.t=q;
+    }else if(def.id==='bear'||def.id==='hydra'||def.id==='turtle'){
+      out.anim='parry_'+def.id+'_from:'+reaction.anim;out.t=q;
+    }
+    const kick=parryReboundAmount(reaction),dir=reaction.reboundDir||0;
+    /* Small whole-body loss of balance; species renderers add the larger
+       joint-local recoil. Deterministic shake avoids animation noise at pause. */
+    out.x+=(dir*PARRY_REACTION.bodyKick+Math.sin(reaction.t*125)*.45)*kick*out.scale;
+    out.y-=PARRY_REACTION.bodyLift*kick*out.scale;
+  }
   out.comboRecoverTime=comboRecoverTime; out.recoverAnimTime=recoverAnimTime;
-  fillMoveContactXs(actor,move,state==='finisher'?ALL_LANES:actor.hazardLanes,state,stateT,out.contactXs);
+  if(reaction&&move){
+    const strikeT=reaction.strikeT*(1-parryLimbReturnProgress(reaction));
+    fillMoveContactXs(actor,move,actor.hazardLanes,'strike',strikeT*move.travel,out.contactXs);
+  }else fillMoveContactXs(actor,move,state==='finisher'?ALL_LANES:actor.hazardLanes,state,stateT,out.contactXs);
   return out;
 }
 function sweepBodyLane(move,k){
@@ -8817,12 +9865,43 @@ function buildMoveLabPlaylist(set,cycle=1){
 }
 const MOVE_LAB_SPEEDS=Object.freeze([.25,.5,1,1.5,2]);
 function activeMoveLabActor(){ return boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null); }
+function moveLabAutoParryCanTrigger(h){
+  const actor=activeMoveLabActor(),lab=actor&&actor._moveLab;
+  if(!actor||!lab.autoParry||!player.alive||!h||h.done||h.autoParryTriggered||
+     h.parryInputEligible===true||actor.parryReaction) return false;
+  if(h.actor) return h.actor===actor;
+  return h.src===(actor===boss?BOSS_SOURCE:MINIBOSS_SOURCE);
+}
+function moveLabFrameAutoParryReady(h){
+  if(!Number.isFinite(h.impact)||Math.abs(perfNow-h.impact)>parryWindow(h)) return false;
+  if(h.height==='all') return true;
+  const playerX=laneX(player.x,1);
+  return h.lanes&&h.lanes.some(lane=>Math.abs(playerX-laneX(lane,1))<=CFG.FIGHT_HIT_HALF);
+}
+function triggerMoveLabAutoParry(h){
+  if(!moveLabAutoParryCanTrigger(h)) return false;
+  /* Set the one-shot guard first because playerAction() immediately registers
+     against every live hazard through the same path as a real tap. */
+  h.autoParryTriggered=true;
+  playerAction('parry');
+  return true;
+}
+function toggleMoveLabAutoParry(actor=activeMoveLabActor()){
+  const lab=actor&&actor._moveLab;if(!lab) return false;
+  lab.autoParry=!lab.autoParry;
+  floater(VW/2,250,'AUTO PARRY '+(lab.autoParry?'ON':'OFF'),
+    lab.autoParry?'#b56cff':'#8b8fa0',16);
+  SFX.swipe();return true;
+}
 function moveLabTimeScale(){
   const actor=activeMoveLabActor(),lab=actor&&actor._moveLab;
   return lab?MOVE_LAB_SPEEDS[lab.speedIndex]:1;
 }
 function restartMoveLabSelection(actor,index){
   const lab=actor&&actor._moveLab; if(!lab||!lab.moves.length) return;
+  /* Preview state belongs only to the selected row. Without this reset a parry
+     preview kept rendering over the next ordinary move selected in Boss Lab. */
+  actor.parryReaction=null;
   index=(index%lab.moves.length+lab.moves.length)%lab.moves.length;
   lab.selected=index; lab.index=index+1; lab.doneT=0; lab.lastResult=null; lab.modelSnapshot=null;
   delete lab.bearMouthOpen;
@@ -8883,6 +9962,9 @@ function changeBossMoveLabStage(delta){
 function moveLabPauseTap(pt){
   const actor=activeMoveLabActor(); if(!actor) return false;
   if(actor===boss&&pt.x>=350&&pt.x<=445&&pt.y>=148&&pt.y<=174){ openBossLabMoves(); return true; }
+  if(pt.x>=132&&pt.x<=348&&pt.y>=318&&pt.y<=352){
+    toggleMoveLabAutoParry(actor); return true;
+  }
   if(pt.y>=180&&pt.y<=220){
     if(pt.x<118) changeMoveLabSelection(-1);
     else if(pt.x>362) changeMoveLabSelection(1);
@@ -8908,8 +9990,8 @@ function drawMoveLabPauseControls(){
   const actor=activeMoveLabActor(); if(!actor) return;
   const lab=actor._moveLab,move=lab.moves[lab.selected||0],speed=MOVE_LAB_SPEEDS[lab.speedIndex];
   g.save();
-  g.fillStyle='rgba(8,10,17,.92)'; g.fillRect(22,146,436,174);
-  g.strokeStyle='#ff9a3a'; g.lineWidth=2; g.strokeRect(22.5,146.5,435,173);
+  g.fillStyle='rgba(8,10,17,.92)'; g.fillRect(22,146,436,214);
+  g.strokeStyle='#ff9a3a'; g.lineWidth=2; g.strokeRect(22.5,146.5,435,213);
   g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ff9a3a';
   g.fillText((actor===boss?'BOSS':'MINIBOSS')+' MOVE LAB CONTROLS',VW/2,165);
   if(actor===boss){
@@ -8936,6 +10018,12 @@ function drawMoveLabPauseControls(){
   } else {
     g.font='9px monospace'; g.fillStyle='#aeb2c2'; g.fillText('LEFT/RIGHT move · UP/DOWN speed',VW/2,296);
   }
+  g.fillStyle=lab.autoParry?'rgba(71,25,108,.88)':'rgba(20,22,31,.9)';
+  g.fillRect(132,318,216,34);
+  g.strokeStyle=lab.autoParry?'#b56cff':'#8b8fa0';g.lineWidth=2;
+  g.strokeRect(132.5,318.5,215,33);
+  g.font='bold 12px monospace';g.fillStyle=lab.autoParry?'#e4c6ff':'#aeb2c2';
+  g.fillText('AUTO PARRY  '+(lab.autoParry?'ON':'OFF')+'  [A]',VW/2,340);
   g.restore();
 }
 function drawBearTurntableMouthButton(){
@@ -8953,7 +10041,7 @@ function startBossMoveLab(definitionId=null){
   const selectedIds=Object.create(null);
   for(const attack of activeBossDefinition().attacks) selectedIds[attack.id]=true;
   boss._moveLab={moves:[],index:0,selected:0,speedIndex:2,doneT:0,testStage:loop,definitionId:pinnedId,
-    selectedIds,loopMoveset:false,customMoveset:false};
+    autoParry:false,selectedIds,loopMoveset:false,customMoveset:false};
   boss._moveLab.moves=buildBossMoveLabStagePlaylist(boss,loop); boss.attacksLeft=boss._moveLab.moves.length;
   boss.entering=false; boss.rise=1; boss.state='idle'; boss.stateT=0; boss.atkTimer=.8;
   setMode('boss'); hazards=[];
@@ -8964,12 +10052,35 @@ function startMiniMoveLab(){
   const definitionId=activeMinibossDefinition().id;
   const moves=buildMoveLabPlaylist(minibossAttackSet());
   minibossFight._moveLab={moves,index:0,selected:0,speedIndex:2,doneT:0,definitionId,
-    visualMode:null}; minibossFight.attacksLeft=moves.length;
+    autoParry:false,visualMode:null}; minibossFight.attacksLeft=moves.length;
   minibossFight.z=10; minibossFight.state='idle'; minibossFight.stateT=0; minibossFight.atkTimer=.8; minibossFight._introDone=true;
   hazards=[];
   floater(VW/2,250,'MINIBOSS MOVE LAB · SINGLES THEN COMBOS','#c9f74a',17);
 }
 function debugMoveLabActive(){ return !!((boss&&boss._moveLab)||(minibossFight&&minibossFight._moveLab)); }
+function activeDebugCombatActor(){
+  const labActor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
+  if(labActor) return labActor;
+  if(!debugRun) return null;
+  return mode==='miniboss'?minibossFight:boss||minibossFight;
+}
+function debugCombatVisualState(actor,create=false){
+  if(!actor) return null;
+  if(actor._moveLab) return actor._moveLab;
+  if(!debugRun) return null;
+  if(!actor._debugCombat&&create)
+    actor._debugCombat={modelSnapshot:null,lastResult:null,previewHazard:null,previewHazardLane:undefined};
+  return actor._debugCombat||null;
+}
+function debugSnapshotCaptureActive(actor){
+  return debugSnapshotsEnabled&&!!debugCombatVisualState(actor,true);
+}
+function clearDebugCombatSnapshots(){
+  for(const actor of [boss,minibossFight]){
+    const state=debugCombatVisualState(actor,false);
+    if(state) state.modelSnapshot=null;
+  }
+}
 function finishMoveLab(){
   hazards=[]; boss=null; minibossFight=null;
   debugRun=false; debugMiniMoves=false;
@@ -10947,21 +12058,32 @@ function moveLabPerfectContactTime(h){
   return Infinity;
 }
 function drawMoveLabPerfectTimer(actor){
-  let active=false,remaining=Infinity,activeWindow=perfectWin(),activeParryWindow=CFG.PARRY_WIN,activeHazard=null;
+  let active=false,remaining=Infinity,bestDistance=Infinity,
+    activeWindow=perfectWin(),activeParryWindow=CFG.PARRY_WIN,activeHazard=null;
   for(const h of hazards) if(!h.done){
     const W=perfectWin()+(actor===minibossFight?minibossPerfectBonus():0)+
       (h.kind==='model'&&h.profile?(h.profile.perfectBonus||0):0);
     const left=moveLabPerfectContactTime(h)-perfNow;
-    if(left>=0&&left<=W&&left<remaining){
-      active=true; remaining=left; activeWindow=W; activeParryWindow=parryWindow(h); activeHazard=h;
+    const frameHit=h.kind!=='model'&&h.kind!=='sweep',parryW=parryWindow(h);
+    /* Frame parries are deliberately symmetric around their scheduled impact.
+       Keep the cue visible through the accepted post-impact half instead of
+       hiding it exactly when the frozen contact pose is still parryable. */
+    const visible=frameHit?left>=-parryW&&left<=W:left>=0&&left<=W;
+    const distance=Math.abs(left);
+    if(visible&&distance<bestDistance){
+      active=true; remaining=left; bestDistance=distance;
+      activeWindow=W; activeParryWindow=parryW; activeHazard=h;
     }
   }
   if(!active) return;
   const x=laneX(player.x,1), y=PLAYER_Y-jumpHeight()-126;
-  const pulse=.72+.28*Math.sin((1-remaining/activeWindow)*Math.PI);
+  const pulsePhase=clamp(1-Math.max(0,remaining)/activeWindow,0,1);
+  const pulse=.72+.28*Math.sin(pulsePhase*Math.PI);
   g.save(); g.textAlign='center'; g.globalAlpha=pulse;
   const modelZone=activeHazard&&activeHazard.kind==='model'?evaluateModelParryInput(activeHazard).zone:null;
-  const parryNow=modelZone!==null?modelParryZoneSucceeds(modelZone):remaining<=activeParryWindow;
+  const frameHit=activeHazard&&activeHazard.kind!=='model'&&activeHazard.kind!=='sweep';
+  const parryNow=modelZone!==null?modelParryZoneSucceeds(modelZone):
+    frameHit?Math.abs(remaining)<=activeParryWindow:remaining<=activeParryWindow;
   const tooLate=modelZone==='RED'||modelZone==='PASSED';
   g.fillStyle=tooLate?'#ff4d3a':parryNow?'#b56cff':'#ffe37a'; g.shadowColor=g.fillStyle; g.shadowBlur=18;
   g.beginPath(); g.ellipse(x,y,34,13,0,0,TAU); g.fill();
@@ -11029,7 +12151,8 @@ function drawMoveLabContactSweep(profile,a,b,prevPresentation,currPresentation,t
   g.restore();
 }
 function drawMoveLabModelPreview(actor,move,def){
-  const lab=actor._moveLab,rig=def.contactRig,baseProfile=rig&&rig.profiles[move.contactId];
+  const lab=debugCombatVisualState(actor,true),rig=def.contactRig,
+    baseProfile=rig&&rig.profiles[move.contactId];
   if(!baseProfile) return false;
   /* Telegraph rendering owns the same cached viability contract that will be
      created for the strike. Without it, hesitation showed the authored shell
@@ -11052,7 +12175,7 @@ function drawMoveLabModelPreview(actor,move,def){
   return true;
 }
 function drawMoveLabDodgeSnapshot(actor){
-  const snap=actor._moveLab&&actor._moveLab.modelSnapshot;
+  const state=debugCombatVisualState(actor,false),snap=state&&state.modelSnapshot;
   if(!snap||snap.until<=perfNow) return;
   const pending=snap.kind==='PENDING',late=snap.kind==='LATE HIT',hit=snap.kind==='HIT',
     parry=snap.kind==='PARRY',parryInput=snap.kind==='PARRY INPUT',airClear=snap.kind==='AIR CLEAR';
@@ -11096,7 +12219,8 @@ function drawMoveLabDodgeSnapshot(actor){
       g.beginPath(); g.arc(c.x,c.y,c.shell,0,TAU); g.stroke();
     }
     if(parry||parryInput){
-      const bands=modelParryBands({move:snap.move,parryBandRatio:snap.parryBandRatio},c.core,c.shell);
+      const bands=modelParryBands({move:snap.move,parryBandRatio:snap.parryBandRatio,
+        parryOuterScale:snap.parryOuterScale,parryVioletMaxRatio:snap.parryVioletMaxRatio},c.core,c.shell);
       fillMoveLabBand(c.x,c.y,c.shell,bands.parryOuter,'#ffe37a',.26);
       fillMoveLabBand(c.x,c.y,bands.parryOuter,c.core,'#831cff',.56);
       fillMoveLabBand(c.x,c.y,c.core,bands.redInner,mixCol('#ff1028','#831cff',.5),.66);
@@ -11130,7 +12254,7 @@ function drawMoveLabModelGeometry(h){
     const name=h.profile.joints[i],a=previous[name],b=current[name];
     drawMoveLabContactSweep(h.profile,a,b,previousPresentation,presentation,true,h,i);
   }
-  const lab=h.actor._moveLab,result=lab&&lab.lastResult;
+  const lab=debugCombatVisualState(h.actor,false),result=lab&&lab.lastResult;
   g.save(); g.textAlign='left'; g.font='11px monospace';
   const pv=h.parryViability,dv=h.viability;
   g.fillStyle='#d8b6ff';
@@ -11150,7 +12274,7 @@ function drawMoveLabModelGeometry(h){
 /* Screenshot/photo mode hides lab chrome but keeps the physical model bubbles
    attached to the boss. It deliberately draws no timers, labels or snapshots. */
 function drawMoveLabPhotoHitboxes(){
-  const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
+  const actor=activeDebugCombatActor();
   if(!actor) return;
   let modelHazard=null;
   for(let i=hazards.length-1;i>=0;i--) if(hazards[i].kind==='model'){
@@ -11174,9 +12298,10 @@ function drawMoveLabPhotoHitboxes(){
     drawMoveLabModelPreview(actor,move,def);
 }
 function drawMoveLabMarkers(){
-  const actor=boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null);
+  const actor=activeDebugCombatActor();
   if(!actor) return;
-  const lab=actor._moveLab,move=actor===boss?currentBossMove():currentMiniMove();
+  const lab=debugCombatVisualState(actor,true),
+    move=actor===boss?currentBossMove():currentMiniMove();
   const modelParryVisual=!!(move&&usesContactRig(move));
   g.save();
   g.textAlign='center'; g.font='bold 12px monospace';
@@ -11186,6 +12311,10 @@ function drawMoveLabMarkers(){
   g.fillStyle='#cfd4e2'; g.font='11px monospace';
   g.fillText('perfect '+Math.round((perfectWin()+(actor===minibossFight ? minibossPerfectBonus() : 0))*1000)+
     ' ms  ·  parry '+Math.round(parryWindow(move)*1000)+' ms',VW/2,207);
+  if(lab.autoParry){
+    g.textAlign='right';g.font='bold 9px monospace';g.fillStyle='#d8b6ff';
+    g.fillText('AUTO PARRY ON',VW-14,191);g.textAlign='center';
+  }
   if(lab.lastResult&&lab.lastResult.until>perfNow){
     g.globalAlpha=clamp((lab.lastResult.until-perfNow)*2,0,1);
     g.font='bold 21px monospace'; g.fillStyle=lab.lastResult.col;
@@ -11194,7 +12323,6 @@ function drawMoveLabMarkers(){
   g.restore();
   drawMoveLabPerfectTimer(actor);
   drawMoveLabLivePlayerGeometry();
-  drawMoveLabDodgeSnapshot(actor);
   const def=actor===boss?activeBossDefinition():activeMinibossDefinition();
   let modelHazard=null;
   for(let i=hazards.length-1;i>=0;i--) if(hazards[i].kind==='model'){
@@ -11280,7 +12408,7 @@ function drawMenu(){
 }
 /* ---------- settings sheet: floats over the menu or the pause screen ---------- */
 function drawSettings(){
-  const showDebugFreeze=debugRun||debugMoveLabActive();
+  const showDebugOptions=debugRun||debugMoveLabActive();
   g.fillStyle='rgba(5,7,12,0.86)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
   g.font='bold 26px monospace'; g.fillStyle='#e8e2d0'; g.fillText('SETTINGS',VW/2,VH/2-150);
@@ -11300,14 +12428,24 @@ function drawSettings(){
   g.strokeStyle=SFX.muted?'#ffe37a':'#8b8fa0'; g.lineWidth=2; g.strokeRect(VW/2-90,VH/2-26,180,42);
   g.font='bold 14px monospace'; g.fillStyle=SFX.muted?'#ffe37a':'#aeb2c2';
   g.fillText(SFX.muted?'SOUND: MUTED (M)':'SOUND: ON (M)',VW/2,VH/2+1);
-  if(showDebugFreeze){
+  if(showDebugOptions){
+    g.strokeStyle=debugHitboxesEnabled?'#ffe37a':'#8b8fa0';g.lineWidth=2;
+    g.strokeRect(VW/2-125,VH/2+30,250,38);
+    g.font='bold 13px monospace';g.fillStyle=debugHitboxesEnabled?'#ffe37a':'#aeb2c2';
+    g.fillText('DEBUG HITBOXES: '+(debugHitboxesEnabled?'ON':'OFF'),VW/2,VH/2+55);
+
     g.strokeStyle=debugParryFreezeEnabled?'#b56cff':'#8b8fa0';g.lineWidth=2;
-    g.strokeRect(VW/2-125,VH/2+30,250,42);
+    g.strokeRect(VW/2-125,VH/2+76,250,38);
     g.font='bold 13px monospace';g.fillStyle=debugParryFreezeEnabled?'#d8b6ff':'#aeb2c2';
-    g.fillText('PARRY INPUT FREEZE: '+(debugParryFreezeEnabled?'ON':'OFF'),VW/2,VH/2+57);
+    g.fillText('PARRY INPUT FREEZE: '+(debugParryFreezeEnabled?'ON':'OFF'),VW/2,VH/2+101);
+
+    g.strokeStyle=debugSnapshotsEnabled?'#8ee8a0':'#8b8fa0';g.lineWidth=2;
+    g.strokeRect(VW/2-125,VH/2+122,250,38);
+    g.font='bold 13px monospace';g.fillStyle=debugSnapshotsEnabled?'#8ee8a0':'#aeb2c2';
+    g.fillText('COMBAT SNAPSHOTS: '+(debugSnapshotsEnabled?'ON':'OFF'),VW/2,VH/2+147);
   }
   /* back */
-  const backY=showDebugFreeze?VH/2+92:VH/2+44;
+  const backY=showDebugOptions?VH/2+180:VH/2+44;
   g.strokeStyle='#e8e2d0'; g.strokeRect(VW/2-70,backY,140,44);
   g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,backY+28);
 }
@@ -11319,15 +12457,23 @@ function settingsTap(pt){
     if(pt.x>VW/2-110&&pt.x<VW/2+110){ SFX.setVol((pt.x-(VW/2-110))/220); SFX.coin(); return; }
   }
   if(pt.x>VW/2-90&&pt.x<VW/2+90&&pt.y>VH/2-26&&pt.y<VH/2+16){ SFX.toggle(); SFX.coin(); return; }
-  const showDebugFreeze=debugRun||debugMoveLabActive();
-  if(showDebugFreeze&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+30&&pt.y<VH/2+72){
+  const showDebugOptions=debugRun||debugMoveLabActive();
+  if(showDebugOptions&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+30&&pt.y<VH/2+68){
+    debugHitboxesEnabled=!debugHitboxesEnabled;SFX.coin();return;
+  }
+  if(showDebugOptions&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+76&&pt.y<VH/2+114){
     debugParryFreezeEnabled=!debugParryFreezeEnabled;
     if(!debugParryFreezeEnabled){
       debugParryInputFrozen=false;debugParryInputMark=null;tapIntentSimulationFrozen=false;
     }
     SFX.coin();return;
   }
-  const backY=showDebugFreeze?VH/2+92:VH/2+44;
+  if(showDebugOptions&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+122&&pt.y<VH/2+160){
+    debugSnapshotsEnabled=!debugSnapshotsEnabled;
+    if(!debugSnapshotsEnabled) clearDebugCombatSnapshots();
+    SFX.coin();return;
+  }
+  const backY=showDebugOptions?VH/2+180:VH/2+44;
   if(pt.x>VW/2-70&&pt.x<VW/2+70&&pt.y>backY&&pt.y<backY+44){ settingsOpen=false; SFX.duck(); }
 }
 /* ---------- the changelog: every version's notes, newest first (tabs to browse) ---------- */
@@ -11926,8 +13072,9 @@ function drawActiveBossWorld(){
   const presentation=sampleBossPresentation(boss,def,boss._presentation||(boss._presentation=createBossPresentation()));
   const p=presentation,bx2=presentation.x;
   const sampledPose=def.contactRig?def.contactRig.samplePose(presentation,boss._renderPose||(boss._renderPose=def.contactRig.createPose())):null;
-  def.draw(bx2,presentation.y,presentation.scale,presentation.anim,presentation.t,
-    boss.hurtT>0,presentation.contactXs,sampledPose);
+  if(sampledPose) sampledPose.parryReaction=boss.parryReaction||null;
+  /* Rise ripples belong to the water surface behind the emerging creature.
+     Drawing them after Hydra painted translucent rings across its body. */
   if(boss.rise<1){
     const wl=p.yProj+4*p.s,isLava=def.element==='lava';
     if(!isLava)for(let r=0;r<3;r++){
@@ -11937,6 +13084,9 @@ function drawActiveBossWorld(){
     }
     g.globalAlpha=1;
   }
+  def.draw(bx2,presentation.y,presentation.scale,presentation.anim,presentation.t,
+    boss.parryReaction?parryFlickerOn(boss.parryReaction):boss.hurtT>0,
+    presentation.contactXs,sampledPose);
   if(boss.poisonT>0&&boss.state!=='dying'){
     for(let i=0;i<4;i++){
       const ph=(perfNow*.9+i*.27)%1;
@@ -11981,6 +13131,11 @@ function drawActiveMinibossWorld(){
     wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniRecoverAnimTime,0,1)));
   else if(!ranged&&miniComboRecovering&&miniMove)
     wx=lerp(laneX(minibossFight.xTarget,1),wx,easeInOut(clamp(minibossFight.stateT/miniComboRecoverTime,0,1)));
+  const reaction=minibossFight.parryReaction;
+  if(reaction){
+    const kick=parryReboundAmount(reaction);
+    wx+=(-(reaction.side||0)*PARRY_REACTION.bodyKick+Math.sin(reaction.t*125)*.45)*kick*p.s*miniDef.scale;
+  }
   let anim=minibossFight.state==='tele'?minibossFight.attack.anim:
     minibossFight.state==='intro'?miniDef.introAnim:
     minibossFight.state==='dying'?(minibossFight.stateT<1.1?miniDef.introAnim:miniDef.exitAnim):minibossFight.state;
@@ -11989,7 +13144,7 @@ function drawActiveMinibossWorld(){
   const miniContacts=moveContactXs(minibossFight,miniMove,minibossFight.hazardLanes);
   miniDef.draw(wx,p.y,p.s*miniDef.scale,anim,
     clamp(minibossFight.stateT/(minibossFight.state==='tele'?(minibossFight.teleTime||miniMove.tele):minibossFight.state==='strike'&&miniMove?miniMove.travel:miniComboRecovering?miniComboRecoverTime:minibossFight.state==='recover'?miniRecoverAnimTime:minibossFight.state==='dying'?1.8:.6),0,1),
-    minibossFight.hurtT>0,miniContacts);
+    reaction?parryFlickerOn(reaction):minibossFight.hurtT>0,miniContacts);
 }
 function render(){
   const stage=BIO();
@@ -12042,15 +13197,16 @@ function render(){
     drawProjectiles();
     drawPackLeap();
   }
+  const debugVisualActor=activeDebugCombatActor();
   if(pausePhotoMode){
-    drawMoveLabPhotoHitboxes();
-    const photoLabActor=boss&&boss._moveLab?boss:
-      (minibossFight&&minibossFight._moveLab?minibossFight:null);
-    if(photoLabActor){
+    if(debugHitboxesEnabled) drawMoveLabPhotoHitboxes();
+    if(debugHitboxesEnabled&&debugVisualActor)
       drawMoveLabLivePlayerGeometry();
-      drawMoveLabDodgeSnapshot(photoLabActor);
-    }
-  } else drawMoveLabMarkers();
+    if(debugSnapshotsEnabled&&debugVisualActor) drawMoveLabDodgeSnapshot(debugVisualActor);
+  } else {
+    if(debugHitboxesEnabled) drawMoveLabMarkers();
+    if(debugSnapshotsEnabled&&debugVisualActor) drawMoveLabDodgeSnapshot(debugVisualActor);
+  }
   /* NOW the near arches: the knight visibly ducks UNDER them */
   frontObs.sort((a,b)=>b.z-a.z);
   for(const o of frontObs) drawObstacle(o,proj(o.z));
@@ -12080,9 +13236,7 @@ function render(){
   if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
     g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
     if(debugMoveLabActive()) drawMoveLabPauseControls();
-    g.textAlign='center'; g.font='bold 34px monospace'; g.fillStyle='#e8e2d0';
-    g.fillText('PAUSED',VW/2,VH/2-58);
-    g.font='15px monospace'; g.fillStyle='#aeb2c2';
+    g.textAlign='center'; g.font='15px monospace'; g.fillStyle='#aeb2c2';
     g.fillText('tap outside buttons or press P to resume',VW/2,VH/2-22);
     g.strokeStyle='#ffe37a'; g.lineWidth=2; g.strokeRect(VW/2-90,VH/2+20,180,46);
     g.font='bold 15px monospace'; g.fillStyle='#ffe37a'; g.fillText('▣ SCREENSHOT',VW/2,VH/2+50);
@@ -12117,7 +13271,8 @@ function frame(now){
   if(tapIntentSimulationFrozen){ render(); return; }// optional debug input freeze; swipe detection still runs
   if(debugParryInputFrozen){ render(); return; }    // first debug parry freezes until the second Space
   if(hitstop>0){ hitstop-=dt; render(); return; }   // hit-stop: freeze the sim, keep drawing
-  update(dt*moveLabTimeScale());
+  const reaction=activeParryReaction();
+  update(dt*moveLabTimeScale()*(reaction?PARRY_REACTION.timeScale:1));
   render();
 }
 requestAnimationFrame(frame);
