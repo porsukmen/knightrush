@@ -7301,7 +7301,8 @@ function createModelHazard(actor,move,def,src){
     configureModelParryViability(h);
     ensureModelDodgeGoldReserve(h);
   }
-  h.redOnlyRaw=modelHazardIsTravelingSwipe(h)?1:predictedModelAuthoredCoreContactRaw(h);
+  h.redOnlyRecovery=!modelHazardIsTravelingSwipe(h)&&!h.profile.pincer;
+  h.redOnlyRaw=h.redOnlyRecovery?predictedModelAuthoredCoreContactRaw(h):Infinity;
   h.defenseCloseAt=h.born+h.redOnlyRaw*h.duration;
   cacheModelPerfectDirections(h);
   return h;
@@ -7692,15 +7693,6 @@ function confirmModelPerfect(h,x,y,reason,preserveSnapshot=false){
 function modelHazardIsTravelingSwipe(h){
   return !!(h&&h.move&&h.move.sweep);
 }
-function modelSwipePassedLastLane(h,raw){
-  if(!modelHazardIsTravelingSwipe(h)||!h.lanes.length) return false;
-  const sweep=h.move.sweep,lane=sweepLaneAt(sweep,raw),
-    first=Math.min(...h.lanes),last=Math.max(...h.lanes),
-    direction=(sweep.to===sweepEntryLane(sweep)?0:Math.sign(sweep.to-sweepEntryLane(sweep)));
-  /* Strictly beyond the final lane: the boundary frame still belongs to the
-     ordinary dodge/parry contract. Past it, only physical red may remain. */
-  return direction<0?lane<first-.001:direction>0?lane>last+.001:false;
-}
 function enterModelRedOnly(h,reason){
   if(h.redOnly) return;
   h.redOnly=true;h.redOnlyAt=perfNow;h.lastReason=reason;
@@ -7791,15 +7783,6 @@ function resolveModelHazard(h){
   if(h.done) return;
   const raw=clamp((perfNow-h.born)/h.duration,0,1);
   if(h.redOnly){resolveModelRedOnlyHazard(h);return;}
-  if(modelSwipePassedLastLane(h,raw)){
-    if(h.perfectPending){
-      confirmModelPerfect(h,h.pendingContactX,h.pendingContactY,
-        'gold contact survived until the swipe cleared its final lane',true);
-      return;
-    }
-    enterModelRedOnly(h,'swipe cleared its final lane; red core remains until recovery');
-    resolveModelRedOnlyHazard(h);return;
-  }
   const labActive=debugMoveLabActive(),snapshotActive=debugSnapshotCaptureActive(h.actor);
   sampleBossPresentation(h.actor,h.def,h.currPresentation,'strike',raw*h.duration);
   h.rig.samplePose(h.currPresentation,h.currPose);
@@ -7838,7 +7821,8 @@ function resolveModelHazard(h){
   /* Model hazards are boss-exclusive; only the contact profile can extend their
      shared perfect window. Miniboss timing remains in the frame resolver. */
   const W=perfectWin()+(h.profile.perfectBonus||0),inputAt=modelInputTime(h),
-    age=perfNow-inputAt,inputBeforeDefenseClose=inputAt<h.defenseCloseAt;
+    age=perfNow-inputAt,
+    inputBeforeDefenseClose=!h.redOnlyRecovery||inputAt<h.defenseCloseAt;
   const playerX=laneX(player.x,1),pincerCentered=Math.abs(playerX-laneX(1,1))<=CFG.FIGHT_HIT_HALF;
   const pincerAirborne=h.profile.pincer&&pincerCentered&&isAirborne();
   /* A normal clear asks for obvious height at the clap. A well-timed two-gold
@@ -7937,10 +7921,20 @@ function resolveModelHazard(h){
     if(labActive)
       moveLabResult('HIT',contactX,contactY,h.perfectPending?'late red contact caught the pending dodge':h.lastReason);
     else damagePlayer(combatHitText(h.src));
-  } else if(!h.done&&!h.lethalPending&&raw>=h.redOnlyRaw){
+  } else if(!h.done&&!h.lethalPending&&h.redOnlyRecovery&&raw>=h.redOnlyRaw){
     enterModelRedOnly(h,modelHazardIsTravelingSwipe(h)?
       'swipe finished; red core holds until recovery':
       'authored contact reached; only the physical red limb remains');
+  } else if(!h.done&&!h.lethalPending&&!h.redOnlyRecovery&&raw>=1){
+    h.done=true;
+    if(h.perfectPending){
+      confirmModelPerfect(h,h.pendingContactX,h.pendingContactY,
+        'gold contact survived the complete red sweep',true);
+    }else{
+      h.lastReason=frontNear?'leading near miss without valid input':
+        near||core?'rear geometry passed without a second result':'visible geometry cleared player';
+      if(labActive) moveLabResult('SAFE',laneX(player.x,1),PLAYER_Y-jumpHeight()-42,h.lastReason);
+    }
   }
   const swapPose=h.prevPose; h.prevPose=h.currPose; h.currPose=swapPose;
   const swapPresentation=h.prevPresentation; h.prevPresentation=h.currPresentation; h.currPresentation=swapPresentation;
