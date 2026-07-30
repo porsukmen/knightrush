@@ -128,8 +128,30 @@ const CFG = {
                         // after loop 6, selected attacks gradually gain bounded random tell timing
   PERFECT_WIN     : 0.18,  // small last-moment input window that awards a counter
   PARRY_WIN       : 0.075, // tighter contact-time guard; intentionally smaller than PERFECT
-  RUSH_PER_DODGE  : 8,
-  RUSH_PER_PARRY  : 24,
+  RUSH_PER_DODGE  : 20,   // first cadence pass: two perfects + two parries fill one stage-1 Rush
+  RUSH_PER_PARRY  : 30,   // parry remains the faster, riskier route to the shared meter
+  KNIGHT_RUSH_HITS : 4,
+  KNIGHT_RUSH_DMG  : 10,   // per hit, sampled from the live Chain before that hit adds its stack
+  KNIGHT_RUSH_TIMES: Object.freeze([.22,.72,1.22,2.02]),
+                         // first three contacts sit exactly on a 120 BPM half-second pulse
+  KNIGHT_RUSH_PRE_STRIKE:Object.freeze({bear:.27,hydra:.22,turtle:.22}),
+                         // incomplete-strike reference for contact bookkeeping and Turtle's held head pose
+  KNIGHT_RUSH_FINAL_WINDUP:0.18,
+  KNIGHT_RUSH_FOLLOW:0.28, // retreat after the fourth hit
+  KNIGHT_RUSH_REACH:11.2,  // Bear Twin Crush's full contact travel; every boss shares it during Rush
+  KNIGHT_RUSH_REC : 0.70, // readable normal-time recovery after the slow-motion boss recoil
+  BOSS_POSTURE_MAX:100,
+  POSTURE_PER_PARRY:18,
+  KNIGHT_RUSH_POSTURE:Object.freeze([3,3,3,15]),
+  BREAK_DURATION:4.0,
+  BREAK_POSE_IN:0.62,
+  BREAK_RECOVERY:0.72,
+  TURN_RESOLVE_MAX:6,
+  TURN_RESOLVE_START:0,
+  TURN_RESOLVE_PER_DEFENSE:1,
+  TURN_RESOLVE_PER_PLAYER_PHASE:1,
+  TURN_NORMAL_DMG:12,
+  TURN_ACTION_TIME:.72,
   PARRY_DMG_MULT  : 1.5,
   FIGHT_HIT_HALF  : 62,    // screen px from a marked lane centre: matches the paw/body footprint
   IMPACT_HOLD     : 0.10,  // keep the contact pose visible after the damage frame
@@ -153,6 +175,7 @@ const TAU = Math.PI*2;
 const ALL_LANES=Object.freeze([0,1,2]);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
+const cubic=(a,b,c,d,t)=>{const u=1-t;return u*u*u*a+3*u*u*t*b+3*u*t*t*c+t*t*t*d;};
 const easeOut=t=>1-Math.pow(1-t,3);
 const easeIn=t=>t*t*t;
 const easeInOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
@@ -222,6 +245,9 @@ class DefinitionRegistry{
    - OBSTACLE_TYPES owns render/cull/collision traits. ObstacleEntity contains only
      runtime state and cached occupied lanes. ARTIFACTS owns ArtifactDefinition data;
      equippedArtifactTypes is the O(1) hot-path cache and must be synced after loadout edits.
+   - CHARACTER_SPECIALS owns immutable CharacterSpecialDefinition records. Characters
+     reference one `specialId`; input, HUD, update and player lunge dispatch through
+     that record. All three temporary riders currently share `knight_rush`.
    - Every boss combo step is a real collision/animation attack. A string reserves
      max(2, ceil(visible steps * 0.60)) boss-move budget when selected; if that cost
      does not fit, exclude it instead of starting and truncating it. This discounts
@@ -537,6 +563,20 @@ const SFX=(()=>{
 /* pause button hit-area (drawn in the HUD, top-right under the weapon pool) */
 const PAUSE_BTN={x:VW-52,y:100,w:38,h:38};
 const BEAR_MOUTH_BTN={x:342,y:146,w:124,h:34};
+const TURN_PANEL={x:14,y:548,w:452,h:185};
+const TURN_FIGHT_BTN={x:30,y:610,w:200,h:88};
+const TURN_SKILL_BTN={x:250,y:610,w:200,h:88};
+const TURN_BACK_BTN={x:374,y:558,w:76,h:30};
+const TURN_SKILL_BTNS=Object.freeze([
+  Object.freeze({x:30,y:594,w:200,h:48}),
+  Object.freeze({x:250,y:594,w:200,h:48}),
+  Object.freeze({x:30,y:653,w:200,h:48}),
+  Object.freeze({x:250,y:653,w:200,h:48}),
+]);
+/* drawHUD pins the Rush meter to the physical bottom of the logical viewport
+   even when safe-area translation moves the rest of the HUD. Keep its tap target
+   in that final screen space so tall-phone padding cannot desynchronise input. */
+const KNIGHT_RUSH_BTN={x:VW/2-147,y:VH-43,w:294,h:25};
 const GAMEPLAY_MODES=['run','boss','miniboss','bossintro'];
 let settingsOpen=false;        // the settings sheet floats over the menu OR the pause screen
 let pausePhotoMode=false;      // hides pause chrome but deliberately keeps simulation frozen
@@ -546,6 +586,9 @@ function activeBearTurntableLab(){
 function toggleBearTurntableMouth(){
   const lab=activeBearTurntableLab();if(!lab)return false;
   lab.bearMouthOpen=lab.bearMouthOpen===true?false:true;SFX.swipe();return true;
+}
+function pointInRect(pt,rect){
+  return pt.x>=rect.x&&pt.x<=rect.x+rect.w&&pt.y>=rect.y&&pt.y<=rect.y+rect.h;
 }
 function handleAction(a,pt,parryIntent=null){
   SFX.init();
@@ -621,6 +664,19 @@ function handleAction(a,pt,parryIntent=null){
   }
   if(a==='tap' && pt && debugRun && boss && !boss._moveLab && mode==='boss'
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
+  /* The command panel owns every tap during the Bear's player phase. A tap
+     outside its buttons must never leak through as a parry or Rush input. */
+  if(mode==='boss'&&isBearPlayerTurn()){
+    if(a==='tap'&&pt) handleBearPlayerTurnTap(pt);
+    return;
+  }
+  if(a==='tap'&&pt&&mode==='boss'&&
+     pt.x>=KNIGHT_RUSH_BTN.x&&pt.x<=KNIGHT_RUSH_BTN.x+KNIGHT_RUSH_BTN.w&&
+     pt.y>=KNIGHT_RUSH_BTN.y&&pt.y<=KNIGHT_RUSH_BTN.y+KNIGHT_RUSH_BTN.h){
+    if(!activateCharacterSpecial()) SFX.duck();
+    return;
+  }
+  if(a==='rush'&&mode==='boss'){ if(!activateCharacterSpecial()) SFX.duck(); return; }
   if(a==='tap'&&(mode==='boss'||mode==='miniboss')){ playerAction('parry',parryIntent); return; }
   if(a==='tap') return;
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a,parryIntent);
@@ -647,7 +703,7 @@ addEventListener('keydown',e=>{
     }
   }
   const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',
-             a:'left',d:'right',w:'up',s:'down',' ':'parry',Enter:'tap'};
+             a:'left',d:'right',w:'up',s:'down',k:'rush',K:'rush',' ':'parry',Enter:'tap'};
   if(e.key==='m'||e.key==='M'){SFX.toggle();return;}
   if(e.key==='Escape'&&mode==='charsel'){ leaveCharSel(); return; }
   if(e.key==='p'||e.key==='P'||e.key==='Escape'){       // pause toggle on keyboard
@@ -715,6 +771,7 @@ function clearTapIntent(start=tStart){
 }
 function immediateParryTapEligible(pt){
   if(paused||settingsOpen||(mode!=='boss'&&mode!=='miniboss')) return false;
+  if(mode==='boss'&&isBearPlayerTurn()) return false;
   if(pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&
      pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop) return false;
   return true;
@@ -1160,7 +1217,7 @@ function parryBearHeadPitchAmount(reaction){
   if(reactionProfile.syncToLaneHit)
     return returnK>0?1-returnK:parryLimbImpulseProgress(reaction);
   if(returnK>0)return 1-easeOut(clamp(returnK/.42,0,1));
-  if(reaction.anim==='strike_high_sweep')
+  if(reaction.anim==='strike_high_sweep'||reaction.source==='knight_rush')
     return easeInOut(clamp(parryReactionClock(reaction)/
       reactionProfile.bear.highShoveHeadPitchPeak,0,1));
   return parryBearBitePoseAmount(reaction);
@@ -1496,7 +1553,8 @@ function sampleBearPose(presentation,out){
   if(parryRecovery){
     const returnK=parryReaction?parryLimbReturnProgress(parryReaction):easeInOut(parryRecoveryT);
     state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
-    const origin=parryReaction?parryReaction.strikeT:1;
+    const origin=parryReaction&&parryReaction.poseT!==undefined
+      ?parryReaction.poseT:parryReaction?parryReaction.strikeT:1;
     t=origin*(1-returnK);
   }
   const poseRecovery=state.startsWith('recover_bear_from:');
@@ -1591,6 +1649,18 @@ function sampleBearPose(presentation,out){
   }
   else if(state==='tele_high_sweep'){ crouch=easeOut(t)*2; rightLift=leftLift=heldLift*.72; headY=-4; jaw=.6; snarl=1; }
   else if(state==='strike_high_sweep'){ const k=clamp(t,0,1); rightLift=leftLift=.72; highThrust=easeOut(k); headY=-4+k*2; lean=Math.sin(k*Math.PI)*.06; jaw=.7; snarl=1; }
+  else if(state==='break_bear'){
+    /* Hindquarters sink while both forelegs remain planted; the skull hangs
+       toward the cave floor instead of recovering to its alert idle silhouette.
+       A slow loose-jaw breath keeps the defeated hold alive without reading as
+       another attack tell. */
+    const k=easeInOut(t),brokenBreath=.5+.5*Math.sin(perfNow*1.35);
+    crouch=lerp(0,-6.5,k);
+    headY=lerp(0,12.3+(brokenBreath-.5)*1.3,k);
+    headOut=lerp(0,4.2+(brokenBreath-.5)*.25,k);
+    jaw=lerp(.14,.20+brokenBreath*.18,k);snarl=lerp(.18,0,k);
+    lean=lerp(0,.025,k);
+  }
   else if(state==='finisher'){
     if(t<.55){ const k=easeOut(t/.55); crouch=k*8; rightLift=leftLift=k; headY=-k*5; jaw=k; snarl=1; }
     else { const k=clamp((t-.55)/.45,0,1); crouch=8-easeOut(k)*13; rightLift=leftLift=1; rightSlam=leftSlam=k; headY=-5+k*11; headOut=k*10; jaw=1; snarl=1; }
@@ -2068,13 +2138,14 @@ function drawBearNatural(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   const reaction=sampledPose&&sampledPose.parryReaction;
   const reactionAnim=reaction&&reaction.anim||'',
     highShoveParry=!!reaction&&reactionAnim==='strike_high_sweep',
+    knightRushHeadParry=!!reaction&&reaction.source==='knight_rush',
     actualBiteParry=!!reaction&&reactionAnim.includes('bite'),
     biteParry=actualBiteParry||highShoveParry,
     bitePullback=biteParry?parryBearBitePullback(reaction):0,
     biteRise=actualBiteParry?parryBearBiteRiseAmount(reaction):0,
     biteRecovery=actualBiteParry?parryBearBiteRecoveryProgress(reaction):0,
     biteRear=biteParry?parryBearBitePoseAmount(reaction):0,
-    biteHeadPitch=biteParry?parryBearHeadPitchAmount(reaction):0,
+    biteHeadPitch=(biteParry||knightRushHeadParry)?parryBearHeadPitchAmount(reaction):0,
     biteHeadReturning=actualBiteParry&&parryReactionClock(reaction)>=
       parryReactionProfile(reaction).bear.biteHeadReturnStart,
     biteArmPose=highShoveParry?biteHeadPitch:biteRear,
@@ -2477,7 +2548,9 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   if(parryRecovery){
     const returnK=parryReaction?parryLimbReturnProgress(parryReaction):easeInOut(parryRecoveryT);
     state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
-    t=(parryReaction?parryReaction.strikeT:1)*(1-returnK);
+    const origin=parryReaction&&parryReaction.poseT!==undefined
+      ?parryReaction.poseT:parryReaction?parryReaction.strikeT:1;
+    t=origin*(1-returnK);
   }
   const poseRecovery=state.startsWith('recover_hydra_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
@@ -2553,6 +2626,14 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
   else if(state==='recover_hydra_pincer'){ const k=easeInOut(t); P=[[lerp(-8,-3,k),lerp(12,0,k),1-k],[0,lerp(4,2,k),.2*(1-k)],[lerp(8,3,k),lerp(12,0,k),1-k]]; }
   else if(state==='tele_hydra_spit') P=[[pull(-3,-6),pull(0,13),held],[0,pull(2,17),held],[pull(3,6),pull(0,13),held]];
   else if(state==='strike_hydra_spit'){ const k=easeOut(t); P=[[-6-k*3,13-k*8,1],[0,17-k*11,1],[6+k*3,13-k*8,1]]; }
+  else if(state==='break_hydra'){
+    /* All three necks lose tension to foot level. Side skulls settle in front
+       of their matching feet while the centre skull folds straight forward. */
+    const k=easeInOut(t);
+    P=[[lerp(-3,-7.5,k),lerp(0,-32.5,k),lerp(0,.025,k)],
+       [0,lerp(2,-35.5,k),lerp(0,.018,k)],
+       [lerp(3,7.5,k),lerp(0,-32.5,k),lerp(0,.025,k)]];
+  }
   else if(state==='tele_swipe')      P=[[-2,0,0],[1,2,0],[7,9,0.5]];
   else if(state==='tele_double')P=[[-7,9,0.5],[0,1,0],[7,9,0.5]];
   else if(state==='tele_sweep') P=[[-5,-7,0.2],[0,-8,0.2],[5,-7,0.2]];
@@ -2739,7 +2820,17 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
       px(lerp(bx,topX,f)+Math.sin(f*Math.PI)*parryNeckCurve-0.8,
         lerp(by,topY,f)+1.4,1.8,1.6,belly); }
     /* the head: wedge skull, jaw, frill, glowing eyes */
-    const hx2=topX, hy2=topY-3;
+    const hx2=topX, hy2=topY-3,brokenHydra=state==='break_hydra',
+      brokenHydraK=brokenHydra?easeInOut(t):0,
+      brokenHeadAngle=brokenHydra?[-.68,.20,.68][n]*brokenHydraK:0;
+    if(brokenHydra){
+      /* A fixed floor shadow makes the endpoint read as dead weight resting on
+         stone, rather than a low attack pose suspended above it. */
+      g.save();g.globalAlpha=.34*brokenHydraK;g.fillStyle='#050907';g.beginPath();
+      g.ellipse(hx2*U,(hy2+5.4)*U,4.5*U,1.15*U,0,0,TAU);g.fill();g.restore();
+      g.save();g.translate(hx2*U,(hy2+2.8)*U);g.rotate(brokenHeadAngle);
+      g.translate(-hx2*U,-(hy2+2.8)*U);
+    }
     if(parryHeadPitch>.015){
       drawAngleClip(hydraParryHeadPitchClip(hurtFlash),parryHeadPitch*.999,
         hx2*U,(topY+parryHeadPitch)*U,12*U,
@@ -2752,10 +2843,22 @@ function drawHydra(x,y,scale,state,t,hurtFlash,contactXs,sampledPose){
       if(jaw>0.2){ g.fillStyle='#e8e2d0';
         g.fillRect((hx2-1.8)*U,(hy2+4.6)*U,U*0.7,U*1.1); g.fillRect((hx2+1.1)*U,(hy2+4.6)*U,U*0.7,U*1.1);
         g.fillStyle='#7a2a3a'; g.fillRect((hx2-1)*U,(hy2+4.8+jaw)*U,U*2,U*0.9); }
-      g.fillStyle='#c9f74a'; g.shadowColor='#c9f74a'; g.shadowBlur=7*scale;   // acid-green eyes
-      g.fillRect((hx2-2)*U,(hy2+1.4)*U,1.5*U,1.5*U); g.fillRect((hx2+0.6)*U,(hy2+1.4)*U,1.5*U,1.5*U);
-      g.shadowBlur=0;
+      if(brokenHydra){
+        /* The acid glow survives as a thin squint while Broken, then opens on
+           the same recovery clock as the skull rotation to avoid a final snap. */
+        const eyeH=lerp(1.5,.48,brokenHydraK),eyeY=lerp(1.4,2.05,brokenHydraK);
+        g.fillStyle='#a7cf42';g.shadowColor='#c9f74a';
+        g.shadowBlur=lerp(7,2.5,brokenHydraK)*scale;
+        g.fillRect((hx2-2.1)*U,(hy2+eyeY)*U,1.7*U,eyeH*U);
+        g.fillRect((hx2+.55)*U,(hy2+eyeY)*U,1.7*U,eyeH*U);
+        g.shadowBlur=0;
+      }else{
+        g.fillStyle='#c9f74a'; g.shadowColor='#c9f74a'; g.shadowBlur=7*scale;   // acid-green eyes
+        g.fillRect((hx2-2)*U,(hy2+1.4)*U,1.5*U,1.5*U); g.fillRect((hx2+0.6)*U,(hy2+1.4)*U,1.5*U,1.5*U);
+        g.shadowBlur=0;
+      }
     }
+    if(brokenHydra)g.restore();
   }
   if(!poseRecovery&&(state==='strike_hydra_wave'||state==='strike_hydra_spit')&&t>.45){
     const a=(1-t)*.7; g.globalAlpha=a;
@@ -2940,6 +3043,13 @@ const TURTLE_SPIN_TUCK=30;
 const TURTLE_SPIN_RETURN_START=.08;
 const TURTLE_SPIN_RETURN_DURATION=.70;
 const TURTLE_SPIN_RETURN_TIME_SCALE=1.15;
+/* Editable final posture-break silhouette. Screen-right is the Snapper's visible
+   right foot in this front-facing sprite. The grounded head uses the opposite
+   cheek from the first pass and sits on the same baseline as that foot. */
+const TURTLE_BREAK_POSE=Object.freeze({
+  headX:26,headY:35.2,headRoll:Math.PI*.48,
+  ropeElbowX:16.45,ropeSag:.58,ropeSegments:8
+});
 const TURTLE_TUBE_POINT_SCRATCH=[
   {x:0,y:0,reach:1},{x:0,y:0,reach:1},{x:0,y:0,reach:1}];
 function turtleSpinReturnProgress(t){
@@ -2990,7 +3100,9 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   if(parryRecovery){
     const returnK=actorReaction?parryLimbReturnProgress(actorReaction):easeInOut(parryRecoveryT);
     state=returnK>=.999?'idle':state.slice(state.indexOf(':')+1);
-    t=(actorReaction?actorReaction.strikeT:1)*(1-returnK);
+    const origin=actorReaction&&actorReaction.poseT!==undefined
+      ?actorReaction.poseT:actorReaction?actorReaction.strikeT:1;
+    t=origin*(1-returnK);
   }
   const poseRecovery=state.startsWith('recover_turtle_from:');
   const poseRecoveryT=poseRecovery?clamp(t,0,1):0;
@@ -3036,6 +3148,13 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   /* Keep the beak visibly open through the lunge. It closes only during the last
      16% and reaches its shut pose on t=1, the exact hazard-impact frame. */
   const jawSnap=biteJawAt(t);
+  const brokenTurtle=state==='break_turtle',
+    turtleBreakT=brokenTurtle?clamp(t,0,1):0,
+    turtleBreakK=brokenTurtle?smoothStep(turtleBreakT):0,
+    turtleBreakFall=brokenTurtle?easeIn(clamp(turtleBreakT/.70,0,1)):0,
+    turtleBreakSlide=brokenTurtle?smoothStep(clamp((turtleBreakT-.12)/.72,0,1)):0,
+    turtleBreakRope=brokenTurtle?smoothStep(clamp((turtleBreakT-.20)/.55,0,1)):0,
+    turtleBreakImpact=brokenTurtle?clamp((turtleBreakT-.67)/.33,0,1):0;
   if(state==='tele_turtle_bite_left'){ tilt=-.028+headTremble; headOut=.58-held*.26+headTremble; jaw=.08+held*.16; rear=held*2.8; }
   else if(state==='strike_turtle_bite_left'){ headOut=.32+easeOut(t)*2.02; jaw=jawSnap; rear=2-easeOut(t)*2.5; }
   else if(state==='tele_turtle_bite_right'){ tilt=.028-headTremble; headOut=.58-held*.26-headTremble; jaw=.08+held*.16; rear=held*2.8; }
@@ -3075,6 +3194,19 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   else if(state==='strike_turtle_right'){ const k=easeOut(t); tilt=.06-k*.12; legR=9-k*14; headOut=.55; jaw=.7; }
   else if(state==='tele_turtle_double'){ rear=held*5; legL=legR=held*8; jaw=.5; }
   else if(state==='strike_turtle_double'){ const k=easeOut(t); rear=5-k*7; legL=legR=8-k*14; jaw=.8; }
+  else if(state==='tele_turtle_knight_rush'){
+    const k=easeOut(t),pre=easeOut(CFG.KNIGHT_RUSH_PRE_STRIKE.turtle);
+    headOut=lerp(.58,.32+pre*2.02,k)+headTremble;
+    jaw=lerp(.06,biteJawAt(CFG.KNIGHT_RUSH_PRE_STRIKE.turtle),k);
+    rear=lerp(0,3-pre*4,k);tilt=headTremble;
+  }
+  else if(state==='break_turtle'){
+    /* The shell stays upright. The skull gains weight first, then slides toward
+       the visible right foot and rolls onto its side after touching ground. */
+    headOut=lerp(.58,.72,turtleBreakFall);jaw=lerp(.14,.018,turtleBreakFall);
+    squash=lerp(0,.055,turtleBreakK);rear=lerp(0,-1.8,turtleBreakK);
+    legL=legR=lerp(0,-1.2,turtleBreakK);
+  }
   else if(state==='tele_turtle_bite'){ headOut=.58-held*.26+headTremble; jaw=.06+held*.18; rear=held*3.2; tilt=headTremble; }
   else if(state==='strike_turtle_bite'){ const k=easeOut(t); headOut=.32+k*2.02; jaw=jawSnap; rear=3-k*4; }
   else if(state==='tele_turtle_quake'){ squash=easeOut(t)*.16; rear=easeOut(t)*5; legL=legR=easeOut(t)*7; }
@@ -3256,11 +3388,17 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
   const biteHideScale=lerp(1,.87,turtleBiteHide);
   const hs=(0.68+Math.max(0,headOut)*0.46)*biteHideScale;     // skull compresses slightly as it crosses the shell mouth
   const hyB=sy(25)-Math.max(0,headOut)*6.2;                  // neck rises clearly above the front opening
-  const isSnap=state==='strike_turtle_bite'||state==='strike_turtle_bite_left'||state==='strike_turtle_bite_right';
+  const isSnap=state==='strike_turtle_bite'||state==='strike_turtle_bite_left'||state==='strike_turtle_bite_right',
+    knightRushTell=state==='tele_turtle_knight_rush';
+  const brokenTurtleK=brokenTurtle?turtleBreakK:0;
   const recoveringSnap=state.startsWith('recover_turtle_bite');
   const neckRecover=recoveringSnap?easeInOut(clamp((t-.08)/.84,0,1)):0;
-  let neckK=isSnap?easeOut(clamp(t,0,1)):recoveringSnap?1-neckRecover:0,
+  let neckK=isSnap?easeOut(clamp(t,0,1)):
+      knightRushTell?easeOut(clamp(t,0,1))*easeOut(CFG.KNIGHT_RUSH_PRE_STRIKE.turtle):
+      brokenTurtle?brokenTurtleK:
+      recoveringSnap?1-neckRecover:0,
       neckTarget=contactLocal.length?contactLocal[0]:16;
+  if(brokenTurtle)neckTarget=TURTLE_BREAK_POSE.headX;
   if(turtleBiteParry){
     /* First recoil one quarter of the extended neck, then withdraw the rest.
        During return the ordinary centre idle neck re-emerges without replaying
@@ -3274,17 +3412,56 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     else if(t<.84){ const q=clamp((t-.68)/.16,0,1); neckTarget=contactLocal[contactLocal.length-1]; neckK=Math.sin(q*Math.PI); }
     else { neckTarget=contactLocal[Math.min(1,contactLocal.length-1)]; neckK=easeOut(clamp((t-.84)/.16,0,1)); }
   }
-  const headX=lerp(16,neckTarget,neckK);
+  const headX=brokenTurtle?lerp(16,TURTLE_BREAK_POSE.headX,turtleBreakSlide):
+    lerp(16,neckTarget,neckK);
   const snapHeadScale=(0.68+Math.max(0,headOut)*0.46)*biteHideScale;
-  const headY=lerp(hyB,biteY-5.2*snapHeadScale,neckK)-(recoveringSnap?Math.sin(neckRecover*Math.PI)*4.2:0);
+  const turtleBreakBounce=brokenTurtle
+    ?Math.sin(turtleBreakImpact*Math.PI)*.62*(1-turtleBreakImpact):0;
+  const headY=brokenTurtle
+    ?lerp(hyB,sy(TURTLE_BREAK_POSE.headY),turtleBreakFall)-turtleBreakBounce:
+    lerp(hyB,biteY-5.2*snapHeadScale,neckK)-(recoveringSnap?Math.sin(neckRecover*Math.PI)*4.2:0);
   if(neckK>0.02){
-    /* The neck originates in the front-lower shell opening, then bends upward
-       before reaching the skull. The bite can straighten this same anatomy. */
+    /* Attacks bend toward contact. Break morphs that direct line into a loose L:
+       socket -> vertical drop -> floor-level horizontal trail -> skull collar. */
     px(12.4,sy(26.8),7.2,4.2,'#100b0d');
-    for(let i=0;i<6;i++){
-      const a=i/6,b=(i+1)/6, ax=lerp(16,headX,a), ay=lerp(sy(28),headY,a), bx=lerp(16,headX,b), by=lerp(sy(28),headY,b);
-      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
-      const neckW=lerp(5.8,4.4,(i+.5)/6);
+    const socketY=sy(28),
+      collarRadius=2.05*hs,
+      /* The opposite cheek turns the drawn crown away from the socket. Keep the
+         loose neck attached to the skull's body-facing edge, never its far side. */
+      ropeEndX=brokenTurtle?headX-collarRadius:headX,
+      ropeEndY=headY,
+      ropeElbowX=lerp(16,TURTLE_BREAK_POSE.ropeElbowX,turtleBreakRope),
+      ropeElbowY=ropeEndY,
+      ropePoint=(s,out)=>{
+        const directX=lerp(16,ropeEndX,s),directY=lerp(socketY,ropeEndY,s),
+          turn=.43;
+        let lx,ly;
+        if(s<=turn){
+          const u=s/turn;
+          lx=lerp(16,ropeElbowX,u)+Math.sin(u*Math.PI)*.16*turtleBreakRope;
+          ly=lerp(socketY,ropeElbowY,u);
+        }else{
+          const u=(s-turn)/(1-turn);
+          lx=lerp(ropeElbowX,ropeEndX,u);
+          ly=lerp(ropeElbowY,ropeEndY,u)+
+            Math.sin(u*Math.PI)*TURTLE_BREAK_POSE.ropeSag*turtleBreakRope;
+        }
+        out.x=lerp(directX,lx,turtleBreakRope);
+        out.y=lerp(directY,ly,turtleBreakRope);
+      },
+      ropeA={x:0,y:0},ropeB={x:0,y:0},
+      ropeSegments=brokenTurtle?TURTLE_BREAK_POSE.ropeSegments:6;
+    for(let i=0;i<ropeSegments;i++){
+      const a=i/ropeSegments,b=(i+1)/ropeSegments;
+      if(brokenTurtle){
+        ropePoint(a,ropeA);ropePoint(b,ropeB);
+      }else{
+        ropeA.x=lerp(16,headX,a);ropeA.y=lerp(socketY,headY,a);
+        ropeB.x=lerp(16,headX,b);ropeB.y=lerp(socketY,headY,b);
+      }
+      const ax=ropeA.x,ay=ropeA.y,bx=ropeB.x,by=ropeB.y,
+        dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+      const neckW=lerp(5.8,4.4,(i+.5)/ropeSegments);
       g.save(); g.translate(ax*U,ay*U); g.rotate(Math.atan2(dy,dx)-Math.PI/2);
       px(-neckW*.5,0,neckW,len,skin);px(-neckW*.5,0,neckW*.24,len,skinL);
       px(neckW*.22,1,neckW*.16,Math.max(1,len-2),skinD);
@@ -3316,7 +3493,19 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
       g.globalAlpha=glow*0.5; px(15,sy(29.7),2,0.8,seamHot); g.globalAlpha=1;
     }
   } else {
-    g.save();g.translate(headX*U,headY*U);g.scale(hs,hs);g.translate(-16*U,-30*U);
+    if(brokenTurtle){
+      /* The skull owns a separate contact shadow because its low pose extends
+         beyond the shell's broad arena shadow. */
+      g.save();g.globalAlpha=.38*brokenTurtleK;g.fillStyle='#090607';g.beginPath();
+      g.ellipse(headX*U,(headY+6.4)*U,6.1*U,1.35*U,.08,0,TAU);g.fill();g.restore();
+    }
+    g.save();g.translate(headX*U,headY*U);
+    if(brokenTurtle){
+      const settleWobble=Math.sin(turtleBreakImpact*Math.PI*2)*
+        .055*(1-turtleBreakImpact);
+      g.rotate(TURTLE_BREAK_POSE.headRoll*turtleBreakSlide+settleWobble);
+    }
+    g.scale(hs,hs);g.translate(-16*U,-30*U);
     px(12.4,26.5,7.2,3,skin);px(12.4,26.5,2,2.8,skinL);       // neck collar
     /* Broad, low snapping-turtle skull with strong temporal corners. */
     g.fillStyle=skin;g.beginPath();g.moveTo(10.2*U,29.4*U);g.lineTo(12*U,27.6*U);
@@ -3324,9 +3513,19 @@ function drawLavaTurtle(x,y,scale,state,t,hurtFlash,contactXs){
     g.lineTo(11.5*U,34.2*U);g.closePath();g.fill();
     px(11.8,27.8,8.4,1.5,skinL);px(10.4,30.2,2,3.4,skinD);px(19.6,30.2,2,3.4,skinD);
     px(12,29,3.2,1.6,skinD);px(16.8,29,3.2,1.6,skinD);        // bony brows
-    g.fillStyle=seamHot;g.shadowColor=seam;g.shadowBlur=8*scale;
-    g.fillRect(12.8*U,30.1*U,1.35*U,1.25*U);g.fillRect(17.85*U,30.1*U,1.35*U,1.25*U);
-    g.shadowBlur=0;
+    if(brokenTurtle){
+      /* A dim lava slit keeps it visibly dazed rather than unconscious. */
+      const eyeH=lerp(1.25,.48,brokenTurtleK),eyeY=lerp(30.1,30.65,brokenTurtleK);
+      g.fillStyle=seamHot;g.shadowColor=seam;
+      g.shadowBlur=lerp(8,2.5,brokenTurtleK)*scale;
+      g.fillRect(12.35*U,eyeY*U,2.15*U,eyeH*U);
+      g.fillRect(17.5*U,eyeY*U,2.15*U,eyeH*U);
+      g.shadowBlur=0;
+    }else{
+      g.fillStyle=seamHot;g.shadowColor=seam;g.shadowBlur=8*scale;
+      g.fillRect(12.8*U,30.1*U,1.35*U,1.25*U);g.fillRect(17.85*U,30.1*U,1.35*U,1.25*U);
+      g.shadowBlur=0;
+    }
     px(14.1,31.7,.8,.7,'#080607');px(17.1,31.7,.8,.7,'#080607'); // nostrils
     /* Hooked upper beak and deep opposing lower jaw: the defining snapper mouth. */
     g.fillStyle='#171115';g.beginPath();g.moveTo(11.6*U,33*U);g.lineTo(20.4*U,33*U);
@@ -6968,7 +7167,8 @@ const player={
 };
 const DEBUG_PARRY_INPUT_HOLD=.32;
 let debugParryInputMark=null,debugParryFreezeEnabled=false,debugParryInputFrozen=false;
-let debugHitboxesEnabled=false,debugSnapshotsEnabled=true,debugParryStaggerEnabled=false;
+let debugHitboxesEnabled=false,debugSnapshotsEnabled=true,debugParryStaggerEnabled=false,
+    debugAutoParryEnabled=false;
 function markDebugParryInput(inputAt=perfNow,allowFreeze=true,intent=null){
   if(!debugRun&&!debugMoveLabActive()) return;
   const holdGeometry=debugParryFreezeEnabled&&allowFreeze&&!debugMoveLabActive();
@@ -6981,7 +7181,7 @@ function markDebugParryInput(inputAt=perfNow,allowFreeze=true,intent=null){
   if(holdGeometry) debugParryInputFrozen=true;
 }
 function playerAction(a,parryIntent=null){
-  if(!player.alive) return;
+  if(!player.alive||knightRushSequence) return;
   if(a==='left'&&player.lane>0){ player.laneFrom=player.lane; player.lane--; player.lastLaneChange=perfNow; SFX.swipe(); }
   else if(a==='right'&&player.lane<2){ player.laneFrom=player.lane; player.lane++; player.lastLaneChange=perfNow; SFX.swipe(); }
   else if(a==='up'&&player.jumpT<0){ player.jumpT=0; player.duckT=-1; player.lastJump=perfNow; SFX.jump();
@@ -7028,9 +7228,10 @@ function updatePlayer(dt){
 function drawPlayer(){
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
   const duck=player.duckT>=0?Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1)):0;
-  const y=PLAYER_Y-jumpHeight();
+  const rushLunge=characterSpecialLungeAmount(),
+    y=PLAYER_Y-jumpHeight()-rushLunge*68;
   if(player.invuln>0 && (perfNow*14|0)%2===0) g.globalAlpha=0.45;   // shield i-frames blink
-  drawRider(laneX(player.x,1),y,1.02,{
+  drawRider(laneX(player.x,1),y,1.02+rushLunge*.08,{
     gallop:player.gallop, lean, duck,
     air:player.jumpT>=0?clamp(player.jumpT/jumpDur(),0,1):0,
     feather:playerChar.feather, horse:playerChar.horse, chubby:playerChar.chubby,
@@ -7813,7 +8014,7 @@ function resolveModelHazard(h){
       if(facesPlayer&&!frontCore){ contactX=b.x; contactY=b.y; }
     }
   }
-  /* Auto Parry is a Boss Lab input assistant, not a separate verdict path.
+  /* Auto Parry is a debug input assistant, not a separate verdict path.
      It presses the normal parry action only when the live spatial evaluator says
      the knight is touching the authored violet/burgundy band in the correct lane. */
   if(moveLabAutoParryCanTrigger(h)&&evaluateModelParryInput(h).success)
@@ -8399,6 +8600,100 @@ function resolveHazard(h){
 /* BOSS CHAIN: every landed boss hit adds one stack. It is created fresh with
    each EncounterActor boss, so no damage momentum leaks between encounters. */
 let chainStacks=0;
+/* First turn-combat vertical slice: immutable placeholder commands keep the
+   prototype data-driven while the real weapon/skill evolution system is designed. */
+const BEAR_TURN_SKILLS=Object.freeze([
+  Object.freeze({name:'POWER SHOT',cost:1,damage:16,col:'#c0f79a'}),
+  Object.freeze({name:'SHIELD BASH',cost:2,damage:24,col:'#9ecbff'}),
+  Object.freeze({name:'ARROW RAIN',cost:3,damage:34,col:'#ffe37a'}),
+  Object.freeze({name:'ROYAL STRIKE',cost:4,damage:46,col:'#c995ff'}),
+]);
+function isBearTurnCombat(actor=boss){
+  return !!(actor&&actor.turnCombat&&!actor._moveLab);
+}
+function isBearPlayerTurn(){
+  return isBearTurnCombat()&&boss.phase==='player';
+}
+function addTurnResolve(amount,show=true){
+  if(!isBearTurnCombat()||amount<=0) return 0;
+  const before=boss.resolve||0;
+  boss.resolve=clamp(before+amount,0,boss.resolveMax||CFG.TURN_RESOLVE_MAX);
+  const gained=boss.resolve-before;
+  if(gained>0&&show)
+    floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-122,'RESOLVE +'+gained,'#7fc9ff',15);
+  return gained;
+}
+function bearTurnDamage(base){
+  const breakMultiplier=boss&&boss.playerTurnBreak?1.5:1;
+  return Math.round(base*(1+chainBonus()*chainStacks)*breakMultiplier);
+}
+function beginBearPlayerTurn(fromBreak=false){
+  if(!isBearTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
+  boss.phase='player';boss.playerTurnBreak=fromBreak;
+  if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
+  boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
+  addTurnResolve(CFG.TURN_RESOLVE_PER_PLAYER_PHASE,false);
+  floater(VW/2,278,fromBreak?'BREAK TURN — DAMAGE +50%':'YOUR TURN',
+    fromBreak?'#ffe37a':'#c0f79a',fromBreak?20:23);
+  SFX.relic();
+  return true;
+}
+function finishBearPlayerAction(){
+  if(!isBearTurnCombat()||boss.phase!=='playerResolve') return;
+  if(boss.hp<=0){ resolveVolley(); return; }
+  const endedBreak=boss.playerTurnBreak===true;
+  if(endedBreak){
+    boss.posture=0;boss.breakEntryZ=undefined;boss.breakSource=null;
+    boss.pendingBreak=null;boss.playerTurnBreak=false;
+  }
+  /* Break ends the Bear's entire current attack phase. Any unspent attacks from
+     that phase are discarded; after the empowered action a fresh half-turn starts. */
+  boss.enemyTurn=(boss.enemyTurn||1)+1;
+  boss.attacksLeft=boss.enemyTurnBudget;
+  boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
+  boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();
+  floater(VW/2,278,'BEAR TURN '+boss.enemyTurn,'#ff9a3a',17);
+}
+function performBearPlayerAction(command){
+  if(!isBearPlayerTurn()||!command) return false;
+  const cost=command.cost||0;
+  if((boss.resolve||0)<cost){ SFX.duck(); return false; }
+  boss.resolve-=cost;
+  boss.phase='playerResolve';boss.playerMenu='root';
+  boss.playerActionTimer=CFG.TURN_ACTION_TIME;
+  player.attackAnim=1;player.counterAnim=.42;
+  const damage=bearTurnDamage(command.damage);
+  const breakAttack=boss.playerTurnBreak===true;
+  const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s;
+  SFX.slash();spawnSlash(x,y,command.slash===undefined?-.48:command.slash,command.col||'#ffffff');
+  burst(x,y,command.skill?16:10,[command.col||'#ffffff','#ffffff','#ffe37a'],
+    command.skill?205:155,75,command.skill?4.2:3.2,.55);
+  floater(VW/2,318,command.name,command.col||'#ffffff',command.skill?19:17);
+  if(breakAttack)floater(VW/2,346,'BREAK BONUS ×1.5','#ffe37a',16);
+  hurtBoss(damage,false,'turn_attack');
+  addChainStack();
+  return true;
+}
+function handleBearPlayerTurnTap(pt){
+  if(!isBearPlayerTurn()) return false;
+  if(boss.playerMenu==='skills'){
+    if(pointInRect(pt,TURN_BACK_BTN)){boss.playerMenu='root';SFX.swipe();return true;}
+    for(let i=0;i<TURN_SKILL_BTNS.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
+      const skill=BEAR_TURN_SKILLS[i];
+      return performBearPlayerAction({
+        name:skill.name,cost:skill.cost,damage:skill.damage,col:skill.col,
+        skill:true,slash:-.72+i*.34
+      });
+    }
+    return false;
+  }
+  if(pointInRect(pt,TURN_FIGHT_BTN))
+    return performBearPlayerAction({
+      name:'NORMAL ATTACK',cost:0,damage:CFG.TURN_NORMAL_DMG,col:'#e8e2d0',slash:-.45
+    });
+  if(pointInRect(pt,TURN_SKILL_BTN)){boss.playerMenu='skills';SFX.swipe();return true;}
+  return false;
+}
 function addChainStack(){
   if(minibossFight) return;                  // taming progress is not a damage chain
   chainStacks++;
@@ -8416,12 +8711,46 @@ function doCounter(src){
   }
   addChainStack();
 }
-let knightRush=0;
+let knightRush=0,knightRushQueued=false,knightRushSequence=null;
 function addKnightRush(amount){
-  if(!boss) return;
-  knightRush=clamp(knightRush+amount,0,100);
+  if(!boss||knightRushQueued) return;
+  knightRush=clamp(knightRush+amount,0,activeCharacterSpecial().maxCharge);
+}
+/* Boss Posture is encounter pressure, not a second health pool. It does not
+   decay, Perfect Dodge does not touch it, and Break never consumes an additional
+   attack token. All future build hooks should enter through this one function. */
+function applyBossPosture(amount,source,reaction=null){
+  if(!boss||boss._moveLab||boss.phase!=='dodge'||boss.state==='dying'||
+     boss.state==='finisher'||boss.state==='break'||boss.state==='breakRecover'||
+     boss.pendingBreak||amount<=0) return 0;
+  const before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
+  boss.posture=Math.min(max,before+amount);
+  boss.lastPostureSource=source;
+  if(boss.posture>=max){
+    boss.pendingBreak={source};
+    /* A posture-breaking parry always uses the authored heavy stagger reaction.
+       Knight Rush already owns that style on its fourth contact. */
+    if(reaction) reaction.style='parry_stagger';
+    if(!reaction&&!knightRushSequence) beginBossBreak(boss,null);
+  }
+  return boss.posture-before;
+}
+function beginBossBreak(actor,entryPresentation=null){
+  if(!actor||actor!==boss||!actor.pendingBreak) return false;
+  const pending=actor.pendingBreak;
+  actor.pendingBreak=null;actor.parryReaction=null;actor.knightRushRecovery=null;
+  actor.breakSource=pending.source;actor.breakCount=(actor.breakCount||0)+1;
+  actor.breakEntryZ=entryPresentation?entryPresentation.z:actor.z;
+  actor.state='break';actor.stateT=0;actor.hurtT=0;
+  actor.sequenceIndex=actor.attack&&actor.attack.steps?actor.attack.steps.length-1:0;
+  for(const h of hazards)if(h.src===BOSS_SOURCE)h.done=true;
+  floater(VW/2,270,'BREAK!','#ffe37a',27);
+  SFX.hit();flash('#ffe37a',.22);shake(9,.42);stopTime(.055);
+  if(isBearTurnCombat(actor))beginBearPlayerTurn(true);
+  return true;
 }
 function doPerfectDodge(src){
+  if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   addKnightRush(CFG.RUSH_PER_DODGE);
   doCounter(src);
 }
@@ -8432,7 +8761,7 @@ function interruptParriedAttack(src){
   actor.state='recover'; actor.stateT=0;
   for(const h of hazards) if(h.src===src) h.done=true;
 }
-function beginParryReaction(actor,move,x,y,strikeT=null){
+function beginParryReaction(actor,move,x,y,strikeT=null,styleOverride=null){
   if(!actor||!move) return null;
   const side=x<laneX(actor.x,1)?-1:x>laneX(actor.x,1)?1:0,
     reboundDir=move.sweep?Math.sign(move.sweep.from-move.sweep.to):(side?-side:0);
@@ -8442,10 +8771,10 @@ function beginParryReaction(actor,move,x,y,strikeT=null){
     if(distance<contactLaneDistance){contactLaneDistance=distance;contactLane=lane;}
   }
   const reaction=actor.parryReaction={
-    t:0,style:debugParryStaggerEnabled?'parry_stagger':'parry_counter',
+    t:0,style:styleOverride||(debugParryStaggerEnabled?'parry_stagger':'parry_counter'),
     move,anim:move.strike||'',contactX:x,contactY:y,
     strikeT:strikeT===null?clamp(actor.stateT/Math.max(.001,move.travel||1),0,1):clamp(strikeT,0,1),
-    side,reboundDir,contactLane,
+    side,reboundDir,contactLane,targetX:move.x!==undefined?move.x:actor.xTarget,
     turtleSpin:move.strike==='strike_turtle_spin'
   };
   const tubeTell=actor._turtleTubeHesitation;
@@ -8477,7 +8806,9 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   const move=moveOverride||(actor&&actor.currentMove());
   const reaction=beginParryReaction(actor,move,x,y,strikeT);
   player.parryAnim=1; player.counterAnim=.55;
+  if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   addKnightRush(CFG.RUSH_PER_PARRY);
+  if(src!==MINIBOSS_SOURCE)applyBossPosture(CFG.POSTURE_PER_PARRY,'parry',reaction);
   emitParryReactionFx(x,y,reaction);
   floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
   interruptParriedAttack(src);
@@ -8487,6 +8818,228 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
     hurtBoss(dmg,true);
   }
   addChainStack();
+}
+
+/* CHARACTER SPECIALS
+   Characters own only a special id. Immutable definitions own activation,
+   simulation and presentation data, so rebuilding the roster never adds
+   character-id branches to input, HUD, update or boss presentation hot paths.
+   The first shared vertical slice is KNIGHT RUSH. It deliberately does not decide
+   early weapon spending, posture or artifacts. Tapping a full meter arms the
+   action; the current boss string remains dangerous and Rush claims the next
+   true idle boundary. */
+class CharacterSpecialDefinition{
+  constructor(id,data){
+    const required=['name','maxCharge','bossAttackIds','selectBossMove',
+      'canActivate','activate','update','lungeAmount'];
+    for(const key of required)if(data[key]===undefined)
+      throw new Error('Character special '+id+' is missing '+key);
+    this.id=id;this.name=data.name;this.maxCharge=data.maxCharge;
+    this.bossAttackIds=Object.freeze(Object.assign({},data.bossAttackIds));
+    this.slashAngles=Object.freeze(Array.from(data.slashAngles||[]));
+    this.selectBossMove=data.selectBossMove;this.canActivate=data.canActivate;
+    this.activate=data.activate;this.update=data.update;this.lungeAmount=data.lungeAmount;
+    Object.freeze(this);
+  }
+}
+const CHARACTER_SPECIALS=new DefinitionRegistry('character special');
+const KNIGHT_RUSH_STAGGER_ATTACK=Object.freeze({
+  bear:'twin_crush',
+  hydra:'acid_canopy',
+  turtle:'furnace_snap'
+});
+const KNIGHT_RUSH_SLASH_ANGLES=Object.freeze([-.82,.66,-.46,.88]);
+const KNIGHT_RUSH_MOVE_CACHE=Object.create(null);
+const KNIGHT_RUSH_SPECIAL=CHARACTER_SPECIALS.register(
+  new CharacterSpecialDefinition('knight_rush',{
+    name:'KNIGHT RUSH',maxCharge:100,
+    bossAttackIds:KNIGHT_RUSH_STAGGER_ATTACK,
+    slashAngles:KNIGHT_RUSH_SLASH_ANGLES,
+    selectBossMove:knightRushStaggerMove,
+    canActivate:knightRushCanActivate,
+    activate:activateKnightRush,
+    update:updateKnightRushSequence,
+    lungeAmount:knightRushLungeAmount
+  })
+);
+function activeCharacterSpecial(){
+  const specialId=playerChar&&playerChar.specialId||KNIGHT_RUSH_SPECIAL.id;
+  return CHARACTER_SPECIALS.get(specialId);
+}
+function runningCharacterSpecial(){
+  return knightRushSequence&&CHARACTER_SPECIALS.has(knightRushSequence.specialId)
+    ?CHARACTER_SPECIALS.get(knightRushSequence.specialId):activeCharacterSpecial();
+}
+function characterSpecialCanActivate(){return activeCharacterSpecial().canActivate();}
+function activateCharacterSpecial(){return activeCharacterSpecial().activate();}
+function updateCharacterSpecial(dt){runningCharacterSpecial().update(dt);}
+function characterSpecialLungeAmount(){return runningCharacterSpecial().lungeAmount();}
+function knightRushStaggerMove(){
+  const special=activeCharacterSpecial(),def=activeBossDefinition(),
+    attackId=special.bossAttackIds[def.id],cacheId=special.id+':'+def.id;
+  if(!attackId) return null;
+  if(KNIGHT_RUSH_MOVE_CACHE[cacheId]) return KNIGHT_RUSH_MOVE_CACHE[cacheId];
+  const attack=def.attacks.find(candidate=>candidate.id===attackId);
+  const move=attack&&(attack.steps?attack.steps[0]:attack);
+  /* Knight Rush presentation clones never enter the live hazard catalogue.
+     Bear exposes both raised arms; Turtle extends its head during the approach
+     instead of replaying the ordinary bite's retracting tell. */
+  let rushMove=move;
+  if(move&&def.id==='bear')
+    rushMove=Object.freeze(Object.assign({},move,{contactId:'pincerPaws'}));
+  else if(move&&def.id==='turtle')
+    rushMove=Object.freeze(Object.assign({},move,{anim:'tele_turtle_knight_rush'}));
+  return KNIGHT_RUSH_MOVE_CACHE[cacheId]=rushMove;
+}
+function knightRushPreStrikeT(){
+  const def=activeBossDefinition();
+  return CFG.KNIGHT_RUSH_PRE_STRIKE[def.id]===undefined
+    ?.22:CFG.KNIGHT_RUSH_PRE_STRIKE[def.id];
+}
+function knightRushCanActivate(){
+  const special=activeCharacterSpecial();
+  return mode==='boss'&&!!boss&&!boss._moveLab&&player.alive&&
+    knightRush>=special.maxCharge&&boss.phase==='dodge'&&!!boss.attack&&
+    boss.attacksLeft>0&&
+    boss.state!=='intro'&&boss.state!=='dying'&&boss.state!=='finisher'&&
+    boss.state!=='volley'&&boss.state!=='break'&&boss.state!=='breakRecover'&&
+    !knightRushQueued&&!knightRushSequence;
+}
+function activateKnightRush(){
+  if(knightRushQueued) return true;
+  if(!knightRushCanActivate()) return false;
+  knightRushQueued=true;
+  floater(VW/2,PLAYER_Y-jumpHeight()-116,'KNIGHT RUSH ARMED','#c995ff',18);
+  SFX.swipe();
+  if(boss.state==='idle'&&!boss.parryReaction) beginQueuedKnightRush();
+  return true;
+}
+function beginQueuedKnightRush(){
+  if(!knightRushQueued||knightRushSequence||!boss||mode!=='boss'||
+     boss.phase!=='dodge'||boss.state!=='idle'||boss.parryReaction) return false;
+  /* attacksLeft is the still-uncommitted boss budget. Once it reaches zero the
+     player's volley is already next; a queued special must not create a free
+     extra defence phase between the final recovery and that volley. */
+  if(boss.attacksLeft<=0){knightRushQueued=false;return false;}
+  const special=activeCharacterSpecial(),
+    move=special.selectBossMove()||boss.currentMove()||
+    (boss.attack.steps&&boss.attack.steps[boss.attack.steps.length-1])||boss.attack;
+  if(!move) return false;
+  knightRushQueued=false;
+  knightRush=0;
+  /* Presentation moves from the boss's exact live lane into centre while AI is
+     frozen. Commit xTarget immediately, but defer actor.x until final contact so
+     the first Rush frame cannot teleport a side-lane boss. */
+  boss.xTarget=1;
+  knightRushSequence={
+    specialId:special.id,t:0,move,hits:0,finalHit:false,
+    preStrikeT:knightRushPreStrikeT(),startX:boss.x,
+    contactReach:Math.min(boss.z-.8,CFG.KNIGHT_RUSH_REACH)
+  };
+  player.attackAnim=.001;player.counterAnim=0;player.parryAnim=0;
+  return true;
+}
+function knightRushHitTime(hitIndex){
+  return CFG.KNIGHT_RUSH_TIMES[hitIndex];
+}
+function knightRushBossAdvanceAmount(sequence=knightRushSequence){
+  if(!sequence||sequence.finalHit) return 0;
+  const t=sequence.t,first=knightRushHitTime(0),second=knightRushHitTime(1),
+    third=knightRushHitTime(2),fourth=knightRushHitTime(3);
+  /* Each contact claims one quarter of the approach. The longer charged fourth
+     interval therefore remains visibly alive instead of parking the boss after
+     beat three, and reaches the ordinary attack's full contact depth on beat four. */
+  if(t<=first) return clamp(t/first,0,1)*.25;
+  if(t<=second) return .25+clamp((t-first)/(second-first),0,1)*.25;
+  if(t<=third) return .5+clamp((t-second)/(third-second),0,1)*.25;
+  return .75+clamp((t-third)/(fourth-third),0,1)*.25;
+}
+function resolveKnightRushHit(sequence){
+  if(!sequence||sequence.finalHit||!boss||mode!=='boss') return false;
+  const special=CHARACTER_SPECIALS.get(sequence.specialId),
+    hitIndex=sequence.hits,finalHit=hitIndex===CFG.KNIGHT_RUSH_HITS-1,
+    dmg=Math.round(CFG.KNIGHT_RUSH_DMG*(1+chainBonus()*chainStacks));
+  const presentation=createBossPresentation();
+  sampleBossPresentation(boss,activeBossDefinition(),presentation);
+  const x=presentation.x,y=presentation.y-62*presentation.sProj;
+  player.attackAnim=1;player.counterAnim=.72;
+  spawnSlash(x,y+(hitIndex%2?8:-6),
+    special.slashAngles[hitIndex%special.slashAngles.length],'#d8c6ff');
+  if(finalHit){
+    /* The sampled approach has reached centre on this exact frame. Commit the
+       actor there before constructing the reaction so its return cannot drift
+       back toward the lane occupied by the preceding ordinary attack. */
+    boss.x=boss.xTarget=1;
+    const reaction=beginParryReaction(
+      boss,sequence.move,x,y,sequence.preStrikeT,'parry_stagger');
+    /* Body travel and limb pose are intentionally independent. Knight Rush meets
+       the boss at normal contact depth, but rebounds it from the completed tell
+       rather than letting its authored strike land. Hydra therefore keeps all
+       three raised heads as the exact first frame of the knockback. */
+    reaction.depthT=1;
+    reaction.contactReach=sequence.contactReach;
+    reaction.poseAnim=sequence.move.anim||reaction.anim;
+    reaction.poseT=1;
+    reaction.source='knight_rush';
+    interruptParriedAttack(BOSS_SOURCE);
+    SFX.lance();emitParryReactionFx(x,y,reaction);flash('#8d46d8',.28);
+    burst(x,y,28,['#8d46d8','#c995ff','#ffffff'],240,55,5,.7);
+  }else{
+    SFX.slash();stopTime(.018);shake(2.5,.10);
+    burst(x,y,9,['#8d46d8','#d8c6ff','#ffffff'],150,42,3.5,.38);
+  }
+  if(hitIndex===0)
+    floater(VW/2,PLAYER_Y-jumpHeight()-128,'KNIGHT RUSH!','#c995ff',24);
+  hurtBoss(dmg,false,finalHit?'rush':'rush_hit');
+  applyBossPosture(CFG.KNIGHT_RUSH_POSTURE[hitIndex]||0,'knight_rush',
+    finalHit?boss.parryReaction:null);
+  addChainStack();
+  sequence.hits++;
+  sequence.finalHit=finalHit;
+  if(sequence.hits===CFG.KNIGHT_RUSH_HITS-1) sequence.chargeFxT=0;
+  return true;
+}
+function updateKnightRushSequence(dt){
+  const sequence=knightRushSequence;
+  if(!sequence) return;
+  if(!boss||mode!=='boss'||!player.alive){knightRushSequence=null;return;}
+  sequence.t+=dt;
+  if(sequence.hits===0)
+    player.attackAnim=Math.max(.001,.5*clamp(sequence.t/knightRushHitTime(0),0,1));
+  while(sequence.hits<CFG.KNIGHT_RUSH_HITS&&
+        sequence.t>=knightRushHitTime(sequence.hits))
+    resolveKnightRushHit(sequence);
+  if(!sequence.finalHit){
+    if(sequence.hits===CFG.KNIGHT_RUSH_HITS-1){
+      const finalTime=knightRushHitTime(CFG.KNIGHT_RUSH_HITS-1),
+        finalWindup=clamp((sequence.t-(finalTime-CFG.KNIGHT_RUSH_FINAL_WINDUP))/
+          CFG.KNIGHT_RUSH_FINAL_WINDUP,0,1);
+      player.attackAnim=Math.max(player.attackAnim,.5*finalWindup);
+      sequence.chargeFxT=(sequence.chargeFxT||0)+dt;
+      while(sequence.chargeFxT>=.08){
+        sequence.chargeFxT-=.08;
+        particles.push({
+          x:laneX(player.x,1)+rnd(-23,23),
+          y:PLAYER_Y-jumpHeight()-knightRushLungeAmount()*68-rnd(32,68),
+          vx:rnd(-18,18),vy:rnd(-62,-28),life:.38,maxLife:.38,
+          size:rnd(2,3.6),col:Math.random()<.5?'#c995ff':'#ffffff',grav:-25
+        });
+      }
+    }
+    return;
+  }
+  const followT=clamp((sequence.t-knightRushHitTime(CFG.KNIGHT_RUSH_HITS-1))/
+    CFG.KNIGHT_RUSH_FOLLOW,0,1);
+  player.attackAnim=1-followT;
+  if(followT>=1) knightRushSequence=null;
+}
+function knightRushLungeAmount(){
+  const sequence=knightRushSequence;
+  if(!sequence) return 0;
+  if(!sequence.finalHit)
+    return easeOut(clamp(sequence.t/knightRushHitTime(0),0,1));
+  return 1-easeInOut(clamp((sequence.t-knightRushHitTime(CFG.KNIGHT_RUSH_HITS-1))/
+    CFG.KNIGHT_RUSH_FOLLOW,0,1));
 }
 
 /* ============================== SHARED STAGE BOSSES ============================== */
@@ -8507,11 +9060,28 @@ class EncounterActor{
          that crossed duration skipped that frame and visibly teleported to idle. */
       if(!this.parryReaction.finishPending){
         this.parryReaction.t=Math.min(reactionProfile.duration,this.parryReaction.t+dt);
+        if(this===boss&&this.pendingBreak&&
+           this.parryReaction.t>=reactionProfile.duration*reactionProfile.limbHoldEnd){
+          /* Capture the last stagger frame before changing state. Break begins
+             from this depth instead of allowing the reaction to return to idle. */
+          const entryPresentation=createBossPresentation();
+          sampleBossPresentation(this,activeBossDefinition(),entryPresentation);
+          beginBossBreak(this,entryPresentation);
+          return;
+        }
         if(this.parryReaction.t>=reactionProfile.duration)
           this.parryReaction.finishPending=true;
         return;
       }
+      const completedReaction=this.parryReaction;
       this.parryReaction=null;
+      if(completedReaction.source==='knight_rush'){
+        /* The slow-motion recoil gets a separate normal-time return. This keeps
+           Rush from dropping straight into the next attack like a normal parry. */
+        this.knightRushRecovery={move:completedReaction.move,duration:CFG.KNIGHT_RUSH_REC};
+        this.state='recover';this.stateT=0;
+        return;
+      }
       /* The reaction itself has already returned the anatomy to neutral. Finish
          the interrupted attack's recovery clock so no old contact pose flashes
          for one frame before the ordinary between-attack wait begins. */
@@ -9093,21 +9663,26 @@ function sampleProjectionInto(z,out){
    normalized clock and contact targets used by both drawing and pose collision. */
 function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.stateT){
   const reaction=actor.parryReaction;
+  const rushRecovery=actor.knightRushRecovery;
+  const rushApproach=actor===boss&&!reaction&&!rushRecovery&&
+      knightRushSequence&&!knightRushSequence.finalHit,
+    rushAdvance=rushApproach?knightRushBossAdvanceAmount():0,
+    rushMove=rushApproach?knightRushSequence.move:null;
   /* A combo interrupt moves sequenceIndex to its terminal step for budget/state
      completion. Presentation must nevertheless finish the exact step that was
      parried, otherwise it silently swaps animation/contact targets mid-rebound. */
-  const move=reaction&&reaction.move||actor.currentMove(); let zD=actor.z;
+  const move=reaction&&reaction.move||rushRecovery&&rushRecovery.move||rushMove||actor.currentMove(); let zD=actor.z;
   const tellReach=move&&move.stageReach!==undefined?move.stageReach:
     move&&move.bodySweep&&move.bodyLunge>8?move.bodyLunge*.88:1.8;
   const requestedReach=move?(move.bodyLunge!==undefined?move.bodyLunge:(move.lunge||(actor.attack&&actor.attack.lunge)||3)+5.2):0;
   const contactReach=move?Math.min(actor.z-.8,requestedReach):0;
   const comboRecovering=state==='comboRecover';
   const comboRecoverTime=move?comboStepRecoveryTime(move,actor.attack):.28;
-  const fullRecoverTime=encounterRecoveryTime(actor.attack);
+  const fullRecoverTime=rushRecovery?rushRecovery.duration:encounterRecoveryTime(actor.attack);
   /* Do not count the stationary tuck/tell. The visible shell-wheel return owns
      one move.travel-long window, so it is the exact temporal mirror of strike. */
   const spinReturn=move&&move.strike==='strike_turtle_spin';
-  const recoverAnimTime=spinReturn
+  const recoverAnimTime=rushRecovery?fullRecoverTime:spinReturn
     ?Math.max(.001,move.travel*TURTLE_SPIN_RETURN_TIME_SCALE/TURTLE_SPIN_RETURN_DURATION)
     :fullRecoverTime*(move&&move.recoverPortion||.38);
   if(state==='tele'&&move){
@@ -9117,25 +9692,39 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
     zD=actor.z-easeOut(approachT)*tellReach;
   }
   if(state==='strike'&&move) zD=actor.z-tellReach-easeOut(clamp(stateT/move.travel,0,1))*Math.max(0,contactReach-tellReach);
-  if(state==='recover'&&move){
+  if(state==='recover'&&move&&!rushRecovery){
     const recoverT=clamp(stateT/recoverAnimTime,0,1),returnK=spinReturn
       ?turtleSpinReturnProgress((recoverT-TURTLE_SPIN_RETURN_START)/TURTLE_SPIN_RETURN_DURATION)
       :easeInOut(recoverT);
     zD=actor.z-(1-returnK)*contactReach;
   }
+  if(rushAdvance>0&&move){
+    /* Knight Rush owns one continuous body approach all the way through the
+       charged fourth beat. Limbs remain in their tell animation, while the body
+       reaches the Bear reference depth shared by every boss species. */
+    zD=actor.z-rushAdvance*knightRushSequence.contactReach;
+  }
   if(comboRecovering&&move) zD=actor.z-(1-easeInOut(clamp(stateT/comboRecoverTime,0,1)))*contactReach;
   if(state==='finisher') zD=actor.z-easeOut(clamp((stateT-.62)/1.3,0,1))*def.finisherReach;
   if(reaction&&move){
     const reactionProfile=parryReactionProfile(reaction),
-      strikeT=reaction.strikeT,returnK=parryReturnProgress(reaction),
-      strikeZ=actor.z-tellReach-easeOut(strikeT)*Math.max(0,contactReach-tellReach);
+      depthT=reaction.depthT===undefined?reaction.strikeT:reaction.depthT,
+      reactionReach=reaction.contactReach===undefined?contactReach:reaction.contactReach,
+      returnK=parryReturnProgress(reaction),
+      strikeZ=actor.z-tellReach-easeOut(depthT)*Math.max(0,reactionReach-tellReach);
     zD=lerp(strikeZ,actor.z,returnK)+
       reactionProfile.bodyDepthKick*parryReboundAmount(reaction);
+  }
+  if(state==='break')zD=actor.breakEntryZ===undefined?actor.z:actor.breakEntryZ;
+  if(state==='breakRecover'){
+    const k=easeInOut(clamp(stateT/CFG.BREAK_RECOVERY,0,1));
+    zD=lerp(actor.breakEntryZ===undefined?actor.z:actor.breakEntryZ,actor.z,k);
   }
   sampleProjectionInto(zD,out);
   let anim=state==='tele'&&actor.attack?actor.attack.anim:state;
   if(move) anim=state==='tele'?move.anim:state==='strike'?move.strike:comboRecovering?comboStepRecoveryAnim(move):
-    state==='recover'&&move.recoverAnim?move.recoverAnim:state;
+    state==='recover'&&!rushRecovery&&move.recoverAnim?move.recoverAnim:state;
+  if(state==='break'||state==='breakRecover')anim=def.breakAnim||'break';
   const riseK=easeOut(clamp(actor.rise,0,1)),sink=(1-riseK)*150*out.sProj;
   let x=laneX(actor.x,out.tProj);
   if(state==='tele'&&move&&move.sweep&&move.bodySweep)
@@ -9144,28 +9733,41 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
     x=laneX(sweepBodyLane(move,clamp(stateT/move.travel,0,1)),1);
   else if(state==='strike'&&move)
     x=lerp(x,laneX(actor.xTarget,1),easeOut(clamp(stateT/move.travel,0,1)));
-  else if(state==='recover'&&move)
+  else if(state==='recover'&&move&&!rushRecovery)
     x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/recoverAnimTime,0,1)));
   else if(comboRecovering&&move)
     x=lerp(laneX(actor.xTarget,1),x,easeInOut(clamp(stateT/comboRecoverTime,0,1)));
+  if(rushApproach)
+    x=laneX(lerp(knightRushSequence.startX,1,rushAdvance),out.tProj);
   if(reaction&&move){
-    const returnK=parryReturnProgress(reaction),idleX=laneX(actor.x,out.tProj),
+    const returnK=parryReturnProgress(reaction),
+      depthT=reaction.depthT===undefined?reaction.strikeT:reaction.depthT,
+      idleX=laneX(actor.x,out.tProj),
       strikeX=move.sweep&&move.bodySweep
-        ?laneX(sweepBodyLane(move,reaction.strikeT),1)
-        :lerp(idleX,laneX(actor.xTarget,1),easeOut(reaction.strikeT));
+        ?laneX(sweepBodyLane(move,depthT),1)
+        :lerp(idleX,laneX(reaction.targetX,1),easeOut(depthT));
     x=lerp(strikeX,idleX,returnK);
   }
   const denom=state==='tele'&&move?(actor.teleTime||move.tele):state==='strike'&&move?move.travel:
-    comboRecovering?comboRecoverTime:state==='recover'?recoverAnimTime:state==='finisher'?2.15:state==='dying'?2.5:.5;
+    comboRecovering?comboRecoverTime:state==='recover'?recoverAnimTime:
+    state==='break'?CFG.BREAK_POSE_IN:state==='breakRecover'?CFG.BREAK_RECOVERY:
+    state==='finisher'?2.15:state==='dying'?2.5:.5;
   out.actor=actor; out.def=def; out.move=move; out.state=state; out.stateT=stateT;
   out.z=zD; out.x=x; out.y=out.yProj+sink; out.scale=out.sProj*def.scale;
-  out.anim=anim; out.t=clamp(stateT/denom,0,1); out.tellReach=tellReach; out.contactReach=contactReach;
+  out.anim=anim; out.t=clamp(stateT/denom,0,1); out.tellReach=tellReach;
+  if(state==='breakRecover')out.t=1-easeInOut(out.t);
+  out.contactReach=rushApproach?knightRushSequence.contactReach:
+    reaction&&reaction.contactReach!==undefined?reaction.contactReach:contactReach;
+  if(rushApproach&&move){
+    out.anim=move.anim||anim;
+    out.t=rushAdvance;
+  }
   if(reaction){
     const reactionProfile=parryReactionProfile(reaction),q=parryReactionClock(reaction);
     if(reaction.turtleSpin){
       out.anim=move&&move.recoverAnim||anim;out.t=q;
     }else if(def.id==='bear'||def.id==='hydra'||def.id==='turtle'){
-      out.anim='parry_'+def.id+'_from:'+reaction.anim;out.t=q;
+      out.anim='parry_'+def.id+'_from:'+(reaction.poseAnim||reaction.anim);out.t=q;
     }
     const kick=parryReboundAmount(reaction),dir=reaction.reboundDir||0;
     /* Small whole-body loss of balance; species renderers add the larger
@@ -9175,10 +9777,13 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
     out.y-=reactionProfile.bodyLift*kick*out.scale;
   }
   out.comboRecoverTime=comboRecoverTime; out.recoverAnimTime=recoverAnimTime;
-  if(reaction&&move){
+  const rushContactLanes=move&&(rushApproach||reaction&&reaction.source==='knight_rush')
+    ?(typeof move.lanes==='function'?move.lanes():move.lanes):actor.hazardLanes;
+  if(state==='break'||state==='breakRecover')out.contactXs.length=0;
+  else if(reaction&&move){
     const strikeT=reaction.strikeT*(1-parryLimbReturnProgress(reaction));
-    fillMoveContactXs(actor,move,actor.hazardLanes,'strike',strikeT*move.travel,out.contactXs);
-  }else fillMoveContactXs(actor,move,state==='finisher'?ALL_LANES:actor.hazardLanes,state,stateT,out.contactXs);
+    fillMoveContactXs(actor,move,rushContactLanes,'strike',strikeT*move.travel,out.contactXs);
+  }else fillMoveContactXs(actor,move,state==='finisher'?ALL_LANES:rushContactLanes,state,stateT,out.contactXs);
   return out;
 }
 function sweepBodyLane(move,k){
@@ -9262,6 +9867,9 @@ function startBoss(definitionId=null){
   const def=definitionId?ENCOUNTERS.get(definitionId):activeBossDefinition();
   const side=def.rises?1:(Math.random()<.5?-3.1:5.1);
   const guaranteeQueue=bossGuaranteeQueue();
+  const fullAttackBudget=bossAttackCount(),
+    turnCombat=def.id==='bear',
+    enemyTurnBudget=turnCombat?Math.max(1,Math.ceil(fullAttackBudget/2)):fullAttackBudget;
   boss=new EncounterActor({
     hp:bossMaxHp(),
     z:CFG.BOSS_Z, x:side, xTarget:1, entering:!def.rises,
@@ -9269,12 +9877,18 @@ function startBoss(definitionId=null){
     lastIds:[], hurtT:0, atkTimer:encounterAttackDelay(),
     poisonT:0, burnT:0, dotAcc:0, rise:def.rises?0:1,
     definitionId:def.id,
-    /* fight structure: exactly N attacks of dodging, THEN the knight's volley */
-    phase:'dodge', attacksLeft:bossAttackCount(),
+    posture:0,postureMax:def.postureMax||CFG.BOSS_POSTURE_MAX,
+    pendingBreak:null,breakCount:0,breakSource:null,
+    /* Bear prototype alternates half-sized enemy turns with one player command.
+       Other species retain the complete legacy dodge-then-volley encounter. */
+    phase:'dodge', attacksLeft:enemyTurnBudget,
+    turnCombat,enemyTurnBudget,enemyTurn:1,
+    resolve:turnCombat?CFG.TURN_RESOLVE_START:0,resolveMax:CFG.TURN_RESOLVE_MAX,
+    playerMenu:'root',playerActionTimer:0,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
-  chainStacks=0; knightRush=0;               // fight resources belong to this boss only
+  chainStacks=0; knightRush=0; knightRushQueued=false; knightRushSequence=null; // fight resources belong to this boss only
   obstacles=[]; pickups=[]; roadsideScenery=[]; // full focus on the fight
   env='cave';                               // you rode in under the arch — now it has you
   flash('#020204',.8);
@@ -9552,21 +10166,26 @@ function chooseBossAttack(movesLeft=boss.attacksLeft){
   const attack=selected.randomCombo?buildRandomBossCombo(cycle,movesLeft):selected;
   return applyEncounterTempo(attack,cycle,bossHesitationMultiplier(cycle));
 }
-function hurtBoss(dmg,fromCounter){
+function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon'){
   if(!boss||boss.state==='dying'||boss.state==='finisher') return;
   /* counter damage keeps counting past 0 HP — the excess lands in overkill,
      together with the whole volley, when the fight resolves */
   boss.hp-=dmg; if(boss.phase!=='dodge') boss.dealt+=dmg;
   if(boss.hp<=0&&boss.phase==='dodge'&&!boss._beaten){ boss._beaten=true;
     floater(VW/2,300,'IT STAGGERS — KEEP THE CHAIN GOING!','#ffe37a',18); }
-  if(fromCounter&&hasRelic('venom')){ boss.poisonT=8;              // VENOM VIAL: the counter envenoms
+  if(damageSource==='counter'&&hasRelic('venom')){ boss.poisonT=8; // VENOM VIAL: the counter envenoms
     floater(laneX(boss.x,proj(boss.z).t),proj(boss.z).y-160*proj(boss.z).s,'POISONED!','#7ade6a',15); }
-  if(!fromCounter&&hasRelic('brand')){ boss.burnT=4;               // BRAND OF EMBERS: steel ignites
+  if(damageSource==='weapon'&&hasRelic('brand')){ boss.burnT=4;    // BRAND OF EMBERS: steel ignites
     if(Math.random()<0.4) floater(laneX(boss.x,proj(boss.z).t)+20,proj(boss.z).y-160*proj(boss.z).s,'BURNING!','#ff9a3a',15); }
   boss.hurtT=0.14; SFX.thud(); shake(3,.12);
   const p=proj(boss.z);
-  burst(laneX(boss.x,p.t),p.y-60*p.s,12,['#ff4d3a','#ffe37a'],180,120,4,.6);
-  floater(laneX(boss.x,p.t),p.y-120*p.s,'-'+dmg,fromCounter?'#ffe37a':'#fff',fromCounter?22:18);
+  const rush=damageSource==='rush'||damageSource==='rush_hit',
+    rushFinal=damageSource==='rush';
+  burst(laneX(boss.x,p.t),p.y-60*p.s,rush?(rushFinal?20:8):12,
+    rush?['#8d46d8','#c995ff','#ffffff']:['#ff4d3a','#ffe37a'],
+    rush?(rushFinal?220:145):180,120,rush?(rushFinal?5:3.5):4,.6);
+  floater(laneX(boss.x,p.t),p.y-120*p.s,'-'+dmg,
+    rush?'#c995ff':fromCounter?'#ffe37a':'#fff',rush?(rushFinal?24:19):fromCounter?22:18);
 }
 /* called once the FULL volley has landed: score first, THEN the kill animation */
 function resolveVolley(){
@@ -9601,6 +10220,26 @@ function updateBossVisualFx(dt){
 }
 function updateBoss(dt){
   if(!boss) return;
+  /* A turn choice freezes combat logic. Break alone may finish its short pose-in
+     animation, then holds the completed species pose until the chosen action. */
+  if(isBearPlayerTurn()){
+    boss.hurtT=Math.max(0,(boss.hurtT||0)-dt);
+    if(boss.playerTurnBreak&&boss.state==='break')
+      boss.stateT=Math.min(CFG.BREAK_POSE_IN,boss.stateT+dt);
+    return;
+  }
+  /* Resolve the queued input before an idle timer can start the next tell. This
+     state-boundary check stays reliable even when late-stage idle windows shrink. */
+  if(knightRushQueued&&boss.state==='idle'&&!boss.parryReaction)
+    beginQueuedKnightRush();
+  /* Idle is a committed Rush opening. Hold the boss's between-attack timer until
+     the knight's authored contact event lands; the boss cannot begin a tell under it. */
+  if(knightRushSequence&&!knightRushSequence.finalHit){
+    /* Freeze AI, not presentation clocks: each Knight Rush contact gets one short
+       white flash instead of the first hit leaving the boss permanently white. */
+    boss.hurtT=Math.max(0,(boss.hurtT||0)-dt);
+    return;
+  }
   boss.tick(dt);
   /* Reversible lab-only Bear model inspection. No hazards, attacks, contact
      rigs or live renderer routing run while this visual selection is active. */
@@ -9664,6 +10303,11 @@ function updateBoss(dt){
     }
     return;
   }
+  if(isBearTurnCombat()&&boss.phase==='playerResolve'){
+    boss.playerActionTimer-=dt;
+    if(boss.playerActionTimer<=0) finishBearPlayerAction();
+    return;
+  }
   if(st==='volley'){                         /* --- PC's TURN: unleash every collected weapon --- */
     boss.volleyTimer-=dt;
     if(boss.volleyTimer<=0){
@@ -9687,6 +10331,21 @@ function updateBoss(dt){
     }
     return;
   }
+  if(st==='break'){
+    /* A long readable prototype hold. No weapons, posture gain, decay or attack
+       token mutation occurs here; the next scheduled attack remains intact. */
+    if(T>=CFG.BREAK_DURATION){
+      boss.posture=0;boss.state='breakRecover';boss.stateT=0;
+    }
+    return;
+  }
+  if(st==='breakRecover'){
+    if(T>=CFG.BREAK_RECOVERY){
+      boss.state='idle';boss.stateT=0;boss.breakEntryZ=undefined;
+      boss.breakSource=null;boss.atkTimer=encounterAttackDelay(boss.attack);
+    }
+    return;
+  }
   if(st==='idle'){
     if(boss._moveLab&&boss._moveLab.index>=boss._moveLab.moves.length&&hazards.length===0){
       if(boss._moveLab.loopMoveset&&boss._moveLab.moves.length){
@@ -9698,6 +10357,7 @@ function updateBoss(dt){
       return;
     }
     if(!boss._moveLab&&boss.phase==='dodge'&&boss.attacksLeft<=0&&hazards.length===0){
+      if(isBearTurnCombat()){beginBearPlayerTurn();return;}
       boss.phase='volley'; boss.state='volley'; boss.stateT=0; boss.volleyTimer=0.6;
       const total=arrows+lances+pack;
       floater(VW/2,280,total>0?'YOUR TURN — UNLEASH!':'YOUR TURN... BUT YOU CARRY NOTHING','#c0f79a',22);
@@ -9765,7 +10425,10 @@ function updateBoss(dt){
       boss.sequenceIndex++; boss.state='tele'; boss.stateT=0; cueBossMove();
     }
   } else if(st==='recover'){
-    if(T>=encounterRecoveryTime(boss.attack)){
+    const rushRecovery=boss.knightRushRecovery,
+      recoveryTime=rushRecovery?rushRecovery.duration:encounterRecoveryTime(boss.attack);
+    if(T>=recoveryTime){
+      boss.knightRushRecovery=null;
       boss.state='idle'; boss.stateT=0;
       if(boss._moveLab){ boss.atkTimer=.85; return; }
        /* Full recovery separates whole attacks. The Turtle's short comboRecover
@@ -9949,7 +10612,7 @@ ENCOUNTERS.register(new EncounterDefinition('bear','boss',{
   name:'MIGHTY BEAR',hitText:"The bear's claws found you",finisherHit:'The cave bear executed you',
   arenaLine:"THE BEAR'S CAVE SWALLOWS YOU",
   draw:drawBearNatural,attacks:BEAR_DUEL_ATTACKS,scale:3.65,contactRig:BEAR_CONTACT_RIG,
-  finisherReach:12,element:'earth',rises:false
+  breakAnim:'break_bear',finisherReach:12,element:'earth',rises:false
 }));
 ENCOUNTERS.register(new EncounterDefinition('bear3d','boss',{
   name:'3D BEAR',hitText:"The 3D bear's claws found you",finisherHit:'The 3D bear mauled you',
@@ -9961,13 +10624,13 @@ ENCOUNTERS.register(new EncounterDefinition('hydra','boss',{
   name:'THE HYDRA',hitText:"The hydra's fangs found you",finisherHit:'The hydra devoured you',
   arenaLine:'THE HYDRA RISES FROM THE BLACK MERE',
   draw:drawHydra,attacks:HYDRA_DUEL_ATTACKS,scale:4.72,contactRig:HYDRA_CONTACT_RIG,
-  finisherReach:10,element:'water',rises:true
+  breakAnim:'break_hydra',finisherReach:10,element:'water',rises:true
 }));
 ENCOUNTERS.register(new EncounterDefinition('turtle','boss',{
   name:'THE MOLTEN SNAPPER',hitText:"The snapper's jaws found you",finisherHit:'The molten snapper crushed you',
   arenaLine:'THE LAVA POND SEETHES — SOMETHING WAKES',
   draw:drawLavaTurtle,attacks:TURTLE_DUEL_ATTACKS,scale:4.88,
-  finisherReach:10,element:'lava',rises:true,stagedFinisher:true
+  breakAnim:'break_turtle',finisherReach:10,element:'lava',rises:true,stagedFinisher:true
 }));
 const MINIBOSS_RECOVERY_PROFILE=Object.freeze({prefix:'recover_miniboss_from:',comboTime:.10,portion:.42});
 function attachMinibossRecovery(attacks){
@@ -10236,8 +10899,12 @@ function buildMoveLabPlaylist(set,cycle=1){
 const MOVE_LAB_SPEEDS=Object.freeze([.25,.5,1,1.5,2]);
 function activeMoveLabActor(){ return boss&&boss._moveLab?boss:(minibossFight&&minibossFight._moveLab?minibossFight:null); }
 function moveLabAutoParryCanTrigger(h){
-  const actor=activeMoveLabActor(),lab=actor&&actor._moveLab;
-  if(!actor||!lab.autoParry||!player.alive||!h||h.done||h.autoParryTriggered||
+  const labActor=activeMoveLabActor(),lab=labActor&&labActor._moveLab;
+  const actor=labActor||(!h?null:h.src===MINIBOSS_SOURCE?minibossFight:
+    h.src===BOSS_SOURCE?boss:null);
+  const enabled=lab?lab.autoParry:
+    debugRun&&!debugMoveLabActive()&&debugAutoParryEnabled;
+  if(!actor||!enabled||!player.alive||!h||h.done||h.autoParryTriggered||
      h.parryInputEligible===true||actor.parryReaction) return false;
   if(h.actor) return h.actor===actor;
   return h.src===(actor===boss?BOSS_SOURCE:MINIBOSS_SOURCE);
@@ -12019,15 +12686,19 @@ function resetRun(){
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,lastParry:-9,invuln:0});
-  knightRush=0;debugParryInputFrozen=false;debugParryInputMark=null;
+  knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
 }
 /* --- riders: pick your knight before the run --- */
 const CHARS=[
-  {name:'SIR ALDRIC', desc:'the swift · a classic knight',    feather:'#3f7bff', horse:'#7a4a26', chubby:false},
-  {name:'BIG GUSTAV', desc:'the stout · twice the knight',    feather:'#b06be0', horse:'#9a9aa6', chubby:true},
+  {name:'SIR ALDRIC', desc:'the swift · a classic knight',    specialId:'knight_rush',
+   feather:'#3f7bff', horse:'#7a4a26', chubby:false},
+  {name:'BIG GUSTAV', desc:'the stout · twice the knight',    specialId:'knight_rush',
+   feather:'#b06be0', horse:'#9a9aa6', chubby:true},
   {name:'UMUTCAN',    desc:'the kürt · sponsor of knightrush', feather:'#3a2a1a', horse:'#6a4a2e',
-   chubby:true, monkey:true, caveman:true},
+   specialId:'knight_rush',chubby:true, monkey:true, caveman:true},
 ];
+for(const character of CHARS)if(!CHARACTER_SPECIALS.has(character.specialId))
+  throw new Error('Character '+character.name+' has unknown special '+character.specialId);
 let charSel=0, playerChar=CHARS[0];
 function uiConfirm(){
   if(mode==='menu'){ debugBossStart=false; debugMiniStart=false; debugMiniMoves=false; }
@@ -12140,24 +12811,44 @@ function drawHUD(){
   if(boss){
     let st='';
     if(boss.state==='volley') st='YOUR TURN — every weapon flies!';
+    else if(isBearTurnCombat()&&boss.phase==='player'&&boss.playerTurnBreak)
+      st='BREAK TURN — all damage +50%';
+    else if(isBearTurnCombat()&&boss.phase==='player') st='YOUR TURN — choose one action';
+    else if(isBearTurnCombat()&&boss.phase==='playerResolve') st='ATTACK!';
+    else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
+    else if(boss.state==='breakRecover') st='RECOVERING';
     else if(boss.state==='finisher') st='NO ESCAPE.';
     else if(boss.phase==='dodge') st='survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
     drawHPBar(activeBossDefinition().name,boss.hp,boss.maxhp,st);
+    drawBossPostureBar(boss);
+    if(isBearTurnCombat()&&boss.phase==='dodge'){
+      g.textAlign='right';g.font='bold 9px monospace';g.fillStyle='#7fc9ff';
+      g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2+160,145);
+    }
     if(chainStacks>0){ g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ffe37a';
-      g.fillText('CHAIN ×'+chainStacks+'  (all hits +'+(chainStacks*chainBonus()*100|0)+'%)',VW/2,132); }
-    /* Reserved boss-resource meter. It is intentionally inert for now; parries
-       fill it much faster than perfect dodges. */
-    const rw=286,rx=VW/2-rw/2,ry=VH-uiTop-39;
+      g.fillText('CHAIN ×'+chainStacks+'  (all hits +'+(chainStacks*chainBonus()*100|0)+'%)',VW/2,180); }
+    /* Tap the full meter to spend it. Input uses KNIGHT_RUSH_BTN in final screen
+       coordinates; this draw position cancels uiTop to stay pinned above the
+       physical bottom safe area on every aspect ratio. */
+    const special=activeCharacterSpecial(),rw=286,rx=VW/2-rw/2,ry=VH-uiTop-39;
+    const rushArmed=knightRushQueued,
+      rushFull=(knightRush>=special.maxCharge||rushArmed)&&boss.phase==='dodge',
+      rushReady=rushFull&&!rushArmed&&characterSpecialCanActivate();
+    const rushPulse=rushReady ? .55+.45*Math.sin(perfNow*9) : 0;
     g.fillStyle='#100b19dd'; g.fillRect(rx-4,ry-4,rw+8,23);
-    g.strokeStyle='#8f62c7'; g.lineWidth=2; g.strokeRect(rx-3,ry-3,rw+6,21);
+    g.strokeStyle=rushReady?'#e5c2ff':rushFull?'#c995ff':'#8f62c7'; g.lineWidth=rushReady?2+rushPulse:2;
+    g.strokeRect(rx-3,ry-3,rw+6,21);
     g.fillStyle='#2b183f'; g.fillRect(rx,ry,rw,15);
-    const rushFill=rw*clamp(knightRush/100,0,1);
+    const rushFill=rw*clamp(knightRush/special.maxCharge,0,1);
     if(rushFill>0){
       g.fillStyle='#8d46d8'; g.fillRect(rx,ry,rushFill,15);
       g.fillStyle='#c995ff'; g.fillRect(rx,ry,rushFill,4);
     }
     g.textAlign='center'; g.font='bold 11px monospace'; g.fillStyle='#f0ddff';
-    g.fillText('KNIGHT RUSH  '+Math.round(knightRush)+'%',VW/2,ry+12);
+    g.fillText(rushArmed?special.name+' ARMED — NEXT OPENING':
+      rushReady?special.name+' READY — TAP':
+      special.name+'  '+Math.round(knightRush/special.maxCharge*100)+'%',VW/2,ry+12);
+    if(isBearPlayerTurn()) drawBearPlayerTurnUI();
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
     g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,140);
@@ -12198,6 +12889,44 @@ function drawHUD(){
   /* mute hint */
   g.font='10px monospace'; g.textAlign='right'; g.fillStyle='#aeb2c266';
   g.fillText(SFX.muted?'muted (M)':'',VW-10,VH-8-uiTop);
+  g.restore();
+}
+function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true){
+  g.fillStyle=enabled?'rgba(13,16,25,.94)':'rgba(10,11,16,.88)';
+  g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle=enabled?col:'#4b4d58';g.lineWidth=2;
+  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
+  g.textAlign='center';g.font='bold 16px monospace';
+  g.fillStyle=enabled?col:'#656774';
+  g.fillText(title,rect.x+rect.w/2,rect.y+(sub?22:rect.h/2+6));
+  if(sub){
+    g.font='10px monospace';g.fillStyle=enabled?'#aeb2c2':'#555764';
+    g.fillText(sub,rect.x+rect.w/2,rect.y+38);
+  }
+}
+function drawBearPlayerTurnUI(){
+  /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
+     remains pinned to the same final-screen coordinates as its hit boxes. */
+  g.save();g.translate(0,-uiTop);
+  const panel=TURN_PANEL;
+  g.fillStyle='rgba(5,7,12,.94)';g.fillRect(panel.x,panel.y,panel.w,panel.h);
+  g.strokeStyle='#e8e2d0';g.lineWidth=3;
+  g.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1);
+  g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
+  g.fillText('CHOOSE AN ACTION',30,578);
+  g.textAlign='right';g.fillStyle='#7fc9ff';
+  g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,boss.playerMenu==='skills'?360:450,578);
+  if(boss.playerMenu==='skills'){
+    drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
+    for(let i=0;i<BEAR_TURN_SKILLS.length;i++){
+      const skill=BEAR_TURN_SKILLS[i],enabled=boss.resolve>=skill.cost;
+      drawTurnButton(TURN_SKILL_BTNS[i],skill.name,
+        skill.cost+' RESOLVE  /  '+bearTurnDamage(skill.damage)+' DMG',skill.col,enabled);
+    }
+  }else{
+    drawTurnButton(TURN_FIGHT_BTN,'FIGHT','0 RESOLVE  /  '+bearTurnDamage(CFG.TURN_NORMAL_DMG)+' DMG','#e8e2d0',true);
+    drawTurnButton(TURN_SKILL_BTN,'SKILL','OPEN SKILL MENU','#7fc9ff',true);
+  }
   g.restore();
 }
 function drawRelicSlot(x,y,s,r){
@@ -12297,7 +13026,28 @@ function drawHPBar(name,hp,max,status,col='#ff4d3a'){
   g.fillStyle=col; g.fillRect(bx,by,bw*clamp(hp/max,0,1),12);
   g.strokeStyle='#e8e2d055'; g.strokeRect(bx-2,by-2,bw+4,16);
   if(status){ g.font='bold 13px monospace'; g.fillStyle='#ffe37a';
-    g.fillText(status,VW/2,by+34); }
+    g.fillText(status,VW/2,by+53); }
+}
+function drawBossPostureBar(actor){
+  if(!actor||!actor.postureMax)return;
+  const bw=320,bx=VW/2-bw/2,by=127,
+    ratio=clamp((actor.posture||0)/actor.postureMax,0,1),
+    broken=actor.state==='break',pulse=broken?.72+.28*Math.sin(perfNow*10):1;
+  g.fillStyle='#09080bcc';g.fillRect(bx-2,by-2,bw+4,10);
+  g.fillStyle='#322b18';g.fillRect(bx,by,bw,6);
+  if(ratio>0){
+    g.globalAlpha=pulse;g.fillStyle=broken?'#fff0a6':'#d9aa38';
+    g.fillRect(bx,by,bw*ratio,6);g.globalAlpha=1;
+  }
+  g.strokeStyle=broken?'#ffe37a':'#9a844f';g.lineWidth=1;
+  g.strokeRect(bx-2,by-2,bw+4,10);
+  g.font='bold 9px monospace';g.textAlign='left';g.fillStyle=broken?'#ffe37a':'#b9a878';
+  g.fillText(broken?'BREAK':'POSTURE',bx,by+18);
+  if(broken){
+    g.textAlign='right';
+    g.fillText(actor.playerTurnBreak?'+50% DMG':
+      Math.max(0,CFG.BREAK_DURATION-actor.stateT).toFixed(1)+'s',bx+bw,by+18);
+  }
 }
 /* Combat telegraphs: lane hit hue plus one small action arrow in each lane. */
 function drawTelegraphs(){
@@ -12790,6 +13540,7 @@ function drawMenu(){
 /* ---------- settings sheet: floats over the menu or the pause screen ---------- */
 function drawSettings(){
   const showDebugOptions=debugRun||debugMoveLabActive();
+  const showRunAutoParry=debugRun&&!debugMoveLabActive();
   g.fillStyle='rgba(5,7,12,0.86)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
   g.font='bold 26px monospace'; g.fillStyle='#e8e2d0'; g.fillText('SETTINGS',VW/2,VH/2-150);
@@ -12832,9 +13583,16 @@ function drawSettings(){
     if(debugParryStaggerEnabled)g.fillText('X',VW/2-103,VH/2+192);
     g.font='bold 13px monospace';
     g.fillText('PARRY STAGGER: '+(debugParryStaggerEnabled?'ON':'OFF'),VW/2+14,VH/2+193);
+
+    if(showRunAutoParry){
+      g.strokeStyle=debugAutoParryEnabled?'#b56cff':'#8b8fa0';g.lineWidth=2;
+      g.strokeRect(VW/2-125,VH/2+214,250,38);
+      g.font='bold 13px monospace';g.fillStyle=debugAutoParryEnabled?'#d8b6ff':'#aeb2c2';
+      g.fillText('AUTO PARRY: '+(debugAutoParryEnabled?'ON':'OFF'),VW/2,VH/2+239);
+    }
   }
   /* back */
-  const backY=showDebugOptions?VH/2+226:VH/2+44;
+  const backY=showRunAutoParry?VH/2+272:showDebugOptions?VH/2+226:VH/2+44;
   g.strokeStyle='#e8e2d0'; g.strokeRect(VW/2-70,backY,140,44);
   g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,backY+28);
 }
@@ -12847,6 +13605,7 @@ function settingsTap(pt){
   }
   if(pt.x>VW/2-90&&pt.x<VW/2+90&&pt.y>VH/2-26&&pt.y<VH/2+16){ SFX.toggle(); SFX.coin(); return; }
   const showDebugOptions=debugRun||debugMoveLabActive();
+  const showRunAutoParry=debugRun&&!debugMoveLabActive();
   if(showDebugOptions&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+30&&pt.y<VH/2+68){
     debugHitboxesEnabled=!debugHitboxesEnabled;SFX.coin();return;
   }
@@ -12865,7 +13624,10 @@ function settingsTap(pt){
   if(showDebugOptions&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+168&&pt.y<VH/2+206){
     debugParryStaggerEnabled=!debugParryStaggerEnabled;SFX.coin();return;
   }
-  const backY=showDebugOptions?VH/2+226:VH/2+44;
+  if(showRunAutoParry&&pt.x>VW/2-125&&pt.x<VW/2+125&&pt.y>VH/2+214&&pt.y<VH/2+252){
+    debugAutoParryEnabled=!debugAutoParryEnabled;SFX.coin();return;
+  }
+  const backY=showRunAutoParry?VH/2+272:showDebugOptions?VH/2+226:VH/2+44;
   if(pt.x>VW/2-70&&pt.x<VW/2+70&&pt.y>backY&&pt.y<backY+44){ settingsOpen=false; SFX.duck(); }
 }
 /* ---------- the changelog: every version's notes, newest first (tabs to browse) ---------- */
@@ -13393,7 +14155,8 @@ function update(dt){
     updateBossVisualFx(dt);
   }
   else if(mode==='boss'){
-    updateBoss(dt); updateProjectiles(dt); updatePackLeap(dt); updateHazards(); updateBossVisualFx(dt);
+    updateBoss(dt); updateCharacterSpecial(dt);
+    updateProjectiles(dt); updatePackLeap(dt); updateHazards(); updateBossVisualFx(dt);
   }
   else if(mode==='miniboss'){ updateMiniboss(dt); updateHazards(); }
   /* during fights the run pauses, but the forest keeps drifting slowly so it feels alive */
