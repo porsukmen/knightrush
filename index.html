@@ -140,8 +140,8 @@ const CFG = {
   TURN_RESOLVE_START:0,
   TURN_RESOLVE_PER_DEFENSE:1,
   TURN_RESOLVE_PER_PLAYER_PHASE:1,
-  TURN_NORMAL_DMG:12,
-  TURN_ACTION_TIME:.72,
+  TURN_RESOLVE_PER_BREAK:2,
+  TURN_ACTION_TIME:1.15,
   PARRY_DMG_MULT  : 1.5,
   FIGHT_HIT_HALF  : 62,    // screen px from a marked lane centre: matches the paw/body footprint
   IMPACT_HOLD     : 0.10,  // keep the contact pose visible after the damage frame
@@ -558,6 +558,7 @@ const TURN_FIGHT_BTN={x:30,y:610,w:200,h:88};
 const TURN_SKILL_BTN={x:250,y:610,w:200,h:88};
 const TURN_BACK_BTN={x:374,y:558,w:76,h:30};
 const TURN_FINISH_BTN={x:242,y:558,w:124,h:30};
+const TURN_ROOT_FINISH_BTN={x:150,y:704,w:180,h:25};
 const TURN_SKILL_BTNS=Object.freeze([
   Object.freeze({x:30,y:594,w:200,h:48}),
   Object.freeze({x:250,y:594,w:200,h:48}),
@@ -581,8 +582,39 @@ function toggleBearTurntableMouth(){
 function pointInRect(pt,rect){
   return pt.x>=rect.x&&pt.x<=rect.x+rect.w&&pt.y>=rect.y&&pt.y<=rect.y+rect.h;
 }
+const SKILL_TOOLTIP_HOLD_MS=450;
+const TURN_FIGHT_TOOLTIP_INDEX=TURN_SKILL_BTNS.length;
+let skillTooltipIndex=-1;
+function skillIndexAtPoint(pt){
+  if(!pt||mode!=='boss'||!isPlayerTurn())return -1;
+  if(boss.playerMenu==='skills'){
+    for(let i=0;i<TURN_SKILL_BTNS.length;i++)if(pointInRect(pt,TURN_SKILL_BTNS[i]))return i;
+  }else if(pointInRect(pt,TURN_FIGHT_BTN))return TURN_FIGHT_TOOLTIP_INDEX;
+  return -1;
+}
+function dismissSkillTooltip(audible=true){
+  if(skillTooltipIndex<0)return false;
+  skillTooltipIndex=-1;if(audible)SFX.swipe();return true;
+}
+function clearSkillTooltipHold(start=tStart){
+  if(start&&start.skillHoldTimer)clearTimeout(start.skillHoldTimer);
+  if(start)start.skillHoldTimer=0;
+}
+function armSkillTooltipHold(start,cx,cy){
+  if(!start||start.done)return false;
+  const index=skillIndexAtPoint(toGame(cx,cy));if(index<0)return false;
+  start.skillHoldIndex=index;
+  start.skillHoldTimer=setTimeout(()=>{
+    if(tStart!==start||start.done||start.intentMoved||
+       skillIndexAtPoint(toGame(start.x,start.y))!==index)return;
+    start.skillHoldTimer=0;start.done=true;skillTooltipIndex=index;
+    SFX.swipe();
+  },SKILL_TOOLTIP_HOLD_MS);
+  return true;
+}
 function handleAction(a,pt,parryIntent=null){
   SFX.init();
+  if(skillTooltipIndex>=0){if(a==='tap')dismissSkillTooltip();return;}
   if(!paused&&debugParryInputFrozen){
     if(a==='parry'||a==='tap'){
       debugParryInputFrozen=false;debugParryInputMark=null;SFX.swipe();
@@ -673,6 +705,9 @@ function handleAction(a,pt,parryIntent=null){
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a,parryIntent);
 }
 addEventListener('keydown',e=>{
+  if(skillTooltipIndex>=0&&(e.key==='Escape'||e.key==='Enter'||e.key===' ')){
+    dismissSkillTooltip();e.preventDefault();return;
+  }
   if(paused&&pausePhotoMode){ e.preventDefault(); return; }
   if(paused&&debugMoveLabActive()){
     if(e.key==='ArrowLeft'){ changeMoveLabSelection(-1); e.preventDefault(); return; }
@@ -758,6 +793,7 @@ function trySwipe(cx,cy){
 function clearTapIntent(start=tStart){
   if(start&&start.tapTimer) clearTimeout(start.tapTimer);
   if(start) start.tapTimer=0;
+  clearSkillTooltipHold(start);
   tapIntentSimulationFrozen=false;
 }
 function immediateParryTapEligible(pt){
@@ -970,8 +1006,9 @@ function noteTapIntentMovement(start,cx,cy){
 }
 addEventListener('touchstart',e=>{e.preventDefault();
   SFX.unlock();
-  if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); tStart=null; return; }
   const t=e.changedTouches[0];
+  if(skillTooltipIndex>=0){dismissSkillTooltip();tStart={x:t.clientX,y:t.clientY,done:true};return;}
+  if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); tStart=null; return; }
   if(debugParryInputFrozen&&!paused){
     handleAction('tap',toGame(t.clientX,t.clientY));
     tStart={x:t.clientX,y:t.clientY,done:true};return;
@@ -979,6 +1016,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
   tStart={x:t.clientX,y:t.clientY,done:levelHold};
   armTapIntent(tStart,t.clientX,t.clientY);
+  armSkillTooltipHold(tStart,t.clientX,t.clientY);
 },{passive:false});
 addEventListener('touchmove',e=>{ e.preventDefault();
   const t=e.changedTouches[0];noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
@@ -998,6 +1036,9 @@ addEventListener('touchcancel',()=>{
 },{passive:true});
 let mDown=false;
 addEventListener('mousedown',e=>{
+  if(skillTooltipIndex>=0){
+    dismissSkillTooltip();mDown=true;tStart={x:e.clientX,y:e.clientY,done:true};return;
+  }
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); mDown=false; tStart=null; return; }
   if(debugParryInputFrozen&&!paused){
     handleAction('tap',toGame(e.clientX,e.clientY));
@@ -1006,6 +1047,7 @@ addEventListener('mousedown',e=>{
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
   tStart={x:e.clientX,y:e.clientY,done:levelHold};
   armTapIntent(tStart,e.clientX,e.clientY);
+  armSkillTooltipHold(tStart,e.clientX,e.clientY);
 });
 addEventListener('mousemove',e=>{ if(mDown){noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);} });
 addEventListener('mouseup',e=>{
@@ -8555,13 +8597,30 @@ function resolveHazard(h){
 /* BOSS CHAIN: every landed boss hit adds one stack. It is created fresh with
    each EncounterActor boss, so no damage momentum leaks between encounters. */
 let chainStacks=0;
-/* Resolve is the turn's action-point resource. Skills can evolve their Resolve
-   costs independently without introducing a second overlapping energy bar. */
+/* Runtime weapon state is intentionally separate from its immutable definition:
+   later RNG upgrades will append rule-changing modifiers without mutating base data. */
+const WEAPON_DEFS=Object.freeze({
+  longbow:Object.freeze({id:'longbow',name:'LONGBOW',baseDamage:12,levelDamage:4,
+    markDamage:8,col:'#c0f79a'})
+});
+function createRunWeapon(id='longbow'){return {id,level:0,upgrades:[]};}
+let runWeapon=createRunWeapon();
+function activeWeapon(){return WEAPON_DEFS[runWeapon.id]||WEAPON_DEFS.longbow;}
+function weaponBaseDamage(){const w=activeWeapon();return w.baseDamage+runWeapon.level*w.levelDamage;}
+
+/* Resolve is the turn's action-point resource. Effects remain declarative so an
+   evolution can replace hit count, cost, Mark behavior or Posture without forks. */
 const TURN_SKILLS=Object.freeze([
-  Object.freeze({name:'POWER SHOT',cost:1,damage:16,col:'#c0f79a'}),
-  Object.freeze({name:'SHIELD BASH',cost:2,damage:24,col:'#9ecbff'}),
-  Object.freeze({name:'ARROW RAIN',cost:3,damage:34,col:'#ffe37a'}),
-  Object.freeze({name:'ROYAL STRIKE',cost:4,damage:46,col:'#c995ff'}),
+  Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
+    damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72}),
+  Object.freeze({id:'arrow_rain',name:'ARROW RAIN',source:'WEAPON',skill:true,cost:2,
+    damage:6,hits:3,hitInterval:.55,consumeMark:true,markDamagePerHit:2,markStackGrowth:1,
+    duration:1.65,col:'#ffe37a',slash:-.52}),
+  Object.freeze({id:'shield_kick',name:'SHIELD KICK',source:'CLASS',skill:true,cost:1,
+    damage:8,hits:1,posture:25,col:'#9ecbff',slash:.18}),
+  Object.freeze({id:'royal_slash',name:'ROYAL SLASH',source:'CLASS',skill:true,cost:3,
+    damage:24,hits:1,extraChainBonus:.08,consumeChain:true,addsChain:false,
+    col:'#c995ff',slash:.62}),
 ]);
 function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
@@ -8578,12 +8637,24 @@ function addTurnResolve(amount,show=true){
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-122,'RESOLVE +'+gained,'#7fc9ff',15);
   return gained;
 }
-function turnDamage(base){
+function turnDamage(base,extraChainBonus=0,chain=chainStacks){
   const breakMultiplier=boss&&boss.playerTurnBreak?1.5:1;
-  return Math.round(base*(1+chainBonus()*chainStacks)*breakMultiplier);
+  return Math.round(base*(1+(chainBonus()+extraChainBonus)*chain)*breakMultiplier);
+}
+function bossMark(){return boss?boss.mark||0:0;}
+function commandMarkDamage(command,stacks){
+  const count=Math.max(0,stacks||0),linear=count*(command.markDamagePerHit||0);
+  return linear+(command.markStackGrowth||0)*count*(count-1)/2;
+}
+function fightCommand(){
+  const weapon=activeWeapon();
+  return {id:'fight_'+weapon.id,name:weapon.name+' ATTACK',source:'WEAPON',skill:false,cost:0,
+    damage:weaponBaseDamage(),hits:1,consumeMark:true,markDamagePerHit:weapon.markDamage,
+    resolvePerHit:1,col:weapon.col,slash:-.45};
 }
 function beginPlayerTurn(fromBreak=false){
   if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
+  skillTooltipIndex=-1;
   boss.phase='player';boss.playerTurnBreak=fromBreak;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
   boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
@@ -8596,6 +8667,7 @@ function beginPlayerTurn(fromBreak=false){
 }
 function endPlayerTurn(){
   if(!isTurnCombat()||(boss.phase!=='player'&&boss.phase!=='playerResolve')) return false;
+  skillTooltipIndex=-1;
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
   if(endedBreak){
@@ -8608,20 +8680,70 @@ function endPlayerTurn(){
   boss.attacksLeft=boss.enemyTurnBudget;
   boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
-  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;
+  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;boss.turnAction=null;
   floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
   return true;
 }
 function finishPlayerAction(){
   if(!isTurnCombat()||boss.phase!=='playerResolve') return;
+  boss.turnAction=null;
   if(boss.hp<=0){resolveVolley();return;}
   if(boss.turnActionEndsPhase){endPlayerTurn();return;}
   boss.phase='player';boss.playerActionTimer=0;boss.turnActionEndsPhase=false;
   boss.playerMenu='skills';
   floater(VW/2,286,'RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
 }
+function applyTurnSkillPosture(amount){
+  if(!boss||!isTurnCombat()||boss.phase!=='playerResolve'||boss.playerTurnBreak||amount<=0)return 0;
+  const before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
+  boss.posture=Math.min(max,before+amount);
+  if(boss.posture>=max){
+    boss.pendingBreak={source:'skill'};
+    beginBossBreak(boss,null);
+  }
+  return boss.posture-before;
+}
+function resolveTurnActionHit(action){
+  if(!action||!boss||action.hitIndex>=action.hits)return false;
+  const command=action.command,index=action.hitIndex++,
+    base=command.damage+action.markDamage,
+    damage=turnDamage(base,command.extraChainBonus||0),
+    p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
+    angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
+  player.attackAnim=1;player.counterAnim=.42;
+  if(command.id==='sharpshoot'||command.id==='arrow_rain'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
+  else SFX.slash();
+  spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
+  burst(x,y,action.hits>1?9:15,[command.col||'#ffffff','#ffffff','#ffe37a'],
+    action.hits>1?150:205,75,action.hits>1?3.2:4.2,.5);
+  const defeated=hurtBoss(damage,false,'turn_attack');
+  if(command.resolvePerHit)addTurnResolve(command.resolvePerHit);
+  if(defeated){
+    action.hitIndex=action.hits;
+    return true;
+  }
+  if(command.addsChain!==false)addChainStack();
+  if(action.hitIndex===action.hits){
+    if(command.markGain){
+      boss.mark=Math.min(3,bossMark()+command.markGain);
+      floater(x,y-55,'MARK ×'+boss.mark,'#ff4d5f',16);
+    }
+    if(command.posture)applyTurnSkillPosture(command.posture);
+    if(command.consumeChain){
+      chainStacks=0;floater(x,y-86,'CHAIN CASHED','#c995ff',15);
+    }
+  }
+  return true;
+}
+function updateTurnAction(dt){
+  const action=boss&&boss.turnAction;if(!action)return;
+  action.t+=dt;
+  while(action.hitIndex<action.hits&&action.t+1e-6>=action.hitIndex*action.hitInterval)
+    resolveTurnActionHit(action);
+}
 function performPlayerAction(command){
   if(!isPlayerTurn()||!command) return false;
+  skillTooltipIndex=-1;
   const skill=command.skill===true,cost=command.cost||0;
   if(!skill&&boss.usedSkillThisTurn){SFX.duck();return false;}
   if((boss.resolve||0)<cost){SFX.duck();return false;}
@@ -8629,18 +8751,20 @@ function performPlayerAction(command){
   if(skill)boss.usedSkillThisTurn=true;
   boss.turnActionEndsPhase=!skill;
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
-  boss.playerActionTimer=CFG.TURN_ACTION_TIME;
-  player.attackAnim=1;player.counterAnim=.42;
-  const damage=turnDamage(command.damage);
+  const hits=command.hits||1,hitInterval=command.hitInterval||0,
+    duration=command.duration||Math.max(CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
+    consumedMark=command.consumeMark?bossMark():0,
+    markDamage=commandMarkDamage(command,consumedMark);
+  if(consumedMark){
+    boss.mark=0;
+    floater(VW/2,300,'MARK ×'+consumedMark+' CONSUMED'+(markDamage?' · +'+markDamage+' BASE / HIT':''),'#ff4d5f',15);
+  }
+  boss.playerActionTimer=duration;
+  boss.turnAction={command,t:0,hitIndex:0,hits,hitInterval,consumedMark,markDamage};
   const breakAttack=boss.playerTurnBreak===true;
-  const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s;
-  SFX.slash();spawnSlash(x,y,command.slash===undefined?-.48:command.slash,command.col||'#ffffff');
-  burst(x,y,skill?16:10,[command.col||'#ffffff','#ffffff','#ffe37a'],
-    skill?205:155,75,skill?4.2:3.2,.55);
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×1.5','#ffe37a',16);
-  hurtBoss(damage,false,'turn_attack');
-  addChainStack();
+  resolveTurnActionHit(boss.turnAction);
   return true;
 }
 function handlePlayerTurnTap(pt){
@@ -8650,17 +8774,13 @@ function handlePlayerTurnTap(pt){
     if(pointInRect(pt,TURN_BACK_BTN)){boss.playerMenu='root';SFX.swipe();return true;}
     for(let i=0;i<TURN_SKILL_BTNS.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
       const skill=TURN_SKILLS[i];
-      return performPlayerAction({
-        name:skill.name,cost:skill.cost,damage:skill.damage,col:skill.col,
-        skill:true,slash:-.72+i*.34
-      });
+      return performPlayerAction(skill);
     }
     return false;
   }
+  if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
   if(pointInRect(pt,TURN_FIGHT_BTN))
-    return performPlayerAction({
-      name:'NORMAL ATTACK',cost:0,damage:CFG.TURN_NORMAL_DMG,col:'#e8e2d0',slash:-.45
-    });
+    return performPlayerAction(fightCommand());
   if(pointInRect(pt,TURN_SKILL_BTN)){boss.playerMenu='skills';SFX.swipe();return true;}
   return false;
 }
@@ -8674,12 +8794,13 @@ function addChainStack(){
 function doCounter(src){
   player.counterAnim=1; player.attackAnim=1; SFX.counter(); stopTime(.06); shake(5,.2);
   spawnSlash(laneX(player.x,1),PLAYER_Y-70,-0.5,'#ffe37a');
+  let defeated=false;
   if(src===MINIBOSS_SOURCE){ if(minibossFight) minibossCounterHit(); }
   else if(boss){
     const dmg=Math.round(counterDmg()*(1+chainBonus()*chainStacks));
-    hurtBoss(dmg,true);
+    defeated=hurtBoss(dmg,true);
   }
-  addChainStack();
+  if(!defeated)addChainStack();
 }
 let knightRush=0,knightRushQueued=false,knightRushSequence=null;
 function addKnightRush(amount){
@@ -8716,7 +8837,16 @@ function beginBossBreak(actor,entryPresentation=null){
   for(const h of hazards)if(h.src===BOSS_SOURCE)h.done=true;
   floater(VW/2,270,'BREAK!','#ffe37a',27);
   SFX.hit();flash('#ffe37a',.22);shake(9,.42);stopTime(.055);
-  if(isTurnCombat(actor))beginPlayerTurn(true);
+  if(isTurnCombat(actor)){
+    /* A class skill may break Posture inside an existing player phase. Preserve
+       its spent Resolve and action history; only future hits gain Break damage. */
+    if(actor.phase==='player'||actor.phase==='playerResolve'){
+      actor.playerTurnBreak=true;
+    }
+    else beginPlayerTurn(true);
+    /* Break itself owns this reward. Source and phase never change its value. */
+    addTurnResolve(CFG.TURN_RESOLVE_PER_BREAK);
+  }
   return true;
 }
 function doPerfectDodge(src){
@@ -8782,12 +8912,13 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   emitParryReactionFx(x,y,reaction);
   floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
   interruptParriedAttack(src);
+  let defeated=false;
   if(src===MINIBOSS_SOURCE){ if(minibossFight) minibossCounterHit(); }
   else if(boss){
     const dmg=Math.round(counterDmg()*CFG.PARRY_DMG_MULT*(1+chainBonus()*chainStacks));
-    hurtBoss(dmg,true);
+    defeated=hurtBoss(dmg,true);
   }
-  addChainStack();
+  if(!defeated)addChainStack();
 }
 
 /* CHARACTER SPECIALS
@@ -8960,7 +9091,11 @@ function resolveKnightRushHit(sequence){
   }
   if(hitIndex===0)
     floater(VW/2,PLAYER_Y-jumpHeight()-128,'KNIGHT RUSH!','#c995ff',24);
-  hurtBoss(dmg,false,finalHit?'rush':'rush_hit');
+  if(hurtBoss(dmg,false,finalHit?'rush':'rush_hit')){
+    sequence.hits=CFG.KNIGHT_RUSH_HITS;sequence.finalHit=true;
+    knightRushSequence=null;player.attackAnim=0;
+    return true;
+  }
   applyBossPosture(CFG.KNIGHT_RUSH_POSTURE[hitIndex]||0,'knight_rush',
     finalHit?boss.parryReaction:null);
   addChainStack();
@@ -9852,7 +9987,7 @@ function startBoss(definitionId=null){
     turnCombat:true,enemyTurnBudget,enemyTurn:1,
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
     usedSkillThisTurn:false,turnActionEndsPhase:false,
-    playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,
+    playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
@@ -10135,12 +10270,9 @@ function chooseBossAttack(movesLeft=boss.attacksLeft){
   return applyEncounterTempo(attack,cycle,bossHesitationMultiplier(cycle));
 }
 function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon'){
-  if(!boss||boss.state==='dying'||boss.state==='finisher') return;
-  /* counter damage keeps counting past 0 HP — the excess lands in overkill,
-     together with the whole volley, when the fight resolves */
+  if(!boss||boss.state==='dying'||boss.state==='finisher') return false;
+  /* Turn combat resolves lethal damage immediately, regardless of its source. */
   boss.hp-=dmg; if(boss.phase!=='dodge') boss.dealt+=dmg;
-  if(boss.hp<=0&&boss.phase==='dodge'&&!boss._beaten){ boss._beaten=true;
-    floater(VW/2,300,'IT STAGGERS — KEEP THE CHAIN GOING!','#ffe37a',18); }
   if(damageSource==='counter'&&hasRelic('venom')){ boss.poisonT=8; // VENOM VIAL: the counter envenoms
     floater(laneX(boss.x,proj(boss.z).t),proj(boss.z).y-160*proj(boss.z).s,'POISONED!','#7ade6a',15); }
   if(damageSource==='weapon'&&hasRelic('brand')){ boss.burnT=4;    // BRAND OF EMBERS: steel ignites
@@ -10154,16 +10286,27 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon'){
     rush?(rushFinal?220:145):180,120,rush?(rushFinal?5:3.5):4,.6);
   floater(laneX(boss.x,p.t),p.y-120*p.s,'-'+dmg,
     rush?'#c995ff':fromCounter?'#ffe37a':'#fff',rush?(rushFinal?24:19):fromCounter?22:18);
+  return boss.hp<=0?defeatBoss():false;
 }
-/* called once the FULL volley has landed: score first, THEN the kill animation */
+/* Every lethal source converges here. No defense attack, queued Break or
+   multi-hit action may survive the transition into the authored death state. */
+function defeatBoss(){
+  if(!boss||boss.hp>0||boss.state==='dying')return false;
+  const overkill=Math.max(0,-boss.hp),pts=RUN_POLICY().bossScoreAt(loop),
+    okPts=Math.round(overkill*CFG.OVERKILL_MULT);
+  bossScoreRun+=pts;overkillRun+=okPts;bossKills++;
+  floater(VW/2,300,'BOSS SLAIN  +'+pts,'#ffe37a',26);
+  if(okPts>0)floater(VW/2,336,'OVERKILL '+overkill+' ×'+CFG.OVERKILL_MULT+'  +'+okPts,'#ff9a3a',20);
+  SFX.win();flash('#ffe37a',.5);shake(12,.6);stopTime(.25);
+  boss.pendingBreak=null;boss.parryReaction=null;boss.knightRushRecovery=null;
+  boss.turnAction=null;boss.playerActionTimer=0;boss.state='dying';boss.stateT=0;boss._stg=0;
+  hazards=[];projectiles=[];packLeap=null;knightRushQueued=false;
+  return true;
+}
+/* Legacy callers still resolve a completed volley through the same outcome. */
 function resolveVolley(){
   if(boss.hp<=0){
-    const overkill=Math.max(0,-boss.hp), pts=RUN_POLICY().bossScoreAt(loop), okPts=Math.round(overkill*CFG.OVERKILL_MULT);
-    bossScoreRun+=pts; overkillRun+=okPts; bossKills++;
-    floater(VW/2,300,'BOSS SLAIN  +'+pts,'#ffe37a',26);
-    if(okPts>0) floater(VW/2,336,'OVERKILL '+overkill+' ×'+CFG.OVERKILL_MULT+'  +'+okPts,'#ff9a3a',20);
-    SFX.win(); flash('#ffe37a',.5); shake(12,.6); stopTime(.25);
-    boss.state='dying'; boss.stateT=0; boss._stg=0; hazards=[];   // now the kill animation plays
+    defeatBoss();
   } else {
     floater(VW/2,300,'NOT ENOUGH DAMAGE...','#ff4d3a',24); SFX.roar();
     boss.state='finisher'; boss.stateT=0; boss.xTarget=1; boss._fin=false; boss._finRoar=false; boss._finStage=0; hazards=[];
@@ -10227,9 +10370,9 @@ function updateBoss(dt){
         const pD=proj(boss.z);
         floater(laneX(boss.x,pD.t)+rnd(-30,30),pD.y-130*pD.s,'-'+n,
           boss.poisonT>0?'#7ade6a':'#ff9a3a',13);
-        if(boss.hp<=0&&boss.phase==='dodge'&&!boss._beaten){ boss._beaten=true;
-          floater(VW/2,300,'IT STAGGERS — KEEP THE CHAIN GOING!','#ffe37a',18); } } }
+      } }
   }
+  if(boss.hp<=0&&boss.state!=='dying'){defeatBoss();return;}
   boss.x+=(boss.xTarget-boss.x)*Math.min(1,5*dt);
   const st=boss.state, T=boss.stateT;
   if(st==='dying'){                          /* --- staged KILL ANIMATION --- */
@@ -10272,6 +10415,7 @@ function updateBoss(dt){
     return;
   }
   if(isTurnCombat()&&boss.phase==='playerResolve'){
+    updateTurnAction(dt);
     boss.playerActionTimer-=dt;
     if(boss.playerActionTimer<=0) finishPlayerAction();
     return;
@@ -10412,7 +10556,7 @@ function updatePackLeap(dt){
   const L=packLeap; L.t+=dt;
   if(L.phase==='fly'&&L.t>=0.5){ L.phase='maul'; L.t=0;
     const dmg=packLeapDmg();
-    hurtBoss(dmg,false);
+    if(hurtBoss(dmg,false))return;
     addChainStack();                                    // every follower hit feeds the boss chain
     if(hasRelic('horn')) addChainStack();               // horn grants one additional fang stack
     if(hasRelic('alpha')){ addChainStack(); addChainStack(); }   // alpha grants two more
@@ -12646,6 +12790,7 @@ function resetRun(){
   loop=RUN_POLICY().startStage; dist=0; roadScroll=0; gold=0; goldEarned=0; runDistance=0; arrows=0; lances=0; paused=false; pausePhotoMode=false; env='forest'; biome=biomeOf(loop); oakUsed=false;
   scoreShown=0; newBestThisRun=false;
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
+  runWeapon=createRunWeapon('longbow');
   relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null; // all FIVE slots, empty
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
@@ -12774,12 +12919,13 @@ function drawHUD(){
     else if(boss.phase==='dodge') st='survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
     drawHPBar(activeBossDefinition().name,boss.hp,boss.maxhp,st);
     drawBossPostureBar(boss);
+    drawBossMarkTokens(boss);
     if(isTurnCombat()&&boss.phase==='dodge'){
       g.textAlign='right';g.font='bold 9px monospace';g.fillStyle='#7fc9ff';
       g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2+160,145);
     }
     if(chainStacks>0){ g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ffe37a';
-      g.fillText('CHAIN ×'+chainStacks+'  (all hits +'+(chainStacks*chainBonus()*100|0)+'%)',VW/2,180); }
+      g.fillText('CHAIN ×'+chainStacks+'  (all hits +'+(chainStacks*chainBonus()*100|0)+'%)',VW/2,198); }
     /* Tap the full meter to spend it. Input uses KNIGHT_RUSH_BTN in final screen
        coordinates; this draw position cancels uiTop to stay pinned above the
        physical bottom safe area on every aspect ratio. */
@@ -12857,6 +13003,125 @@ function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true){
     g.fillText(sub,rect.x+rect.w/2,rect.y+38);
   }
 }
+function skillButtonSubtitle(skill){
+  if(skill.id==='arrow_rain'){
+    const perHit=turnDamage(skill.damage+commandMarkDamage(skill,bossMark()));
+    return 'WPN · '+skill.cost+'R · 3×'+perHit+' · MARK BURST';
+  }
+  if(skill.id==='shield_kick')
+    return 'CLASS · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · '+skill.posture+' POST';
+  if(skill.id==='royal_slash')
+    return 'CLASS · '+skill.cost+'R · '+turnDamage(skill.damage,skill.extraChainBonus)+' · CHAIN FINISH';
+  return 'WPN · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · MARK +1';
+}
+function turnTooltipCommand(){
+  return skillTooltipIndex===TURN_FIGHT_TOOLTIP_INDEX?fightCommand():TURN_SKILLS[skillTooltipIndex];
+}
+function turnCommandDamageBreakdown(command){
+  const hits=command.hits||1,markStacks=command.consumeMark?bossMark():0,
+    markPerHit=commandMarkDamage(command,markStacks),
+    chainRate=chainBonus()+(command.extraChainBonus||0),breakMultiplier=boss.playerTurnBreak?1.5:1,
+    rows=[];
+  let total=0;
+  for(let i=0;i<hits;i++){
+    const hitChain=chainStacks+(command.addsChain!==false?i:0),
+      subtotal=command.damage+markPerHit,
+      chainDamage=subtotal*chainRate*hitChain,
+      beforeBreak=subtotal+chainDamage,
+      breakDamage=beforeBreak*(breakMultiplier-1),final=Math.round(beforeBreak*breakMultiplier);
+    rows.push({hit:i+1,base:command.damage,mark:markPerHit,chainStacks:hitChain,
+      chain:chainDamage,break:breakDamage,final});
+    total+=final;
+  }
+  return {rows,total,markStacks};
+}
+function damagePart(value){
+  if(Math.abs(value)<.001)return '0';
+  return Number.isInteger(value)?String(value):value.toFixed(1).replace(/\.0$/,'');
+}
+function damageBreakdownLine(row){
+  let line='HIT '+row.hit+'  BASE '+damagePart(row.base);
+  if(row.mark>0)line+='  MARK +'+damagePart(row.mark);
+  if(row.chainStacks>0)line+='  CHAIN×'+row.chainStacks+' +'+damagePart(row.chain);
+  if(row.break>0)line+='  BREAK +'+damagePart(row.break);
+  return line+'  = '+row.final;
+}
+function skillTooltipContent(command){
+  if(command.id.indexOf('fight_longbow')===0)return {paragraphs:[
+    'A free Longbow attack. Its base damage gains 4 for every weapon level.',
+    'Consume every Mark. Each stack adds 8 base damage to this hit.',
+    'Every landed hit grants 1 Resolve. Add 1 Chain and end the player phase.'
+  ]};
+  if(command.id==='sharpshoot')return {paragraphs:[
+    'Fire one precise arrow and apply 1 Mark. A boss can carry up to 3 Mark.',
+    'Mark persists across enemy and player phases until Longbow Attack or Arrow Rain consumes every stack.',
+    'A successful hit also adds 1 Chain.'
+  ]};
+  if(command.id==='arrow_rain')return {paragraphs:[
+    'Consume every Mark before firing. Stacking increases the bonus on each arrow: 1 / 2 / 3 Mark gives +2 / +5 / +9.',
+    'Every arrow adds 1 Chain. The next arrow uses that new Chain, so all three hits are calculated separately.',
+    'Break damage applies to all three hits.'
+  ]};
+  if(command.id==='shield_kick')return {paragraphs:[
+    'Strike the boss and deal 25 Posture damage.',
+    'Every Break grants 2 Resolve, whether caused by this skill, a Parry or Knight Rush.',
+    'The kick lands before Break. Only attacks made after it receive the 50% Break bonus.'
+  ]};
+  const chainPercent=Math.round((chainBonus()+(command.extraChainBonus||0))*100);
+  return {paragraphs:[
+    'Deliver a finisher that gains '+chainPercent+'% damage for every current Chain stack.',
+    'After the hit, consume all Chain and add no new Chain.',
+    'Use during Break to multiply the complete result by 1.5.'
+  ]};
+}
+function drawWrappedTooltipText(text,x,y,maxWidth,lineHeight){
+  const words=text.split(' ');let line='';
+  for(let i=0;i<words.length;i++){
+    const test=line?line+' '+words[i]:words[i];
+    if(line&&g.measureText(test).width>maxWidth){g.fillText(line,x,y);line=words[i];y+=lineHeight;}
+    else line=test;
+  }
+  if(line){g.fillText(line,x,y);y+=lineHeight;}
+  return y;
+}
+function drawSkillTooltip(){
+  const command=turnTooltipCommand(),fightTooltip=skillTooltipIndex===TURN_FIGHT_TOOLTIP_INDEX;
+  if(!command||!isPlayerTurn()||(fightTooltip?boss.playerMenu!=='root':boss.playerMenu!=='skills'))return;
+  const info=skillTooltipContent(command),breakdown=turnCommandDamageBreakdown(command),
+    finals=breakdown.rows.map(row=>row.final),x=20,y=94,w=440,h=552,
+    available=boss.resolve>=command.cost&&(!fightTooltip||!boss.usedSkillThisTurn),
+    preview=breakdown.rows.length>1
+      ?breakdown.rows.length+' HITS · '+finals.join(' / ')+' · TOTAL '+breakdown.total
+      :'FINAL DAMAGE '+breakdown.total;
+  g.save();
+  g.fillStyle='rgba(2,3,7,.78)';g.fillRect(0,0,VW,VH);
+  g.fillStyle='rgba(8,11,18,.98)';g.fillRect(x,y,w,h);
+  g.strokeStyle=command.col;g.lineWidth=3;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.fillStyle=command.col;g.fillRect(x,y,w,6);
+  g.textAlign='left';g.font='bold 23px monospace';g.fillStyle='#f4f1e8';
+  g.fillText(command.name,x+20,y+42);
+  g.font='bold 11px monospace';g.fillStyle=command.col;
+  g.fillText(command.source+' '+(command.skill?'SKILL':'ATTACK')+'  ·  COST '+command.cost+' RESOLVE',x+20,y+64);
+  g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
+  g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
+  g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
+  const unavailable=fightTooltip&&boss.usedSkillThisTurn?' · LOCKED AFTER SKILL':' · NOT ENOUGH';
+  g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax+(available?' · READY':unavailable),x+28,y+124);
+  g.font='bold 10px monospace';g.fillStyle='#ff8794';
+  g.fillText('DAMAGE SOURCES · FINAL VALUE ROUNDED',x+20,y+166);
+  let rowY=y+190;g.font='10px monospace';g.fillStyle='#e8e2d0';
+  for(const row of breakdown.rows){g.fillText(damageBreakdownLine(row),x+20,rowY);rowY+=21;}
+  const dividerY=rowY+3;
+  g.strokeStyle='#ffffff24';g.lineWidth=1;g.beginPath();g.moveTo(x+20,dividerY);g.lineTo(x+w-20,dividerY);g.stroke();
+  let textY=dividerY+27;g.font='12px monospace';g.fillStyle='#d9dce6';
+  for(const paragraph of info.paragraphs){
+    g.fillStyle=command.col;g.fillText('◆',x+22,textY);
+    g.fillStyle='#d9dce6';textY=drawWrappedTooltipText(paragraph,x+42,textY,w-72,18)+10;
+  }
+  g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#8f94a5';
+  g.fillText('TAP ANYWHERE TO CLOSE',VW/2,y+h-18);
+  g.restore();
+}
 function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
      remains pinned to the same final-screen coordinates as its hit boxes. */
@@ -12872,19 +13137,25 @@ function drawPlayerTurnUI(){
     drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
     for(let i=0;i<TURN_SKILLS.length;i++){
       const skill=TURN_SKILLS[i],enabled=boss.resolve>=skill.cost;
-      drawTurnButton(TURN_SKILL_BTNS[i],skill.name,
-        skill.cost+' RESOLVE · '+turnDamage(skill.damage)+' DMG',skill.col,enabled);
+      drawTurnButton(TURN_SKILL_BTNS[i],skill.name,skillButtonSubtitle(skill),skill.col,enabled);
     }
+    g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
+    g.fillText('HOLD A SKILL FOR DETAILS',VW/2,721);
   }else{
     g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
     g.fillText('CHOOSE AN ACTION',30,578);
     g.textAlign='right';g.fillStyle='#7fc9ff';
     g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
+    g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
+    g.fillText('HOLD FIGHT FOR DAMAGE DETAILS',130,600);
     const fightEnabled=!boss.usedSkillThisTurn;
+    const fight=fightCommand(),fightDamage=turnDamage(
+      fight.damage+commandMarkDamage(fight,bossMark()));
     drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled
-      ?'0 RESOLVE · '+turnDamage(CFG.TURN_NORMAL_DMG)+' DMG':'LOCKED AFTER SKILL',
+      ?activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R/HIT':'LOCKED AFTER SKILL',
       '#e8e2d0',fightEnabled);
     drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',boss.resolve>0);
+    drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
   }
   g.restore();
 }
@@ -12976,6 +13247,21 @@ function drawRelicSlot(x,y,s,r){
   }
   g.restore(); g.globalAlpha=1;
 }
+function drawBossMarkTokens(actor){
+  const count=actor?Math.min(3,actor.mark||0):0;if(!count)return;
+  const spacing=20,start=VW/2-(count-1)*spacing*.5,y=151,
+    segments=[[-3,-6,6,2],[-5,-4,2,2],[3,-4,2,2],[-6,-2,2,4],[4,-2,2,4],
+      [-5,2,2,2],[3,2,2,2],[-3,4,6,2],[-8,-1,5,2],[3,-1,5,2],
+      [-1,-8,2,5],[-1,3,2,5]];
+  g.save();
+  for(let i=0;i<count;i++){
+    const x=Math.round(start+i*spacing);
+    g.fillStyle='#ff3047';
+    for(const s of segments)g.fillRect(x+s[0],y+s[1],s[2],s[3]);
+    g.fillStyle='#ff7180';g.fillRect(x-1,y-1,2,2);
+  }
+  g.restore();
+}
 function drawHPBar(name,hp,max,status,col='#ff4d3a'){
   const bw=320,bx=VW/2-bw/2,by=108;
   g.textAlign='center'; g.font='bold 14px monospace';
@@ -12985,7 +13271,7 @@ function drawHPBar(name,hp,max,status,col='#ff4d3a'){
   g.fillStyle=col; g.fillRect(bx,by,bw*clamp(hp/max,0,1),12);
   g.strokeStyle='#e8e2d055'; g.strokeRect(bx-2,by-2,bw+4,16);
   if(status){ g.font='bold 13px monospace'; g.fillStyle='#ffe37a';
-    g.fillText(status,VW/2,by+53); }
+    g.fillText(status,VW/2,by+70); }
 }
 function drawBossPostureBar(actor){
   if(!actor||!actor.postureMax)return;
@@ -14348,6 +14634,7 @@ function render(){
       if(mode==='miniboss') drawMinibossIntro();
     }
   }
+  if(skillTooltipIndex>=0)drawSkillTooltip();
   if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
     g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
     if(debugMoveLabActive()) drawMoveLabPauseControls();
