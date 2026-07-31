@@ -64,18 +64,8 @@ const CFG = {
   SPAWN_GAP       : 13,
   P_OBSTACLE      : 0.42,  // chance: obstacle pattern (roots / ponds / boulders)
   P_COINS         : 0.26,  // chance: a single gold coin
-  P_ARROW         : 0.012, // chance: BONUS arrow (arsenal is deliberately tight — every arrow matters)
-  P_LANCE         : 0.005, // chance: BONUS lance
   P_MIXED         : 0.09,  // chance: obstacle + a coin in a guaranteed-free lane
   COIN_VALUE      : 1,     // gold per coin; earned gold scores now and unspent gold scores again at death
-
-  /* --- guaranteed arsenal: grows per CYCLE and caps; upgrades/relics create power --- */
-  GUAR_ARROWS     : 6,
-  GUAR_ARROWS_TIER: 1,
-  GUAR_ARROWS_MAX : 12,
-  GUAR_LANCES     : 2,
-  GUAR_LANCES_TIER: 1,
-  GUAR_LANCES_MAX : 6,
 
   /* --- weapons / the volley --- */
   ARROW_DMG       : 10,    // damage per collected arrow
@@ -567,6 +557,7 @@ const TURN_PANEL={x:14,y:548,w:452,h:185};
 const TURN_FIGHT_BTN={x:30,y:610,w:200,h:88};
 const TURN_SKILL_BTN={x:250,y:610,w:200,h:88};
 const TURN_BACK_BTN={x:374,y:558,w:76,h:30};
+const TURN_FINISH_BTN={x:242,y:558,w:124,h:30};
 const TURN_SKILL_BTNS=Object.freeze([
   Object.freeze({x:30,y:594,w:200,h:48}),
   Object.freeze({x:250,y:594,w:200,h:48}),
@@ -666,8 +657,8 @@ function handleAction(a,pt,parryIntent=null){
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
   /* The command panel owns every tap during the Bear's player phase. A tap
      outside its buttons must never leak through as a parry or Rush input. */
-  if(mode==='boss'&&isBearPlayerTurn()){
-    if(a==='tap'&&pt) handleBearPlayerTurnTap(pt);
+  if(mode==='boss'&&isPlayerTurn()){
+    if(a==='tap'&&pt) handlePlayerTurnTap(pt);
     return;
   }
   if(a==='tap'&&pt&&mode==='boss'&&
@@ -771,7 +762,7 @@ function clearTapIntent(start=tStart){
 }
 function immediateParryTapEligible(pt){
   if(paused||settingsOpen||(mode!=='boss'&&mode!=='miniboss')) return false;
-  if(mode==='boss'&&isBearPlayerTurn()) return false;
+  if(mode==='boss'&&isPlayerTurn()) return false;
   if(pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&
      pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop) return false;
   return true;
@@ -7029,31 +7020,6 @@ function cullObstacles(){
   obstacles.length=write;
 }
 
-/* the guaranteed arsenal: fixed weapon positions rolled at loop start */
-let guaranteed=[];
-function buildGuaranteed(){
-  guaranteed=[];
-  const tier=progressionTier();
-  const routeLength=stageDistance(), hasMiniboss=RUN_POLICY().hasMinibossAt(loop);
-  const minibossAt=routeLength*CFG.MINIBOSS_AT;
-  const place=(kind,count,from,to)=>{
-    for(let i=0;i<count;i++){
-      let at=routeLength*(from+(to-from)*(count===1?0.5:i/(count-1)))+rnd(-18,18);
-      if(hasMiniboss&&Math.abs(at-minibossAt)<32) at+=48;     // keep the optional encounter runway clear
-      at=clamp(at,60,routeLength-70);                           // and of the boss runway
-      guaranteed.push({kind,at});
-    }
-  };
-  /* Route density stops growing after a modest arsenal. Long runs become strong
-     through focused upgrades, relic synergy, counters and the optional follower. */
-  const arrowBase=Math.min(CFG.GUAR_ARROWS_MAX,CFG.GUAR_ARROWS+tier*CFG.GUAR_ARROWS_TIER);
-  const lanceBase=Math.min(CFG.GUAR_LANCES_MAX,CFG.GUAR_LANCES+tier*CFG.GUAR_LANCES_TIER);
-  place('arrow',arrowBase+(hasRelic('quiver')?3:0)+(hasRelic('storm')?2:0),0.05,0.92);
-  place('lance',lanceBase,0.14,0.86);
-  guaranteed.sort((a,b)=>a.at-b.at);
-  for(let i=1;i<guaranteed.length;i++)                     // enforce breathing room between drops
-    if(guaranteed[i].at-guaranteed[i-1].at<9) guaranteed[i].at=guaranteed[i-1].at+9;
-}
 function spawnLoopEntities(){
   /* called every frame during 'run'; spawns patterns ahead at the horizon */
   const profile=sceneryProfile();
@@ -7089,15 +7055,6 @@ function spawnLoopEntities(){
     if(hasMiniboss&&Math.abs(worldPos-minibossAtDist)<26) continue; // clear its encounter runway
     spawnPattern(worldPos-dist);
   }
-  /* guaranteed weapons: drop each one into a lane free of obstacles */
-  while(guaranteed.length && dist+CFG.Z_FAR-2 > guaranteed[0].at){
-    const gw=guaranteed[0], z=gw.at-dist;
-    const free=[0,1,2].filter(l=>!obstacles.some(o=>Math.abs(o.z-z)<4.5 && occupiesLane(o,l))
-      && !pickups.some(c=>Math.abs(c.z-z)<4.5 && c.lane===l));
-    if(!free.length){ gw.at+=6; break; }                  // blocked → try a little further ahead
-    pickups.push({kind:gw.kind,lane:pick(free),z});
-    guaranteed.shift();
-  }
   /* the active stage miniboss (spawned once per loop) */
   if(hasMiniboss&&!minibossSpawned && dist+CFG.Z_FAR > minibossAtDist){
     minibossSpawned=true;
@@ -7125,8 +7082,6 @@ function spawnPattern(z){
   if(!clear(lane)){ const alt=[0,1,2].filter(clear); if(!alt.length) return; lane=pick(alt); }
   if((acc+=CFG.P_OBSTACLE)>r){ spawnObstacle(z); }
   else if((acc+=CFG.P_COINS)>r){ pickups.push({kind:'coin',lane,z}); }        // one big coin at a time
-  else if((acc+=CFG.P_ARROW)>r){ pickups.push({kind:'arrow',lane,z}); }       // rare bonus arrow, single
-  else if((acc+=CFG.P_LANCE)>r){ pickups.push({kind:'lance',lane,z}); }
   else if((acc+=CFG.P_MIXED)>r){
     const used=spawnObstacle(z);                          // lanes the obstacle actually occupies
     const free=[0,1,2].filter(l=>!used.includes(l)&&clear(l));
@@ -8600,22 +8555,22 @@ function resolveHazard(h){
 /* BOSS CHAIN: every landed boss hit adds one stack. It is created fresh with
    each EncounterActor boss, so no damage momentum leaks between encounters. */
 let chainStacks=0;
-/* First turn-combat vertical slice: immutable placeholder commands keep the
-   prototype data-driven while the real weapon/skill evolution system is designed. */
-const BEAR_TURN_SKILLS=Object.freeze([
+/* Resolve is the turn's action-point resource. Skills can evolve their Resolve
+   costs independently without introducing a second overlapping energy bar. */
+const TURN_SKILLS=Object.freeze([
   Object.freeze({name:'POWER SHOT',cost:1,damage:16,col:'#c0f79a'}),
   Object.freeze({name:'SHIELD BASH',cost:2,damage:24,col:'#9ecbff'}),
   Object.freeze({name:'ARROW RAIN',cost:3,damage:34,col:'#ffe37a'}),
   Object.freeze({name:'ROYAL STRIKE',cost:4,damage:46,col:'#c995ff'}),
 ]);
-function isBearTurnCombat(actor=boss){
+function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
 }
-function isBearPlayerTurn(){
-  return isBearTurnCombat()&&boss.phase==='player';
+function isPlayerTurn(){
+  return isTurnCombat()&&boss.phase==='player';
 }
 function addTurnResolve(amount,show=true){
-  if(!isBearTurnCombat()||amount<=0) return 0;
+  if(!isTurnCombat()||amount<=0) return 0;
   const before=boss.resolve||0;
   boss.resolve=clamp(before+amount,0,boss.resolveMax||CFG.TURN_RESOLVE_MAX);
   const gained=boss.resolve-before;
@@ -8623,64 +8578,79 @@ function addTurnResolve(amount,show=true){
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-122,'RESOLVE +'+gained,'#7fc9ff',15);
   return gained;
 }
-function bearTurnDamage(base){
+function turnDamage(base){
   const breakMultiplier=boss&&boss.playerTurnBreak?1.5:1;
   return Math.round(base*(1+chainBonus()*chainStacks)*breakMultiplier);
 }
-function beginBearPlayerTurn(fromBreak=false){
-  if(!isBearTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
+function beginPlayerTurn(fromBreak=false){
+  if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
   boss.phase='player';boss.playerTurnBreak=fromBreak;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
   boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
+  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;
   addTurnResolve(CFG.TURN_RESOLVE_PER_PLAYER_PHASE,false);
   floater(VW/2,278,fromBreak?'BREAK TURN — DAMAGE +50%':'YOUR TURN',
     fromBreak?'#ffe37a':'#c0f79a',fromBreak?20:23);
   SFX.relic();
   return true;
 }
-function finishBearPlayerAction(){
-  if(!isBearTurnCombat()||boss.phase!=='playerResolve') return;
+function endPlayerTurn(){
+  if(!isTurnCombat()||(boss.phase!=='player'&&boss.phase!=='playerResolve')) return false;
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
   if(endedBreak){
     boss.posture=0;boss.breakEntryZ=undefined;boss.breakSource=null;
     boss.pendingBreak=null;boss.playerTurnBreak=false;
   }
-  /* Break ends the Bear's entire current attack phase. Any unspent attacks from
+  /* Break ends the boss's entire current attack phase. Any unspent attacks from
      that phase are discarded; after the empowered action a fresh half-turn starts. */
   boss.enemyTurn=(boss.enemyTurn||1)+1;
   boss.attacksLeft=boss.enemyTurnBudget;
   boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
-  boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();
-  floater(VW/2,278,'BEAR TURN '+boss.enemyTurn,'#ff9a3a',17);
+  boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
+  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;
+  floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
+  return true;
 }
-function performBearPlayerAction(command){
-  if(!isBearPlayerTurn()||!command) return false;
-  const cost=command.cost||0;
-  if((boss.resolve||0)<cost){ SFX.duck(); return false; }
+function finishPlayerAction(){
+  if(!isTurnCombat()||boss.phase!=='playerResolve') return;
+  if(boss.hp<=0){resolveVolley();return;}
+  if(boss.turnActionEndsPhase){endPlayerTurn();return;}
+  boss.phase='player';boss.playerActionTimer=0;boss.turnActionEndsPhase=false;
+  boss.playerMenu='skills';
+  floater(VW/2,286,'RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
+}
+function performPlayerAction(command){
+  if(!isPlayerTurn()||!command) return false;
+  const skill=command.skill===true,cost=command.cost||0;
+  if(!skill&&boss.usedSkillThisTurn){SFX.duck();return false;}
+  if((boss.resolve||0)<cost){SFX.duck();return false;}
   boss.resolve-=cost;
-  boss.phase='playerResolve';boss.playerMenu='root';
+  if(skill)boss.usedSkillThisTurn=true;
+  boss.turnActionEndsPhase=!skill;
+  boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionTimer=CFG.TURN_ACTION_TIME;
   player.attackAnim=1;player.counterAnim=.42;
-  const damage=bearTurnDamage(command.damage);
+  const damage=turnDamage(command.damage);
   const breakAttack=boss.playerTurnBreak===true;
   const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s;
   SFX.slash();spawnSlash(x,y,command.slash===undefined?-.48:command.slash,command.col||'#ffffff');
-  burst(x,y,command.skill?16:10,[command.col||'#ffffff','#ffffff','#ffe37a'],
-    command.skill?205:155,75,command.skill?4.2:3.2,.55);
-  floater(VW/2,318,command.name,command.col||'#ffffff',command.skill?19:17);
+  burst(x,y,skill?16:10,[command.col||'#ffffff','#ffffff','#ffe37a'],
+    skill?205:155,75,skill?4.2:3.2,.55);
+  floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×1.5','#ffe37a',16);
   hurtBoss(damage,false,'turn_attack');
   addChainStack();
   return true;
 }
-function handleBearPlayerTurnTap(pt){
-  if(!isBearPlayerTurn()) return false;
+function handlePlayerTurnTap(pt){
+  if(!isPlayerTurn()) return false;
   if(boss.playerMenu==='skills'){
+    if(pointInRect(pt,TURN_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
     if(pointInRect(pt,TURN_BACK_BTN)){boss.playerMenu='root';SFX.swipe();return true;}
     for(let i=0;i<TURN_SKILL_BTNS.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
-      const skill=BEAR_TURN_SKILLS[i];
-      return performBearPlayerAction({
+      const skill=TURN_SKILLS[i];
+      return performPlayerAction({
         name:skill.name,cost:skill.cost,damage:skill.damage,col:skill.col,
         skill:true,slash:-.72+i*.34
       });
@@ -8688,7 +8658,7 @@ function handleBearPlayerTurnTap(pt){
     return false;
   }
   if(pointInRect(pt,TURN_FIGHT_BTN))
-    return performBearPlayerAction({
+    return performPlayerAction({
       name:'NORMAL ATTACK',cost:0,damage:CFG.TURN_NORMAL_DMG,col:'#e8e2d0',slash:-.45
     });
   if(pointInRect(pt,TURN_SKILL_BTN)){boss.playerMenu='skills';SFX.swipe();return true;}
@@ -8746,7 +8716,7 @@ function beginBossBreak(actor,entryPresentation=null){
   for(const h of hazards)if(h.src===BOSS_SOURCE)h.done=true;
   floater(VW/2,270,'BREAK!','#ffe37a',27);
   SFX.hit();flash('#ffe37a',.22);shake(9,.42);stopTime(.055);
-  if(isBearTurnCombat(actor))beginBearPlayerTurn(true);
+  if(isTurnCombat(actor))beginPlayerTurn(true);
   return true;
 }
 function doPerfectDodge(src){
@@ -9866,10 +9836,8 @@ function startBoss(definitionId=null){
   /* the bear stalks in from the treeline; pond bosses RISE from the water */
   const def=definitionId?ENCOUNTERS.get(definitionId):activeBossDefinition();
   const side=def.rises?1:(Math.random()<.5?-3.1:5.1);
-  const guaranteeQueue=bossGuaranteeQueue();
-  const fullAttackBudget=bossAttackCount(),
-    turnCombat=def.id==='bear',
-    enemyTurnBudget=turnCombat?Math.max(1,Math.ceil(fullAttackBudget/2)):fullAttackBudget;
+  const guaranteeQueue=bossGuaranteeQueue(),fullAttackBudget=bossAttackCount(),
+    enemyTurnBudget=Math.max(1,Math.ceil(fullAttackBudget/2));
   boss=new EncounterActor({
     hp:bossMaxHp(),
     z:CFG.BOSS_Z, x:side, xTarget:1, entering:!def.rises,
@@ -9879,12 +9847,12 @@ function startBoss(definitionId=null){
     definitionId:def.id,
     posture:0,postureMax:def.postureMax||CFG.BOSS_POSTURE_MAX,
     pendingBreak:null,breakCount:0,breakSource:null,
-    /* Bear prototype alternates half-sized enemy turns with one player command.
-       Other species retain the complete legacy dodge-then-volley encounter. */
+    /* Every stage boss alternates half-sized enemy phases with Resolve-driven turns. */
     phase:'dodge', attacksLeft:enemyTurnBudget,
-    turnCombat,enemyTurnBudget,enemyTurn:1,
-    resolve:turnCombat?CFG.TURN_RESOLVE_START:0,resolveMax:CFG.TURN_RESOLVE_MAX,
-    playerMenu:'root',playerActionTimer:0,
+    turnCombat:true,enemyTurnBudget,enemyTurn:1,
+    resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
+    usedSkillThisTurn:false,turnActionEndsPhase:false,
+    playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
@@ -10222,7 +10190,7 @@ function updateBoss(dt){
   if(!boss) return;
   /* A turn choice freezes combat logic. Break alone may finish its short pose-in
      animation, then holds the completed species pose until the chosen action. */
-  if(isBearPlayerTurn()){
+  if(isPlayerTurn()){
     boss.hurtT=Math.max(0,(boss.hurtT||0)-dt);
     if(boss.playerTurnBreak&&boss.state==='break')
       boss.stateT=Math.min(CFG.BREAK_POSE_IN,boss.stateT+dt);
@@ -10303,9 +10271,9 @@ function updateBoss(dt){
     }
     return;
   }
-  if(isBearTurnCombat()&&boss.phase==='playerResolve'){
+  if(isTurnCombat()&&boss.phase==='playerResolve'){
     boss.playerActionTimer-=dt;
-    if(boss.playerActionTimer<=0) finishBearPlayerAction();
+    if(boss.playerActionTimer<=0) finishPlayerAction();
     return;
   }
   if(st==='volley'){                         /* --- PC's TURN: unleash every collected weapon --- */
@@ -10357,7 +10325,7 @@ function updateBoss(dt){
       return;
     }
     if(!boss._moveLab&&boss.phase==='dodge'&&boss.attacksLeft<=0&&hazards.length===0){
-      if(isBearTurnCombat()){beginBearPlayerTurn();return;}
+      if(isTurnCombat()){beginPlayerTurn();return;}
       boss.phase='volley'; boss.state='volley'; boss.stateT=0; boss.volleyTimer=0.6;
       const total=arrows+lances+pack;
       floater(VW/2,280,total>0?'YOUR TURN — UNLEASH!':'YOUR TURN... BUT YOU CARRY NOTHING','#c0f79a',22);
@@ -11139,7 +11107,6 @@ function startMiniboss(lane,direct=false){
     dist=gateAt; roadScroll=gateAt; minibossSpawned=true;
     nextSpawnAt=Math.ceil((gateAt+CFG.Z_FAR)/CFG.SPAWN_GAP)*CFG.SPAWN_GAP;
     nextTreeAt=gateAt+6; nextPondAt=gateAt;
-    guaranteed=guaranteed.filter(item=>item.at>=gateAt-6);
   }
   minibossFight=new EncounterActor({
     /* Begin out on the road and walk into the fixed combat distance during the
@@ -12611,7 +12578,7 @@ function nextLoop(){
   loop=policy.nextStageAt(loop); dist=0; roadScroll=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
   arrows=0; lances=0;                        // weapons reset every loop — all were spent on the boss
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[];
-  minibossSpawned=false; buildGuaranteed();
+  minibossSpawned=false;
   biome=biomeOf(loop); env='forest'; oakUsed=false;
   floater(VW/2,300,'STAGE '+loop+' — '+BIO().enterLine,'#e8e2d0',20);
   if((loop-policy.startStage)%policy.cycleLength===0&&loop>policy.startStage)
@@ -12684,7 +12651,7 @@ function resetRun(){
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
-  nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
+  nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,lastParry:-9,invuln:0});
   knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
 }
@@ -12714,7 +12681,7 @@ function startRun(i){
     relics=[null,null,null,null,null];
     let k=0; for(const key in debugSel){ if(debugSel[key]&&k<5) relics[k++]={type:key,charged:true}; }
     syncArtifactCache();
-    nextSpawnAt=40; nextTreeAt=6; nextPondAt=0; buildGuaranteed();
+    nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
     floater(VW/2,300,'⚙ DEBUG — STAGE '+loop+(godMode?' · GOD MODE':''),'#5c8fa0',18);
   }
   setMode('run'); SFX.relic();
@@ -12771,20 +12738,6 @@ function drawHUD(){
   g.font='bold 18px monospace';
   g.fillStyle='#000'; g.fillText(sc,VW-14,36); g.fillStyle='#e8e2d0'; g.fillText(sc,VW-16,34);
   g.font='10px monospace'; g.fillStyle='#8b8fa0'; g.fillText('SCORE',VW-16,46);
-  /* arrow & lance counts with tiny pixel icons */
-  g.font='bold 15px monospace';
-  drawArrowSprite(VW-57,62,0.85,0.62,false);
-  g.fillStyle=arrows>0?'#c0f79a':'#5c5f6a'; g.fillText('×'+arrows,VW-16,68);
-  /* a proper jousting lance: tapered shaft, vamplate cone, spiral stripes, steel tip */
-  g.save(); g.translate(VW-72,84); g.rotate(-0.62);
-  g.fillStyle='#c9a86a'; g.beginPath();
-  g.moveTo(0,2.6); g.lineTo(22,0.9); g.lineTo(22,-0.9); g.lineTo(0,-2.6); g.closePath(); g.fill();
-  g.fillStyle='#8f5a2a'; for(let k=0;k<3;k++) g.fillRect(5+k*6,-2+k*0.4,2.4,4-k*0.8);   // spiral stripes
-  g.fillStyle='#9ecbff'; g.beginPath(); g.moveTo(22,1.2); g.lineTo(27.5,0); g.lineTo(22,-1.2); g.closePath(); g.fill();
-  g.fillStyle='#5c4a30'; g.beginPath(); g.moveTo(0,4.4); g.lineTo(4.5,2.4); g.lineTo(4.5,-2.4); g.lineTo(0,-4.4); g.closePath(); g.fill(); // vamplate
-  g.fillStyle='#3a2f20'; g.fillRect(-3.4,-1.6,3.4,3.2);                                  // grip
-  g.restore();
-  g.fillStyle=lances>0?'#9ecbff':'#5c5f6a'; g.fillText('×'+lances,VW-16,90);
   /* loop badge */
   g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#e8e2d0';
   g.fillText('STAGE '+loop,VW/2,26);
@@ -12811,17 +12764,17 @@ function drawHUD(){
   if(boss){
     let st='';
     if(boss.state==='volley') st='YOUR TURN — every weapon flies!';
-    else if(isBearTurnCombat()&&boss.phase==='player'&&boss.playerTurnBreak)
+    else if(isTurnCombat()&&boss.phase==='player'&&boss.playerTurnBreak)
       st='BREAK TURN — all damage +50%';
-    else if(isBearTurnCombat()&&boss.phase==='player') st='YOUR TURN — choose one action';
-    else if(isBearTurnCombat()&&boss.phase==='playerResolve') st='ATTACK!';
+    else if(isTurnCombat()&&boss.phase==='player') st='YOUR TURN — spend Resolve or finish';
+    else if(isTurnCombat()&&boss.phase==='playerResolve') st='ATTACK!';
     else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
     else if(boss.state==='breakRecover') st='RECOVERING';
     else if(boss.state==='finisher') st='NO ESCAPE.';
     else if(boss.phase==='dodge') st='survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
     drawHPBar(activeBossDefinition().name,boss.hp,boss.maxhp,st);
     drawBossPostureBar(boss);
-    if(isBearTurnCombat()&&boss.phase==='dodge'){
+    if(isTurnCombat()&&boss.phase==='dodge'){
       g.textAlign='right';g.font='bold 9px monospace';g.fillStyle='#7fc9ff';
       g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2+160,145);
     }
@@ -12848,7 +12801,7 @@ function drawHUD(){
     g.fillText(rushArmed?special.name+' ARMED — NEXT OPENING':
       rushReady?special.name+' READY — TAP':
       special.name+'  '+Math.round(knightRush/special.maxCharge*100)+'%',VW/2,ry+12);
-    if(isBearPlayerTurn()) drawBearPlayerTurnUI();
+    if(isPlayerTurn()) drawPlayerTurnUI();
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
     g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,140);
@@ -12904,7 +12857,7 @@ function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true){
     g.fillText(sub,rect.x+rect.w/2,rect.y+38);
   }
 }
-function drawBearPlayerTurnUI(){
+function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
      remains pinned to the same final-screen coordinates as its hit boxes. */
   g.save();g.translate(0,-uiTop);
@@ -12912,20 +12865,26 @@ function drawBearPlayerTurnUI(){
   g.fillStyle='rgba(5,7,12,.94)';g.fillRect(panel.x,panel.y,panel.w,panel.h);
   g.strokeStyle='#e8e2d0';g.lineWidth=3;
   g.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1);
-  g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
-  g.fillText('CHOOSE AN ACTION',30,578);
-  g.textAlign='right';g.fillStyle='#7fc9ff';
-  g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,boss.playerMenu==='skills'?360:450,578);
   if(boss.playerMenu==='skills'){
+    g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
+    g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,30,578);
+    drawTurnButton(TURN_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
     drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
-    for(let i=0;i<BEAR_TURN_SKILLS.length;i++){
-      const skill=BEAR_TURN_SKILLS[i],enabled=boss.resolve>=skill.cost;
+    for(let i=0;i<TURN_SKILLS.length;i++){
+      const skill=TURN_SKILLS[i],enabled=boss.resolve>=skill.cost;
       drawTurnButton(TURN_SKILL_BTNS[i],skill.name,
-        skill.cost+' RESOLVE  /  '+bearTurnDamage(skill.damage)+' DMG',skill.col,enabled);
+        skill.cost+' RESOLVE · '+turnDamage(skill.damage)+' DMG',skill.col,enabled);
     }
   }else{
-    drawTurnButton(TURN_FIGHT_BTN,'FIGHT','0 RESOLVE  /  '+bearTurnDamage(CFG.TURN_NORMAL_DMG)+' DMG','#e8e2d0',true);
-    drawTurnButton(TURN_SKILL_BTN,'SKILL','OPEN SKILL MENU','#7fc9ff',true);
+    g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
+    g.fillText('CHOOSE AN ACTION',30,578);
+    g.textAlign='right';g.fillStyle='#7fc9ff';
+    g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
+    const fightEnabled=!boss.usedSkillThisTurn;
+    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled
+      ?'0 RESOLVE · '+turnDamage(CFG.TURN_NORMAL_DMG)+' DMG':'LOCKED AFTER SKILL',
+      '#e8e2d0',fightEnabled);
+    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',boss.resolve>0);
   }
   g.restore();
 }
