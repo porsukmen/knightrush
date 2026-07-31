@@ -559,6 +559,8 @@ const TURN_SKILL_BTN={x:250,y:610,w:200,h:88};
 const TURN_BACK_BTN={x:374,y:558,w:76,h:30};
 const TURN_FINISH_BTN={x:242,y:558,w:124,h:30};
 const TURN_ROOT_FINISH_BTN={x:150,y:704,w:180,h:25};
+const TURN_KNIGHT_TAB={x:30,y:558,w:96,h:30};
+const TURN_ALLY_TAB={x:134,y:558,w:96,h:30};
 const TURN_SKILL_BTNS=Object.freeze([
   Object.freeze({x:30,y:594,w:200,h:48}),
   Object.freeze({x:250,y:594,w:200,h:48}),
@@ -588,8 +590,9 @@ let skillTooltipIndex=-1;
 function skillIndexAtPoint(pt){
   if(!pt||mode!=='boss'||!isPlayerTurn())return -1;
   if(boss.playerMenu==='skills'){
-    for(let i=0;i<TURN_SKILL_BTNS.length;i++)if(pointInRect(pt,TURN_SKILL_BTNS[i]))return i;
-  }else if(pointInRect(pt,TURN_FIGHT_BTN))return TURN_FIGHT_TOOLTIP_INDEX;
+    const skills=activeTurnSkills();
+    for(let i=0;i<skills.length;i++)if(pointInRect(pt,TURN_SKILL_BTNS[i]))return i;
+  }else if(boss.playerMenu==='root'&&pointInRect(pt,TURN_FIGHT_BTN))return TURN_FIGHT_TOOLTIP_INDEX;
   return -1;
 }
 function dismissSkillTooltip(audible=true){
@@ -8622,6 +8625,42 @@ const TURN_SKILLS=Object.freeze([
     damage:24,hits:1,extraChainBonus:.08,consumeChain:true,addsChain:false,
     col:'#c995ff',slash:.62}),
 ]);
+function companionCombatProfile(id,name,fightName,markName,doubleName,col){
+  return Object.freeze({id,name,fightName,col,skills:Object.freeze([
+    Object.freeze({id:id+'_mark',name:markName,source:'COMPANION',skill:true,cost:1,
+      damage:3,hits:1,markGain:1,addsChain:false,col,slash:-.28}),
+    Object.freeze({id:id+'_double',name:doubleName,source:'COMPANION',skill:true,cost:2,
+      damage:4,hits:2,hitInterval:.48,duration:1.12,col,slash:.22}),
+  ])});
+}
+/* Companions intentionally begin as support pieces, not smaller Knights. Their
+   first kit only prepares Mark or Chain; evolution can replace these commands. */
+const COMPANION_COMBAT=Object.freeze({
+  wolf:companionCombatProfile('wolf','GREY WOLF','BITE','MARKING CLAW','TWIN FANG','#9ecbff'),
+  toad:companionCombatProfile('toad','MIRE TOAD','HEADBUTT','MIRE MARK','DOUBLE KICK','#c9f74a'),
+  imp:companionCombatProfile('imp','CINDER IMP','CLAW','CINDER MARK','TWIN CLAW','#ff9a3a'),
+});
+function hasCombatAlly(){return pack>0&&packTypes.length>0;}
+function companionProfile(){return COMPANION_COMBAT[packTypes[0]]||COMPANION_COMBAT.wolf;}
+function activeTurnActorId(){return boss&&boss.partyActor==='ally'&&hasCombatAlly()?'ally':'knight';}
+function turnActorState(id=activeTurnActorId()){
+  if(!boss)return {usedSkill:false,finished:false};
+  if(!boss.partyActorStates)boss.partyActorStates={knight:{usedSkill:false,finished:false}};
+  if(!boss.partyActorStates[id])boss.partyActorStates[id]={usedSkill:false,finished:false};
+  return boss.partyActorStates[id];
+}
+function resetPartyActorStates(){
+  if(!boss)return;
+  boss.partyActorStates={knight:{usedSkill:false,finished:false}};
+  if(hasCombatAlly())boss.partyActorStates.ally={usedSkill:false,finished:false};
+}
+function selectTurnActor(id){
+  if(!boss||(id==='ally'&&!hasCombatAlly()))return false;
+  const state=turnActorState(id);if(state.finished){SFX.duck();return false;}
+  boss.partyActor=id;boss.usedSkillThisTurn=state.usedSkill;boss.playerMenu='root';
+  skillTooltipIndex=-1;SFX.swipe();return true;
+}
+function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:TURN_SKILLS;}
 function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
 }
@@ -8646,7 +8685,12 @@ function commandMarkDamage(command,stacks){
   const count=Math.max(0,stacks||0),linear=count*(command.markDamagePerHit||0);
   return linear+(command.markStackGrowth||0)*count*(count-1)/2;
 }
-function fightCommand(){
+function fightCommand(actorId=activeTurnActorId()){
+  if(actorId==='ally'&&hasCombatAlly()){
+    const profile=companionProfile();
+    return {id:profile.id+'_fight',name:profile.fightName,source:'COMPANION',skill:false,cost:0,
+      damage:5,hits:1,resolvePerHit:1,col:profile.col,slash:-.12};
+  }
   const weapon=activeWeapon();
   return {id:'fight_'+weapon.id,name:weapon.name+' ATTACK',source:'WEAPON',skill:false,cost:0,
     damage:weaponBaseDamage(),hits:1,consumeMark:true,markDamagePerHit:weapon.markDamage,
@@ -8657,8 +8701,9 @@ function beginPlayerTurn(fromBreak=false){
   skillTooltipIndex=-1;
   boss.phase='player';boss.playerTurnBreak=fromBreak;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
-  boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
-  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;
+  boss.hazardLanes=[];boss.playerMenu=hasCombatAlly()?'party':'root';boss.playerActionTimer=0;
+  boss.partyActor=hasCombatAlly()?null:'knight';resetPartyActorStates();
+  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;boss.playerActionReturnMenu='root';
   addTurnResolve(CFG.TURN_RESOLVE_PER_PLAYER_PHASE,false);
   floater(VW/2,278,fromBreak?'BREAK TURN — DAMAGE +50%':'YOUR TURN',
     fromBreak?'#ffe37a':'#c0f79a',fromBreak?20:23);
@@ -8680,6 +8725,7 @@ function endPlayerTurn(){
   boss.attacksLeft=boss.enemyTurnBudget;
   boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
+  boss.partyActor=null;boss.partyActorStates=null;
   boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;boss.turnAction=null;
   floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
   return true;
@@ -8690,7 +8736,8 @@ function finishPlayerAction(){
   if(boss.hp<=0){resolveVolley();return;}
   if(boss.turnActionEndsPhase){endPlayerTurn();return;}
   boss.phase='player';boss.playerActionTimer=0;boss.turnActionEndsPhase=false;
-  boss.playerMenu='skills';
+  boss.playerMenu=boss.playerActionReturnMenu||'skills';
+  if(boss.playerMenu==='party')boss.partyActor=null;
   floater(VW/2,286,'RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
 }
 function applyTurnSkillPosture(amount){
@@ -8710,7 +8757,8 @@ function resolveTurnActionHit(action){
     damage=turnDamage(base,command.extraChainBonus||0),
     p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
-  player.attackAnim=1;player.counterAnim=.42;
+  if(action.actorId==='ally')boss.allyAttackAnim=1;
+  else {player.attackAnim=1;player.counterAnim=.42;}
   if(command.id==='sharpshoot'||command.id==='arrow_rain'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
   else SFX.slash();
   spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
@@ -8737,6 +8785,7 @@ function resolveTurnActionHit(action){
 }
 function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
+  boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
   action.t+=dt;
   while(action.hitIndex<action.hits&&action.t+1e-6>=action.hitIndex*action.hitInterval)
     resolveTurnActionHit(action);
@@ -8744,13 +8793,16 @@ function updateTurnAction(dt){
 function performPlayerAction(command){
   if(!isPlayerTurn()||!command) return false;
   skillTooltipIndex=-1;
-  const skill=command.skill===true,cost=command.cost||0;
-  if(!skill&&boss.usedSkillThisTurn){SFX.duck();return false;}
+  const actorId=activeTurnActorId(),actorState=turnActorState(actorId),
+    skill=command.skill===true,cost=command.cost||0;
+  if(actorState.finished||(!skill&&actorState.usedSkill)){SFX.duck();return false;}
   if((boss.resolve||0)<cost){SFX.duck();return false;}
   boss.resolve-=cost;
-  if(skill)boss.usedSkillThisTurn=true;
-  boss.turnActionEndsPhase=!skill;
+  if(skill){actorState.usedSkill=true;boss.usedSkillThisTurn=true;}
+  else actorState.finished=true;
+  boss.turnActionEndsPhase=!skill&&!hasCombatAlly();
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
+  boss.playerActionReturnMenu=skill?'skills':(hasCombatAlly()?'party':'root');
   const hits=command.hits||1,hitInterval=command.hitInterval||0,
     duration=command.duration||Math.max(CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
     consumedMark=command.consumeMark?bossMark():0,
@@ -8760,7 +8812,7 @@ function performPlayerAction(command){
     floater(VW/2,300,'MARK ×'+consumedMark+' CONSUMED'+(markDamage?' · +'+markDamage+' BASE / HIT':''),'#ff4d5f',15);
   }
   boss.playerActionTimer=duration;
-  boss.turnAction={command,t:0,hitIndex:0,hits,hitInterval,consumedMark,markDamage};
+  boss.turnAction={command,actorId,t:0,hitIndex:0,hits,hitInterval,consumedMark,markDamage};
   const breakAttack=boss.playerTurnBreak===true;
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×1.5','#ffe37a',16);
@@ -8769,19 +8821,33 @@ function performPlayerAction(command){
 }
 function handlePlayerTurnTap(pt){
   if(!isPlayerTurn()) return false;
+  if(hasCombatAlly()&&boss.playerMenu!=='party'){
+    if(pointInRect(pt,TURN_KNIGHT_TAB))return selectTurnActor('knight');
+    if(pointInRect(pt,TURN_ALLY_TAB))return selectTurnActor('ally');
+  }
+  if(boss.playerMenu==='party'){
+    if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
+    if(pointInRect(pt,TURN_FIGHT_BTN))return selectTurnActor('knight');
+    if(pointInRect(pt,TURN_SKILL_BTN))return selectTurnActor('ally');
+    return false;
+  }
   if(boss.playerMenu==='skills'){
     if(pointInRect(pt,TURN_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
     if(pointInRect(pt,TURN_BACK_BTN)){boss.playerMenu='root';SFX.swipe();return true;}
-    for(let i=0;i<TURN_SKILL_BTNS.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
-      const skill=TURN_SKILLS[i];
+    const skills=activeTurnSkills();
+    for(let i=0;i<skills.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
+      const skill=skills[i];
       return performPlayerAction(skill);
     }
     return false;
   }
+  if(hasCombatAlly()&&pointInRect(pt,TURN_BACK_BTN)){
+    boss.partyActor=null;boss.playerMenu='party';SFX.swipe();return true;
+  }
   if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
   if(pointInRect(pt,TURN_FIGHT_BTN))
-    return performPlayerAction(fightCommand());
-  if(pointInRect(pt,TURN_SKILL_BTN)){boss.playerMenu='skills';SFX.swipe();return true;}
+    return performPlayerAction(fightCommand(activeTurnActorId()));
+  if(pointInRect(pt,TURN_SKILL_BTN)&&!turnActorState().finished){boss.playerMenu='skills';SFX.swipe();return true;}
   return false;
 }
 function addChainStack(){
@@ -9988,6 +10054,7 @@ function startBoss(definitionId=null){
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
     usedSkillThisTurn:false,turnActionEndsPhase:false,
     playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
+    partyActor:null,partyActorStates:null,playerActionReturnMenu:'root',allyAttackAnim:0,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
@@ -10390,8 +10457,8 @@ function updateBoss(dt){
       for(let i=0;i<14;i++) particles.push({x:bx+rnd(-40,40),y:p.y-rnd(20,90)*p.s,
         vx:rnd(-14,14),vy:rnd(-90,-40),life:1.4,maxLife:1.4,size:rnd(2,5),col:'#cfe0ff',grav:-16}); }
     if(T>2.5){
-      if(pack>0){ floater(VW/2,340,activeMinibossDefinition().byeLine,'#9ecbff',17); }
-      pack=0; packTypes=[];                     // its debt is paid — the beast returns to its wild
+      /* A tamed miniboss is now a run-long party member. Future encounters may
+         offer swap/evolution choices; a stage boss no longer dismisses it. */
       if(hasRelic('idol')){ awardGold(40); floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
       boss=null; RUN_POLICY().afterBoss(loop);   // policy chooses reward/continuation; arena stays available
     }
@@ -11388,7 +11455,12 @@ function updateMiniboss(dt){
        during the boss fight it steps up and stands at your side. --- */
 let allyTrail=[], allyTrailStart=0;
 function updateAllyTrail(){
-  allyTrail.push({t:perfNow,x:player.x,j:jumpHeight()});
+  /* Do not allocate trail samples before a companion exists. Once recruited,
+     record the complete readable pose so the follower replays movement instead
+     of merely chasing the knight's current lane. */
+  if(pack<=0){allyTrail.length=0;allyTrailStart=0;return;}
+  const duck=player.duckT<0?0:Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1));
+  allyTrail.push({t:perfNow,x:player.x,j:jumpHeight(),d:duck,g:player.gallop});
   while(allyTrailStart<allyTrail.length&&allyTrail[allyTrailStart].t<perfNow-0.8) allyTrailStart++;
   /* compact occasionally instead of shifting the whole trail every frame */
   if(allyTrailStart>64){ allyTrail.splice(0,allyTrailStart); allyTrailStart=0; }
@@ -11396,7 +11468,7 @@ function updateAllyTrail(){
 function trailSample(delay){
   const tt=perfNow-delay;
   for(let i=allyTrail.length-1;i>=0;i--) if(allyTrail[i].t<=tt) return allyTrail[i];
-  return allyTrail[allyTrailStart]||{x:player.x,j:0};
+  return allyTrail[allyTrailStart]||{x:player.x,j:0,d:0,g:player.gallop};
 }
 function drawPackAllies(){
   if(pack<=0) return;
@@ -11404,7 +11476,9 @@ function drawPackAllies(){
   for(let i=0;i<pack;i++){
     if(packLeap&&packLeap.idx===i) continue;  // this one is mid-leap — drawn separately
     if(mode==='boss'||mode==='bossintro'){
-      packEncounter(i).allyBack(laneX(player.x,1)+side[i],PLAYER_Y+6+(i===2?10:0),0.95,perfNow*0.6+i,0);
+      const strike=i===0&&boss?Math.sin((1-(boss.allyAttackAnim||0))*Math.PI):0,
+        standX=laneX(player.x,1)+side[i],standY=PLAYER_Y+6+(i===2?10:0);
+      packEncounter(i).allyBack(standX,standY-strike*18,0.95+strike*.04,perfNow*0.6+i,0,0);
       continue;
     }
     /* each follower replays your path at its own short delay */
@@ -11412,7 +11486,7 @@ function drawPackAllies(){
     const x=laneX(sm.x,1)+(i===1?-14:i===2?14:0), y=PLAYER_Y+30+i*11-sm.j*0.85;
     g.globalAlpha=0.25*(1-sm.j/CFG.JUMP_H*.7); g.fillStyle='#000';
     g.beginPath(); g.ellipse(x,PLAYER_Y+40+i*11,17,4.5,0,0,TAU); g.fill(); g.globalAlpha=1;
-    packEncounter(i).allyBack(x,y,1.0-i*0.07,perfNow+i*0.9,speed());
+    packEncounter(i).allyBack(x,y,1.0-i*0.07,sm.g===undefined?perfNow:sm.g,speed(),sm.d||0);
   }
 }
 /* ---- THE MIRE TOAD: jointed swamp-native pixel miniboss ---- */
@@ -12580,12 +12654,14 @@ function drawImpBack(x,y,scale,t,spd){
   g.restore();
 }
 /* back view: haunches, spine ridge, ears over the head, and the tail wagging left-right */
-function drawWolfBack(x,y,scale,t,spd){
+function drawWolfBack(x,y,scale,t,spd,duck=0){
   const U2=2.6*scale;
   const px2=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U2),Math.round(b*U2),Math.round(w*U2),Math.round(h*U2)); };
   const trot=spd>0?Math.sin(t*11):0, bob=spd>0?Math.abs(Math.sin(t*11))*1.4:Math.sin(t*2)*0.4;
   const fur='#6d7280', furD='#4d5160', furL='#8a8fa0';
-  g.save(); g.translate(x,y-bob*U2);
+  /* Scale toward the planted feet: the delayed crouch visibly follows the
+     knight under low obstacles without inventing a second collision actor. */
+  g.save(); g.translate(x,y-bob*U2);g.scale(1,1-clamp(duck,0,1)*.30);
   /* hind legs (alternating trot) */
   px2(-6,-4+trot*1.2,3,7,furD); px2(3,-4-trot*1.2,3,7,furD);
   /* haunches: two rounded hip masses */
@@ -13004,6 +13080,12 @@ function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true){
   }
 }
 function skillButtonSubtitle(skill){
+  if(skill.source==='COMPANION'){
+    const perHit=turnDamage(skill.damage);
+    return skill.hits>1
+      ?'ALLY · '+skill.cost+'R · '+skill.hits+'×'+perHit+' · CHAIN +'+skill.hits
+      :'ALLY · '+skill.cost+'R · '+perHit+' DMG · MARK +1';
+  }
   if(skill.id==='arrow_rain'){
     const perHit=turnDamage(skill.damage+commandMarkDamage(skill,bossMark()));
     return 'WPN · '+skill.cost+'R · 3×'+perHit+' · MARK BURST';
@@ -13015,7 +13097,8 @@ function skillButtonSubtitle(skill){
   return 'WPN · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · MARK +1';
 }
 function turnTooltipCommand(){
-  return skillTooltipIndex===TURN_FIGHT_TOOLTIP_INDEX?fightCommand():TURN_SKILLS[skillTooltipIndex];
+  return skillTooltipIndex===TURN_FIGHT_TOOLTIP_INDEX
+    ?fightCommand(activeTurnActorId()):activeTurnSkills()[skillTooltipIndex];
 }
 function turnCommandDamageBreakdown(command){
   const hits=command.hits||1,markStacks=command.consumeMark?bossMark():0,
@@ -13047,10 +13130,25 @@ function damageBreakdownLine(row){
   return line+'  = '+row.final;
 }
 function skillTooltipContent(command){
+  if(command.source==='COMPANION'&&!command.skill)return {paragraphs:[
+    'A weak free companion attack. Every landed hit grants 1 Resolve and adds 1 shared Chain.',
+    'Using it commits this companion for the current player phase.',
+    'It does not consume Mark; the Knight can use the prepared target afterward.'
+  ]};
+  if(command.source==='COMPANION'&&command.markGain)return {paragraphs:[
+    'Deal a small amount of damage and apply 1 Mark to the boss.',
+    'This setup hit deliberately adds no Chain. Mark remains for the Knight or a later attack.',
+    'Using any skill locks this companion out of its free Fight for the current player phase.'
+  ]};
+  if(command.source==='COMPANION')return {paragraphs:[
+    'Strike twice. Each fang is calculated separately and adds 1 shared Chain.',
+    'The second hit benefits from the Chain created by the first hit.',
+    'This early companion skill has no extra status effect or Mark consumption.'
+  ]};
   if(command.id.indexOf('fight_longbow')===0)return {paragraphs:[
     'A free Longbow attack. Its base damage gains 4 for every weapon level.',
     'Consume every Mark. Each stack adds 8 base damage to this hit.',
-    'Every landed hit grants 1 Resolve. Add 1 Chain and end the player phase.'
+    'Every landed hit grants 1 Resolve and adds 1 Chain. With a companion, this commits the Knight and returns to character selection.'
   ]};
   if(command.id==='sharpshoot')return {paragraphs:[
     'Fire one precise arrow and apply 1 Mark. A boss can carry up to 3 Mark.',
@@ -13089,7 +13187,8 @@ function drawSkillTooltip(){
   if(!command||!isPlayerTurn()||(fightTooltip?boss.playerMenu!=='root':boss.playerMenu!=='skills'))return;
   const info=skillTooltipContent(command),breakdown=turnCommandDamageBreakdown(command),
     finals=breakdown.rows.map(row=>row.final),x=20,y=94,w=440,h=552,
-    available=boss.resolve>=command.cost&&(!fightTooltip||!boss.usedSkillThisTurn),
+    actorState=turnActorState(),
+    available=boss.resolve>=command.cost&&!actorState.finished&&(!fightTooltip||!actorState.usedSkill),
     preview=breakdown.rows.length>1
       ?breakdown.rows.length+' HITS · '+finals.join(' / ')+' · TOTAL '+breakdown.total
       :'FINAL DAMAGE '+breakdown.total;
@@ -13105,7 +13204,8 @@ function drawSkillTooltip(){
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
   g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
-  const unavailable=fightTooltip&&boss.usedSkillThisTurn?' · LOCKED AFTER SKILL':' · NOT ENOUGH';
+  const unavailable=actorState.finished?' · ACTED':
+    fightTooltip&&actorState.usedSkill?' · LOCKED AFTER SKILL':' · NOT ENOUGH';
   g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax+(available?' · READY':unavailable),x+28,y+124);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';
   g.fillText('DAMAGE SOURCES · FINAL VALUE ROUNDED',x+20,y+166);
@@ -13122,6 +13222,15 @@ function drawSkillTooltip(){
   g.fillText('TAP ANYWHERE TO CLOSE',VW/2,y+h-18);
   g.restore();
 }
+function partyActorLabel(id){
+  return id==='ally'?companionProfile().name:playerChar.name;
+}
+function drawPartyTabs(){
+  if(!hasCombatAlly())return;
+  const knight=turnActorState('knight'),ally=turnActorState('ally'),selected=activeTurnActorId();
+  drawTurnButton(TURN_KNIGHT_TAB,'KNIGHT', '',selected==='knight'?'#ffe37a':'#aeb2c2',!knight.finished);
+  drawTurnButton(TURN_ALLY_TAB,companionProfile().id.toUpperCase(),'',selected==='ally'?'#9ecbff':'#aeb2c2',!ally.finished);
+}
 function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
      remains pinned to the same final-screen coordinates as its hit boxes. */
@@ -13130,31 +13239,50 @@ function drawPlayerTurnUI(){
   g.fillStyle='rgba(5,7,12,.94)';g.fillRect(panel.x,panel.y,panel.w,panel.h);
   g.strokeStyle='#e8e2d0';g.lineWidth=3;
   g.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1);
-  if(boss.playerMenu==='skills'){
-    g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
-    g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,30,578);
+  if(boss.playerMenu==='party'){
+    const knight=turnActorState('knight'),ally=turnActorState('ally');
+    g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
+    g.fillText('CHOOSE A CHARACTER',30,578);
+    g.textAlign='right';g.fillStyle='#7fc9ff';g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
+    drawTurnButton(TURN_FIGHT_BTN,'KNIGHT',knight.finished?'ACTED':playerChar.name,'#ffe37a',!knight.finished);
+    drawTurnButton(TURN_SKILL_BTN,companionProfile().name,ally.finished?'ACTED':'2 SUPPORT SKILLS','#9ecbff',!ally.finished);
+    drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
+  }else if(boss.playerMenu==='skills'){
+    const skills=activeTurnSkills(),actorState=turnActorState();
+    drawPartyTabs();
+    if(!hasCombatAlly()){
+      g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
+      g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,30,578);
+    }
     drawTurnButton(TURN_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
     drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
-    for(let i=0;i<TURN_SKILLS.length;i++){
-      const skill=TURN_SKILLS[i],enabled=boss.resolve>=skill.cost;
+    for(let i=0;i<skills.length;i++){
+      const skill=skills[i],enabled=!actorState.finished&&boss.resolve>=skill.cost;
       drawTurnButton(TURN_SKILL_BTNS[i],skill.name,skillButtonSubtitle(skill),skill.col,enabled);
     }
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD A SKILL FOR DETAILS',VW/2,721);
+    g.fillText('HOLD FOR DETAILS · RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
   }else{
-    g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
-    g.fillText('CHOOSE AN ACTION',30,578);
-    g.textAlign='right';g.fillStyle='#7fc9ff';
-    g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
+    const actorId=activeTurnActorId(),actorState=turnActorState(actorId);
+    if(hasCombatAlly())drawPartyTabs();
+    else{
+      g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
+      g.fillText('CHOOSE AN ACTION',30,578);
+    }
+    if(hasCombatAlly())drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
+    g.textAlign='right';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
+    if(!hasCombatAlly())g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FIGHT FOR DAMAGE DETAILS',130,600);
-    const fightEnabled=!boss.usedSkillThisTurn;
-    const fight=fightCommand(),fightDamage=turnDamage(
-      fight.damage+commandMarkDamage(fight,bossMark()));
-    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled
-      ?activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R/HIT':'LOCKED AFTER SKILL',
-      '#e8e2d0',fightEnabled);
-    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',boss.resolve>0);
+    g.fillText('HOLD FIGHT FOR DETAILS · R '+boss.resolve+'/'+boss.resolveMax,130,600);
+    const fightEnabled=!actorState.usedSkill&&!actorState.finished,
+      fight=fightCommand(actorId),fightDamage=turnDamage(
+        fight.damage+commandMarkDamage(fight,bossMark())),
+      fightSub=actorId==='ally'
+        ?fight.name+' · '+fightDamage+' DMG · +1R/HIT'
+        :activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R/HIT';
+    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:
+      (actorState.finished?'ALREADY ACTED':'LOCKED AFTER SKILL'),'#e8e2d0',fightEnabled);
+    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',!actorState.finished&&boss.resolve>0);
     drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
   }
   g.restore();
