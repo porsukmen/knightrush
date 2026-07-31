@@ -136,6 +136,8 @@ const CFG = {
   BREAK_DURATION:4.0,
   BREAK_POSE_IN:0.62,
   BREAK_RECOVERY:0.72,
+  TURN_AP_BASE:2,
+  TURN_AP_PER_ATTACK_BREAK:1,
   TURN_RESOLVE_MAX:6,
   TURN_RESOLVE_START:0,
   TURN_RESOLVE_PER_DEFENSE:1,
@@ -238,6 +240,14 @@ class DefinitionRegistry{
    - CHARACTER_SPECIALS owns immutable CharacterSpecialDefinition records. Characters
      reference one `specialId`; input, HUD, update and player lunge dispatch through
      that record. All three temporary riders currently share `knight_rush`.
+   - Skill evolution is a four-depth authored graph: Form, Specialization, Twist,
+     Apex. Rarity, mutation type, parents, tags and loop risk are independent data.
+     Definitions are indexed once by skill; drafts run only on reward entry. Endless
+     rejects player-repeat and automatic loops, while future Climb may explicitly
+     allow player-driven loops but never automatic event recursion.
+   - Rider art dispatches by `rigId`. Ser Jonathan Smith owns the first allocation-
+     light articulated 2D rig: horse and rider animate joint endpoints, while the two
+     untouched characters remain on `drawLegacyRider` until their redesigns.
    - Every boss combo step is a real collision/animation attack. A string reserves
      max(2, ceil(visible steps * 0.60)) boss-move budget when selected; if that cost
      does not fit, exclude it instead of starting and truncating it. This discounts
@@ -437,10 +447,12 @@ const HORIZON_Y=286, PLAYER_Y=648, GROUND_Y=PLAYER_Y-14;
 const ATTACK_GROUND_Y=PLAYER_Y+11; // a little below the horse: shared extra jump clearance for every model swipe
 const BODY_ATTACK_Y=PLAYER_Y-60;  // rider/horse body contact for bites and lane strikes
 const DUCK_ATTACK_Y=PLAYER_Y-113; // a little higher: shared extra duck clearance for every model swipe
+const MODEL_HELMET_CLEARANCE_SHIFT=4.75; // preserves duck timing for the crown-only deep pose
 /* Model attacks scale around fixed posture-clearance edges. Low attacks keep their
-   upper lethal edge at JUMP; high attacks keep their lower edge at DUCK. */
+   upper lethal edge at JUMP; high attacks keep their lower edge at DUCK. Raising
+   the high edge by the helmet extension preserves the original duck timing. */
 const MODEL_JUMP_CLEARANCE_Y=PLAYER_Y-71;
-const MODEL_DUCK_CLEARANCE_Y=DUCK_ATTACK_Y+34;
+const MODEL_DUCK_CLEARANCE_Y=DUCK_ATTACK_Y+34-MODEL_HELMET_CLEARANCE_SHIFT;
 /* Closing paws begin as upright walls whose core reaches above even the horse's
    apex. Only their final palm-to-palm rotation lowers the top to JUMP clearance. */
 const MODEL_PINCH_WALL_TOP_Y=PLAYER_Y-110;
@@ -567,6 +579,23 @@ const TURN_SKILL_BTNS=Object.freeze([
   Object.freeze({x:30,y:653,w:200,h:48}),
   Object.freeze({x:250,y:653,w:200,h:48}),
 ]);
+const SKILL_LAB_TABS=Object.freeze([
+  Object.freeze({id:'draft',x:18,y:102,w:140,h:38,label:'RNG DRAFT'}),
+  Object.freeze({id:'catalog',x:170,y:102,w:140,h:38,label:'CATALOG'}),
+  Object.freeze({id:'combat',x:322,y:102,w:140,h:38,label:'TEST COMBAT'}),
+]);
+const SKILL_LAB_COMBAT_PRESETS=Object.freeze([
+  Object.freeze({id:'clean',x:10,y:205,w:84,h:32,label:'CLEAN'}),
+  Object.freeze({id:'mark',x:104,y:205,w:84,h:32,label:'MARK ×3'}),
+  Object.freeze({id:'chain',x:198,y:205,w:84,h:32,label:'CHAIN ×5'}),
+  Object.freeze({id:'combo',x:292,y:205,w:84,h:32,label:'COMBO'}),
+  Object.freeze({id:'near',x:386,y:205,w:84,h:32,label:'NEAR BREAK'}),
+  Object.freeze({id:'broken',x:10,y:245,w:84,h:32,label:'BROKEN'}),
+]);
+const SKILL_LAB_COMBAT_BACK=Object.freeze({x:104,y:245,w:84,h:32});
+const SKILL_LAB_COMBAT_HP=Object.freeze({x:198,y:245,w:84,h:32});
+const SKILL_LAB_COMBAT_TURN=Object.freeze({x:292,y:245,w:84,h:32});
+const SKILL_LAB_COMBAT_HUD=Object.freeze({x:386,y:245,w:84,h:32});
 /* drawHUD pins the Rush meter to the physical bottom of the logical viewport
    even when safe-area translation moves the rest of the HUD. Keep its tap target
    in that final screen space so tall-phone padding cannot desynchronise input. */
@@ -669,6 +698,7 @@ function handleAction(a,pt,parryIntent=null){
   if(mode==='debugcfg'){ if(a==='tap'&&pt) debugCfgTap(pt); return; }
   if(mode==='bosslabselect'){ if(a==='tap'&&pt) bossLabSelectTap(pt); return; }
   if(mode==='bosslabmoves'){ if(a==='tap'&&pt) bossLabMovesTap(pt); return; }
+  if(mode==='skilllab'){ if(a==='tap'&&pt) skillLabTap(pt); return; }
   if(mode==='score'){ if(a==='tap'||a==='up') uiConfirm(); return; }
   if(mode==='charsel'){
     if(a==='left'){ charSel=Math.max(0,charSel-1); SFX.swipe(); }
@@ -677,6 +707,7 @@ function handleAction(a,pt,parryIntent=null){
     else if(a==='tap'&&pt) charselTap(pt);
     return;
   }
+  if(mode==='evolution'&&a==='tap'&&pt){skillEvolutionTap(pt);return;}
   if(mode==='relic' && a==='tap' && pt){ relicTap(pt); return; }
   if(mode==='shop'  && a==='tap' && pt){ shopTap(pt); return; }
   if(a==='tap' && pt && GAMEPLAY_MODES.includes(mode)
@@ -688,7 +719,8 @@ function handleAction(a,pt,parryIntent=null){
      &&pt.y>BEAR_MOUTH_BTN.y+uiTop&&pt.y<BEAR_MOUTH_BTN.y+BEAR_MOUTH_BTN.h+uiTop){
     toggleBearTurntableMouth();return;
   }
-  if(a==='tap' && pt && debugRun && boss && !boss._moveLab && mode==='boss'
+  if(a==='tap'&&pt&&activeSkillLabCombat()&&skillLabCombatTap(pt))return;
+  if(a==='tap' && pt && debugRun && boss && !boss._moveLab && !activeSkillLabCombat()&&mode==='boss'
      && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
   /* The command panel owns every tap during the Bear's player phase. A tap
      outside its buttons must never leak through as a parry or Rush input. */
@@ -732,7 +764,7 @@ addEventListener('keydown',e=>{
     }
   }
   const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',
-             a:'left',d:'right',w:'up',s:'down',k:'rush',K:'rush',' ':'parry',Enter:'tap'};
+             a:'left',d:'right',w:'up',s:'down',f:'rush',F:'rush',' ':'parry',Enter:'tap'};
   if(e.key==='m'||e.key==='M'){SFX.toggle();return;}
   if(e.key==='Escape'&&mode==='charsel'){ leaveCharSel(); return; }
   if(e.key==='p'||e.key==='P'||e.key==='Escape'){       // pause toggle on keyboard
@@ -1380,12 +1412,393 @@ function drawParticles(behindBoss=false){
    Every sprite is drawn with small filled rects in a local "pixel" coordinate space,
    then scaled/rotated with canvas transforms. u = one art pixel (3 screen px).      */
 const U=3;
+const SER_JONATHAN_DUCK_SHOULDER_Y=5.7,SER_JONATHAN_DUCK_HEAD_Y=4.85,
+  SER_JONATHAN_DUCK_HEAD_SCALE=.82,SER_JONATHAN_DUCK_CROWN_Y=-1.45;
 function px(x,y,w,h,c){ g.fillStyle=c; g.fillRect(x*U,y*U,w*U,h*U); }
+
+/* Helmet crown in Jonathan's local art space. Collision samples the very same
+   pitched pose instead of approximating it with a disappearing magic extension. */
+function serJonathanHelmetTopLocal(duck){
+  const fold=easeInOut(clamp(duck,0,1)),hipY=10+duck*.8,
+    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y,fold),
+    headY=lerp(shoulderY-5.4,SER_JONATHAN_DUCK_HEAD_Y,fold),
+    headScale=lerp(1,SER_JONATHAN_DUCK_HEAD_SCALE,fold),
+    crownY=lerp(-2.7,SER_JONATHAN_DUCK_CROWN_Y,fold);
+  return headY+crownY*headScale;
+}
+function serJonathanHelmetTopWorldY(baseY,duck){
+  return baseY+(serJonathanHelmetTopLocal(duck)-30)*U*1.02;
+}
+function serJonathanDuckForClearanceY(baseY,clearanceY){
+  let lo=0,hi=1;
+  for(let i=0;i<10;i++){
+    const mid=(lo+hi)*.5;
+    if(serJonathanHelmetTopWorldY(baseY,mid)>=clearanceY)hi=mid;else lo=mid;
+  }
+  return hi;
+}
+
+/* Crisp articulated helpers for authored rider rigs. Coordinates stay in the
+   same tiny art-pixel space as px(), but limbs are real joint-to-joint segments;
+   animation changes endpoints instead of squashing a finished sprite. */
+function rigSegment(ax,ay,bx,by,width,col){
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1,nx=-dy/len*width*.5,ny=dx/len*width*.5;
+  g.fillStyle=col;g.beginPath();
+  g.moveTo((ax+nx)*U,(ay+ny)*U);g.lineTo((bx+nx)*U,(by+ny)*U);
+  g.lineTo((bx-nx)*U,(by-ny)*U);g.lineTo((ax-nx)*U,(ay-ny)*U);g.closePath();g.fill();
+}
+function rigJoint(x,y,size,col){
+  g.fillStyle=col;g.fillRect((x-size*.5)*U,(y-size*.5)*U,size*U,size*U);
+}
+function rigTriangle(x1,y1,x2,y2,x3,y3,col){
+  g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);g.lineTo(x3*U,y3*U);g.closePath();g.fill();
+}
+function rigQuad(x1,y1,x2,y2,x3,y3,x4,y4,col){
+  g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);
+  g.lineTo(x3*U,y3*U);g.lineTo(x4*U,y4*U);g.closePath();g.fill();
+}
+function rigPentagon(x1,y1,x2,y2,x3,y3,x4,y4,x5,y5,col){
+  g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);g.lineTo(x3*U,y3*U);
+  g.lineTo(x4*U,y4*U);g.lineTo(x5*U,y5*U);g.closePath();g.fill();
+}
+function rigHexagon(x1,y1,x2,y2,x3,y3,x4,y4,x5,y5,x6,y6,col){
+  g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);g.lineTo(x3*U,y3*U);
+  g.lineTo(x4*U,y4*U);g.lineTo(x5*U,y5*U);g.lineTo(x6*U,y6*U);g.closePath();g.fill();
+}
+function drawSerJonathanHorseLeg(hipX,side,phase,fore,col,gal,air,bob,horseD,mane){
+  let kneeX,kneeY,hoofX,hoofY;
+  if(air>0){
+    /* Wolf-style flight posing: forelegs tuck early and reach for landing;
+       hind legs trail at take-off, gather at the apex, then extend. */
+    const tuck=Math.sin(Math.PI*air),reach=easeInOut(clamp((air-.62)/.38,0,1));
+    if(fore){
+      kneeX=hipX+side*(.15+.25*tuck);kneeY=24.2-2.2*tuck+1.2*reach;
+      hoofX=hipX+side*(.08+.18*tuck);hoofY=lerp(30-5.4*tuck,30,reach);
+    }else{
+      const trail=clamp((.42-air)/.42,0,1);
+      kneeX=hipX+side*(.7+.35*trail-.25*tuck);kneeY=23.2-1.2*tuck;
+      hoofX=hipX+side*(.45+1.1*trail-.25*tuck);hoofY=lerp(30-4.2*tuck,30,reach);
+    }
+  }else{
+    /* Rear-view gallop moves in screen depth: hooves rise vertically with only
+       a sub-pixel lateral drift. Opposite phases keep a diagonal pair planted. */
+    const stride=Math.sin(gal+phase),lift=Math.max(0,stride);
+    kneeX=hipX+side*(fore?.10:.48);
+    kneeY=(fore?24.3:23.4)+bob-lift*(fore?.9:.55);
+    hoofX=hipX+side*(fore?.06:.28);
+    hoofY=30-lift*(fore?3.1:2.65);
+  }
+  rigSegment(hipX,19.8+bob,kneeX,kneeY,fore?1.3:2.25,col);
+  rigJoint(kneeX,kneeY,fore?1.25:2.05,col);
+  rigSegment(kneeX,kneeY,hoofX,hoofY,fore?1.05:1.72,fore?mane:horseD);
+  px(hoofX-(fore?.62:.95),hoofY-.35,fore?1.3:2.05,1.15,mane);
+}
+function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=1){
+  rigSegment(sx,sy,ex,ey,2.05*depth,upper);rigJoint(ex,ey,1.85*depth,joint);
+  rigSegment(ex,ey,hx,hy,1.65*depth,lower);if(hand)rigJoint(hx,hy,1.55*depth,joint);
+}
+
+/* SER JONATHAN SMITH — first production rider rig.
+   Silver armour and the long blue plume preserve the Fallen Knights silhouette.
+   Horse and rider have independent joints so
+   future skill clips can author shoulder/elbow/wrist and hip/knee/hoof tracks. */
+function drawSerJonathanRider(x,y,scale,o){
+  o=o||{};const gal=(o.gallop||0)*TAU,air=o.air||0,duck=o.duck||0,
+    leap=air>0?Math.sin(air*Math.PI):0,
+    bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
+    riderBob=air>0?-leap*.24:Math.sin(gal*2+.9)*.34,
+    atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
+    counter=clamp(o.counter||0,0,1),swordClock=Math.max(atk,parry),swordActive=swordClock>0||!!combo,
+    attackProgress=swordActive?1-swordClock:0,
+    baseCut=swordClock>0?(attackProgress<.58
+      ?easeInOut(clamp(attackProgress/.58,0,1))
+      :1-easeInOut(clamp((attackProgress-.58)/.42,0,1))):0,
+    swordTurn=combo?lerp(combo.from,combo.to,combo.k):baseCut,cut=Math.abs(swordTurn);
+  const horse=o.horse||'#6f4327',horseD=shade(horse,-28),horseL=shade(horse,18),
+    mane=shade(horse,-48),armor='#919da7',armorD='#4b5966',armorL='#c4ced5',
+    steel='#aebbc5',steelL='#edf4f7',plume=o.feather||'#268ee8';
+  const hipY=10+riderBob+duck*.8;
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  g.rotate(air>0?0:(o.lean||0)*.13);g.translate(-9*U,-30*U);
+
+  /* Hoof contact stains sit exactly on the local baseline; unlike the former
+     floating oval, these remain underneath the planted feet. */
+  if(air<=0){g.globalAlpha=.18;px(2.5,30,4.1,.65,'#000');px(11.4,30,4.1,.65,'#000');g.globalAlpha=1;}
+  /* Forelegs are farther from the rear camera and emerge through the rump gap. */
+  drawSerJonathanHorseLeg(6.2,-1,0,true,horseD,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(11.8,1,Math.PI,true,horseD,gal,air,bob,horseD,mane);
+  /* Rider legs are farther than the rump from this camera. Draw them now so
+     both haunches mask the inner thighs; only the portions beside the horse survive. */
+  rigSegment(7.1,hipY,.6,16+bob,2.05,armorD);rigJoint(.6,16+bob,1.85,armorL);
+  rigSegment(.6,16+bob,.7,23+bob,1.65,armor);px(-.15,22+bob,1.8,2.2,armorD);
+  px(-.35,23.25+bob,2.15,.7,steel);
+  rigSegment(10.9,hipY,17.4,16+bob,2.05,armorD);rigJoint(17.4,16+bob,1.85,armorL);
+  rigSegment(17.4,16+bob,17.3,23+bob,1.65,armor);px(16.35,22+bob,1.8,2.2,armorD);
+  px(16.2,23.25+bob,2.15,.7,steel);
+  /* Symmetric rear silhouette: paired haunches and a central cleft make the
+     camera direction unmistakable. */
+  rigHexagon(1.2,15+bob,4,12.4+bob,8.55,13.2+bob,8.35,22.2+bob,4.1,23.4+bob,1.5,21+bob,horse);
+  rigHexagon(9.45,13.2+bob,14,12.4+bob,16.8,15+bob,16.5,21+bob,13.9,23.4+bob,9.65,22.2+bob,horse);
+  rigQuad(7.9,13.7+bob,10.1,13.7+bob,9.65,22.4+bob,8.35,22.4+bob,horseD);
+  /* Highlights hug the OUTER curves of the haunches; paired top rectangles read
+     as eyes and made the rump look like a face. */
+  px(3.05,15.1+bob,1.05,5.4,horseL);px(13.9,15.1+bob,1.05,5.4,horseL);
+  px(8.55,14.2+bob,.9,6.9,mane);
+  /* Near hind legs hang under the haunches; they no longer skate sideways. */
+  drawSerJonathanHorseLeg(4,-1,Math.PI,false,horse,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(14,1,0,false,horse,gal,air,bob,horseD,mane);
+  /* The tail is the strongest rear-view cue: its root must sit ON the rump, not
+     disappear behind it. The broad brush overlaps the cleft and hangs centrally. */
+  const tail=Math.sin(gal+1.7)*1.25,tailL=shade(horse,-34);
+  rigSegment(9,14.7+bob,9+tail*.16,20.5+bob,3.05,mane);
+  rigSegment(9+tail*.16,20.5+bob,9+tail*.48,25.7+bob,2.8,mane);
+  rigSegment(9+tail*.48,25.7+bob,9+tail,29.2+bob,2.5,mane);
+  rigSegment(8.65,15.2+bob,8.8+tail*.38,25.6+bob,.65,tailL);
+  px(7.8+tail,27.5+bob,2.5,2.15,mane);
+  const headLift=air>0?(-1.35*Math.sin(Math.PI*clamp(air/.55,0,1))+
+    .85*easeInOut(clamp((air-.68)/.32,0,1))):Math.sin(gal*2+.35)*.14;
+  /* Only the narrow BACK of the neck, crown and ears survive above the saddle.
+     A broad head here resembles a forward-facing muzzle at this resolution. */
+  rigQuad(6.7,13+bob,7.25,5.2+bob+headLift,10.75,5.2+bob+headLift,11.3,13+bob,horseD);
+  rigQuad(7.15,6.1+bob+headLift,7.65,3.5+bob+headLift,
+    10.35,3.5+bob+headLift,10.85,6.1+bob+headLift,horse);
+  rigTriangle(7.2,4+bob+headLift,7.45,1.8+bob+headLift,8.35,4+bob+headLift,horseD);
+  rigTriangle(9.65,4+bob+headLift,10.55,1.8+bob+headLift,10.8,4+bob+headLift,horseD);
+  px(8.45,4.1+bob+headLift,1.1,4.1,mane);
+  rigQuad(3.1,12.1+bob,14.9,12.1+bob,13.8,14.3+bob,4.2,14.3+bob,'#39251d');
+
+  /* The rigid scabbard stays attached to the hip while the upper body folds. */
+  rigSegment(6.25,hipY-.65,4.35,hipY+.55,.62,'#3a281f');
+  rigSegment(6.55,hipY-.2,4.55,hipY+1.05,.62,'#3a281f');
+  rigSegment(4.4,hipY+.25,2.3,hipY+12.2,1.7,'#402719');
+  rigSegment(4.22,hipY+.45,2.18,hipY+12,.55,'#765038');
+  px(1.4,hipY+11.7,1.8,1.15,'#24160f');
+  if(!swordActive){
+    /* Purple grip projects straight out of the brown sheath on its own axis. */
+    rigSegment(4.4,hipY+.25,4.98,hipY-3.05,1.42,'#7140a8');
+    rigSegment(3.28,hipY-.22,5.68,hipY+.2,.78,'#d1a640');
+    rigJoint(5.08,hipY-3.35,1.35,'#7140a8');
+  }
+
+  /* A shorter, broader torso fits the runner clearance while keeping Jonathan
+     human-proportioned instead of an unnaturally thin vertical line. */
+  /* Authored rear-camera crouch. This is a second perspective pose, not a scaled
+     standing sprite: the waist remains near the camera, the shoulder edge becomes
+     the narrow far edge of a pitched back plate, and the helmet travels beyond it. */
+  const duckFold=easeInOut(duck),deepDuck=easeInOut(clamp((duckFold-.38)/.62,0,1)),
+    depthScale=lerp(1,.94,duckFold),farDepthScale=lerp(1,.66,duckFold),
+    headDepthScale=lerp(1,SER_JONATHAN_DUCK_HEAD_SCALE,duckFold),
+    plumeLengthScale=lerp(1,1.08,duckFold),plumeWidthScale=lerp(1,.98,duckFold),
+    shoulderX=9-swordTurn*.25,
+    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y+riderBob,duckFold),
+    headX=shoulderX-swordTurn*.2,
+    headY=lerp(shoulderY-5.4,SER_JONATHAN_DUCK_HEAD_Y+riderBob,duckFold);
+
+  const leftShoulderX=shoulderX-3.7*depthScale,leftShoulderY=shoulderY+.8+swordTurn*.35,
+    rightShoulderX=shoulderX+3.7*depthScale+swordTurn*.8,rightShoulderY=shoulderY+.8-swordTurn*.35;
+  let leftElbowX=shoulderX-4.9*depthScale,leftElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
+      leftHandX=lerp(6.9,7.35,duckFold),leftHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
+      rightElbowX=shoulderX+4.9*depthScale,rightElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
+      rightHandX=lerp(11.1,10.65,duckFold),rightHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
+      swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0;
+  if(swordActive){
+    if(combo){
+      const k=combo.k,from=combo.from,to=combo.to,
+        rightHandEndX=shoulderX+14.5,rightHandEndY=shoulderY-2.4,
+        leftHandEndX=shoulderX-12.5,leftHandEndY=shoulderY-2.2,
+        rightTipX=shoulderX+24,rightTipY=shoulderY-15.5,
+        leftTipX=shoulderX-24,leftTipY=shoulderY-15;
+      if(from===0||to===0){
+        const side=from===0?to:from,q=from===0?k:1-k,inv=1-q,
+          handEndX=side>0?rightHandEndX:leftHandEndX,
+          handEndY=side>0?rightHandEndY:leftHandEndY,
+          handControlX=side>0?2.8:shoulderX-7,
+          tipEndX=side>0?rightTipX:leftTipX,
+          tipEndY=side>0?rightTipY:leftTipY,
+          tipControlX=side>0?-2.1:shoulderX-8.5;
+        rightHandX=inv*inv*4.4+2*inv*q*handControlX+q*q*handEndX;
+        rightHandY=inv*inv*(hipY+.25)+2*inv*q*(shoulderY-4.8)+q*q*handEndY;
+        swordTipX=inv*inv*2.3+2*inv*q*tipControlX+q*q*tipEndX;
+        swordTipY=inv*inv*(hipY+12.2)+2*inv*q*(shoulderY-13)+q*q*tipEndY;
+        swordReveal=clamp(q/.16,0,1);
+        if(to===0)swordReturnK=easeInOut(k);
+      }else{
+        const fromRight=from>0,
+          fromHandX=fromRight?rightHandEndX:leftHandEndX,
+          fromHandY=fromRight?rightHandEndY:leftHandEndY,
+          toHandX=to>0?rightHandEndX:leftHandEndX,
+          toHandY=to>0?rightHandEndY:leftHandEndY,
+          fromTipX=fromRight?rightTipX:leftTipX,
+          fromTipY=fromRight?rightTipY:leftTipY,
+          toTipX=to>0?rightTipX:leftTipX,
+          toTipY=to>0?rightTipY:leftTipY,
+          lift=Math.sin(Math.PI*k),arcDir=fromRight?1:-1;
+        rightHandX=lerp(fromHandX,toHandX,k)+lift*arcDir*2.3;
+        rightHandY=lerp(fromHandY,toHandY,k)-lift*3.8;
+        swordTipX=lerp(fromTipX,toTipX,k)+lift*arcDir*5.5;
+        swordTipY=lerp(fromTipY,toTipY,k)-lift*12;
+        swordReveal=1;
+      }
+    }else{
+      /* Single attacks and parries share one sheath-to-sheath quadratic arc. */
+      const inv=1-cut;
+      rightHandX=inv*inv*4.4+2*inv*cut*2.8+cut*cut*(shoulderX+14.5);
+      rightHandY=inv*inv*(hipY+.25)+2*inv*cut*(shoulderY-5.6)+cut*cut*(shoulderY-2.4);
+      swordTipX=inv*inv*2.3+2*inv*cut*(-3.2)+cut*cut*(shoulderX+24);
+      swordTipY=inv*inv*(hipY+12.2)+2*inv*cut*(shoulderY-18)+cut*cut*(shoulderY-15.5);
+      swordReveal=clamp(cut/.16,0,1);
+      if(attackProgress>=.58)swordReturnK=easeInOut(clamp((attackProgress-.58)/.42,0,1));
+    }
+    /* Draw and every contact use a genuinely extended arm: shoulder, elbow and
+       hand are collinear. Only the trip back into the left scabbard bends it. */
+    const straightElbowX=lerp(rightShoulderX,rightHandX,.52),
+      straightElbowY=lerp(rightShoulderY,rightHandY,.52),
+      bentElbowX=shoulderX+5.25,bentElbowY=shoulderY+3.8;
+    rightElbowX=lerp(straightElbowX,bentElbowX,swordReturnK);
+    rightElbowY=lerp(straightElbowY,bentElbowY,swordReturnK);
+  }
+  const rightActive=swordActive;
+  /* Reins and resting arms are BEHIND the back plate. From this camera the hands
+     are ahead of the torso and should almost disappear, never form a chest X. */
+  rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
+  drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
+  if(!rightActive){
+    rigSegment(rightHandX,rightHandY,10.4,5.2+bob+headLift,.38,'#241915');
+    drawSerJonathanArm(rightShoulderX,rightShoulderY,rightElbowX,rightElbowY,rightHandX,rightHandY,armorD,armorL,steel,true,farDepthScale);
+  }
+  /* Weapon arms and blade are also behind the cuirass. The back plate drawn
+     below masks their central run, leaving only the external silhouette visible. */
+  if(rightActive)drawSerJonathanArm(rightShoulderX,rightShoulderY,rightElbowX,rightElbowY,rightHandX,rightHandY,armorD,armorL,steel,true,farDepthScale);
+  if(swordActive){
+    const bladeX=swordTipX,bladeY=swordTipY,
+      dx=bladeX-rightHandX,dy=bladeY-rightHandY,len=Math.hypot(dx,dy)||1,
+      nx=-dy/len,ny=dx/len,reveal=swordReveal,
+      bladeBaseX=lerp(bladeX,rightHandX+dx/len*.7,reveal),
+      bladeBaseY=lerp(bladeY,rightHandY+dy/len*.7,reveal);
+    rigSegment(rightHandX-dx/len*2.15,rightHandY-dy/len*2.15,rightHandX,rightHandY,1.5,'#7140a8');
+    rigSegment(rightHandX-nx*1.25,rightHandY-ny*1.25,rightHandX+nx*1.25,rightHandY+ny*1.25,1.25,'#d1a640');
+    if(reveal>.02){
+      rigSegment(bladeBaseX,bladeBaseY,bladeX,bladeY,1.45,steelL);
+      rigSegment(bladeX-dx/len*1.25,bladeY-dy/len*1.25,bladeX,bladeY,1.0,'#ffffff');
+    }
+  }
+
+  const helmetTopY=lerp(-2,-1.05,duckFold),helmetBottomY=lerp(3.5,1.85,duckFold),
+    helmetCrownY=lerp(-2.7,SER_JONATHAN_DUCK_CROWN_Y,duckFold),
+    helmetRimY=lerp(2.45,1.15,duckFold),helmetFaceAlpha=1-deepDuck;
+  /* The deep helmet keeps most of its width, but its vertical face collapses and
+     is painted BEFORE the back. The torso then naturally occludes its lower half. */
+  if(deepDuck>.01){
+    g.globalAlpha=deepDuck;
+    rigQuad(headX-3.2*headDepthScale,headY+helmetTopY*headDepthScale,
+      headX+3.2*headDepthScale,headY+helmetTopY*headDepthScale,
+      headX+3.5*headDepthScale,headY+helmetBottomY*headDepthScale,
+      headX-3.5*headDepthScale,headY+helmetBottomY*headDepthScale,armor);
+    px(headX-.5*headDepthScale,headY+lerp(-1.6,-.72,duckFold)*headDepthScale,
+      headDepthScale,lerp(4.8,2.15,duckFold)*headDepthScale,armorL);
+    px(headX-3.55*headDepthScale,headY+helmetRimY*headDepthScale,
+      7.1*headDepthScale,1.3*headDepthScale,armorD);
+    px(headX-2*headDepthScale,headY+helmetCrownY*headDepthScale,
+      4*headDepthScale,1.05*headDepthScale,steelL);
+    g.globalAlpha=1;
+  }
+
+  /* At full crouch this quadrilateral is the TOP plane of Jonathan's back: the
+     far shoulder edge narrows while the near waist edge widens toward camera. */
+  const backShoulderHalf=lerp(4.35,2.85,duckFold),backHipHalf=lerp(2.7,4.05,duckFold),
+    innerShoulderHalf=lerp(3.55,2.15,duckFold),innerHipHalf=lerp(2.05,3.25,duckFold);
+  rigQuad(shoulderX-backShoulderHalf,shoulderY+swordTurn*.35,
+    shoulderX+backShoulderHalf,shoulderY-swordTurn*.35,
+    9+backHipHalf,hipY,9-backHipHalf,hipY,armorD);
+  rigQuad(shoulderX-innerShoulderHalf,shoulderY+.45+swordTurn*.25,
+    shoulderX+innerShoulderHalf,shoulderY+.45-swordTurn*.25,
+    9+innerHipHalf,hipY-1,9-innerHipHalf,hipY-1,armor);
+  rigSegment(shoulderX,shoulderY+.8,9,Math.max(shoulderY+1.2,hipY-2.5),1.3,armorL);
+  if(duckFold>.01){
+    const planeNearY=lerp(shoulderY+1.25,hipY-1.15,deepDuck),
+      planeNearHalf=lerp(innerShoulderHalf+.35,innerHipHalf,deepDuck);
+    g.globalAlpha=duckFold*.58;
+    rigQuad(shoulderX-backShoulderHalf,shoulderY+swordTurn*.35,
+      shoulderX+backShoulderHalf,shoulderY-swordTurn*.35,
+      9+planeNearHalf,planeNearY,9-planeNearHalf,planeNearY,armorL);
+    g.globalAlpha=1;
+  }
+  px(6.25,hipY-1.3,5.5,1.35,'#3a281f');
+  rigJoint(shoulderX-4.05*depthScale,shoulderY+.7+swordTurn*.28,3.05*farDepthScale,armorL);
+  rigJoint(shoulderX+4.05*depthScale,shoulderY+.7-swordTurn*.28,3.05*farDepthScale,armorL);
+  /* Rear view keeps most limbs behind the cuirass, but these tiny outer elbow
+     caps stop the arms from disappearing without exposing them across the back. */
+  g.globalAlpha=1-deepDuck*.92;
+  if(leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
+  if(rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
+  g.globalAlpha=1;
+
+  /* In the deep crouch the forearms become the visible support plane beneath the
+     helmet. Their top faces reappear over the back plate while the upper arms stay
+     behind it, so the elbows read as lowered rather than winged outward. */
+  if(duckFold>.02){
+    g.globalAlpha=duckFold*(1-deepDuck*.82);
+    rigSegment(leftElbowX,leftElbowY,leftHandX,leftHandY,1.15*farDepthScale,armorL);
+    rigSegment(rightElbowX,rightElbowY,rightHandX,rightHandY,1.15*farDepthScale,armorL);
+    g.globalAlpha=1;
+  }
+
+  /* Neck bridge and helmet have their own pitched geometry. As Jonathan folds,
+     the tall rear face becomes a shallow crown/back plane rather than a smaller
+     upright rectangle pasted into the torso. */
+  if(helmetFaceAlpha>.01){
+    g.globalAlpha=helmetFaceAlpha;
+    rigQuad(headX-1.15*headDepthScale,headY+helmetBottomY*headDepthScale,
+      headX+1.15*headDepthScale,headY+helmetBottomY*headDepthScale,
+      shoulderX+1.45,shoulderY+.25,shoulderX-1.45,shoulderY+.25,armorD);
+    rigQuad(headX-3.2*headDepthScale,headY+helmetTopY*headDepthScale,
+      headX+3.2*headDepthScale,headY+helmetTopY*headDepthScale,
+      headX+3.5*headDepthScale,headY+helmetBottomY*headDepthScale,
+      headX-3.5*headDepthScale,headY+helmetBottomY*headDepthScale,armor);
+    px(headX-.5*headDepthScale,headY+lerp(-1.6,-.72,duckFold)*headDepthScale,
+      headDepthScale,lerp(4.8,2.15,duckFold)*headDepthScale,armorL);
+    px(headX-3.55*headDepthScale,headY+helmetRimY*headDepthScale,
+      7.1*headDepthScale,1.3*headDepthScale,armorD);
+    if(duckFold>.01){
+      g.globalAlpha=helmetFaceAlpha*duckFold*.78;
+      rigQuad(headX-2.7*headDepthScale,headY+helmetTopY*headDepthScale,
+        headX+2.7*headDepthScale,headY+helmetTopY*headDepthScale,
+        headX+3.05*headDepthScale,headY+.05*headDepthScale,
+        headX-3.05*headDepthScale,headY+.05*headDepthScale,steelL);
+    }
+    g.globalAlpha=1;
+    g.globalAlpha=helmetFaceAlpha;
+    px(headX-2*headDepthScale,headY+helmetCrownY*headDepthScale,
+      4*headDepthScale,1.05*headDepthScale,steelL);
+    g.globalAlpha=1;
+  }
+  const plumeSway=Math.sin(gal+2.2)*.7,plumeRootY=headY-2.2*headDepthScale,
+    plume1X=headX+(.2+duck*1.8)*plumeLengthScale,
+    plume1Y=plumeRootY+(-4.1+duck*3.2)*plumeLengthScale,
+    plume2X=headX+(2.8+plumeSway+duck*3.1)*plumeLengthScale,
+    plume2Y=plumeRootY+(-6.5+duck*5.7)*plumeLengthScale,
+    plume3X=headX+(4.7+plumeSway*1.4+duck*3.5)*plumeLengthScale,
+    plume3Y=plumeRootY+(-5.4+duck*5.9)*plumeLengthScale;
+  rigSegment(headX,plumeRootY,plume1X,plume1Y,1.55*plumeWidthScale,plume);
+  rigSegment(plume1X,plume1Y,plume2X,plume2Y,1.9*plumeWidthScale,shade(plume,12));
+  rigSegment(plume2X,plume2Y,plume3X,plume3Y,1.35*plumeWidthScale,plume);
+
+  if(counter>0){
+    g.globalAlpha=Math.sin(counter*Math.PI);g.strokeStyle='#ffe37a';g.lineWidth=2.5*U;
+    g.beginPath();g.arc(9*U,(shoulderY+2)*U,14*U,-.5-counter*2.1,.7-counter*2.1);g.stroke();g.globalAlpha=1;
+  }
+  g.restore();
+}
+
+function drawRider(x,y,scale,o){
+  if(o&&o.rigId==='ser_jonathan')return drawSerJonathanRider(x,y,scale,o);
+  return drawLegacyRider(x,y,scale,o);
+}
 
 /* ---- Knight on horseback, seen from behind (the runner view) ----
    opts: {gallop (phase 0..1), lean (-1..1), duck (0..1), feather, armor, horse, chubby,
           attack (0..1 lance-thrust anim), counter (0..1)} */
-function drawRider(x,y,scale,o){
+function drawLegacyRider(x,y,scale,o){
   o=o||{}; const gal=(o.gallop||0)*TAU;
   const air=o.air||0, duck=o.duck||0;                // air: 0..1 through the jump arc
   const leap=air>0?Math.sin(air*Math.PI):0;
@@ -5411,12 +5824,13 @@ class RunPolicyDefinition{
     this.id=id;
     Object.assign(this,{
       startStage:1, cycleLength:STAGE_POOL_SEQUENCE.length,
+      evolutionRulesId:'endless_safe',
       stagePoolAt:stage=>STAGE_POOL_SEQUENCE[(stage-1)%STAGE_POOL_SEQUENCE.length],
       progressionTierAt:stage=>Math.floor((stage-1)/STAGE_POOL_SEQUENCE.length),
       hasBossAt:()=>true, hasMinibossAt:()=>true,
       bossScoreAt:stage=>CFG.BOSS_SCORE*stage,
       nextStageAt:stage=>stage+1,
-      afterBoss:()=>giveRelic(), afterRoute:()=>nextLoop(),
+      afterBoss:()=>giveSkillEvolution(), afterRoute:()=>nextLoop(),
     },data);
     for(const key of ['stagePoolAt','progressionTierAt','hasBossAt','hasMinibossAt','bossScoreAt','nextStageAt','afterBoss','afterRoute'])
       if(typeof this[key]!=='function') throw new Error('Run policy '+id+' needs '+key+'()');
@@ -7163,7 +7577,7 @@ const player={
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
   gallop:0, alive:true,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
-  attackAnim:0, counterAnim:0, parryAnim:0, invuln:0,
+  attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, invuln:0,
 };
 const DEBUG_PARRY_INPUT_HOLD=.32;
 let debugParryInputMark=null,debugParryFreezeEnabled=false,debugParryInputFrozen=false;
@@ -7209,9 +7623,38 @@ function firstHalfPostureTime(amount,duration){
 function jumpHeight(){ return player.jumpT<0?0:Math.sin(Math.PI*clamp(player.jumpT/jumpDur(),0,1))*CFG.JUMP_H; }
 function isAirborne(){ return jumpHeight()>CFG.JUMP_SAFE_H; }
 function isDucking(){ return player.duckT>=0; }
+/* Multi-hit commands keep one blade out for the entire action: sheath -> right,
+   then alternating side-to-side cuts, then a single return from the final side. */
+function beginPlayerSwordSegment(from,to,duration,pendingReturn=false,returning=false){
+  let clip=player.swordCombo;
+  if(!clip)clip=player.swordCombo={from:0,to:0,k:0,t:0,duration:.28,pendingReturn:false,returning:false,cadenced:false};
+  clip.from=from;clip.to=to;clip.k=0;clip.t=0;clip.duration=Math.max(.001,duration);
+  clip.pendingReturn=pendingReturn;clip.returning=returning;
+  clip.cadenced=from!==0&&to!==0;
+  return clip;
+}
+function triggerPlayerSwordCombo(action,hitIndex){
+  const clip=player.swordCombo,from=hitIndex===0?0:(clip?clip.to:(hitIndex%2?-1:1));
+  beginPlayerSwordSegment(from,hitIndex%2===0?1:-1,
+    Math.min(.28,Math.max(.18,(action.hitInterval||.46)*.55)),hitIndex===action.hits-1);
+}
+function updatePlayerSwordCombo(dt){
+  const clip=player.swordCombo;if(!clip)return;
+  clip.t=Math.min(clip.duration,clip.t+dt);
+  const raw=clamp(clip.t/clip.duration,0,1);
+  /* A combo owns readable beats rather than metronomic side-to-side travel:
+     hold the completed hit, cut quickly, then settle briefly at the new side. */
+  clip.k=clip.cadenced
+    ?(raw<=.32?0:raw>=.78?1:easeInOut((raw-.32)/.46))
+    :easeInOut(raw);
+  if(clip.t<clip.duration)return;
+  if(clip.pendingReturn){
+    beginPlayerSwordSegment(clip.to,0,.28,false,true);
+  }else if(clip.returning)player.swordCombo=null;
+}
 function updatePlayer(dt){
   player.x+=(player.lane-player.x)*Math.min(1,CFG.LANE_EASE*dt);
-  const resting=mode==='relic'||mode==='shop';
+  const resting=mode==='evolution'||mode==='relic'||mode==='shop';
   const inFight=(mode==='boss'||mode==='miniboss'||mode==='bossintro');
   player.gallop=resting?0:(player.gallop+dt*(inFight?0.55:speed()/9))%1; // reward rooms are still
   if(player.jumpT>=0){ player.jumpT+=dt; if(player.jumpT>jumpDur()){ player.jumpT=-1;
@@ -7219,7 +7662,9 @@ function updatePlayer(dt){
   if(player.duckT>=0){ player.duckT+=dt; if(player.duckT>CFG.DUCK_TIME) player.duckT=-1; }
   player.attackAnim=Math.max(0,player.attackAnim-dt*2.4);
   player.counterAnim=Math.max(0,player.counterAnim-dt*1.6);
-  player.parryAnim=Math.max(0,player.parryAnim-dt*3.8);
+  /* Parry uses the same complete sheath-to-sheath sword clip as an attack. */
+  player.parryAnim=Math.max(0,player.parryAnim-dt*2.4);
+  updatePlayerSwordCombo(dt);
   player.invuln=Math.max(0,player.invuln-dt);
   updateAllyTrail();
   /* galloping dust */
@@ -7228,20 +7673,23 @@ function updatePlayer(dt){
 function drawPlayer(){
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
   const duck=player.duckT>=0?Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1)):0;
-  const rushLunge=characterSpecialLungeAmount(),
-    y=PLAYER_Y-jumpHeight()-rushLunge*68;
+  const rushLunge=characterSpecialLungeAmount(),jumpH=jumpHeight(),
+    y=PLAYER_Y-jumpH-rushLunge*68;
+  /* Ground contact belongs behind the hooves. Drawing the old shadow after the
+     rider left a bright gap and made horse and Knight look suspended. */
+  g.globalAlpha=0.32*(1-jumpH/CFG.JUMP_H*.78);g.fillStyle='#000';
+  g.beginPath();g.ellipse(laneX(player.x,1),PLAYER_Y+4,22-rushLunge*4,4.8,0,0,TAU);g.fill();g.globalAlpha=1;
   if(player.invuln>0 && (perfNow*14|0)%2===0) g.globalAlpha=0.45;   // shield i-frames blink
   drawRider(laneX(player.x,1),y,1.02+rushLunge*.08,{
     gallop:player.gallop, lean, duck,
     air:player.jumpT>=0?clamp(player.jumpT/jumpDur(),0,1):0,
+    rigId:playerChar.rigId,
     feather:playerChar.feather, horse:playerChar.horse, chubby:playerChar.chubby,
     monkey:playerChar.monkey, caveman:playerChar.caveman,
     attack:player.attackAnim, counter:player.counterAnim, parry:player.parryAnim,
+    swordCombo:player.swordCombo,
   });
   g.globalAlpha=1;
-  /* shadow shrinks when airborne */
-  g.globalAlpha=0.3*(1-jumpHeight()/CFG.JUMP_H*.7); g.fillStyle='#000';
-  g.beginPath(); g.ellipse(laneX(player.x,1),PLAYER_Y+12,23,6,0,0,TAU); g.fill(); g.globalAlpha=1;
 }
 /* ============================== collisions (run mode) ============================== */
 function updateRunCollisions(){
@@ -7291,7 +7739,7 @@ function counterDmg(){ return CFG.COUNTER_DMG+upg.counter*CFG.UPG_COUNTER_INC+(h
 
 /* ============================== damage / death / shield ============================== */
 let debugRun=false, godMode=false, debugBossStart=false, debugMiniStart=false,
-    debugMiniMoves=false, debugLoop=1, debugSel={};
+    debugMiniMoves=false, debugLoop=1, debugSel={},skillLabSession=null;
 function damagePlayer(reason,unstoppable=false){
   if(godMode){ flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
     hazards=[]; return; }
@@ -7382,7 +7830,9 @@ const PLAYER_HURT_VOLUMES=createPlayerHurtVolumes();
 function samplePlayerHurtVolumesAt(out,x,baseY,duck){
   const horse=out.capsules[0],rider=out.capsules[1];
   horse.x1=horse.x2=x; horse.y1=baseY-45; horse.y2=baseY-10; horse.r=17;
-  rider.x1=rider.x2=x; rider.y1=baseY-93+duck*37; rider.y2=baseY-43+duck*8; rider.r=10.5;
+  /* The rider capsule follows the actual pitched helmet crown. Plume is cosmetic. */
+  rider.x1=rider.x2=x; rider.y1=serJonathanHelmetTopWorldY(baseY,duck)+10.5;
+  rider.y2=baseY-43+duck*8; rider.r=10.5;
   return out;
 }
 function samplePlayerHurtVolumes(out=PLAYER_HURT_VOLUMES){
@@ -7786,7 +8236,7 @@ function modelDodgeClearanceTime(h,redRaw){
       MODEL_DODGE_VIABILITY.frameMargin;
   }
   if(h.height==='high'){
-    const uprightTop=PLAYER_Y-93-10.5,duckNeed=clamp((MODEL_DUCK_CLEARANCE_Y-uprightTop)/37,0,.98);
+    const duckNeed=clamp(serJonathanDuckForClearanceY(PLAYER_Y,MODEL_DUCK_CLEARANCE_Y),0,.98);
     return firstHalfPostureTime(duckNeed,CFG.DUCK_TIME)+
       MODEL_DODGE_VIABILITY.frameMargin;
   }
@@ -8611,20 +9061,240 @@ let runWeapon=createRunWeapon();
 function activeWeapon(){return WEAPON_DEFS[runWeapon.id]||WEAPON_DEFS.longbow;}
 function weaponBaseDamage(){const w=activeWeapon();return w.baseDamage+runWeapon.level*w.levelDamage;}
 
-/* Resolve is the turn's action-point resource. Effects remain declarative so an
-   evolution can replace hit count, cost, Mark behavior or Posture without forks. */
-const TURN_SKILLS=Object.freeze([
+/* AP limits command count; persistent Resolve pays skill costs. Effects remain
+   declarative so an evolution can replace either economy or attack rules. */
+const BASE_TURN_SKILLS=Object.freeze([
   Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
-    damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72}),
+    damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,
+    tags:Object.freeze(['weapon','ranged','mark','setup'])}),
   Object.freeze({id:'arrow_rain',name:'ARROW RAIN',source:'WEAPON',skill:true,cost:2,
     damage:6,hits:3,hitInterval:.55,consumeMark:true,markDamagePerHit:2,markStackGrowth:1,
-    duration:1.65,col:'#ffe37a',slash:-.52}),
+    duration:1.65,col:'#ffe37a',slash:-.52,
+    tags:Object.freeze(['weapon','ranged','multihit','mark','payoff'])}),
   Object.freeze({id:'shield_kick',name:'SHIELD KICK',source:'CLASS',skill:true,cost:1,
-    damage:8,hits:1,posture:25,col:'#9ecbff',slash:.18}),
+    damage:8,hits:1,posture:25,col:'#9ecbff',slash:.18,
+    tags:Object.freeze(['class','melee','posture','setup'])}),
   Object.freeze({id:'royal_slash',name:'ROYAL SLASH',source:'CLASS',skill:true,cost:3,
     damage:24,hits:1,extraChainBonus:.08,consumeChain:true,addsChain:false,
-    col:'#c995ff',slash:.62}),
+    col:'#c995ff',slash:.62,
+    tags:Object.freeze(['class','melee','chain','payoff'])}),
 ]);
+function createRunSkill(definition){
+  return {...definition,baseId:definition.id,tags:Array.from(definition.tags||[]),
+    mutationIds:[],mutationGroups:[],evolutionDepth:0,evolutionText:null};
+}
+let runSkills=[];
+function resetRunSkills(){runSkills=BASE_TURN_SKILLS.map(createRunSkill);}
+function runSkill(baseId){return runSkills.find(skill=>skill.baseId===baseId)||null;}
+resetRunSkills();
+function skillMutation(data){
+  const mutation={depth:1,type:'STABLE',weight:1,loopRisk:'none',...data};
+  mutation.parents=Object.freeze(mutation.parents||[]);
+  mutation.requires=Object.freeze(mutation.requires||[]);
+  mutation.requiresTags=Object.freeze(mutation.requiresTags||[]);
+  mutation.blocksTags=Object.freeze(mutation.blocksTags||[]);
+  mutation.grantsTags=Object.freeze(mutation.grantsTags||[]);
+  mutation.removesTags=Object.freeze(mutation.removesTags||[]);
+  mutation.conflicts=Object.freeze(mutation.conflicts||[]);
+  mutation.details=Object.freeze(mutation.details||[]);
+  return Object.freeze(mutation);
+}
+function transformSharpshoot(skill,patch){
+  return Object.assign(skill,{
+    damage:16,hits:1,hitInterval:0,duration:undefined,cost:1,markGain:0,
+    consumeMark:false,markDamagePerHit:0,markStackGrowth:0,
+    posture:0,posturePerChain:0,resolvePerHit:0,
+    consumeChain:false,extraChainBonus:0,addsChain:true,col:'#c0f79a'
+  },patch);
+}
+/* Evolution is authored as a four-deep tree, while rarity and mutation type stay
+   orthogonal. Definitions are indexed once below; reward rolls never scan combat
+   state per frame. Automatic event recursion is forbidden in every mode. The
+   future climb policy may admit explicitly-authored player loops, but the current
+   endless build filters them out before they can enter a draft. */
+const SKILL_EVOLUTION_DEPTHS=Object.freeze({
+  1:Object.freeze({id:'FORM',name:'FORM'}),
+  2:Object.freeze({id:'SPECIALIZATION',name:'SPECIALIZATION'}),
+  3:Object.freeze({id:'TWIST',name:'TWIST'}),
+  4:Object.freeze({id:'APEX',name:'APEX'}),
+});
+const SKILL_EVOLUTION_RULESETS=Object.freeze({
+  endless_safe:Object.freeze({id:'endless_safe',maxDepth:4,choiceCount:3,
+    allowPlayerInfinite:false,allowAutomaticInfinite:false}),
+  climb_experimental:Object.freeze({id:'climb_experimental',maxDepth:4,choiceCount:3,
+    allowPlayerInfinite:true,allowAutomaticInfinite:false}),
+});
+function activeSkillEvolutionRules(){
+  return SKILL_EVOLUTION_RULESETS[RUN_POLICY().evolutionRulesId]||SKILL_EVOLUTION_RULESETS.endless_safe;
+}
+/* A form mutation replaces Sharpshoot's combat role in one decisive step. */
+const SKILL_MUTATIONS=Object.freeze([
+  skillMutation({id:'split_sight',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'SPLIT SIGHT',rarity:'COMMON',weight:22,col:'#c0f79a',
+    grantsTags:['multihit','chain','engine'],
+    summary:'Two arrows build Chain rapidly.',details:[
+      'Transform into 2 hits of 9 base damage.',
+      'Apply 1 Mark after the second arrow. Both hits add Chain.',
+      'Costs 1 AP and 1 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'SPLIT SIGHT',damage:9,hits:2,
+      hitInterval:.42,duration:1.02,markGain:1,cost:1,addsChain:true})}),
+  skillMutation({id:'blood_mark',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'BLOOD MARK',rarity:'COMMON',weight:20,col:'#ff596d',
+    grantsTags:['mark','setup'],
+    summary:'Sacrifice damage to prepare 2 Mark.',details:[
+      'Transform into a 6 damage setup shot that applies 2 Mark.',
+      'The shot produces no Chain, concentrating its power in the next payoff.',
+      'Costs 1 AP and 1 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'BLOOD MARK',damage:6,hits:1,
+      markGain:2,cost:1,addsChain:false,col:'#ff596d'})}),
+  skillMutation({id:'pinning_shot',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'PINNING SHOT',rarity:'UNCOMMON',weight:14,col:'#9ecbff',
+    grantsTags:['posture','break','setup'],
+    summary:'Turn the bow into a Break setup.',details:[
+      'Transform into 10 damage, 1 Mark and 35 Posture damage.',
+      'If this attack causes Break, the Break reward refunds 1 AP.',
+      'Costs 1 AP and 2 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'PINNING SHOT',damage:10,hits:1,
+      markGain:1,posture:35,cost:2,col:'#9ecbff',addsChain:true})}),
+  skillMutation({id:'quickdraw',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'QUICKDRAW',rarity:'UNCOMMON',weight:12,col:'#ffe37a',
+    grantsTags:['economy','mark','setup'],
+    summary:'A free Resolve-neutral setup.',details:[
+      'Transform into a 10 damage shot that applies 1 Mark.',
+      'It still costs 1 AP but costs no Resolve.',
+      'Use it to begin a combo without draining the saved Resolve pool.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'QUICKDRAW',damage:10,hits:1,
+      markGain:1,cost:0,col:'#ffe37a',addsChain:true})}),
+  skillMutation({id:'deadeye',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'DEADEYE',rarity:'RARE',weight:7,type:'VOLATILE',col:'#c995ff',
+    removesTags:['setup'],grantsTags:['mark','finisher'],
+    summary:'Invert the setup skill into a Mark finisher.',details:[
+      'Transform into a 28 damage payoff that consumes every Mark.',
+      'Each consumed Mark adds 12 base damage. The hit adds no Chain.',
+      'Costs 1 AP and 3 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'DEADEYE',damage:28,hits:1,
+      markGain:0,consumeMark:true,markDamagePerHit:12,cost:3,col:'#c995ff',addsChain:false})}),
+  skillMutation({id:'echo_barrage',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'ECHO BARRAGE',rarity:'LEGENDARY',weight:3,type:'DISTORTED',col:'#ff9a3a',
+    grantsTags:['multihit','chain','engine'],
+    summary:'Three arrows create an immediate Chain engine.',details:[
+      'Transform into 3 hits of 7 base damage.',
+      'Apply 1 Mark after the barrage. All three arrows add Chain.',
+      'Costs 1 AP and 2 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'ECHO BARRAGE',damage:7,hits:3,
+      hitInterval:.46,duration:1.3,markGain:1,cost:2,col:'#ff9a3a',addsChain:true})}),
+  skillMutation({id:'rangers_rhythm',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:"RANGER'S RHYTHM",rarity:'RARE',weight:7,type:'VOLATILE',col:'#7fc9ff',
+    removesTags:['mark','setup'],grantsTags:['multihit','chain','economy','engine'],
+    summary:'Trade impact for a Resolve and Chain engine.',details:[
+      'Transform into 3 hits of 4 base damage. It applies no Mark.',
+      'Every arrow grants 1 Resolve and adds 1 Chain.',
+      'Costs 1 AP and 2 Resolve. AP prevents this engine from looping forever.'
+    ],apply:skill=>transformSharpshoot(skill,{name:"RANGER'S RHYTHM",damage:4,hits:3,
+      hitInterval:.4,duration:1.18,cost:2,resolvePerHit:1,col:'#7fc9ff',addsChain:true})}),
+  skillMutation({id:'barbed_anchor',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'BARBED ANCHOR',rarity:'UNCOMMON',weight:11,type:'STABLE',col:'#ff9a3a',
+    removesTags:['mark','setup'],grantsTags:['chain','posture','break','finisher'],
+    summary:'Cash Chain into a ranged Break attempt.',details:[
+      'Deal 14 base damage, then consume every Chain. It applies no Mark.',
+      'Deal 10 Posture plus 5 additional Posture for every consumed Chain.',
+      'Costs 1 AP and 2 Resolve. The shot adds no new Chain.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'BARBED ANCHOR',damage:14,hits:1,
+      cost:2,posture:10,posturePerChain:5,consumeChain:true,col:'#ff9a3a',addsChain:false})}),
+  skillMutation({id:'signal_arrow',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'SIGNAL ARROW',rarity:'UNCOMMON',weight:10,type:'STABLE',col:'#ff596d',
+    grantsTags:['mark','setup','burst_setup'],
+    summary:'Spend a whole action to expose the target completely.',details:[
+      'Deal only 3 base damage but immediately apply 3 Mark.',
+      'The setup shot adds no Chain. Follow with Longbow Attack or Arrow Rain.',
+      'Costs 1 AP and 2 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'SIGNAL ARROW',damage:3,hits:1,
+      markGain:3,cost:2,col:'#ff596d',addsChain:false})}),
+  skillMutation({id:'war_draw',skillId:'sharpshoot',group:'sharpshoot_form',
+    name:'WAR DRAW',rarity:'COMMON',weight:18,type:'STABLE',col:'#e8e2d0',
+    removesTags:['mark','setup'],grantsTags:['direct','damage','chain'],
+    summary:'Abandon setup for one reliable heavy arrow.',details:[
+      'Transform into one hit of 30 base damage. It applies no Mark.',
+      'The arrow still adds 1 Chain for the next action.',
+      'Costs 1 AP and 2 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'WAR DRAW',damage:30,hits:1,
+      cost:2,col:'#e8e2d0',addsChain:true})}),
+]);
+const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(m=>[m.id,m])));
+const SKILL_MUTATION_RARITY_COL=Object.freeze({COMMON:'#c0f79a',UNCOMMON:'#9ecbff',RARE:'#c995ff',LEGENDARY:'#ff9a3a'});
+const SKILL_MUTATION_TYPE_COL=Object.freeze({
+  STABLE:'#cfd3df',VOLATILE:'#ffe37a',CURSED:'#ff596d',DISTORTED:'#c995ff',CORRUPTED:'#7ade6a'
+});
+const SKILL_MUTATIONS_BY_SKILL=(()=>{
+  const index=Object.create(null),seenIds=new Set();
+  for(const skill of BASE_TURN_SKILLS)index[skill.id]=[];
+  for(const mutation of SKILL_MUTATIONS){
+    if(seenIds.has(mutation.id))throw new Error('Duplicate skill mutation id '+mutation.id);
+    seenIds.add(mutation.id);
+    if(!index[mutation.skillId])throw new Error('Mutation '+mutation.id+' targets unknown skill '+mutation.skillId);
+    if(!SKILL_EVOLUTION_DEPTHS[mutation.depth])throw new Error('Mutation '+mutation.id+' has invalid depth '+mutation.depth);
+    if(!(mutation.weight>0))throw new Error('Mutation '+mutation.id+' needs positive weight');
+    if(mutation.grantsTags.some(tag=>mutation.removesTags.includes(tag)))
+      throw new Error('Mutation '+mutation.id+' both grants and removes tag');
+    index[mutation.skillId].push(mutation);
+  }
+  for(const mutation of SKILL_MUTATIONS)for(const parentId of mutation.parents){
+    const parent=SKILL_MUTATION_BY_ID[parentId];
+    if(!parent||parent.skillId!==mutation.skillId||parent.depth>=mutation.depth)
+      throw new Error('Mutation '+mutation.id+' has invalid parent '+parentId);
+  }
+  for(const id of Object.keys(index))index[id]=Object.freeze(index[id]);
+  return Object.freeze(index);
+})();
+function mutationAllowedByRules(mutation,rules=activeSkillEvolutionRules()){
+  if(mutation.depth>rules.maxDepth||mutation.loopRisk==='automatic')return false;
+  return mutation.loopRisk!=='player_repeat'||rules.allowPlayerInfinite;
+}
+function canApplySkillMutation(mutation){
+  const skill=mutation&&runSkill(mutation.skillId);if(!skill)return false;
+  if(!mutationAllowedByRules(mutation))return false;
+  if(mutation.depth!==skill.evolutionDepth+1)return false;
+  if(skill.mutationIds.includes(mutation.id))return false;
+  if(mutation.group&&skill.mutationGroups.includes(mutation.group))return false;
+  if(mutation.parents.length&&!mutation.parents.some(id=>skill.mutationIds.includes(id)))return false;
+  if(mutation.requires.some(id=>!skill.mutationIds.includes(id)))return false;
+  if(mutation.requiresTags.some(tag=>!skill.tags.includes(tag)))return false;
+  if(mutation.blocksTags.some(tag=>skill.tags.includes(tag)))return false;
+  return !mutation.conflicts.some(id=>skill.mutationIds.includes(id));
+}
+function rollSkillMutationChoices(count=3,rng=Math.random){
+  const pools=Object.create(null),skillIds=[],choices=[];
+  for(const skill of runSkills){
+    const pool=(SKILL_MUTATIONS_BY_SKILL[skill.baseId]||[]).filter(canApplySkillMutation);
+    if(pool.length){pools[skill.baseId]=pool;skillIds.push(skill.baseId);}
+  }
+  /* Target skill and authored node roll independently per card. This prevents a
+     skill with a larger catalogue from crowding every other move out, while still
+     allowing all three cards to mutate the same move when RNG chooses it. */
+  while(skillIds.length&&choices.length<count){
+    const skillIndex=Math.min(skillIds.length-1,(clamp(rng(),0,.999999999)*skillIds.length)|0),
+      skillId=skillIds[skillIndex],pool=pools[skillId];
+    const total=pool.reduce((sum,m)=>sum+m.weight,0);
+    let roll=clamp(rng(),0,.999999999)*total,index=0;
+    for(;index<pool.length-1;index++){roll-=pool[index].weight;if(roll<0)break;}
+    choices.push(pool[index]);pool.splice(index,1);
+    if(!pool.length)skillIds.splice(skillIndex,1);
+  }
+  return choices;
+}
+function applySkillMutation(id){
+  const mutation=SKILL_MUTATION_BY_ID[id];if(!canApplySkillMutation(mutation))return false;
+  const skill=runSkill(mutation.skillId);mutation.apply(skill);
+  skill.mutationIds.push(mutation.id);
+  if(mutation.group)skill.mutationGroups.push(mutation.group);
+  if(mutation.removesTags.length)
+    skill.tags=skill.tags.filter(tag=>!mutation.removesTags.includes(tag));
+  for(const tag of mutation.grantsTags)if(!skill.tags.includes(tag))skill.tags.push(tag);
+  skill.evolutionDepth=Math.max(skill.evolutionDepth,mutation.depth);
+  skill.evolutionText=mutation.details.slice();skill.evolutionRarity=mutation.rarity;
+  skill.evolutionName=mutation.name;skill.evolutionType=mutation.type;
+  return true;
+}
 function companionCombatProfile(id,name,fightName,markName,doubleName,col){
   return Object.freeze({id,name,fightName,col,skills:Object.freeze([
     Object.freeze({id:id+'_mark',name:markName,source:'COMPANION',skill:true,cost:1,
@@ -8643,24 +9313,15 @@ const COMPANION_COMBAT=Object.freeze({
 function hasCombatAlly(){return pack>0&&packTypes.length>0;}
 function companionProfile(){return COMPANION_COMBAT[packTypes[0]]||COMPANION_COMBAT.wolf;}
 function activeTurnActorId(){return boss&&boss.partyActor==='ally'&&hasCombatAlly()?'ally':'knight';}
-function turnActorState(id=activeTurnActorId()){
-  if(!boss)return {usedSkill:false,finished:false};
-  if(!boss.partyActorStates)boss.partyActorStates={knight:{usedSkill:false,finished:false}};
-  if(!boss.partyActorStates[id])boss.partyActorStates[id]={usedSkill:false,finished:false};
-  return boss.partyActorStates[id];
-}
-function resetPartyActorStates(){
-  if(!boss)return;
-  boss.partyActorStates={knight:{usedSkill:false,finished:false}};
-  if(hasCombatAlly())boss.partyActorStates.ally={usedSkill:false,finished:false};
-}
 function selectTurnActor(id){
   if(!boss||(id==='ally'&&!hasCombatAlly()))return false;
-  const state=turnActorState(id);if(state.finished){SFX.duck();return false;}
-  boss.partyActor=id;boss.usedSkillThisTurn=state.usedSkill;boss.playerMenu='root';
+  boss.partyActor=id;boss.playerMenu='root';
   skillTooltipIndex=-1;SFX.swipe();return true;
 }
-function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:TURN_SKILLS;}
+function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:runSkills;}
+function hasAffordableTurnSkill(){
+  return !!(boss&&boss.ap>0&&activeTurnSkills().some(skill=>boss.resolve>=(skill.cost||0)));
+}
 function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
 }
@@ -8676,6 +9337,15 @@ function addTurnResolve(amount,show=true){
     floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-122,'RESOLVE +'+gained,'#7fc9ff',15);
   return gained;
 }
+function addTurnAp(amount,show=true){
+  if(!isTurnCombat()||amount<=0)return 0;
+  const before=boss.ap||0;
+  boss.ap=clamp(before+amount,0,boss.apMax||CFG.TURN_AP_BASE);
+  const gained=boss.ap-before;
+  if(gained>0&&show)
+    floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-148,'AP +'+gained,'#ffe37a',17);
+  return gained;
+}
 function turnDamage(base,extraChainBonus=0,chain=chainStacks){
   const breakMultiplier=boss&&boss.playerTurnBreak?1.5:1;
   return Math.round(base*(1+(chainBonus()+extraChainBonus)*chain)*breakMultiplier);
@@ -8684,6 +9354,9 @@ function bossMark(){return boss?boss.mark||0:0;}
 function commandMarkDamage(command,stacks){
   const count=Math.max(0,stacks||0),linear=count*(command.markDamagePerHit||0);
   return linear+(command.markStackGrowth||0)*count*(count-1)/2;
+}
+function commandPostureDamage(command,chain=chainStacks){
+  return Math.max(0,(command.posture||0)+(command.posturePerChain||0)*Math.max(0,chain||0));
 }
 function fightCommand(actorId=activeTurnActorId()){
   if(actorId==='ally'&&hasCombatAlly()){
@@ -8701,9 +9374,9 @@ function beginPlayerTurn(fromBreak=false){
   skillTooltipIndex=-1;
   boss.phase='player';boss.playerTurnBreak=fromBreak;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
-  boss.hazardLanes=[];boss.playerMenu=hasCombatAlly()?'party':'root';boss.playerActionTimer=0;
-  boss.partyActor=hasCombatAlly()?null:'knight';resetPartyActorStates();
-  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;boss.playerActionReturnMenu='root';
+  boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
+  boss.partyActor='knight';boss.ap=boss.apMax;
+  boss.playerActionReturnMenu='root';
   addTurnResolve(CFG.TURN_RESOLVE_PER_PLAYER_PHASE,false);
   floater(VW/2,278,fromBreak?'BREAK TURN — DAMAGE +50%':'YOUR TURN',
     fromBreak?'#ffe37a':'#c0f79a',fromBreak?20:23);
@@ -8712,6 +9385,7 @@ function beginPlayerTurn(fromBreak=false){
 }
 function endPlayerTurn(){
   if(!isTurnCombat()||(boss.phase!=='player'&&boss.phase!=='playerResolve')) return false;
+  if(activeSkillLabCombat())return resetSkillLabTurn();
   skillTooltipIndex=-1;
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
@@ -8725,20 +9399,18 @@ function endPlayerTurn(){
   boss.attacksLeft=boss.enemyTurnBudget;
   boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
-  boss.partyActor=null;boss.partyActorStates=null;
-  boss.usedSkillThisTurn=false;boss.turnActionEndsPhase=false;boss.turnAction=null;
+  boss.partyActor='knight';boss.turnAction=null;
   floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
   return true;
 }
 function finishPlayerAction(){
   if(!isTurnCombat()||boss.phase!=='playerResolve') return;
+  finishSkillLabActionLog();
   boss.turnAction=null;
   if(boss.hp<=0){resolveVolley();return;}
-  if(boss.turnActionEndsPhase){endPlayerTurn();return;}
-  boss.phase='player';boss.playerActionTimer=0;boss.turnActionEndsPhase=false;
+  boss.phase='player';boss.playerActionTimer=0;
   boss.playerMenu=boss.playerActionReturnMenu||'skills';
-  if(boss.playerMenu==='party')boss.partyActor=null;
-  floater(VW/2,286,'RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
+  floater(VW/2,286,'AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
 }
 function applyTurnSkillPosture(amount){
   if(!boss||!isTurnCombat()||boss.phase!=='playerResolve'||boss.playerTurnBreak||amount<=0)return 0;
@@ -8758,12 +9430,17 @@ function resolveTurnActionHit(action){
     p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
   if(action.actorId==='ally')boss.allyAttackAnim=1;
-  else {player.attackAnim=1;player.counterAnim=.42;}
+  else {
+    if(action.hits>1)triggerPlayerSwordCombo(action,index);
+    else {player.swordCombo=null;player.attackAnim=1;}
+    player.counterAnim=.42;
+  }
   if(command.id==='sharpshoot'||command.id==='arrow_rain'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
   else SFX.slash();
   spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
   burst(x,y,action.hits>1?9:15,[command.col||'#ffffff','#ffffff','#ffe37a'],
     action.hits>1?150:205,75,action.hits>1?3.2:4.2,.5);
+  logSkillLabActionHit(action,index,damage,chainStacks);
   const defeated=hurtBoss(damage,false,'turn_attack');
   if(command.resolvePerHit)addTurnResolve(command.resolvePerHit);
   if(defeated){
@@ -8776,7 +9453,8 @@ function resolveTurnActionHit(action){
       boss.mark=Math.min(3,bossMark()+command.markGain);
       floater(x,y-55,'MARK ×'+boss.mark,'#ff4d5f',16);
     }
-    if(command.posture)applyTurnSkillPosture(command.posture);
+    const posture=commandPostureDamage(command,action.chainAtStart);
+    if(posture)applyTurnSkillPosture(posture);
     if(command.consumeChain){
       chainStacks=0;floater(x,y-86,'CHAIN CASHED','#c995ff',15);
     }
@@ -8793,16 +9471,14 @@ function updateTurnAction(dt){
 function performPlayerAction(command){
   if(!isPlayerTurn()||!command) return false;
   skillTooltipIndex=-1;
-  const actorId=activeTurnActorId(),actorState=turnActorState(actorId),
-    skill=command.skill===true,cost=command.cost||0;
-  if(actorState.finished||(!skill&&actorState.usedSkill)){SFX.duck();return false;}
-  if((boss.resolve||0)<cost){SFX.duck();return false;}
+  const actorId=activeTurnActorId(),skill=command.skill===true,
+    cost=command.cost||0,apCost=command.apCost||1;
+  if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
+  beginSkillLabActionLog(command);
+  boss.ap-=apCost;
   boss.resolve-=cost;
-  if(skill){actorState.usedSkill=true;boss.usedSkillThisTurn=true;}
-  else actorState.finished=true;
-  boss.turnActionEndsPhase=!skill&&!hasCombatAlly();
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
-  boss.playerActionReturnMenu=skill?'skills':(hasCombatAlly()?'party':'root');
+  boss.playerActionReturnMenu=skill?'skills':'root';
   const hits=command.hits||1,hitInterval=command.hitInterval||0,
     duration=command.duration||Math.max(CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
     consumedMark=command.consumeMark?bossMark():0,
@@ -8812,7 +9488,8 @@ function performPlayerAction(command){
     floater(VW/2,300,'MARK ×'+consumedMark+' CONSUMED'+(markDamage?' · +'+markDamage+' BASE / HIT':''),'#ff4d5f',15);
   }
   boss.playerActionTimer=duration;
-  boss.turnAction={command,actorId,t:0,hitIndex:0,hits,hitInterval,consumedMark,markDamage};
+  boss.turnAction={command,actorId,t:0,hitIndex:0,hits,hitInterval,consumedMark,markDamage,
+    chainAtStart:chainStacks};
   const breakAttack=boss.playerTurnBreak===true;
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×1.5','#ffe37a',16);
@@ -8821,15 +9498,9 @@ function performPlayerAction(command){
 }
 function handlePlayerTurnTap(pt){
   if(!isPlayerTurn()) return false;
-  if(hasCombatAlly()&&boss.playerMenu!=='party'){
+  if(hasCombatAlly()){
     if(pointInRect(pt,TURN_KNIGHT_TAB))return selectTurnActor('knight');
     if(pointInRect(pt,TURN_ALLY_TAB))return selectTurnActor('ally');
-  }
-  if(boss.playerMenu==='party'){
-    if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
-    if(pointInRect(pt,TURN_FIGHT_BTN))return selectTurnActor('knight');
-    if(pointInRect(pt,TURN_SKILL_BTN))return selectTurnActor('ally');
-    return false;
   }
   if(boss.playerMenu==='skills'){
     if(pointInRect(pt,TURN_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
@@ -8841,13 +9512,10 @@ function handlePlayerTurnTap(pt){
     }
     return false;
   }
-  if(hasCombatAlly()&&pointInRect(pt,TURN_BACK_BTN)){
-    boss.partyActor=null;boss.playerMenu='party';SFX.swipe();return true;
-  }
   if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
   if(pointInRect(pt,TURN_FIGHT_BTN))
     return performPlayerAction(fightCommand(activeTurnActorId()));
-  if(pointInRect(pt,TURN_SKILL_BTN)&&!turnActorState().finished){boss.playerMenu='skills';SFX.swipe();return true;}
+  if(pointInRect(pt,TURN_SKILL_BTN)&&boss.ap>0){boss.playerMenu='skills';SFX.swipe();return true;}
   return false;
 }
 function addChainStack(){
@@ -8908,6 +9576,9 @@ function beginBossBreak(actor,entryPresentation=null){
        its spent Resolve and action history; only future hits gain Break damage. */
     if(actor.phase==='player'||actor.phase==='playerResolve'){
       actor.playerTurnBreak=true;
+      /* Breaking Posture with an attack refunds its AP and opens one extra
+         combo step. Defense Breaks already begin with a full AP pool. */
+      addTurnAp(CFG.TURN_AP_PER_ATTACK_BREAK);
     }
     else beginPlayerTurn(true);
     /* Break itself owns this reward. Source and phase never change its value. */
@@ -9103,7 +9774,8 @@ function beginQueuedKnightRush(){
     preStrikeT:knightRushPreStrikeT(),startX:boss.x,
     contactReach:Math.min(boss.z-.8,CFG.KNIGHT_RUSH_REACH)
   };
-  player.attackAnim=.001;player.counterAnim=0;player.parryAnim=0;
+  player.attackAnim=0;player.counterAnim=0;player.parryAnim=0;
+  beginPlayerSwordSegment(0,1,knightRushHitTime(0));
   return true;
 }
 function knightRushHitTime(hitIndex){
@@ -9129,7 +9801,7 @@ function resolveKnightRushHit(sequence){
   const presentation=createBossPresentation();
   sampleBossPresentation(boss,activeBossDefinition(),presentation);
   const x=presentation.x,y=presentation.y-62*presentation.sProj;
-  player.attackAnim=1;player.counterAnim=.72;
+  player.attackAnim=0;player.counterAnim=.72;
   spawnSlash(x,y+(hitIndex%2?8:-6),
     special.slashAngles[hitIndex%special.slashAngles.length],'#d8c6ff');
   if(finalHit){
@@ -9159,6 +9831,7 @@ function resolveKnightRushHit(sequence){
     floater(VW/2,PLAYER_Y-jumpHeight()-128,'KNIGHT RUSH!','#c995ff',24);
   if(hurtBoss(dmg,false,finalHit?'rush':'rush_hit')){
     sequence.hits=CFG.KNIGHT_RUSH_HITS;sequence.finalHit=true;
+    beginPlayerSwordSegment(hitIndex%2===0?1:-1,0,CFG.KNIGHT_RUSH_FOLLOW,false,true);
     knightRushSequence=null;player.attackAnim=0;
     return true;
   }
@@ -9167,6 +9840,13 @@ function resolveKnightRushHit(sequence){
   addChainStack();
   sequence.hits++;
   sequence.finalHit=finalHit;
+  if(finalHit){
+    beginPlayerSwordSegment(hitIndex%2===0?1:-1,0,CFG.KNIGHT_RUSH_FOLLOW,false,true);
+  }else{
+    const nextTarget=(hitIndex+1)%2===0?1:-1,
+      nextInterval=knightRushHitTime(hitIndex+1)-knightRushHitTime(hitIndex);
+    beginPlayerSwordSegment(hitIndex%2===0?1:-1,nextTarget,nextInterval);
+  }
   if(sequence.hits===CFG.KNIGHT_RUSH_HITS-1) sequence.chargeFxT=0;
   return true;
 }
@@ -9175,8 +9855,6 @@ function updateKnightRushSequence(dt){
   if(!sequence) return;
   if(!boss||mode!=='boss'||!player.alive){knightRushSequence=null;return;}
   sequence.t+=dt;
-  if(sequence.hits===0)
-    player.attackAnim=Math.max(.001,.5*clamp(sequence.t/knightRushHitTime(0),0,1));
   while(sequence.hits<CFG.KNIGHT_RUSH_HITS&&
         sequence.t>=knightRushHitTime(sequence.hits))
     resolveKnightRushHit(sequence);
@@ -9185,7 +9863,6 @@ function updateKnightRushSequence(dt){
       const finalTime=knightRushHitTime(CFG.KNIGHT_RUSH_HITS-1),
         finalWindup=clamp((sequence.t-(finalTime-CFG.KNIGHT_RUSH_FINAL_WINDUP))/
           CFG.KNIGHT_RUSH_FINAL_WINDUP,0,1);
-      player.attackAnim=Math.max(player.attackAnim,.5*finalWindup);
       sequence.chargeFxT=(sequence.chargeFxT||0)+dt;
       while(sequence.chargeFxT>=.08){
         sequence.chargeFxT-=.08;
@@ -9201,8 +9878,7 @@ function updateKnightRushSequence(dt){
   }
   const followT=clamp((sequence.t-knightRushHitTime(CFG.KNIGHT_RUSH_HITS-1))/
     CFG.KNIGHT_RUSH_FOLLOW,0,1);
-  player.attackAnim=1-followT;
-  if(followT>=1) knightRushSequence=null;
+  if(followT>=1&&!player.swordCombo) knightRushSequence=null;
 }
 function knightRushLungeAmount(){
   const sequence=knightRushSequence;
@@ -10048,13 +10724,13 @@ function startBoss(definitionId=null){
     definitionId:def.id,
     posture:0,postureMax:def.postureMax||CFG.BOSS_POSTURE_MAX,
     pendingBreak:null,breakCount:0,breakSource:null,
-    /* Every stage boss alternates half-sized enemy phases with Resolve-driven turns. */
+    /* Every stage boss alternates half-sized enemy phases with AP-limited player turns. */
     phase:'dodge', attacksLeft:enemyTurnBudget,
     turnCombat:true,enemyTurnBudget,enemyTurn:1,
+    ap:CFG.TURN_AP_BASE,apMax:CFG.TURN_AP_BASE,
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
-    usedSkillThisTurn:false,turnActionEndsPhase:false,
     playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
-    partyActor:null,partyActorStates:null,playerActionReturnMenu:'root',allyAttackAnim:0,
+    partyActor:'knight',playerActionReturnMenu:'root',allyAttackAnim:0,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
@@ -10359,6 +11035,9 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon'){
    multi-hit action may survive the transition into the authored death state. */
 function defeatBoss(){
   if(!boss||boss.hp>0||boss.state==='dying')return false;
+  /* Skill Lab records lethal-scale builds without ever entering rewards, score or
+     death choreography. One HP keeps the real damage path and hit feedback live. */
+  if(boss.skillLabDummy){boss.hp=1;return false;}
   const overkill=Math.max(0,-boss.hp),pts=RUN_POLICY().bossScoreAt(loop),
     okPts=Math.round(overkill*CFG.OVERKILL_MULT);
   bossScoreRun+=pts;overkillRun+=okPts;bossKills++;
@@ -12720,6 +13399,172 @@ const ARTIFACT_DEFS=ARTIFACTS.byId;
 const ARTIFACT_IDS=Object.freeze(ARTIFACTS.ids.slice());
 let relics=[null,null,null,null,null];        // FIVE equip slots
 let relicChoices=null, pendingRelic=null;
+let skillMutationChoices=null;
+const SKILL_EVOLUTION_CARD_Y=300,SKILL_EVOLUTION_CARD_W=140,SKILL_EVOLUTION_CARD_H=340;
+const SKILL_LAB_CARD_W=140,SKILL_LAB_CARD_H=340,SKILL_LAB_CARD_Y=190;
+const SKILL_LAB_CATALOG_RECTS=Object.freeze(Array.from({length:6},(_,i)=>Object.freeze({
+  x:14+(i%2)*230,y:190+((i/2)|0)*116,w:222,h:106
+})));
+function skillEvolutionCardRect(index){
+  return {x:10+index*155,y:SKILL_EVOLUTION_CARD_Y,w:SKILL_EVOLUTION_CARD_W,h:SKILL_EVOLUTION_CARD_H};
+}
+function skillLabDraftCardRect(index){
+  return {x:10+index*155,y:SKILL_LAB_CARD_Y,w:SKILL_LAB_CARD_W,h:SKILL_LAB_CARD_H};
+}
+function giveSkillEvolution(){
+  skillMutationChoices=rollSkillMutationChoices(activeSkillEvolutionRules().choiceCount);
+  if(!skillMutationChoices.length){giveRelic();return false;}
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,
+    attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9});
+  setMode('evolution');SFX.relic();flash('#9ecbff',.32);
+  return true;
+}
+function skillEvolutionTap(pt){
+  if(!skillMutationChoices)return false;
+  for(let i=0;i<skillMutationChoices.length;i++){
+    const rect=skillEvolutionCardRect(i);
+    if(pointInRect(pt,rect)){
+      const mutation=skillMutationChoices[i];
+      if(!applySkillMutation(mutation.id)){SFX.duck();return false;}
+      skillMutationChoices=null;SFX.relic();flash(mutation.col,.35);
+      floater(VW/2,250,mutation.name+' — TECHNIQUE TRANSFORMED',mutation.col,20);
+      giveRelic();return true;
+    }
+  }
+  return false;
+}
+function activeSkillLabCombat(){
+  return !!(skillLabSession&&skillLabSession.inCombat&&mode==='boss'&&boss&&boss.skillLabDummy);
+}
+function skillLabSeededRng(seed){
+  let state=(seed>>>0)||0x6d2b79f5;
+  return ()=>{
+    state=(state+0x6d2b79f5)>>>0;
+    let n=state;n=Math.imul(n^(n>>>15),n|1);n^=n+Math.imul(n^(n>>>7),n|61);
+    return ((n^(n>>>14))>>>0)/4294967296;
+  };
+}
+function skillLabCurrentBaseId(){
+  if(!skillLabSession)return BASE_TURN_SKILLS[0].id;
+  return BASE_TURN_SKILLS[skillLabSession.skillIndex%BASE_TURN_SKILLS.length].id;
+}
+function skillLabCurrentMutations(){
+  return SKILL_MUTATIONS_BY_SKILL[skillLabCurrentBaseId()]||[];
+}
+function skillLabMutationStatus(mutation){
+  const skill=runSkill(mutation.skillId);
+  if(skill&&skill.mutationIds.includes(mutation.id))return 'APPLIED';
+  if(canApplySkillMutation(mutation))return 'READY';
+  if(mutation.depth===1&&skill&&skill.evolutionDepth>0)return 'REPLACE';
+  return 'LOCKED';
+}
+function resetRunSkill(baseId){
+  const definition=BASE_TURN_SKILLS.find(skill=>skill.id===baseId),
+    index=runSkills.findIndex(skill=>skill.baseId===baseId);
+  if(!definition||index<0)return false;
+  runSkills[index]=createRunSkill(definition);return true;
+}
+function openSkillLab(){
+  resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;
+  skillLabSession={view:'draft',seed:((Math.random()*0xffffffff)>>>0)||1,
+    choices:[],skillIndex:0,catalogPage:0,selectedMutationId:null,inCombat:false,
+    preset:'clean',combatHud:true,lastLog:null,pendingLog:null};
+  setMode('skilllab');SFX.relic();
+}
+function closeSkillLab(){
+  skillLabSession=null;debugRun=false;resetRun();setMode('debugcfg');SFX.duck();
+}
+function resetSkillLabBuild(){
+  if(!skillLabSession)return false;
+  resetRunSkills();skillLabSession.choices=[];skillLabSession.selectedMutationId=null;
+  skillLabSession.catalogPage=0;skillLabSession.lastLog=null;SFX.swipe();return true;
+}
+function rollSkillLabDraft(newSeed=false){
+  if(!skillLabSession)return false;
+  if(newSeed)skillLabSession.seed=(skillLabSession.seed+0x9e3779b9)>>>0||1;
+  skillLabSession.choices=rollSkillMutationChoices(
+    activeSkillEvolutionRules().choiceCount,skillLabSeededRng(skillLabSession.seed));
+  skillLabSession.view='draft';
+  if(skillLabSession.choices.length)SFX.relic();else SFX.duck();
+  return !!skillLabSession.choices.length;
+}
+function applySkillLabMutation(mutation){
+  if(!skillLabSession||!mutation)return false;
+  let status=skillLabMutationStatus(mutation);
+  if(status==='REPLACE'){
+    resetRunSkill(mutation.skillId);status=skillLabMutationStatus(mutation);
+  }
+  if(status!=='READY'||!applySkillMutation(mutation.id)){SFX.duck();return false;}
+  skillLabSession.choices=[];skillLabSession.selectedMutationId=mutation.id;
+  SFX.relic();flash(mutation.col,.25);return true;
+}
+function cycleSkillLabSkill(delta){
+  if(!skillLabSession)return false;
+  skillLabSession.skillIndex=(skillLabSession.skillIndex+delta+BASE_TURN_SKILLS.length)%BASE_TURN_SKILLS.length;
+  skillLabSession.catalogPage=0;skillLabSession.selectedMutationId=null;SFX.swipe();return true;
+}
+function skillLabStateSnapshot(){
+  return boss?{hp:boss.hp,ap:boss.ap,resolve:boss.resolve,mark:bossMark(),chain:chainStacks,
+    posture:boss.posture||0,broken:boss.playerTurnBreak===true}:null;
+}
+function startSkillLabCombat(){
+  if(!skillLabSession)return false;
+  skillLabSession.inCombat=true;skillLabSession.lastLog=null;skillLabSession.pendingLog=null;
+  skillLabSession.combatHud=true;
+  startBoss('bear');
+  boss.skillLabDummy=true;boss.entering=false;boss.x=boss.xTarget=1;boss.rise=1;
+  boss.maxhp=9999;boss.hp=boss.maxhp;boss.dealt=0;boss.turnCombat=true;
+  boss.apMax=CFG.TURN_AP_BASE;boss.resolveMax=CFG.TURN_RESOLVE_MAX;
+  boss.state='idle';boss.stateT=0;boss.attack=null;boss.pendingBreak=null;
+  boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
+  boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.mark=0;
+  chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
+}
+function leaveSkillLabCombat(){
+  if(!skillLabSession)return false;
+  skillTooltipIndex=-1;skillLabSession.inCombat=false;skillLabSession.pendingLog=null;
+  boss=null;hazards=[];projectiles=[];particles.length=0;floaters.length=0;slashes.length=0;
+  setMode('skilllab');SFX.duck();return true;
+}
+function applySkillLabPreset(id,audible=true){
+  if(!activeSkillLabCombat())return false;
+  const values={
+    clean:{mark:0,chain:0,posture:0,broken:false},
+    mark:{mark:3,chain:0,posture:0,broken:false},
+    chain:{mark:0,chain:5,posture:0,broken:false},
+    combo:{mark:3,chain:5,posture:0,broken:false},
+    near:{mark:0,chain:0,posture:Math.max(0,boss.postureMax-1),broken:false},
+    broken:{mark:0,chain:0,posture:boss.postureMax,broken:true},
+  }[id];
+  if(!values)return false;
+  skillTooltipIndex=-1;boss.hp=boss.maxhp;boss.mark=values.mark;chainStacks=values.chain;
+  boss.posture=values.posture;boss.playerTurnBreak=values.broken;
+  boss.state=values.broken?'break':'idle';boss.stateT=values.broken?CFG.BREAK_POSE_IN:0;
+  boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
+  boss.pendingBreak=null;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  skillLabSession.preset=id;skillLabSession.pendingLog=null;
+  if(audible)SFX.swipe();return true;
+}
+function resetSkillLabTurn(){
+  if(!activeSkillLabCombat())return false;
+  skillTooltipIndex=-1;boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
+  boss.turnAction=null;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  skillLabSession.pendingLog=null;SFX.relic();return true;
+}
+function beginSkillLabActionLog(command){
+  if(!activeSkillLabCombat())return;
+  skillLabSession.pendingLog={name:command.name,before:skillLabStateSnapshot(),hits:[],after:null};
+}
+function logSkillLabActionHit(action,index,damage,chainBefore){
+  const log=skillLabSession&&skillLabSession.pendingLog;if(!log)return;
+  log.hits.push({index:index+1,damage,base:action.command.damage,
+    mark:action.markDamage||0,chain:chainBefore,breakBonus:boss.playerTurnBreak===true});
+}
+function finishSkillLabActionLog(){
+  const log=skillLabSession&&skillLabSession.pendingLog;if(!log)return;
+  log.after=skillLabStateSnapshot();skillLabSession.lastLog=log;skillLabSession.pendingLog=null;
+}
 let equippedArtifactTypes=new Set();
 function syncArtifactCache(){
   equippedArtifactTypes.clear();
@@ -12736,7 +13581,7 @@ function giveRelic(){
   let bi=(Math.random()*(ARTIFACT_IDS.length-1))|0; if(bi>=ai) bi++;
   relicChoices=[ARTIFACTS.get(ARTIFACT_IDS[ai]).create(),ARTIFACTS.get(ARTIFACT_IDS[bi]).create()];
   pendingRelic=null;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0,parryAnim:0,lastParry:-9});
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9});
   setMode('relic'); SFX.relic(); flash('#ffe37a',.35);
 }
 function relicTap(pt){
@@ -12867,19 +13712,20 @@ function resetRun(){
   scoreShown=0; newBestThisRun=false;
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
   runWeapon=createRunWeapon('longbow');
-  relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null; // all FIVE slots, empty
+  resetRunSkills();
+  relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null;skillMutationChoices=null; // all FIVE slots, empty
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,lastParry:-9,invuln:0});
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9,invuln:0});
   knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
 }
 /* --- riders: pick your knight before the run --- */
 const CHARS=[
-  {name:'SIR ALDRIC', desc:'the swift · a classic knight',    specialId:'knight_rush',
-   feather:'#3f7bff', horse:'#7a4a26', chubby:false},
+  {name:'SER JONATHAN SMITH',desc:'the fallen · a royal knight',specialId:'knight_rush',
+   rigId:'ser_jonathan',feather:'#268ee8',horse:'#714326',chubby:false},
   {name:'BIG GUSTAV', desc:'the stout · twice the knight',    specialId:'knight_rush',
    feather:'#b06be0', horse:'#9a9aa6', chubby:true},
   {name:'UMUTCAN',    desc:'the kürt · sponsor of knightrush', feather:'#3a2a1a', horse:'#6a4a2e',
@@ -12925,9 +13771,9 @@ function drawCharSel(){
     const c=CHARS[i], x=VW/2-237+i*160, hl=charSel===i;
     g.fillStyle='rgba(0,0,0,0.55)'; g.fillRect(x,330,150,230);
     g.strokeStyle=hl?'#ffe37a':'#e8e2d055'; g.lineWidth=hl?3:2; g.strokeRect(x,330,150,230);
-    drawRider(x+75,478,1.15,{gallop:(perfNow*(1+i*0.2))%1,feather:c.feather,horse:c.horse,
+    drawRider(x+75,478,1.15,{gallop:(perfNow*(1+i*0.2))%1,rigId:c.rigId,feather:c.feather,horse:c.horse,
       chubby:c.chubby,monkey:c.monkey,caveman:c.caveman});
-    g.font='bold 13px monospace'; g.fillStyle=hl?'#ffe37a':'#e8e2d0'; g.fillText(c.name,x+75,516);
+    g.font='bold '+(c.name.length>15?10:13)+'px monospace'; g.fillStyle=hl?'#ffe37a':'#e8e2d0'; g.fillText(c.name,x+75,516);
     /* wrap the tagline so it stays INSIDE the card */
     g.font='9px monospace'; g.fillStyle='#aeb2c2';
     const words=c.desc.split(' '); let l1='',l2='';
@@ -12987,7 +13833,8 @@ function drawHUD(){
     if(boss.state==='volley') st='YOUR TURN — every weapon flies!';
     else if(isTurnCombat()&&boss.phase==='player'&&boss.playerTurnBreak)
       st='BREAK TURN — all damage +50%';
-    else if(isTurnCombat()&&boss.phase==='player') st='YOUR TURN — spend Resolve or finish';
+    else if(isTurnCombat()&&boss.phase==='player')
+      st='YOUR TURN — AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax;
     else if(isTurnCombat()&&boss.phase==='playerResolve') st='ATTACK!';
     else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
     else if(boss.state==='breakRecover') st='RECOVERING';
@@ -13027,7 +13874,7 @@ function drawHUD(){
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
     g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,140);
-    if(boss&&mode==='boss'&&!boss._moveLab&&boss.state!=='dying'){
+    if(boss&&mode==='boss'&&!boss._moveLab&&!activeSkillLabCombat()&&boss.state!=='dying'){
       g.fillStyle='#3a101088'; g.fillRect(VW-128,150,112,36);
       g.strokeStyle='#ff4d3a'; g.lineWidth=2; g.strokeRect(VW-128,150,112,36);
       g.textAlign='center'; g.font='bold 13px monospace'; g.fillStyle='#ff4d3a';
@@ -13083,18 +13930,27 @@ function skillButtonSubtitle(skill){
   if(skill.source==='COMPANION'){
     const perHit=turnDamage(skill.damage);
     return skill.hits>1
-      ?'ALLY · '+skill.cost+'R · '+skill.hits+'×'+perHit+' · CHAIN +'+skill.hits
-      :'ALLY · '+skill.cost+'R · '+perHit+' DMG · MARK +1';
+      ?'1AP · '+skill.cost+'R · '+skill.hits+'×'+perHit+' · CHAIN +'+skill.hits
+      :'1AP · '+skill.cost+'R · '+perHit+' DMG · MARK +1';
+  }
+  if(skill.baseId==='sharpshoot'){
+    const perHit=turnDamage(skill.damage+commandMarkDamage(skill,bossMark())),
+      damage=(skill.hits||1)>1?(skill.hits+'×'+perHit):String(perHit),
+      posture=commandPostureDamage(skill),
+      effect=skill.consumeMark?'MARK CASH':posture?(posture+' POST'+(skill.consumeChain?' · CASH':'')):
+        skill.markGain?('MARK +'+skill.markGain):skill.resolvePerHit?
+          ('RESOLVE +'+skill.resolvePerHit*(skill.hits||1)):'';
+    return '1AP · '+skill.cost+'R · '+damage+(effect?' · '+effect:'');
   }
   if(skill.id==='arrow_rain'){
     const perHit=turnDamage(skill.damage+commandMarkDamage(skill,bossMark()));
-    return 'WPN · '+skill.cost+'R · 3×'+perHit+' · MARK BURST';
+    return '1AP · '+skill.cost+'R · 3×'+perHit+' · MARK BURST';
   }
   if(skill.id==='shield_kick')
-    return 'CLASS · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · '+skill.posture+' POST';
+    return '1AP · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · '+skill.posture+' POST';
   if(skill.id==='royal_slash')
-    return 'CLASS · '+skill.cost+'R · '+turnDamage(skill.damage,skill.extraChainBonus)+' · CHAIN FINISH';
-  return 'WPN · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · MARK +1';
+    return '1AP · '+skill.cost+'R · '+turnDamage(skill.damage,skill.extraChainBonus)+' · CHAIN FINISH';
+  return '1AP · '+skill.cost+'R · '+turnDamage(skill.damage)+' DMG · MARK +1';
 }
 function turnTooltipCommand(){
   return skillTooltipIndex===TURN_FIGHT_TOOLTIP_INDEX
@@ -13130,15 +13986,16 @@ function damageBreakdownLine(row){
   return line+'  = '+row.final;
 }
 function skillTooltipContent(command){
+  if(command.evolutionText)return {paragraphs:command.evolutionText};
   if(command.source==='COMPANION'&&!command.skill)return {paragraphs:[
     'A weak free companion attack. Every landed hit grants 1 Resolve and adds 1 shared Chain.',
-    'Using it commits this companion for the current player phase.',
+    'It costs 1 AP but no Resolve, so it can fund a second action in the same phase.',
     'It does not consume Mark; the Knight can use the prepared target afterward.'
   ]};
   if(command.source==='COMPANION'&&command.markGain)return {paragraphs:[
     'Deal a small amount of damage and apply 1 Mark to the boss.',
     'This setup hit deliberately adds no Chain. Mark remains for the Knight or a later attack.',
-    'Using any skill locks this companion out of its free Fight for the current player phase.'
+    'Switch to the Knight and spend the remaining AP on a Mark payoff.'
   ]};
   if(command.source==='COMPANION')return {paragraphs:[
     'Strike twice. Each fang is calculated separately and adds 1 shared Chain.',
@@ -13148,7 +14005,7 @@ function skillTooltipContent(command){
   if(command.id.indexOf('fight_longbow')===0)return {paragraphs:[
     'A free Longbow attack. Its base damage gains 4 for every weapon level.',
     'Consume every Mark. Each stack adds 8 base damage to this hit.',
-    'Every landed hit grants 1 Resolve and adds 1 Chain. With a companion, this commits the Knight and returns to character selection.'
+    'Every landed hit grants 1 Resolve and adds 1 Chain. It costs 1 AP but no Resolve.'
   ]};
   if(command.id==='sharpshoot')return {paragraphs:[
     'Fire one precise arrow and apply 1 Mark. A boss can carry up to 3 Mark.',
@@ -13162,7 +14019,7 @@ function skillTooltipContent(command){
   ]};
   if(command.id==='shield_kick')return {paragraphs:[
     'Strike the boss and deal 25 Posture damage.',
-    'Every Break grants 2 Resolve, whether caused by this skill, a Parry or Knight Rush.',
+    'Every Break grants 2 Resolve. If an attack causes it during your phase, also regain 1 AP.',
     'The kick lands before Break. Only attacks made after it receive the 50% Break bonus.'
   ]};
   const chainPercent=Math.round((chainBonus()+(command.extraChainBonus||0))*100);
@@ -13187,8 +14044,7 @@ function drawSkillTooltip(){
   if(!command||!isPlayerTurn()||(fightTooltip?boss.playerMenu!=='root':boss.playerMenu!=='skills'))return;
   const info=skillTooltipContent(command),breakdown=turnCommandDamageBreakdown(command),
     finals=breakdown.rows.map(row=>row.final),x=20,y=94,w=440,h=552,
-    actorState=turnActorState(),
-    available=boss.resolve>=command.cost&&!actorState.finished&&(!fightTooltip||!actorState.usedSkill),
+    available=boss.ap>0&&boss.resolve>=command.cost,
     preview=breakdown.rows.length>1
       ?breakdown.rows.length+' HITS · '+finals.join(' / ')+' · TOTAL '+breakdown.total
       :'FINAL DAMAGE '+breakdown.total;
@@ -13200,13 +14056,13 @@ function drawSkillTooltip(){
   g.textAlign='left';g.font='bold 23px monospace';g.fillStyle='#f4f1e8';
   g.fillText(command.name,x+20,y+42);
   g.font='bold 11px monospace';g.fillStyle=command.col;
-  g.fillText(command.source+' '+(command.skill?'SKILL':'ATTACK')+'  ·  COST '+command.cost+' RESOLVE',x+20,y+64);
+  g.fillText(command.source+' '+(command.skill?'SKILL':'ATTACK')+'  ·  1 AP  ·  '+command.cost+' RESOLVE',x+20,y+64);
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
   g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
-  const unavailable=actorState.finished?' · ACTED':
-    fightTooltip&&actorState.usedSkill?' · LOCKED AFTER SKILL':' · NOT ENOUGH';
-  g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax+(available?' · READY':unavailable),x+28,y+124);
+  const unavailable=boss.ap<=0?' · NO AP':' · NOT ENOUGH RESOLVE';
+  g.fillText('AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
+    (available?' · READY':unavailable),x+28,y+124);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';
   g.fillText('DAMAGE SOURCES · FINAL VALUE ROUNDED',x+20,y+166);
   let rowY=y+190;g.font='10px monospace';g.fillStyle='#e8e2d0';
@@ -13222,14 +14078,11 @@ function drawSkillTooltip(){
   g.fillText('TAP ANYWHERE TO CLOSE',VW/2,y+h-18);
   g.restore();
 }
-function partyActorLabel(id){
-  return id==='ally'?companionProfile().name:playerChar.name;
-}
 function drawPartyTabs(){
   if(!hasCombatAlly())return;
-  const knight=turnActorState('knight'),ally=turnActorState('ally'),selected=activeTurnActorId();
-  drawTurnButton(TURN_KNIGHT_TAB,'KNIGHT', '',selected==='knight'?'#ffe37a':'#aeb2c2',!knight.finished);
-  drawTurnButton(TURN_ALLY_TAB,companionProfile().id.toUpperCase(),'',selected==='ally'?'#9ecbff':'#aeb2c2',!ally.finished);
+  const selected=activeTurnActorId();
+  drawTurnButton(TURN_KNIGHT_TAB,'KNIGHT','',selected==='knight'?'#ffe37a':'#aeb2c2',true);
+  drawTurnButton(TURN_ALLY_TAB,companionProfile().id.toUpperCase(),'',selected==='ally'?'#9ecbff':'#aeb2c2',true);
 }
 function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
@@ -13239,16 +14092,8 @@ function drawPlayerTurnUI(){
   g.fillStyle='rgba(5,7,12,.94)';g.fillRect(panel.x,panel.y,panel.w,panel.h);
   g.strokeStyle='#e8e2d0';g.lineWidth=3;
   g.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1);
-  if(boss.playerMenu==='party'){
-    const knight=turnActorState('knight'),ally=turnActorState('ally');
-    g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
-    g.fillText('CHOOSE A CHARACTER',30,578);
-    g.textAlign='right';g.fillStyle='#7fc9ff';g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
-    drawTurnButton(TURN_FIGHT_BTN,'KNIGHT',knight.finished?'ACTED':playerChar.name,'#ffe37a',!knight.finished);
-    drawTurnButton(TURN_SKILL_BTN,companionProfile().name,ally.finished?'ACTED':'2 SUPPORT SKILLS','#9ecbff',!ally.finished);
-    drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
-  }else if(boss.playerMenu==='skills'){
-    const skills=activeTurnSkills(),actorState=turnActorState();
+  if(boss.playerMenu==='skills'){
+    const skills=activeTurnSkills();
     drawPartyTabs();
     if(!hasCombatAlly()){
       g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
@@ -13257,32 +14102,30 @@ function drawPlayerTurnUI(){
     drawTurnButton(TURN_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
     drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
     for(let i=0;i<skills.length;i++){
-      const skill=skills[i],enabled=!actorState.finished&&boss.resolve>=skill.cost;
+      const skill=skills[i],enabled=boss.ap>0&&boss.resolve>=skill.cost;
       drawTurnButton(TURN_SKILL_BTNS[i],skill.name,skillButtonSubtitle(skill),skill.col,enabled);
     }
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FOR DETAILS · RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
+    g.fillText('HOLD FOR DETAILS · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
   }else{
-    const actorId=activeTurnActorId(),actorState=turnActorState(actorId);
+    const actorId=activeTurnActorId();
     if(hasCombatAlly())drawPartyTabs();
     else{
       g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
       g.fillText('CHOOSE AN ACTION',30,578);
     }
-    if(hasCombatAlly())drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
     g.textAlign='right';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
-    if(!hasCombatAlly())g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,450,578);
+    if(!hasCombatAlly())g.fillText('AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,450,578);
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FIGHT FOR DETAILS · R '+boss.resolve+'/'+boss.resolveMax,130,600);
-    const fightEnabled=!actorState.usedSkill&&!actorState.finished,
+    g.fillText('HOLD FIGHT · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,130,600);
+    const fightEnabled=boss.ap>0,
       fight=fightCommand(actorId),fightDamage=turnDamage(
-        fight.damage+commandMarkDamage(fight,bossMark())),
+      fight.damage+commandMarkDamage(fight,bossMark())),
       fightSub=actorId==='ally'
-        ?fight.name+' · '+fightDamage+' DMG · +1R/HIT'
-        :activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R/HIT';
-    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:
-      (actorState.finished?'ALREADY ACTED':'LOCKED AFTER SKILL'),'#e8e2d0',fightEnabled);
-    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',!actorState.finished&&boss.resolve>0);
+        ?'1AP · '+fight.name+' · '+fightDamage+' DMG · +1R'
+        :'1AP · '+activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R';
+    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:'NO AP','#e8e2d0',fightEnabled);
+    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',hasAffordableTurnSkill());
     drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
   }
   g.restore();
@@ -13884,7 +14727,7 @@ function drawMenu(){
   g.fillStyle='#3f7bff'; g.fillText('RUSH',VW/2,276+bob);
   g.font='15px monospace'; g.fillStyle='#aeb2c2';
   g.fillText('a moonlit gauntlet through the wolfwood',VW/2,312+bob);
-  drawRider(VW/2,PLAYER_Y-40,1.3,{gallop:(perfNow*1.4)%1,feather:playerChar.feather,horse:playerChar.horse,
+  drawRider(VW/2,PLAYER_Y-40,1.3,{gallop:(perfNow*1.4)%1,rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,
     chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman});
   const btnBg=(x,y,w,h)=>{ g.fillStyle='rgba(5,9,16,0.55)'; g.fillRect(x,y,w,h); };
   btnBg(VW/2-80,404,160,50);
@@ -14226,6 +15069,193 @@ function bossLabMovesTap(pt){
     if(pt.x>=x&&pt.x<=x+224&&pt.y>=y&&pt.y<=y+42){draft[def.attacks[i].id]=!draft[def.attacks[i].id];SFX.coin();return;}
   }
 }
+function drawSkillLabButton(rect,label,col='#e8e2d0',enabled=true,active=false){
+  g.fillStyle=active?col+'22':'rgba(0,0,0,.42)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle=enabled?col:'#3a3a44';g.lineWidth=active?3:2;
+  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
+  g.textAlign='center';g.font='bold 10px monospace';g.fillStyle=enabled?col:'#626570';
+  g.fillText(label,rect.x+rect.w/2,rect.y+rect.h/2+4);
+}
+function drawSkillLabHeader(){
+  g.fillStyle='rgba(5,7,12,.97)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.textAlign='center';g.font='bold 23px monospace';g.fillStyle='#9ecbff';
+  g.fillText('SKILL EVOLUTION LAB',VW/2,57);
+  g.font='9px monospace';g.fillStyle='#8b8fa0';
+  g.fillText('REAL MUTATIONS · DISPOSABLE BUILD · NO SAVE DATA',VW/2,76);
+  drawSkillLabButton({x:14,y:48,w:82,h:34},'◀ EXIT','#e8e2d0');
+  drawSkillLabButton({x:374,y:48,w:92,h:34},'RESET ALL','#ff7a82');
+  for(const tab of SKILL_LAB_TABS)
+    drawSkillLabButton(tab,tab.label,tab.id==='combat'?'#c0f79a':'#9ecbff',true,
+      skillLabSession.view===tab.id);
+}
+function skillLabBuildLine(){
+  const evolved=runSkills.filter(skill=>skill.mutationIds.length).map(skill=>skill.evolutionName||skill.name);
+  return evolved.length?evolved.join(' + '):'BASE KIT — NO EVOLUTION APPLIED';
+}
+function drawSkillLabDraft(){
+  g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#e8e2d0';
+  g.fillText(skillLabBuildLine(),VW/2,162);
+  const choices=skillLabSession.choices;
+  if(choices.length){
+    for(let i=0;i<choices.length;i++)drawSkillMutationCard(choices[i],skillLabDraftCardRect(i),'APPLY IN LAB');
+  }else{
+    g.fillStyle='rgba(158,203,255,.07)';g.fillRect(36,190,408,340);
+    g.strokeStyle='#33465d';g.lineWidth=2;g.strokeRect(36.5,190.5,407,339);
+    g.font='bold 23px monospace';g.fillStyle='#9ecbff';g.fillText('ROLL A REAL DRAFT',VW/2,315);
+    g.font='12px monospace';g.fillStyle='#aeb2c2';
+    g.fillText('the live rarity weights and eligibility rules',VW/2,346);
+    g.fillText('produce the same three cards as a real run',VW/2,366);
+  }
+  drawSkillLabButton({x:18,y:550,w:140,h:42},choices.length?'ROLL SAME':'ROLL 3','#9ecbff');
+  drawSkillLabButton({x:170,y:550,w:140,h:42},'NEW SEED','#c995ff');
+  drawSkillLabButton({x:322,y:550,w:140,h:42},'CLEAR BUILD','#ff7a82');
+  drawSkillLabButton({x:100,y:610,w:280,h:48},'TEST CURRENT BUILD ▶','#c0f79a');
+  g.font='bold 11px monospace';g.fillStyle='#8b8fa0';
+  g.fillText('SEED '+skillLabSession.seed,VW/2,686);
+  g.font='9px monospace';g.fillText('same seed + same build = same draft',VW/2,705);
+}
+function drawSkillLabCatalogCard(mutation,rect,selected){
+  const status=skillLabMutationStatus(mutation),rarityCol=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col,
+    statusCol=status==='READY'?'#c0f79a':status==='APPLIED'?'#9ecbff':status==='REPLACE'?'#ffe37a':'#626570';
+  g.fillStyle=selected?'rgba(158,203,255,.13)':'rgba(8,11,18,.9)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle=selected?'#ffffff':statusCol;g.lineWidth=selected?3:1.5;
+  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
+  g.fillStyle=rarityCol;g.fillRect(rect.x,rect.y,4,rect.h);
+  g.textAlign='left';g.font='bold 11px monospace';g.fillStyle='#f4f1e8';
+  g.fillText(mutation.name,rect.x+12,rect.y+20);
+  g.font='bold 8px monospace';g.fillStyle=rarityCol;
+  g.fillText(mutation.rarity+' · '+mutation.type+' · D'+mutation.depth,rect.x+12,rect.y+35);
+  g.save();g.beginPath();g.rect(rect.x+10,rect.y+43,rect.w-20,40);g.clip();
+  g.font='8px monospace';g.fillStyle='#aeb2c2';
+  drawWrappedTooltipText(mutation.summary,rect.x+12,rect.y+52,rect.w-24,12);
+  g.restore();
+  g.font='bold 9px monospace';g.fillStyle=statusCol;g.fillText(status,rect.x+12,rect.y+rect.h-10);
+}
+function drawSkillLabCatalog(){
+  const baseId=skillLabCurrentBaseId(),skill=runSkill(baseId),mutations=skillLabCurrentMutations(),
+    pageCount=Math.max(1,Math.ceil(mutations.length/6)),page=Math.min(skillLabSession.catalogPage,pageCount-1),
+    selected=SKILL_MUTATION_BY_ID[skillLabSession.selectedMutationId];
+  skillLabSession.catalogPage=page;
+  drawSkillLabButton({x:20,y:150,w:44,h:32},'◀','#9ecbff');
+  drawSkillLabButton({x:416,y:150,w:44,h:32},'▶','#9ecbff');
+  g.textAlign='center';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';
+  g.fillText((skill?skill.name:baseId.toUpperCase())+' · '+mutations.length+' NODES',VW/2,171);
+  for(let i=0;i<6;i++){
+    const mutation=mutations[page*6+i];if(!mutation)continue;
+    drawSkillLabCatalogCard(mutation,SKILL_LAB_CATALOG_RECTS[i],
+      mutation.id===skillLabSession.selectedMutationId);
+  }
+  drawSkillLabButton({x:126,y:548,w:48,h:32},'◀','#9ecbff',page>0);
+  drawSkillLabButton({x:306,y:548,w:48,h:32},'▶','#9ecbff',page<pageCount-1);
+  g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#8b8fa0';
+  g.fillText('PAGE '+(page+1)+' / '+pageCount,VW/2,568);
+  g.fillStyle='rgba(255,255,255,.04)';g.fillRect(20,590,440,76);
+  if(selected){
+    const status=skillLabMutationStatus(selected);
+    g.font='bold 13px monospace';g.fillStyle=selected.col;g.fillText(selected.name+' · '+status,VW/2,612);
+    g.textAlign='left';g.font='9px monospace';g.fillStyle='#cfd3df';
+    drawWrappedTooltipText(selected.summary,34,632,412,13);
+    const label=status==='READY'?'APPLY SELECTED':status==='REPLACE'?'REPLACE CURRENT FORM':status;
+    drawSkillLabButton({x:90,y:682,w:300,h:46},label,
+      status==='READY'?'#c0f79a':status==='REPLACE'?'#ffe37a':'#626570',status==='READY'||status==='REPLACE');
+  }else{
+    g.font='11px monospace';g.fillStyle='#8b8fa0';g.fillText('tap a node to inspect and apply it',VW/2,630);
+  }
+}
+function drawSkillLab(){
+  if(!skillLabSession)return;
+  drawSkillLabHeader();
+  if(skillLabSession.view==='catalog')drawSkillLabCatalog();else drawSkillLabDraft();
+}
+function skillLabTap(pt){
+  if(!skillLabSession)return false;
+  if(pointInRect(pt,{x:14,y:48,w:82,h:34})){closeSkillLab();return true;}
+  if(pointInRect(pt,{x:374,y:48,w:92,h:34})){resetSkillLabBuild();return true;}
+  for(const tab of SKILL_LAB_TABS)if(pointInRect(pt,tab)){
+    if(tab.id==='combat')startSkillLabCombat();
+    else{skillLabSession.view=tab.id;SFX.swipe();}
+    return true;
+  }
+  if(skillLabSession.view==='draft'){
+    for(let i=0;i<skillLabSession.choices.length;i++)if(pointInRect(pt,skillLabDraftCardRect(i))){
+      applySkillLabMutation(skillLabSession.choices[i]);return true;
+    }
+    if(pointInRect(pt,{x:18,y:550,w:140,h:42})){rollSkillLabDraft(false);return true;}
+    if(pointInRect(pt,{x:170,y:550,w:140,h:42})){rollSkillLabDraft(true);return true;}
+    if(pointInRect(pt,{x:322,y:550,w:140,h:42})){resetSkillLabBuild();return true;}
+    if(pointInRect(pt,{x:100,y:610,w:280,h:48})){startSkillLabCombat();return true;}
+    return false;
+  }
+  if(pointInRect(pt,{x:20,y:150,w:44,h:32})){cycleSkillLabSkill(-1);return true;}
+  if(pointInRect(pt,{x:416,y:150,w:44,h:32})){cycleSkillLabSkill(1);return true;}
+  const mutations=skillLabCurrentMutations(),pageCount=Math.max(1,Math.ceil(mutations.length/6));
+  for(let i=0;i<6;i++)if(mutations[skillLabSession.catalogPage*6+i]&&pointInRect(pt,SKILL_LAB_CATALOG_RECTS[i])){
+    skillLabSession.selectedMutationId=mutations[skillLabSession.catalogPage*6+i].id;SFX.swipe();return true;
+  }
+  if(pointInRect(pt,{x:126,y:548,w:48,h:32})&&skillLabSession.catalogPage>0){skillLabSession.catalogPage--;SFX.swipe();return true;}
+  if(pointInRect(pt,{x:306,y:548,w:48,h:32})&&skillLabSession.catalogPage<pageCount-1){skillLabSession.catalogPage++;SFX.swipe();return true;}
+  if(pointInRect(pt,{x:90,y:682,w:300,h:46})){
+    applySkillLabMutation(SKILL_MUTATION_BY_ID[skillLabSession.selectedMutationId]);return true;
+  }
+  return false;
+}
+function skillLabCombatTap(pt){
+  if(!activeSkillLabCombat())return false;
+  if(!skillLabSession.combatHud){
+    if(pointInRect(pt,SKILL_LAB_COMBAT_HUD)){skillLabSession.combatHud=true;SFX.swipe();return true;}
+    return false;
+  }
+  for(const preset of SKILL_LAB_COMBAT_PRESETS)if(pointInRect(pt,preset)){
+    applySkillLabPreset(preset.id);return true;
+  }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_BACK)){leaveSkillLabCombat();return true;}
+  if(pointInRect(pt,SKILL_LAB_COMBAT_HP)){
+    boss.hp=boss.maxhp;skillLabSession.lastLog=null;SFX.relic();return true;
+  }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_TURN)){resetSkillLabTurn();return true;}
+  if(pointInRect(pt,SKILL_LAB_COMBAT_HUD)){skillLabSession.combatHud=false;SFX.swipe();return true;}
+  return false;
+}
+function drawSkillLabCombatLog(){
+  const log=skillLabSession.pendingLog||skillLabSession.lastLog;
+  g.fillStyle='rgba(5,7,12,.87)';g.fillRect(10,285,460,78);
+  g.strokeStyle='#33465d';g.lineWidth=1.5;g.strokeRect(10.5,285.5,459,77);
+  g.textAlign='left';
+  if(!log){
+    g.font='bold 11px monospace';g.fillStyle='#8b8fa0';
+    g.fillText('USE FIGHT OR A SKILL — REAL RESULTS APPEAR HERE',22,318);
+    g.font='9px monospace';g.fillText('hold a combat button for the full damage formula',22,340);return;
+  }
+  const after=log.after||skillLabStateSnapshot(),before=log.before,
+    total=log.hits.reduce((sum,hit)=>sum+hit.damage,0),
+    hitLine=log.hits.map(hit=>'H'+hit.index+' '+hit.damage).join(' · ');
+  g.font='bold 11px monospace';g.fillStyle='#9ecbff';
+  g.fillText(log.name+' · TOTAL '+total+(log.after?'':' · RESOLVING'),22,302);
+  g.font='9px monospace';g.fillStyle='#e8e2d0';g.fillText(hitLine||'waiting for contact…',22,318);
+  g.fillStyle='#ffe37a';
+  g.fillText('AP '+before.ap+'→'+after.ap+'  R '+before.resolve+'→'+after.resolve+
+    '  CHAIN '+before.chain+'→'+after.chain+'  MARK '+before.mark+'→'+after.mark,22,337);
+  g.fillStyle='#c995ff';
+  g.fillText('POSTURE '+before.posture+'→'+after.posture+
+    (after.broken?'  ·  BREAK BONUS ACTIVE':''),22,354);
+}
+function drawSkillLabCombatOverlay(){
+  if(!activeSkillLabCombat())return;
+  if(!skillLabSession.combatHud){
+    drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'SHOW LAB','#9ecbff');return;
+  }
+  g.fillStyle='rgba(5,7,12,.9)';g.fillRect(4,195,472,174);
+  g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#9ecbff';
+  g.fillText('SKILL LAB · STATIC TARGET · REAL COMBAT CODE',VW/2,200);
+  for(const preset of SKILL_LAB_COMBAT_PRESETS)
+    drawSkillLabButton(preset,preset.label,preset.id==='broken'?'#ffe37a':'#9ecbff',true,
+      skillLabSession.preset===preset.id);
+  drawSkillLabButton(SKILL_LAB_COMBAT_BACK,'◀ BUILD','#e8e2d0');
+  drawSkillLabButton(SKILL_LAB_COMBAT_HP,'TARGET','#ff7a82');
+  drawSkillLabButton(SKILL_LAB_COMBAT_TURN,'TURN','#c0f79a');
+  drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'HIDE HUD','#8b8fa0');
+  drawSkillLabCombatLog();
+}
 function drawDebugCfg(){
   g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
@@ -14254,10 +15284,13 @@ function drawDebugCfg(){
   g.fillStyle=debugBossStart?'#ff7a82':'#8b8fa0'; g.fillText((debugBossStart?'✓ ':'□ ')+'TO BOSS',dl+dw/2,284);
   g.strokeStyle=debugMiniStart?'#9ecbff':'#55565e'; g.strokeRect(dr,262,dw,34);
   g.fillStyle=debugMiniStart?'#9ecbff':'#8b8fa0'; g.fillText((debugMiniStart?'✓ ':'□ ')+'TO MINI',dr+dw/2,284);
-  g.strokeStyle='#ff9a3a'; g.strokeRect(dl,302,dw,34);
-  g.fillStyle='#ff9a3a'; g.fillText('BOSS LAB ▶',dl+dw/2,324);
-  g.strokeStyle=debugMiniMoves?'#c9f74a':'#55565e'; g.strokeRect(dr,302,dw,34);
-  g.fillStyle=debugMiniMoves?'#c9f74a':'#8b8fa0'; g.fillText((debugMiniMoves?'✓ ':'□ ')+'MINI MOVES',dr+dw/2,324);
+  const labW=144;
+  g.strokeStyle='#ff9a3a'; g.strokeRect(12,302,labW,34);
+  g.fillStyle='#ff9a3a'; g.fillText('BOSS LAB ▶',12+labW/2,324);
+  g.strokeStyle=debugMiniMoves?'#c9f74a':'#55565e'; g.strokeRect(168,302,labW,34);
+  g.fillStyle=debugMiniMoves?'#c9f74a':'#8b8fa0'; g.fillText((debugMiniMoves?'✓ ':'□ ')+'MINI MOVES',168+labW/2,324);
+  g.strokeStyle='#9ecbff';g.strokeRect(324,302,labW,34);
+  g.fillStyle='#9ecbff';g.fillText('SKILL LAB ▶',324+labW/2,324);
   /* relic toggles */
   g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,348);
   const keys=ARTIFACT_IDS;
@@ -14294,8 +15327,9 @@ function debugCfgTap(pt){
   if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>218&&pt.y<256){ godMode=!godMode; SFX.relic(); return; }
   if(pt.x>VW/2-112&&pt.x<VW/2-4&&pt.y>262&&pt.y<296){ selectDebugFight('boss'); return; }
   if(pt.x>VW/2+4&&pt.x<VW/2+112&&pt.y>262&&pt.y<296){ selectDebugFight('mini'); return; }
-  if(pt.x>VW/2-112&&pt.x<VW/2-4&&pt.y>302&&pt.y<336){ setMode('bosslabselect'); SFX.relic(); return; }
-  if(pt.x>VW/2+4&&pt.x<VW/2+112&&pt.y>302&&pt.y<336){ selectDebugFight('miniMoves'); return; }
+  if(pt.x>12&&pt.x<156&&pt.y>302&&pt.y<336){ setMode('bosslabselect'); SFX.relic(); return; }
+  if(pt.x>168&&pt.x<312&&pt.y>302&&pt.y<336){ selectDebugFight('miniMoves'); return; }
+  if(pt.x>324&&pt.x<468&&pt.y>302&&pt.y<336){ openSkillLab(); return; }
   const keys=ARTIFACT_IDS;
   for(let i=0;i<keys.length;i++){
     const col=i%2, row=(i/2)|0, x=14+col*230, y=360+row*40;
@@ -14348,6 +15382,45 @@ function drawBossIntro(){
   g.fillStyle='#ff4d3a'; g.fillText(activeBossDefinition().name,VW/2,380);
   g.font='15px monospace'; g.fillStyle='#e8e2d0';
   g.fillText('stage '+loop+' — read its body. dodge. survive.',VW/2,410);
+}
+function drawSkillMutationCard(mutation,rect,footer='TAP TO EVOLVE'){
+  const col=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col;
+  g.fillStyle='rgba(8,11,18,.97)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle=col;g.lineWidth=mutation.rarity==='LEGENDARY'?4:2;
+  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
+  g.fillStyle=col;g.fillRect(rect.x,rect.y,rect.w,5);
+  const skill=runSkill(mutation.skillId),depth=SKILL_EVOLUTION_DEPTHS[mutation.depth],
+    typeCol=SKILL_MUTATION_TYPE_COL[mutation.type]||'#cfd3df';
+  g.textAlign='center';g.font='bold 9px monospace';g.fillStyle=col;
+  g.fillText(mutation.rarity+' · '+mutation.type,rect.x+rect.w/2,rect.y+21);
+  g.font='bold 8px monospace';g.fillStyle=typeCol;
+  g.fillText((skill?skill.name:mutation.skillId.toUpperCase())+' / '+depth.name,rect.x+rect.w/2,rect.y+34);
+  g.font='bold 15px monospace';g.fillStyle='#f4f1e8';
+  g.fillText(mutation.name,rect.x+rect.w/2,rect.y+55);
+  g.textAlign='left';g.font='bold 10px monospace';g.fillStyle=mutation.col;
+  let y=drawWrappedTooltipText(mutation.summary,rect.x+10,rect.y+78,rect.w-20,14)+8;
+  g.strokeStyle='#ffffff22';g.lineWidth=1;g.beginPath();
+  g.moveTo(rect.x+10,y);g.lineTo(rect.x+rect.w-10,y);g.stroke();y+=17;
+  g.font='9px monospace';
+  for(const detail of mutation.details){
+    g.fillStyle=col;g.fillText('◆',rect.x+10,y);
+    g.fillStyle='#cfd3df';
+    y=drawWrappedTooltipText(detail,rect.x+23,y,rect.w-33,13)+6;
+  }
+  g.textAlign='center';g.font='bold 9px monospace';g.fillStyle=col;
+  g.fillText(footer,rect.x+rect.w/2,rect.y+rect.h-14);
+}
+function drawSkillEvolutionScreen(){
+  g.fillStyle='rgba(5,7,12,.86)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.textAlign='center';g.font='bold 25px monospace';g.fillStyle='#9ecbff';
+  g.fillText('A TECHNIQUE MUTATES',VW/2,222);
+  g.font='12px monospace';g.fillStyle='#aeb2c2';
+  g.fillText('only these paths emerged this run — choose one',VW/2,246);
+  g.font='bold 13px monospace';g.fillStyle='#e8e2d0';
+  g.fillText('THREE POSSIBILITIES FROM YOUR CURRENT BUILD',VW/2,272);
+  if(!skillMutationChoices)return;
+  for(let i=0;i<skillMutationChoices.length;i++)
+    drawSkillMutationCard(skillMutationChoices[i],skillEvolutionCardRect(i));
 }
 function drawRelicScreen(){
   g.fillStyle='rgba(5,7,12,0.72)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -14477,7 +15550,7 @@ function update(dt){
   updateAmbient(dt);
   updateArenaFx(dt);
   updateScoreShown(dt);
-  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
+  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='skilllab'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
   if(mode==='dying'){ if(modeT>1.4){ commitFinalScore(); setMode('score'); } return; }
 
   updatePlayer(dt);
@@ -14720,7 +15793,7 @@ function render(){
   for(const d of dr) d.draw(d.ref,stage);
 
   drawTelegraphs();
-  if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
+  if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
     if(player.alive) drawPlayer();
     drawPackAllies();
     drawProjectiles();
@@ -14750,13 +15823,15 @@ function render(){
     else if(mode==='relicdex') drawRelicDex();
     else if(mode==='changelog') drawChangelog();
     else if(mode==='debugcfg') drawDebugCfg();
+    else if(mode==='skilllab') drawSkillLab();
     else if(mode==='bosslabselect') drawBossLabSelect();
     else if(mode==='bosslabmoves') drawBossLabMoves();
     else if(mode==='charsel') drawCharSel();
     else if(mode==='score') drawScore();
     else {
-      drawHUD();drawBearTurntableMouthButton();
+      drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();
       if(mode==='bossintro') drawBossIntro();
+      if(mode==='evolution')drawSkillEvolutionScreen();
       if(mode==='relic') drawRelicScreen();
       if(mode==='shop') drawShop();
       if(mode==='miniboss') drawMinibossIntro();
