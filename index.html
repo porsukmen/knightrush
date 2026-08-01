@@ -580,10 +580,11 @@ const TURN_SKILL_BTNS=Object.freeze([
   Object.freeze({x:250,y:653,w:200,h:48}),
 ]);
 const SKILL_LAB_TABS=Object.freeze([
-  Object.freeze({id:'draft',x:12,y:102,w:105,h:38,label:'RNG DRAFT'}),
-  Object.freeze({id:'catalog',x:129,y:102,w:105,h:38,label:'CATALOG'}),
-  Object.freeze({id:'history',x:246,y:102,w:105,h:38,label:'HISTORY'}),
-  Object.freeze({id:'combat',x:363,y:102,w:105,h:38,label:'COMBAT'}),
+  Object.freeze({id:'draft',x:8,y:102,w:88,h:38,label:'DRAFT'}),
+  Object.freeze({id:'catalog',x:102,y:102,w:88,h:38,label:'CATALOG'}),
+  Object.freeze({id:'tree',x:196,y:102,w:88,h:38,label:'TREE'}),
+  Object.freeze({id:'history',x:290,y:102,w:88,h:38,label:'HISTORY'}),
+  Object.freeze({id:'combat',x:384,y:102,w:88,h:38,label:'COMBAT'}),
 ]);
 const MOVE_HISTORY_BACK=Object.freeze({x:16,y:52,w:86,h:34});
 const MOVE_HISTORY_VIEW_BTN=Object.freeze({x:362,y:52,w:102,h:34});
@@ -624,7 +625,9 @@ function pointInRect(pt,rect){
 const SKILL_TOOLTIP_HOLD_MS=450;
 const TURN_FIGHT_TOOLTIP_INDEX=TURN_SKILL_BTNS.length;
 let skillTooltipIndex=-1,skillLabTooltipMutationId=null,moveHistoryOpen=false,moveHistorySkillIndex=0,
-  moveHistoryView='evolution',moveHistoryMasteryPage=0;
+  moveHistoryView='evolution',moveHistoryMasteryPage=0,moveTreeOpen=false,moveTreeSkillIndex=0,
+  moveTreeFormIndex=0,moveTreeSpecId=null,moveTreeTwistId=null,moveTreeSelectedId=null,
+  moveTreePages=[0,0,0],moveTreeHitNodes=[],moveTreePageButtons=[];
 function skillIndexAtPoint(pt){
   if(!pt||mode!=='boss'||!isPlayerTurn())return -1;
   if(boss.playerMenu==='skills'){
@@ -638,7 +641,13 @@ function dismissSkillTooltip(audible=true){
   skillTooltipIndex=-1;if(audible)SFX.swipe();return true;
 }
 function skillLabCatalogMutationAtPoint(pt){
-  if(!pt||moveHistoryOpen||mode!=='skilllab'||!skillLabSession||skillLabSession.view!=='catalog')return null;
+  if(!pt||moveHistoryOpen)return null;
+  if(moveTreeOpen){
+    for(let i=moveTreeHitNodes.length-1;i>=0;i--)
+      if(pointInRect(pt,moveTreeHitNodes[i].rect))return moveTreeHitNodes[i].node;
+    return null;
+  }
+  if(mode!=='skilllab'||!skillLabSession||skillLabSession.view!=='catalog')return null;
   const mutations=skillLabCurrentMutations(),offset=skillLabSession.catalogPage*6;
   for(let i=0;i<SKILL_LAB_CATALOG_RECTS.length;i++)
     if(mutations[offset+i]&&pointInRect(pt,SKILL_LAB_CATALOG_RECTS[i]))return mutations[offset+i];
@@ -681,6 +690,7 @@ function handleAction(a,pt,parryIntent=null){
   SFX.init();
   if(skillTooltipIndex>=0){if(a==='tap')dismissSkillTooltip();return;}
   if(skillLabTooltipMutationId){if(a==='tap')dismissSkillLabTooltip();return;}
+  if(moveTreeOpen){if(a==='tap'&&pt)moveTreeTap(pt);return;}
   if(moveHistoryOpen){if(a==='tap'&&pt)moveHistoryTap(pt);return;}
   if(!paused&&debugParryInputFrozen){
     if(a==='parry'||a==='tap'){
@@ -781,6 +791,9 @@ addEventListener('keydown',e=>{
   }
   if(moveHistoryOpen&&(e.key==='Escape'||e.key==='Enter'||e.key===' ')){
     closeMoveHistory();e.preventDefault();return;
+  }
+  if(moveTreeOpen&&(e.key==='Escape'||e.key==='Enter'||e.key===' ')){
+    closeMoveTree();e.preventDefault();return;
   }
   if(paused&&pausePhotoMode){ e.preventDefault(); return; }
   if(paused&&debugMoveLabActive()){
@@ -9108,26 +9121,47 @@ function weaponBaseDamage(){const w=activeWeapon();return w.baseDamage+runWeapon
 
 /* AP limits command count; persistent Resolve pays skill costs. Effects remain
    declarative so an evolution can replace either economy or attack rules. */
+/* A base skill is a mechanical promise, not merely starting numbers. Stable
+   evolution must keep that promise; the other aspects may deliberately replace
+   it with a named identity of their own. These predicates run only while the
+   authored graph is indexed, never during a frame. */
+const SKILL_IDENTITIES=Object.freeze({
+  MARK_BUILDER:Object.freeze({id:'MARK_BUILDER',name:'MARK BUILDER',description:'Ends the attack by generating Mark; it may read or consume earlier stacks.',
+    accepts:skill=>skill.markGain>0}),
+  MARK_PAYOFF:Object.freeze({id:'MARK_PAYOFF',name:'MARK PAYOFF',description:'Spends Mark for additional damage.',
+    accepts:skill=>skill.consumeMark===true&&skill.markDamagePerHit>0}),
+  POSTURE_BUILDER:Object.freeze({id:'POSTURE_BUILDER',name:'POSTURE BUILDER',description:'Generates meaningful Posture damage.',
+    accepts:skill=>(skill.posture||0)>0}),
+  CHAIN_FINISHER:Object.freeze({id:'CHAIN_FINISHER',name:'CHAIN FINISHER',description:'Spends Chain instead of generating it.',
+    accepts:skill=>skill.consumeChain===true&&skill.addsChain===false}),
+});
 const BASE_TURN_SKILLS=Object.freeze([
   Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
     damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,
+    identityId:'MARK_BUILDER',
     tags:Object.freeze(['weapon','ranged','mark','setup'])}),
   Object.freeze({id:'arrow_rain',name:'ARROW RAIN',source:'WEAPON',skill:true,cost:2,
     damage:6,hits:3,hitInterval:.55,consumeMark:true,markDamagePerHit:2,markStackGrowth:1,
     duration:1.65,col:'#ffe37a',slash:-.52,
+    identityId:'MARK_PAYOFF',
     tags:Object.freeze(['weapon','ranged','multihit','mark','payoff'])}),
   Object.freeze({id:'shield_kick',name:'SHIELD KICK',source:'CLASS',skill:true,cost:1,
     damage:8,hits:1,posture:25,col:'#9ecbff',slash:.18,
+    identityId:'POSTURE_BUILDER',
     tags:Object.freeze(['class','melee','posture','setup'])}),
   Object.freeze({id:'royal_slash',name:'ROYAL SLASH',source:'CLASS',skill:true,cost:3,
     damage:24,hits:1,extraChainBonus:.08,consumeChain:true,addsChain:false,
     col:'#c995ff',slash:.62,
+    identityId:'CHAIN_FINISHER',
     tags:Object.freeze(['class','melee','chain','payoff'])}),
 ]);
 function createRunSkill(definition){
   return {...definition,baseId:definition.id,tags:Array.from(definition.tags||[]),
+    lineageAspect:'STABLE',lineageIdentity:definition.identityId,formAspectId:null,aspectLevel:0,
+    frameMutation:null,
     mutationIds:[],mutationGroups:[],evolutionMutationIds:[],evolutionHistory:[],
     evolutionDepth:0,evolutionText:null,nextPoolId:definition.id+'_form',
+    synthesisActive:false,synthesisOriginMutationId:null,synthesisHistory:[],
     masteryIds:[],masteryGroups:[],masteryHistory:[],masteryRanks:Object.create(null),
     masteryLevel:0,masteryText:null};
 }
@@ -9141,7 +9175,19 @@ function skillMutation(data){
   mutation.type=mutation.type.toUpperCase();
   if(mutation.kind==='MASTERY')mutation.theme=(mutation.theme||'REFINEMENT').toUpperCase();
   mutation.variant=(mutation.variant||mutation.type).toUpperCase();
+  mutation.resultAspect=(mutation.resultAspect||mutation.type).toUpperCase();
+  mutation.aspectFrom=Object.freeze((mutation.aspectFrom||(
+    mutation.type==='STABLE'?['STABLE']:
+    mutation.type==='DISTORTED'?['STABLE','DISTORTED']:['STABLE','CORRUPTED']
+  )).map(aspect=>aspect.toUpperCase()));
+  const baseDefinition=BASE_TURN_SKILLS.find(skill=>skill.id===mutation.skillId);
+  mutation.aspectIdentity=mutation.aspectIdentity||(
+    mutation.resultAspect==='STABLE'&&baseDefinition?baseDefinition.identityId:null);
+  mutation.allowAspectShift=mutation.allowAspectShift===true;
   mutation.familyId=mutation.familyId||mutation.id;
+  mutation.buildAspect=data.buildAspect||null;
+  mutation.branchId=data.branchId||null;
+  mutation.expectedChildren=data.expectedChildren===undefined?null:data.expectedChildren;
   mutation.poolId=mutation.poolId||(mutation.kind==='EVOLUTION'&&mutation.depth===1?mutation.skillId+'_form':null);
   mutation.poolIds=Object.freeze(mutation.poolIds||(mutation.poolId?[mutation.poolId]:[]));
   const nextDepth=mutation.kind==='EVOLUTION'?{1:'specialization',2:'twist',3:'apex'}[mutation.depth]:null;
@@ -9166,7 +9212,8 @@ function transformSharpshoot(skill,patch){
     damage:16,hitDamages:null,hits:1,hitInterval:0,duration:undefined,cost:1,markGain:0,
     consumeMark:false,useMark:false,markDamagePerHit:0,markStackGrowth:0,
     posture:0,posturePerChain:0,resolvePerHit:0,resolveOnComplete:0,
-    consumeChain:false,extraChainBonus:0,addsChain:true,chainGainPerHit:1,col:'#c0f79a'
+    resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,
+    addsChain:true,chainGainPerHit:1,chainGainPattern:null,col:'#c0f79a'
   },patch);
 }
 /* Evolution is authored as a four-deep tree, while rarity and mutation type stay
@@ -9194,13 +9241,34 @@ const SKILL_EVOLUTION_RULESETS=Object.freeze({
     maxMasterySelections:0,
     allowPlayerInfinite:true,allowAutomaticInfinite:false}),
 });
+/* Synthesis never rolls an unrelated move. The current card selects the authored
+   child pool; rarity supplies the power budget, and a non-Stable type starts the
+   synthesis lineage. Later Stable choices still pass through that lineage rather
+   than erasing its history. Actual Distorted/Corrupted rule modules are authored
+   beside each finished Stable branch instead of procedurally inventing numbers. */
+const SKILL_SYNTHESIS_RULES=Object.freeze({
+  choiceCount:3,parentBound:true,preserveRarity:true,
+  activationTypes:Object.freeze(['DISTORTED','CORRUPTED'])
+});
+function skillSynthesisParentId(skill){
+  return skill&&skill.evolutionMutationIds.length
+    ?skill.evolutionMutationIds[skill.evolutionMutationIds.length-1]:null;
+}
+function skillSynthesisActive(skill){return !!(skill&&skill.synthesisActive);}
+function mutationStartsSkillSynthesis(skill,mutation){
+  return !!(skill&&mutation&&!skill.synthesisActive&&
+    SKILL_SYNTHESIS_RULES.activationTypes.includes(mutation.type));
+}
+function mutationUsesSkillSynthesis(skill,mutation){
+  return !!(skill&&mutation&&(skill.synthesisActive||mutationStartsSkillSynthesis(skill,mutation)));
+}
 function activeSkillEvolutionRules(){
   return SKILL_EVOLUTION_RULESETS[RUN_POLICY().evolutionRulesId]||SKILL_EVOLUTION_RULESETS.endless_safe;
 }
 /* A form mutation replaces Sharpshoot's combat role in one decisive step. */
 const SKILL_EVOLUTIONS=Object.freeze([
   skillMutation({id:'split_sight',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'SPLIT SIGHT',rarity:'COMMON',weight:22,col:'#c0f79a',
+    name:'SPLIT SIGHT',rarity:'COMMON',weight:22,buildAspect:'SPLIT_VOLLEY',col:'#c0f79a',
     grantsTags:['multihit','chain','engine'],
     summary:'Two arrows build Chain rapidly.',details:[
       'Transform into 2 hits of 9 base damage.',
@@ -9209,7 +9277,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'SPLIT SIGHT',damage:9,hits:2,
       hitInterval:.42,duration:1.02,markGain:1,cost:1,addsChain:true})}),
   skillMutation({id:'blood_mark',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'BLOOD MARK',rarity:'COMMON',weight:20,col:'#ff596d',
+    name:'BLOOD MARK',rarity:'COMMON',weight:20,buildAspect:'MARK_SATURATION',col:'#ff596d',
     grantsTags:['mark','setup'],
     summary:'Sacrifice damage to prepare 2 Mark.',details:[
       'Transform into a 6 damage setup shot that applies 2 Mark.',
@@ -9218,7 +9286,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'BLOOD MARK',damage:6,hits:1,
       markGain:2,cost:1,addsChain:false,col:'#ff596d'})}),
   skillMutation({id:'pinning_shot',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'PINNING SHOT',rarity:'UNCOMMON',weight:14,col:'#9ecbff',
+    name:'PINNING SHOT',rarity:'UNCOMMON',weight:14,buildAspect:'BREAK_ARCHERY',col:'#9ecbff',
     grantsTags:['posture','break','setup'],
     summary:'Turn the bow into a Break setup.',details:[
       'Transform into 10 damage, 1 Mark and 35 Posture damage.',
@@ -9227,7 +9295,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'PINNING SHOT',damage:10,hits:1,
       markGain:1,posture:35,cost:2,col:'#9ecbff',addsChain:true})}),
   skillMutation({id:'quickdraw',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'QUICKDRAW',rarity:'UNCOMMON',weight:12,col:'#ffe37a',
+    name:'QUICKDRAW',rarity:'UNCOMMON',weight:12,buildAspect:'RESOLVE_ECONOMY',col:'#ffe37a',
     grantsTags:['economy','mark','setup'],
     summary:'A free Resolve-neutral setup.',details:[
       'Transform into a 10 damage shot that applies 1 Mark.',
@@ -9236,16 +9304,16 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'QUICKDRAW',damage:10,hits:1,
       markGain:1,cost:0,col:'#ffe37a',addsChain:true})}),
   skillMutation({id:'deadeye',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'DEADEYE',rarity:'RARE',weight:7,type:'STABLE',col:'#c995ff',
-    removesTags:['setup'],grantsTags:['mark','finisher'],
-    summary:'Invert the setup skill into a Mark finisher.',details:[
-      'Transform into a 28 damage payoff that consumes every Mark.',
-      'Each consumed Mark adds 12 base damage. The hit adds no Chain.',
-      'Costs 1 AP and 3 Resolve.'
-    ],apply:skill=>transformSharpshoot(skill,{name:'DEADEYE',damage:28,hits:1,
-      markGain:0,consumeMark:true,markDamagePerHit:12,cost:3,col:'#c995ff',addsChain:false})}),
+    name:'DEADEYE',rarity:'RARE',weight:7,buildAspect:'MARK_READER',col:'#c995ff',
+    grantsTags:['mark','read','precision'],
+    summary:'Read accumulated Mark without spending the setup.',details:[
+      'Transform into a 16 damage precision shot that preserves every Mark.',
+      'Each existing Mark adds 6 base damage. Apply 1 Mark after the hit.',
+      'The shot adds no Chain. Costs 1 AP and 3 Resolve.'
+    ],apply:skill=>transformSharpshoot(skill,{name:'DEADEYE',damage:16,hits:1,
+      markGain:1,useMark:true,markDamagePerHit:6,cost:3,col:'#c995ff',addsChain:false})}),
   skillMutation({id:'echo_barrage',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'ECHO BARRAGE',rarity:'LEGENDARY',weight:3,type:'STABLE',col:'#ff9a3a',
+    name:'ECHO BARRAGE',rarity:'LEGENDARY',weight:3,buildAspect:'BARRAGE_CHAIN',col:'#ff9a3a',
     grantsTags:['multihit','chain','engine'],
     summary:'Three arrows create an immediate Chain engine.',details:[
       'Transform into 3 hits of 7 base damage.',
@@ -9254,25 +9322,25 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'ECHO BARRAGE',damage:7,hits:3,
       hitInterval:.46,duration:1.3,markGain:1,cost:2,col:'#ff9a3a',addsChain:true})}),
   skillMutation({id:'rangers_rhythm',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:"RANGER'S RHYTHM",rarity:'RARE',weight:7,type:'STABLE',col:'#7fc9ff',
-    removesTags:['mark','setup'],grantsTags:['multihit','chain','economy','engine'],
-    summary:'Trade impact for a Resolve and Chain engine.',details:[
-      'Transform into 3 hits of 4 base damage. It applies no Mark.',
+    name:"RANGER'S RHYTHM",rarity:'RARE',weight:7,buildAspect:'RHYTHM_ENGINE',col:'#7fc9ff',
+    grantsTags:['multihit','chain','economy','engine','mark'],
+    summary:'Build Mark through a low-impact Resolve rhythm.',details:[
+      'Transform into 3 hits of 4 base damage and apply 1 Mark after the rhythm.',
       'Every arrow grants 1 Resolve and adds 1 Chain.',
       'Costs 1 AP and 2 Resolve. AP prevents this engine from looping forever.'
     ],apply:skill=>transformSharpshoot(skill,{name:"RANGER'S RHYTHM",damage:4,hits:3,
-      hitInterval:.4,duration:1.18,cost:2,resolvePerHit:1,col:'#7fc9ff',addsChain:true})}),
+      hitInterval:.4,duration:1.18,cost:2,markGain:1,resolvePerHit:1,col:'#7fc9ff',addsChain:true})}),
   skillMutation({id:'barbed_anchor',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'BARBED ANCHOR',rarity:'UNCOMMON',weight:11,type:'STABLE',col:'#ff9a3a',
-    removesTags:['mark','setup'],grantsTags:['chain','posture','break','finisher'],
-    summary:'Cash Chain into a ranged Break attempt.',details:[
-      'Deal 14 base damage, then consume every Chain. It applies no Mark.',
+    name:'BARBED ANCHOR',rarity:'UNCOMMON',weight:11,buildAspect:'CHAIN_SIEGE',col:'#ff9a3a',
+    grantsTags:['mark','chain','posture','break'],
+    summary:'Build Mark while cashing Chain into a ranged Break attempt.',details:[
+      'Deal 14 base damage, apply 1 Mark, then consume every Chain.',
       'Deal 10 Posture plus 5 additional Posture for every consumed Chain.',
       'Costs 1 AP and 2 Resolve. The shot adds no new Chain.'
     ],apply:skill=>transformSharpshoot(skill,{name:'BARBED ANCHOR',damage:14,hits:1,
-      cost:2,posture:10,posturePerChain:5,consumeChain:true,col:'#ff9a3a',addsChain:false})}),
+      cost:2,markGain:1,posture:10,posturePerChain:5,consumeChain:true,col:'#ff9a3a',addsChain:false})}),
   skillMutation({id:'signal_arrow',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'SIGNAL ARROW',rarity:'UNCOMMON',weight:10,type:'STABLE',col:'#ff596d',
+    name:'SIGNAL ARROW',rarity:'UNCOMMON',weight:10,buildAspect:'SIGNAL_SETUP',col:'#ff596d',
     grantsTags:['mark','setup','burst_setup'],
     summary:'Spend a whole action to expose the target completely.',details:[
       'Deal only 3 base damage but immediately apply 3 Mark.',
@@ -9281,26 +9349,28 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'SIGNAL ARROW',damage:3,hits:1,
       markGain:3,cost:2,col:'#ff596d',addsChain:false})}),
   skillMutation({id:'war_draw',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'WAR DRAW',rarity:'COMMON',weight:18,type:'STABLE',col:'#e8e2d0',
-    removesTags:['mark','setup'],grantsTags:['direct','damage','chain'],
-    summary:'Abandon setup for one reliable heavy arrow.',details:[
-      'Transform into one hit of 30 base damage. It applies no Mark.',
+    name:'WAR DRAW',rarity:'COMMON',weight:18,buildAspect:'HEAVY_DRAW',col:'#e8e2d0',
+    grantsTags:['direct','damage','mark'],
+    summary:'Build Mark with one deliberate heavy arrow.',details:[
+      'Transform into one hit of 22 base damage and apply 1 Mark.',
       'The arrow still adds 1 Chain for the next action.',
       'Costs 1 AP and 2 Resolve.'
-    ],apply:skill=>transformSharpshoot(skill,{name:'WAR DRAW',damage:30,hits:1,
-      cost:2,col:'#e8e2d0',addsChain:true})}),
+    ],apply:skill=>transformSharpshoot(skill,{name:'WAR DRAW',damage:22,hits:1,
+      markGain:1,cost:2,col:'#e8e2d0',addsChain:true})}),
 ]);
 function sharpshootLayer(data){
   const source=data.patch||{},patch=Object.freeze({...source,name:data.name,
-    hitDamages:source.hitDamages?Object.freeze(source.hitDamages.slice()):source.hitDamages});
-  return skillMutation({...data,patch,apply:skill=>Object.assign(skill,patch)});
+    hitDamages:source.hitDamages?Object.freeze(source.hitDamages.slice()):source.hitDamages,
+    chainGainPattern:source.chainGainPattern?Object.freeze(source.chainGainPattern.slice()):source.chainGainPattern});
+  return skillMutation({buildAspect:'SPLIT_VOLLEY',...data,patch,apply:skill=>Object.assign(skill,patch)});
 }
 /* First complete vertical slice: Split Sight remains a two-arrow chassis, then
    branches into economy, Mark, Break or high-rarity multihit identities. Every
    number below is authored; rarity never procedurally invents combat stats. */
 const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   sharpshootLayer({id:'twin_rhythm',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
-    parents:['split_sight'],familyId:'twin_rhythm',name:'TWIN RHYTHM',rarity:'COMMON',weight:22,col:'#7fc9ff',
+    parents:['split_sight'],familyId:'twin_rhythm',branchId:'TWIN_RHYTHM',expectedChildren:6,
+    name:'TWIN RHYTHM',rarity:'COMMON',weight:22,col:'#7fc9ff',
     grantsTags:['economy','rhythm'],summary:'Make the paired shot Resolve-neutral.',details:[
       'Fire 2 arrows for 10 base damage each and apply 1 Mark.','After the second arrow, regain 1 Resolve.',
       'Both arrows add Chain. Costs 1 AP and 1 Resolve.'
@@ -9323,68 +9393,165 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
       'Fire 3 arrows for 9 base damage each and apply 1 Mark.','All three arrows add Chain and scale inside the volley.',
       'Costs 1 AP and 2 Resolve.'
     ],patch:{damage:9,hitDamages:null,hits:3,cost:2,markGain:1,resolveOnComplete:0,hitInterval:.4}}),
-
   /* TWIN RHYTHM — economy Twists. */
   sharpshootLayer({id:'triple_cadence',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'triple_cadence',name:'TRIPLE CADENCE',rarity:'COMMON',weight:20,col:'#7fc9ff',
+    parents:['twin_rhythm'],familyId:'triple_cadence',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'TRIPLE CADENCE',rarity:'COMMON',weight:20,col:'#7fc9ff',
     grantsTags:['multihit','cadence'],summary:'Add a third beat without increasing the cost.',details:[
       'Fire 3 arrows for 8 base damage each and apply 1 Mark.','Regain 1 Resolve after the volley.',
       'All three arrows add Chain. Costs 1 AP and 1 Resolve.'
     ],patch:{damage:8,hitDamages:null,hits:3,cost:1,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.38}}),
   sharpshootLayer({id:'stored_tempo',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'stored_tempo',name:'STORED TEMPO',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    parents:['twin_rhythm'],familyId:'stored_tempo',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'STORED TEMPO',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
     grantsTags:['backloaded','reserve'],summary:'Bank the first beat and release it through the second.',details:[
       'Deal 8 base damage, then 16. Apply 1 Mark afterward.','Regain 2 Resolve after the second arrow.',
       'Both arrows add Chain. Costs 1 AP and 2 Resolve.'
     ],patch:{damage:8,hitDamages:[8,16],hits:2,cost:2,markGain:1,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.55}}),
   sharpshootLayer({id:'double_time',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'double_time',name:'DOUBLE TIME',rarity:'RARE',weight:7,col:'#c995ff',
+    parents:['twin_rhythm'],familyId:'double_time',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'DOUBLE TIME',rarity:'RARE',weight:7,col:'#c995ff',
     grantsTags:['chain','engine','accelerating'],summary:'Each arrow advances Chain twice.',details:[
       'Fire 2 arrows for 9 base damage each and apply 1 Mark.','Each landed arrow adds 2 Chain instead of 1.',
       'Regain 1 Resolve. Costs 1 AP and 1 Resolve.'
     ],patch:{damage:9,hitDamages:null,hits:2,cost:1,markGain:1,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.4}}),
+  sharpshootLayer({id:'steady_refrain',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
+    parents:['twin_rhythm'],familyId:'steady_refrain',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'STEADY REFRAIN',rarity:'COMMON',weight:18,col:'#c0f79a',
+    grantsTags:['economy','safe_refund','even'],summary:'Recover the investment one arrow at a time.',details:[
+      'Fire 2 arrows for 11 base damage each and apply 1 Mark.','Every arrow immediately restores 1 Resolve instead of waiting for the volley.',
+      'Costs 1 AP and 2 Resolve; a completed attack is Resolve-neutral.'
+    ],patch:{damage:11,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,
+      chainGainPerHit:1,hitInterval:.46}}),
+  sharpshootLayer({id:'pulse_exchange',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
+    parents:['twin_rhythm'],familyId:'pulse_exchange',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'PULSE EXCHANGE',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    grantsTags:['multihit','investment','chain'],summary:'Spend one net Resolve to buy four immediate beats.',details:[
+      'Fire 4 arrows for 6 base damage each and apply 1 Mark.','The four arrows build 4 Chain, then the volley refunds 2 Resolve.',
+      'Costs 1 AP and 3 Resolve; the final net cost is 1 Resolve.'
+    ],patch:{damage:6,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,
+      chainGainPerHit:1,hitInterval:.3}}),
+  sharpshootLayer({id:'crown_tempo',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
+    parents:['twin_rhythm'],familyId:'crown_tempo',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    name:'CROWN TEMPO',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    grantsTags:['royal','economy','mark','safe_refund'],summary:'A royal rhythm refunds power on every impact.',details:[
+      'Fire 3 arrows for 11 base damage each and apply 2 Mark.','Every arrow immediately restores 1 Resolve and adds 1 Chain.',
+      'Costs 1 AP and 3 Resolve; a completed attack is Resolve-neutral.'
+    ],patch:{damage:11,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,
+      chainGainPerHit:1,hitInterval:.38}}),
 
   /* TRIPLE CADENCE — Apex. */
+  sharpshootLayer({id:'marching_measure',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
+    parents:['triple_cadence'],familyId:'marching_measure',branchId:'TWIN_RHYTHM',
+    name:'MARCHING MEASURE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'The cadence marches toward one emphatic final beat.',details:['Deal 8, 8, then 12 base damage.','Apply 1 Mark and regain 1 Resolve after the volley.','Costs 1 AP and 1 Resolve.'],
+    patch:{damage:8,hitDamages:[8,8,12],hits:3,cost:1,markGain:1,resolvePerHit:0,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.38}}),
+  sharpshootLayer({id:'fourth_beat',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
+    parents:['triple_cadence'],familyId:'fourth_beat',branchId:'TWIN_RHYTHM',
+    name:'FOURTH BEAT',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'Invest an extra Resolve to extend the neutral rhythm.',details:['Fire 4 arrows for 7 base damage each.','Apply 1 Mark and regain both Resolve after the fourth beat.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:7,hitDamages:null,hits:4,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.33}}),
   sharpshootLayer({id:'clockwork_volley',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'clockwork_volley',name:'CLOCKWORK VOLLEY',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'A measured four-arrow engine.',details:['Fire 4 arrows for 8 base damage each.','Apply 1 Mark and regain 1 Resolve after the volley.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:4,cost:2,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.34}}),
+    parents:['triple_cadence'],familyId:'clockwork_volley',branchId:'TWIN_RHYTHM',name:'CLOCKWORK VOLLEY',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'A measured volley accelerates into a Chain engine.',details:['Fire 4 arrows for 8 base damage each.','The arrows add 1 / 1 / 2 / 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:4,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPattern:[1,1,2,2],hitInterval:.34}}),
   sharpshootLayer({id:'unbroken_measure',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'unbroken_measure',name:'UNBROKEN MEASURE',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Keep full force without paying for the added beat.',details:['Fire 3 arrows for 11 base damage each.','Apply 1 Mark and regain 1 Resolve.','Costs only 1 AP and 1 Resolve.'],
-    patch:{damage:11,hitDamages:null,hits:3,cost:1,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.38}}),
-  sharpshootLayer({id:'rest_note',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'rest_note',name:'REST NOTE',rarity:'UNCOMMON',weight:12,col:'#7fc9ff',
-    summary:'Sacrifice setup to produce spare Resolve.',details:['Fire 3 arrows for 9 base damage each.','Apply no Mark and add no Chain. Regain 2 Resolve.','Costs 1 AP and 1 Resolve; AP prevents repetition loops.'],
-    patch:{damage:9,hitDamages:null,hits:3,cost:1,markGain:0,resolveOnComplete:2,addsChain:false,chainGainPerHit:1,hitInterval:.38}}),
-
+    parents:['triple_cadence'],familyId:'unbroken_measure',branchId:'TWIN_RHYTHM',name:'UNBROKEN MEASURE',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'The unbroken final beat crowns both damage and momentum.',details:['Deal 10, 10, then 15 base damage.','The final arrow adds 3 Chain; apply 1 Mark and regain 1 Resolve.','Costs only 1 AP and 1 Resolve.'],
+    patch:{damage:10,hitDamages:[10,10,15],hits:3,cost:1,markGain:1,resolveOnComplete:1,chainGainPattern:[1,1,3],hitInterval:.38}}),
   /* STORED TEMPO — Apex. */
+  sharpshootLayer({id:'balanced_account',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
+    parents:['stored_tempo'],familyId:'balanced_account',branchId:'TWIN_RHYTHM',name:'BALANCED ACCOUNT',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'A modest first deposit funds a much stronger second arrow.',details:['Deal 8 base damage, then 18.','Apply 1 Mark and regain both Resolve after the second arrow.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:8,hitDamages:[8,18],hits:2,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,extraChainBonus:0,chainGainPerHit:1,hitInterval:.57}}),
   sharpshootLayer({id:'banked_thunder',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
-    parents:['stored_tempo'],familyId:'banked_thunder',name:'BANKED THUNDER',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'The stored second arrow lands like a finisher.',details:['Deal 10 base damage, then 24.','Regain 2 Resolve and apply 1 Mark. Chain scaling gains an extra 2% per stack.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:10,hitDamages:[10,24],hits:2,cost:2,markGain:1,resolveOnComplete:2,extraChainBonus:.02,chainGainPerHit:1,hitInterval:.62}}),
+    parents:['stored_tempo'],familyId:'banked_thunder',branchId:'TWIN_RHYTHM',name:'BANKED THUNDER',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'The stored second arrow lands like a Chain-scaled finisher.',details:['Deal 9 base damage, then 25.','Regain 2 Resolve and apply 1 Mark. Chain scaling gains an extra 2% per stack.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:9,hitDamages:[9,25],hits:2,cost:2,markGain:1,resolveOnComplete:2,extraChainBonus:.02,chainGainPerHit:1,hitInterval:.62}}),
   sharpshootLayer({id:'compound_interest',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
-    parents:['stored_tempo'],familyId:'compound_interest',name:'COMPOUND INTEREST',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Every delayed arrow returns a larger investment.',details:['Deal 8, then 12, then 20 base damage.','Apply 1 Mark and regain all 3 Resolve spent.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:[8,12,20],hits:3,cost:3,markGain:1,resolveOnComplete:3,extraChainBonus:0,chainGainPerHit:1,hitInterval:.46}}),
+    parents:['stored_tempo'],familyId:'compound_interest',branchId:'TWIN_RHYTHM',name:'COMPOUND INTEREST',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Three delayed payments compound into one lethal return.',details:['Deal 6, then 12, then 24 base damage.','Apply 1 Mark, regain all 3 Resolve and gain +1% Chain scaling per stack.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:6,hitDamages:[6,12,24],hits:3,cost:3,markGain:1,resolveOnComplete:3,extraChainBonus:.01,chainGainPerHit:1,hitInterval:.46}}),
   sharpshootLayer({id:'patient_dividend',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
-    parents:['stored_tempo'],familyId:'patient_dividend',name:'PATIENT DIVIDEND',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'A cheap pause before a brutal second arrow.',details:['Deal 6 base damage, then 22.','Apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
-    patch:{damage:6,hitDamages:[6,22],hits:2,cost:1,markGain:1,resolveOnComplete:1,extraChainBonus:0,chainGainPerHit:1,hitInterval:.68}}),
+    parents:['stored_tempo'],familyId:'patient_dividend',branchId:'TWIN_RHYTHM',name:'PATIENT DIVIDEND',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A nearly harmless pause precedes a brutal cheap release.',details:['Deal 5 base damage, then 24.','Apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
+    patch:{damage:5,hitDamages:[5,24],hits:2,cost:1,markGain:1,resolveOnComplete:1,extraChainBonus:0,chainGainPerHit:1,hitInterval:.68}}),
 
   /* DOUBLE TIME — Apex. */
+  sharpshootLayer({id:'taut_weave',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
+    parents:['double_time'],familyId:'taut_weave',branchId:'TWIN_RHYTHM',name:'TAUT WEAVE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Tighten the paired rhythm without changing its cost.',details:['Fire 2 arrows for 10 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:2,cost:1,markGain:1,resolvePerHit:0,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.4}}),
   sharpshootLayer({id:'chain_loom',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
-    parents:['double_time'],familyId:'chain_loom',name:'CHAIN LOOM',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Weave six Chain from one action.',details:['Fire 3 arrows for 8 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:3,cost:2,markGain:1,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.34}}),
+    parents:['double_time'],familyId:'chain_loom',branchId:'TWIN_RHYTHM',name:'CHAIN LOOM',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'Weave six Chain from one action.',details:['Fire 3 arrows for 9 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain both Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:9,hitDamages:null,hits:3,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:2,hitInterval:.34}}),
   sharpshootLayer({id:'accelerando',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
-    parents:['double_time'],familyId:'accelerando',name:'ACCELERANDO',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Eight Chain arrive in a rising four-shot rush.',details:['Fire 4 arrows for 7 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:7,hitDamages:null,hits:4,cost:3,markGain:1,resolveOnComplete:2,chainGainPerHit:2,hitInterval:.3}}),
+    parents:['double_time'],familyId:'accelerando',branchId:'TWIN_RHYTHM',name:'ACCELERANDO',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Every impact accelerates the next step of the Chain engine.',details:['Fire 4 arrows for 8 base damage each.','The arrows add 1 / 2 / 3 / 4 Chain; apply 1 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:3,chainGainPattern:[1,2,3,4],hitInterval:.3}}),
   sharpshootLayer({id:'snap_rhythm',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
-    parents:['double_time'],familyId:'snap_rhythm',name:'SNAP RHYTHM',rarity:'UNCOMMON',weight:12,col:'#7fc9ff',
-    summary:'Two hard shots, three Chain each.',details:['Fire 2 arrows for 12 base damage each.','Every arrow adds 3 Chain; apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:12,hitDamages:null,hits:2,cost:2,markGain:1,resolveOnComplete:1,chainGainPerHit:3,hitInterval:.48}}),
+    parents:['double_time'],familyId:'snap_rhythm',branchId:'TWIN_RHYTHM',name:'SNAP RHYTHM',rarity:'UNCOMMON',weight:12,col:'#7fc9ff',
+    summary:'Two hard shots, three Chain each.',details:['Fire 2 arrows for 12 base damage each.','Every arrow adds 3 Chain; apply 1 Mark and regain both Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:12,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:3,hitInterval:.48}}),
+
+  /* STEADY REFRAIN — per-hit refund Apex. */
+  sharpshootLayer({id:'even_measure',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
+    parents:['steady_refrain'],familyId:'even_measure',branchId:'TWIN_RHYTHM',name:'EVEN MEASURE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Two equal arrows return their cost as they land.',details:['Fire 2 arrows for 12 base damage each.','Every arrow restores 1 Resolve; apply 1 Mark after the second.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:12,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.46}}),
+  sharpshootLayer({id:'clear_cadence',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
+    parents:['steady_refrain'],familyId:'clear_cadence',branchId:'TWIN_RHYTHM',name:'CLEAR CADENCE',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A light refunded opening clears space for a heavier answer.',details:['Deal 9 base damage, then 17.','Every arrow restores 1 Resolve; apply 1 Mark after the second.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:9,hitDamages:[9,17],hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.52}}),
+  sharpshootLayer({id:'silver_interval',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
+    parents:['steady_refrain'],familyId:'silver_interval',branchId:'TWIN_RHYTHM',name:'SILVER INTERVAL',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'A third safe beat extends the live refund rhythm.',details:['Fire 3 arrows for 10 base damage each.','Every arrow restores 1 Resolve; apply 1 Mark after the third.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:3,cost:3,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.4}}),
+  sharpshootLayer({id:'perfect_refrain',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
+    parents:['steady_refrain'],familyId:'perfect_refrain',branchId:'TWIN_RHYTHM',name:'PERFECT REFRAIN',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Perfect refunds never disappear; excess Resolve becomes momentum.',details:['Fire 3 arrows for 12 base damage each and apply 2 Mark.','Every arrow restores 1 Resolve; overflow Resolve becomes the same amount of Chain.','Costs 1 AP and 2 Resolve, producing 1 net Resolve.'],
+    patch:{damage:12,hitDamages:null,hits:3,cost:2,markGain:2,resolvePerHit:1,resolveOnComplete:0,
+      resolveOverflowToChain:true,chainGainPerHit:1,hitInterval:.38}}),
+
+  /* PULSE EXCHANGE — net-cost multihit Apex. */
+  sharpshootLayer({id:'fourfold_current',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
+    parents:['pulse_exchange'],familyId:'fourfold_current',branchId:'TWIN_RHYTHM',name:'FOURFOLD CURRENT',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Four stronger pulses preserve the one-Resolve exchange.',details:['Fire 4 arrows for 7 base damage each.','Build 4 Chain, apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:7,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.3}}),
+  sharpshootLayer({id:'open_circuit',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
+    parents:['pulse_exchange'],familyId:'open_circuit',branchId:'TWIN_RHYTHM',name:'OPEN CIRCUIT',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A fifth pulse opens a longer Chain circuit.',details:['Fire 5 arrows for 6 base damage each.','Build 5 Chain, apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:6,hitDamages:null,hits:5,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.27}}),
+  sharpshootLayer({id:'returning_current',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
+    parents:['pulse_exchange'],familyId:'returning_current',branchId:'TWIN_RHYTHM',name:'RETURNING CURRENT',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'The fourth current returns the entire investment.',details:['Fire 4 arrows for 8 base damage each.','Build 4 Chain, apply 1 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.3}}),
+  sharpshootLayer({id:'crown_circuit',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
+    parents:['pulse_exchange'],familyId:'crown_circuit',branchId:'TWIN_RHYTHM',name:'CROWN CIRCUIT',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Five royal currents return their price and surge at the end.',details:['Fire 5 arrows for 8 base damage each.','The arrows add 1 / 1 / 1 / 2 / 3 Chain; apply 2 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:5,cost:3,markGain:2,resolvePerHit:0,resolveOnComplete:3,
+      chainGainPattern:[1,1,1,2,3],hitInterval:.27}}),
+
+  /* CROWN TEMPO — royal economy Apex. */
+  sharpshootLayer({id:'lesser_coronation',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
+    parents:['crown_tempo'],familyId:'lesser_coronation',branchId:'TWIN_RHYTHM',name:'LESSER CORONATION',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Three royal impacts strengthen the established tempo.',details:['Fire 3 arrows for 12 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark after the third.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:12,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.38}}),
+  sharpshootLayer({id:'royal_refrain',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
+    parents:['crown_tempo'],familyId:'royal_refrain',branchId:'TWIN_RHYTHM',name:'ROYAL REFRAIN',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A fourth royal beat produces one spare Resolve.',details:['Fire 4 arrows for 10 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark after the fourth.','Costs 1 AP and 3 Resolve, producing 1 net Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:4,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.32}}),
+  sharpshootLayer({id:'sovereign_pulse',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
+    parents:['crown_tempo'],familyId:'sovereign_pulse',branchId:'TWIN_RHYTHM',name:'SOVEREIGN PULSE',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'Three sovereign impacts trade speed for Chain-scaled force.',details:['Fire 3 arrows for 16 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark. Chain scaling gains +2% per stack.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:16,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,
+      extraChainBonus:.02,chainGainPerHit:1,hitInterval:.48}}),
+  sharpshootLayer({id:'endless_anthem',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
+    parents:['crown_tempo'],familyId:'endless_anthem',branchId:'TWIN_RHYTHM',name:'ENDLESS ANTHEM',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Five royal beats turn every excess resource into a final crescendo.',details:['Fire 5 arrows for 10 base damage each and apply 2 Mark.','Restore 1 Resolve per hit; overflow becomes Chain. The hits add 1 / 1 / 1 / 2 / 3 Chain.','Costs 1 AP and 4 Resolve, producing 1 net Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:5,cost:4,markGain:2,resolvePerHit:1,resolveOnComplete:0,
+      resolveOverflowToChain:true,chainGainPattern:[1,1,1,2,3],hitInterval:.28}}),
 
   /* FORKED BARBS — Mark Twists. */
   sharpshootLayer({id:'crimson_map',skillId:'sharpshoot',depth:3,poolId:'forked_barbs_twist',
@@ -9393,12 +9560,6 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
       'Fire 2 arrows for 6 base damage each.','Apply the maximum 3 Mark after the volley.',
       'The setup adds no Chain. Costs 1 AP and 1 Resolve.'
     ],patch:{damage:6,hitDamages:null,hits:2,cost:1,markGain:3,consumeMark:false,useMark:false,addsChain:false,resolveOnComplete:0,hitInterval:.42}}),
-  sharpshootLayer({id:'barbed_recall',skillId:'sharpshoot',depth:3,poolId:'forked_barbs_twist',
-    parents:['forked_barbs'],familyId:'barbed_recall',name:'BARBED RECALL',rarity:'UNCOMMON',weight:12,col:'#ff8794',
-    grantsTags:['mark','payoff','cycle'],summary:'Cash Mark, then leave a new wound behind.',details:[
-      'Fire 2 arrows for 9 base damage each and consume every Mark.','Each Mark adds 4 base damage per hit; stacked Marks add a further +0 / +2 / +6.',
-      'Apply 1 new Mark afterward. Costs 1 AP and 2 Resolve.'
-    ],patch:{damage:9,hitDamages:null,hits:2,cost:2,consumeMark:true,useMark:false,markDamagePerHit:4,markStackGrowth:2,markGain:1,addsChain:true,hitInterval:.46}}),
   sharpshootLayer({id:'fixed_sightline',skillId:'sharpshoot',depth:3,poolId:'forked_barbs_twist',
     parents:['forked_barbs'],familyId:'fixed_sightline',name:'FIXED SIGHTLINE',rarity:'RARE',weight:7,col:'#c995ff',
     grantsTags:['mark','read','payoff'],summary:'Read the wounds for damage without consuming them.',details:[
@@ -9420,29 +9581,15 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
     summary:'A scratch exposes the target before a crushing pin.',details:['Deal 4 base damage, then 28.','Apply 3 Mark after the second hit. Add no Chain.','Costs only 1 AP and 1 Resolve.'],
     patch:{damage:4,hitDamages:[4,28],hits:2,cost:1,markGain:3,consumeMark:false,useMark:false,addsChain:false,hitInterval:.64}}),
 
-  /* BARBED RECALL — Apex. */
-  sharpshootLayer({id:'red_recursion',skillId:'sharpshoot',depth:4,poolId:'barbed_recall_apex',
-    parents:['barbed_recall'],familyId:'red_recursion',name:'RED RECURSION',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Cash the wound three times and immediately rebuild it.',details:['Fire 3 arrows for 8 base damage each and consume every Mark.','Each hit receives the full 4-per-Mark bonus and stack growth.','Apply 2 new Mark. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:3,cost:3,consumeMark:true,useMark:false,markDamagePerHit:4,markStackGrowth:2,markGain:2,addsChain:true,hitInterval:.36}}),
-  sharpshootLayer({id:'open_vein',skillId:'sharpshoot',depth:4,poolId:'barbed_recall_apex',
-    parents:['barbed_recall'],familyId:'open_vein',name:'OPEN VEIN',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Two enormous Mark detonations leave one wound alive.',details:['Fire 2 arrows for 14 base damage each and consume every Mark.','Each Mark adds 6 base damage per hit with 3 stack growth.','Apply 1 new Mark and add no Chain. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:14,hitDamages:null,hits:2,cost:3,consumeMark:true,useMark:false,markDamagePerHit:6,markStackGrowth:3,markGain:1,addsChain:false,hitInterval:.55}}),
-  sharpshootLayer({id:'barbed_cycle',skillId:'sharpshoot',depth:4,poolId:'barbed_recall_apex',
-    parents:['barbed_recall'],familyId:'barbed_cycle',name:'BARBED CYCLE',rarity:'UNCOMMON',weight:12,col:'#ff8794',
-    summary:'A cheaper, repeatable Mark conversion.',details:['Fire 2 arrows for 10 base damage each and consume every Mark.','Each Mark adds 3 base damage per hit with 2 stack growth.','Apply 1 new Mark. Costs 1 AP and 2 Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:2,cost:2,consumeMark:true,useMark:false,markDamagePerHit:3,markStackGrowth:2,markGain:1,addsChain:true,hitInterval:.44}}),
-
   /* FIXED SIGHTLINE — Apex. */
   sharpshootLayer({id:'fixed_target',skillId:'sharpshoot',depth:4,poolId:'fixed_sightline_apex',
     parents:['fixed_sightline'],familyId:'fixed_target',name:'FIXED TARGET',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Three attacks exploit every Mark without spending one.',details:['Fire 3 arrows for 8 base damage each.','Every Mark adds 3 base damage plus stack growth to all three hits.','Preserve Mark. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:3,cost:3,consumeMark:false,useMark:true,markDamagePerHit:3,markStackGrowth:1,markGain:0,addsChain:true,hitInterval:.36}}),
+    summary:'Three attacks exploit every Mark without spending one.',details:['Fire 3 arrows for 8 base damage each.','Every Mark adds 3 base damage plus stack growth to all three hits.','Preserve all Mark and apply 1. Costs 1 AP and 3 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:3,cost:3,consumeMark:false,useMark:true,markDamagePerHit:3,markStackGrowth:1,markGain:1,addsChain:true,hitInterval:.36}}),
   sharpshootLayer({id:'deaths_coordinates',skillId:'sharpshoot',depth:4,poolId:'fixed_sightline_apex',
     parents:['fixed_sightline'],familyId:'deaths_coordinates',name:"DEATH'S COORDINATES",rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'A motionless target receives two perfect executions.',details:['Fire 2 arrows for 14 base damage each.','Every preserved Mark adds 5 base damage with 2 stack growth to both hits.','Add no Chain. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:14,hitDamages:null,hits:2,cost:3,consumeMark:false,useMark:true,markDamagePerHit:5,markStackGrowth:2,markGain:0,addsChain:false,hitInterval:.58}}),
+    summary:'A motionless target receives two perfect executions.',details:['Fire 2 arrows for 14 base damage each.','Every preserved Mark adds 5 base damage with 2 stack growth to both hits.','Preserve Mark, apply 1 and add no Chain. Costs 1 AP and 3 Resolve.'],
+    patch:{damage:14,hitDamages:null,hits:2,cost:3,consumeMark:false,useMark:true,markDamagePerHit:5,markStackGrowth:2,markGain:1,addsChain:false,hitInterval:.58}}),
   sharpshootLayer({id:'red_geometry',skillId:'sharpshoot',depth:4,poolId:'fixed_sightline_apex',
     parents:['fixed_sightline'],familyId:'red_geometry',name:'RED GEOMETRY',rarity:'UNCOMMON',weight:12,col:'#ff596d',
     summary:'Two probes guide a heavier third arrow.',details:['Deal 6, 6, then 12 base damage.','Every preserved Mark adds 2 base damage plus stack growth to each hit.','Apply 1 Mark. Costs 1 AP and 2 Resolve.'],
@@ -9452,15 +9599,15 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   sharpshootLayer({id:'hammer_pair',skillId:'sharpshoot',depth:3,poolId:'siege_pair_twist',
     parents:['siege_pair'],familyId:'hammer_pair',name:'HAMMER PAIR',rarity:'COMMON',weight:20,col:'#9ecbff',
     grantsTags:['posture','impact'],summary:'Commit both arrows to reliable Posture damage.',details:[
-      'Fire 2 arrows for 10 base damage each.','Deal 42 Posture damage after the volley and apply no Mark.',
+      'Fire 2 arrows for 10 base damage each.','Deal 42 Posture damage and apply 1 Mark after the volley.',
       'Costs 1 AP and 2 Resolve.'
-    ],patch:{damage:10,hitDamages:null,hits:2,cost:2,markGain:0,posture:42,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.46}}),
+    ],patch:{damage:10,hitDamages:null,hits:2,cost:2,markGain:1,posture:42,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.46}}),
   sharpshootLayer({id:'chain_ram',skillId:'sharpshoot',depth:3,poolId:'siege_pair_twist',
     parents:['siege_pair'],familyId:'chain_ram',name:'CHAIN RAM',rarity:'UNCOMMON',weight:12,col:'#c995ff',
     grantsTags:['posture','chain','payoff'],summary:'Convert accumulated Chain into a Break attempt.',details:[
       'Fire 2 arrows for 8 base damage each and add no new Chain.','Deal 8 Posture plus 6 for every starting Chain.',
-      'Consume all Chain afterward. Costs 1 AP and 2 Resolve.'
-    ],patch:{damage:8,hitDamages:null,hits:2,cost:2,markGain:0,posture:8,posturePerChain:6,consumeChain:true,addsChain:false,hitInterval:.48}}),
+      'Consume all Chain, then apply 1 Mark. Costs 1 AP and 2 Resolve.'
+    ],patch:{damage:8,hitDamages:null,hits:2,cost:2,markGain:1,posture:8,posturePerChain:6,consumeChain:true,addsChain:false,hitInterval:.48}}),
   sharpshootLayer({id:'fracture_echo',skillId:'sharpshoot',depth:3,poolId:'siege_pair_twist',
     parents:['siege_pair'],familyId:'fracture_echo',name:'FRACTURE ECHO',rarity:'RARE',weight:7,col:'#c995ff',
     grantsTags:['posture','multihit'],summary:'Three lighter impacts spread damage and fracture.',details:[
@@ -9471,30 +9618,30 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   /* HAMMER PAIR — Apex. */
   sharpshootLayer({id:'gatebreaker',skillId:'sharpshoot',depth:4,poolId:'hammer_pair_apex',
     parents:['hammer_pair'],familyId:'gatebreaker',name:'GATEBREAKER',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Three impacts threaten a Break from an empty bar.',details:['Fire 3 arrows for 10 base damage each.','Deal 60 Posture after the volley. Apply no Mark.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:3,cost:3,markGain:0,posture:60,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.4}}),
+    summary:'Three impacts threaten a Break from an empty bar.',details:['Fire 3 arrows for 10 base damage each.','Deal 60 Posture and apply 1 Mark after the volley.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:3,cost:3,markGain:1,posture:60,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.4}}),
   sharpshootLayer({id:'royal_ballista',skillId:'sharpshoot',depth:4,poolId:'hammer_pair_apex',
     parents:['hammer_pair'],familyId:'royal_ballista',name:'ROYAL BALLISTA',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'The second siege bolt carries the full machine behind it.',details:['Deal 12 base damage, then 24.','Deal 55 Posture after the second bolt.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:12,hitDamages:[12,24],hits:2,cost:3,markGain:0,posture:55,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.66}}),
+    summary:'The second siege bolt carries the full machine behind it.',details:['Deal 12 base damage, then 24.','Deal 55 Posture and apply 1 Mark after the second bolt.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:12,hitDamages:[12,24],hits:2,cost:3,markGain:1,posture:55,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.66}}),
   sharpshootLayer({id:'cracked_bell',skillId:'sharpshoot',depth:4,poolId:'hammer_pair_apex',
     parents:['hammer_pair'],familyId:'cracked_bell',name:'CRACKED BELL',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'Two taps announce the heavy third impact.',details:['Deal 8, 8, then 16 base damage.','Deal 48 Posture after the third arrow.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:[8,8,16],hits:3,cost:2,markGain:0,posture:48,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.44}}),
+    summary:'Two taps announce the heavy third impact.',details:['Deal 8, 8, then 16 base damage.','Deal 48 Posture and apply 1 Mark after the third arrow.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:8,hitDamages:[8,8,16],hits:3,cost:2,markGain:1,posture:48,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.44}}),
 
   /* CHAIN RAM — Apex. */
   sharpshootLayer({id:'castle_ruin',skillId:'sharpshoot',depth:4,poolId:'chain_ram_apex',
     parents:['chain_ram'],familyId:'castle_ruin',name:'CASTLE RUIN',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Every stored Chain becomes damage and heavy Posture.',details:['Fire 2 arrows for 14 base damage each with +4% Chain scaling.','Deal 12 Posture plus 8 for every starting Chain.','Add no Chain and consume all stacks. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:14,hitDamages:null,hits:2,cost:3,markGain:0,posture:12,posturePerChain:8,consumeChain:true,extraChainBonus:.04,addsChain:false,hitInterval:.52}}),
+    summary:'Every stored Chain becomes damage and heavy Posture.',details:['Fire 2 arrows for 14 base damage each with +4% Chain scaling.','Deal 12 Posture plus 8 for every starting Chain.','Consume Chain, then apply 1 Mark. Costs 1 AP and 3 Resolve.'],
+    patch:{damage:14,hitDamages:null,hits:2,cost:3,markGain:1,posture:12,posturePerChain:8,consumeChain:true,extraChainBonus:.04,addsChain:false,hitInterval:.52}}),
   sharpshootLayer({id:'kingdom_fall',skillId:'sharpshoot',depth:4,poolId:'chain_ram_apex',
     parents:['chain_ram'],familyId:'kingdom_fall',name:'KINGDOM FALL',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'A final bolt magnifies an entire combat of momentum.',details:['Deal 10 base damage, then 30, with +5% Chain scaling.','Deal 15 Posture plus 10 for every starting Chain.','Consume all Chain. Costs 1 AP and 3 Resolve.'],
-    patch:{damage:10,hitDamages:[10,30],hits:2,cost:3,markGain:0,posture:15,posturePerChain:10,consumeChain:true,extraChainBonus:.05,addsChain:false,hitInterval:.7}}),
+    summary:'A final bolt magnifies an entire combat of momentum.',details:['Deal 10 base damage, then 30, with +5% Chain scaling.','Deal 15 Posture plus 10 for every starting Chain.','Consume Chain, then apply 1 Mark. Costs 1 AP and 3 Resolve.'],
+    patch:{damage:10,hitDamages:[10,30],hits:2,cost:3,markGain:1,posture:15,posturePerChain:10,consumeChain:true,extraChainBonus:.05,addsChain:false,hitInterval:.7}}),
   sharpshootLayer({id:'breach_tax',skillId:'sharpshoot',depth:4,poolId:'chain_ram_apex',
     parents:['chain_ram'],familyId:'breach_tax',name:'BREACH TAX',rarity:'UNCOMMON',weight:12,col:'#7fc9ff',
-    summary:'Cash Chain for fracture while recovering part of the cost.',details:['Fire 2 arrows for 10 base damage each.','Deal 10 Posture plus 5 per starting Chain, then consume Chain.','Regain 1 Resolve. Costs 1 AP and 2 Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:2,cost:2,markGain:0,posture:10,posturePerChain:5,consumeChain:true,extraChainBonus:0,addsChain:false,resolveOnComplete:1,hitInterval:.5}}),
+    summary:'Cash Chain for fracture while recovering part of the cost.',details:['Fire 2 arrows for 10 base damage each.','Deal 10 Posture plus 5 per Chain; consume Chain and apply 1 Mark.','Regain 1 Resolve. Costs 1 AP and 2 Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:2,cost:2,markGain:1,posture:10,posturePerChain:5,consumeChain:true,extraChainBonus:0,addsChain:false,resolveOnComplete:1,hitInterval:.5}}),
 
   /* FRACTURE ECHO — Apex. */
   sharpshootLayer({id:'ninefold_crack',skillId:'sharpshoot',depth:4,poolId:'fracture_echo_apex',
@@ -9539,11 +9686,6 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
     parents:['prism_volley'],familyId:'white_crown',name:'WHITE CROWN',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
     summary:'Four brilliant rays carry both force and scaling.',details:['Fire 4 arrows for 11 base damage each.','Gain an extra 2% damage per Chain and apply 1 Mark.','Costs 1 AP and 3 Resolve.'],
     patch:{damage:11,hitDamages:null,hits:4,cost:3,markGain:1,resolveOnComplete:0,extraChainBonus:.02,chainGainPerHit:1,hitInterval:.32}}),
-  sharpshootLayer({id:'glass_choir',skillId:'sharpshoot',depth:4,poolId:'prism_volley_apex',
-    parents:['prism_volley'],familyId:'glass_choir',name:'GLASS CHOIR',rarity:'UNCOMMON',weight:12,col:'#35e4ff',
-    summary:'Four fragile rays sing eight Chain into existence.',details:['Fire 4 arrows for 8 base damage each.','Each ray adds 2 Chain; apply no Mark.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:4,cost:2,markGain:0,resolveOnComplete:0,extraChainBonus:0,chainGainPerHit:2,hitInterval:.3}}),
-
   /* ROYAL ANGLES — Apex. */
   sharpshootLayer({id:'golden_ratio',skillId:'sharpshoot',depth:4,poolId:'royal_angles_apex',
     parents:['royal_angles'],familyId:'golden_ratio',name:'GOLDEN RATIO',rarity:'RARE',weight:8,col:'#c995ff',
@@ -9584,6 +9726,20 @@ const SKILL_MUTATION_TYPE_COL=Object.freeze({
   STABLE:'#cfd3df',DISTORTED:'#35e4ff',CORRUPTED:'#ff334f'
 });
 const SKILL_MUTATION_TYPES=Object.freeze(['STABLE','DISTORTED','CORRUPTED']);
+function skillIdentityName(id){
+  const identity=SKILL_IDENTITIES[id];
+  return identity?identity.name:String(id||'UNDEFINED').replace(/_/g,' ');
+}
+function skillBuildAspectName(id){return String(id||'UNFORMED').replace(/_/g,' ');}
+function skillLineageLabel(skill){
+  if(!skill)return 'STABLE';
+  const aspect=skill.lineageAspect||'STABLE',level=skill.aspectLevel||0;
+  return aspect+(aspect==='STABLE'?'':(' '+Math.max(1,level)))+' · '+
+    skillBuildAspectName(skill.formAspectId||skill.lineageIdentity||skill.identityId);
+}
+function mutationIdentityLabel(mutation){
+  return skillBuildAspectName(mutation&&(mutation.buildAspect||mutation.aspectIdentity));
+}
 const SKILL_MUTATION_RARITY_WEIGHTS=Object.freeze({COMMON:65,UNCOMMON:27,RARE:7,LEGENDARY:1});
 const SKILL_MUTATION_TYPE_WEIGHTS=Object.freeze({
   COMMON:Object.freeze({STABLE:97,DISTORTED:3,CORRUPTED:0}),
@@ -9591,9 +9747,97 @@ const SKILL_MUTATION_TYPE_WEIGHTS=Object.freeze({
   RARE:Object.freeze({STABLE:80,DISTORTED:15,CORRUPTED:5}),
   LEGENDARY:Object.freeze({STABLE:60,DISTORTED:30,CORRUPTED:10}),
 });
+function evolutionLineagesTo(mutation,trail=new Set()){
+  if(!mutation||mutation.kind!=='EVOLUTION'||trail.has(mutation.id))return [];
+  if(mutation.depth===1)return [[mutation]];
+  const nextTrail=new Set(trail);nextTrail.add(mutation.id);
+  const parents=mutation.parents.length?mutation.parents.map(id=>SKILL_MUTATION_BY_ID[id]).filter(Boolean):
+    SKILL_MUTATIONS.filter(parent=>parent.skillId===mutation.skillId&&parent.kind==='EVOLUTION'&&
+      parent.depth===mutation.depth-1&&mutation.poolIds.includes(parent.childPoolId));
+  return parents.flatMap(parent=>evolutionLineagesTo(parent,nextTrail).map(path=>path.concat(mutation)));
+}
+function validateStableSkillIdentity(mutation){
+  if(mutation.kind!=='EVOLUTION'||mutation.resultAspect!=='STABLE')return;
+  const definition=BASE_TURN_SKILLS.find(skill=>skill.id===mutation.skillId);
+  const identity=definition&&SKILL_IDENTITIES[definition.identityId];
+  if(!definition||!identity)return;
+  const lineages=evolutionLineagesTo(mutation);
+  if(!lineages.length)throw new Error('Stable mutation '+mutation.id+' has no valid lineage');
+  for(const lineage of lineages){
+    const state=createRunSkill(definition);for(const layer of lineage)layer.apply(state);
+    if(!identity.accepts(state))throw new Error('Stable '+definition.id+' mutation '+mutation.id+
+      ' violates base identity '+identity.id+': '+identity.description);
+  }
+}
+function validateTwinRhythmGuideline(mutation){
+  if(mutation.kind!=='EVOLUTION'||mutation.branchId!=='TWIN_RHYTHM')return;
+  const definition=BASE_TURN_SKILLS.find(skill=>skill.id===mutation.skillId);
+  for(const lineage of evolutionLineagesTo(mutation)){
+    const state=createRunSkill(definition);for(const layer of lineage)layer.apply(state);
+    const hits=state.hits||1,refund=(state.resolvePerHit||0)*hits+(state.resolveOnComplete||0),
+      netResolve=refund-(state.cost||0);
+    if(hits<2)throw new Error('Twin Rhythm '+mutation.id+' must remain a split or multihit volley');
+    if(!(state.markGain>0))
+      throw new Error('Twin Rhythm '+mutation.id+' must end by generating Mark');
+    if(refund<=0)throw new Error('Twin Rhythm '+mutation.id+' must contain a Resolve rhythm');
+    if(netResolve < -1||netResolve > 1)
+      throw new Error('Twin Rhythm '+mutation.id+' exceeds the Stable Resolve budget');
+    if((state.posture||0)>0||state.consumeChain)
+      throw new Error('Twin Rhythm '+mutation.id+' cannot steal another Specialization role');
+  }
+}
+const SKILL_RARITY_ORDER=Object.freeze(['COMMON','UNCOMMON','RARE','LEGENDARY']);
+function evolutionCombatState(mutation){
+  const definition=mutation&&BASE_TURN_SKILLS.find(skill=>skill.id===mutation.skillId),
+    lineage=evolutionLineagesTo(mutation)[0];
+  if(!definition||!lineage)return null;
+  const state=createRunSkill(definition);for(const layer of lineage)layer.apply(state);
+  return state;
+}
+/* This value is a guardrail, not the final balance formula. It compares siblings
+   at zero starting Chain so a higher rarity cannot accidentally be a strict
+   numerical downgrade; authored utility and live boss balance are still tested. */
+function stableEvolutionGuardrailValue(state){
+  const hits=state.hits||1,rate=CFG.CHAIN_BONUS+(state.extraChainBonus||0);
+  let chain=0,damage=0;
+  for(let i=0;i<hits;i++){
+    damage+=Math.round(commandHitBase(state,i)*(1+rate*chain));
+    chain+=commandChainGain(state,i);
+  }
+  const refund=(state.resolvePerHit||0)*hits+(state.resolveOnComplete||0),
+    netResolve=refund-(state.cost||0);
+  return damage+chain*2+(state.markGain||0)*6+netResolve*4+
+    (state.resolveOverflowToChain?4:0)+(state.posture||0)*.35;
+}
+function stableEvolutionMechanicSignature(state){
+  return JSON.stringify({hits:state.hits||1,damage:state.hitDamages||state.damage,cost:state.cost||0,
+    refundHit:state.resolvePerHit||0,refundEnd:state.resolveOnComplete||0,mark:state.markGain||0,
+    chain:state.chainGainPattern||state.chainGainPerHit||1,overflow:!!state.resolveOverflowToChain,
+    chainScale:state.extraChainBonus||0,posture:state.posture||0});
+}
+function validateTwinRhythmApexPool(twist){
+  if(twist.kind!=='EVOLUTION'||twist.branchId!=='TWIN_RHYTHM'||twist.depth!==3)return;
+  const apexes=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.depth===4&&
+    node.parents.includes(twist.id)).sort((a,b)=>SKILL_RARITY_ORDER.indexOf(a.rarity)-SKILL_RARITY_ORDER.indexOf(b.rarity));
+  const rarities=apexes.map(node=>node.rarity);
+  if(rarities.join('|')!==SKILL_RARITY_ORDER.join('|'))
+    throw new Error('Twin Rhythm '+twist.id+' Apex pool needs exactly Common, Uncommon, Rare and Legendary');
+  const states=apexes.map(evolutionCombatState),signatures=new Set(states.map(stableEvolutionMechanicSignature));
+  if(signatures.size!==apexes.length)
+    throw new Error('Twin Rhythm '+twist.id+' Apex cards need four distinct combat outcomes');
+  const values=states.map(stableEvolutionGuardrailValue);
+  for(let i=1;i<values.length;i++)if(values[i]<=values[i-1])
+    throw new Error('Twin Rhythm '+twist.id+' rarity power regresses from '+rarities[i-1]+' to '+rarities[i]);
+}
 const SKILL_MUTATIONS_BY_SKILL=(()=>{
   const index=Object.create(null),seenIds=new Set();
-  for(const skill of BASE_TURN_SKILLS)index[skill.id]=[];
+  for(const skill of BASE_TURN_SKILLS){
+    const identity=SKILL_IDENTITIES[skill.identityId];
+    if(!identity)throw new Error('Base skill '+skill.id+' needs a registered identity');
+    if(!identity.accepts(createRunSkill(skill)))throw new Error('Base skill '+skill.id+
+      ' violates its own identity '+identity.id);
+    index[skill.id]=[];
+  }
   for(const mutation of SKILL_MUTATIONS){
     if(seenIds.has(mutation.id))throw new Error('Duplicate skill mutation id '+mutation.id);
     seenIds.add(mutation.id);
@@ -9605,15 +9849,26 @@ const SKILL_MUTATIONS_BY_SKILL=(()=>{
       throw new Error('Mastery '+mutation.id+' has invalid theme '+mutation.theme);
     if(!SKILL_MUTATION_RARITY_WEIGHTS[mutation.rarity])throw new Error('Mutation '+mutation.id+' has invalid rarity '+mutation.rarity);
     if(!SKILL_MUTATION_TYPES.includes(mutation.type))throw new Error('Mutation '+mutation.id+' has invalid type '+mutation.type);
+    if(!SKILL_MUTATION_TYPES.includes(mutation.resultAspect))throw new Error('Mutation '+mutation.id+' has invalid result aspect '+mutation.resultAspect);
+    if(!mutation.aspectFrom.length||mutation.aspectFrom.some(aspect=>!SKILL_MUTATION_TYPES.includes(aspect)))
+      throw new Error('Mutation '+mutation.id+' has invalid aspect origin');
+    if(!mutation.aspectIdentity)throw new Error('Mutation '+mutation.id+' needs an aspect identity');
     if(mutation.variant!==mutation.type)throw new Error('Mutation '+mutation.id+' variant must match its type');
     if(!mutation.familyId)throw new Error('Mutation '+mutation.id+' needs a family id');
     if(mutation.kind==='EVOLUTION'&&!mutation.poolIds.length)
       throw new Error('Mutation '+mutation.id+' needs at least one parent pool');
+    if(mutation.kind==='EVOLUTION'&&!mutation.buildAspect)
+      throw new Error('Mutation '+mutation.id+' needs a Form build aspect');
     if(mutation.kind==='EVOLUTION'&&mutation.depth<4&&!mutation.childPoolId)
       throw new Error('Mutation '+mutation.id+' needs a child pool');
     if(mutation.kind==='MASTERY'&&(!(mutation.maxRank>=1)||mutation.maxRank%1))
       throw new Error('Mastery '+mutation.id+' needs a positive integer maxRank');
     if(!(mutation.weight>0))throw new Error('Mutation '+mutation.id+' needs positive weight');
+    const chainPattern=mutation.patch&&mutation.patch.chainGainPattern;
+    if(chainPattern&&(
+      chainPattern.length!==(mutation.patch.hits||1)||
+      chainPattern.some(value=>value<0||value%1)))
+      throw new Error('Mutation '+mutation.id+' needs one non-negative integer Chain value per hit');
     if(mutation.grantsTags.some(tag=>mutation.removesTags.includes(tag)))
       throw new Error('Mutation '+mutation.id+' both grants and removes tag');
     index[mutation.skillId].push(mutation);
@@ -9633,6 +9888,27 @@ const SKILL_MUTATIONS_BY_SKILL=(()=>{
       throw new Error('Mutation '+mutation.id+' has invalid parent '+parentId);
     if(mutation.kind==='EVOLUTION'&&!mutation.poolIds.includes(parent.childPoolId))
       throw new Error('Mutation '+mutation.id+' is not in parent pool '+parent.childPoolId);
+    if(mutation.kind==='EVOLUTION'&&mutation.buildAspect!==parent.buildAspect)
+      throw new Error('Mutation '+mutation.id+' abandons Form aspect '+parent.buildAspect);
+    if(parent.branchId&&mutation.branchId!==parent.branchId)
+      throw new Error('Mutation '+mutation.id+' abandons Specialization branch '+parent.branchId);
+    if(mutation.kind==='EVOLUTION'&&!mutation.aspectFrom.includes(parent.resultAspect))
+      throw new Error('Mutation '+mutation.id+' cannot continue parent aspect '+parent.resultAspect);
+    if(mutation.kind==='EVOLUTION'&&parent.resultAspect!=='STABLE'&&
+       mutation.resultAspect===parent.resultAspect&&!mutation.allowAspectShift&&
+       mutation.aspectIdentity!==parent.aspectIdentity)
+      throw new Error('Mutation '+mutation.id+' abandons inherited '+parent.resultAspect+
+        ' identity '+parent.aspectIdentity+' without an authored aspect shift');
+  }
+  for(const mutation of SKILL_MUTATIONS)if(mutation.expectedChildren!==null){
+    const childCount=SKILL_MUTATIONS.filter(child=>child.kind==='EVOLUTION'&&
+      child.depth===mutation.depth+1&&child.poolIds.includes(mutation.childPoolId)&&
+      (!child.parents.length||child.parents.includes(mutation.id))).length;
+    if(childCount!==mutation.expectedChildren)throw new Error('Mutation '+mutation.id+' needs '+
+      mutation.expectedChildren+' children; found '+childCount);
+  }
+  for(const mutation of SKILL_MUTATIONS){
+    validateStableSkillIdentity(mutation);validateTwinRhythmGuideline(mutation);validateTwinRhythmApexPool(mutation);
   }
   for(const id of Object.keys(index))index[id]=Object.freeze(index[id]);
   return Object.freeze(index);
@@ -9643,9 +9919,17 @@ function mutationAllowedByRules(mutation,rules=activeSkillEvolutionRules()){
   if(mutation.kind==='MASTERY'&&!rules.allowMastery)return false;
   return mutation.loopRisk!=='player_repeat'||rules.allowPlayerInfinite;
 }
+function mutationContinuesSkillAspect(skill,mutation){
+  const currentAspect=skill.lineageAspect||'STABLE';
+  if(mutation.kind==='EVOLUTION'&&skill.formAspectId&&mutation.buildAspect!==skill.formAspectId)return false;
+  if(!mutation.aspectFrom.includes(currentAspect))return false;
+  return currentAspect==='STABLE'||mutation.resultAspect!==currentAspect||mutation.allowAspectShift||
+    !skill.lineageIdentity||mutation.aspectIdentity===skill.lineageIdentity;
+}
 function canApplySkillMutation(mutation){
   const skill=mutation&&runSkill(mutation.skillId),rules=activeSkillEvolutionRules();if(!skill)return false;
   if(!mutationAllowedByRules(mutation,rules))return false;
+  if(!mutationContinuesSkillAspect(skill,mutation))return false;
   if(mutation.kind==='EVOLUTION'){
     if(mutation.depth!==skill.evolutionDepth+1)return false;
     if(!mutation.poolIds.includes(skill.nextPoolId))return false;
@@ -9673,13 +9957,23 @@ function weightedEvolutionKey(weights,available,rng){
 }
 function weightedEvolutionMutation(pool,rng){
   if(!pool.length)return null;
-  const rarities=[...new Set(pool.map(mutation=>mutation.rarity))],
-    rarity=weightedEvolutionKey(SKILL_MUTATION_RARITY_WEIGHTS,rarities,rng),
-    rarityPool=pool.filter(mutation=>mutation.rarity===rarity),
-    types=[...new Set(rarityPool.map(mutation=>mutation.type))],
-    type=weightedEvolutionKey(SKILL_MUTATION_TYPE_WEIGHTS[rarity],types,rng),
-    candidates=rarityPool.filter(mutation=>mutation.type===type),
+  /* Roll the authored rarity/type pair as one bucket. A lone Distorted card at a
+     rarity no longer inherits 100% of that rarity's probability merely because
+     a Stable sibling was authored at a different rarity. */
+  const buckets=new Map();
+  for(const mutation of pool){
+    const key=mutation.rarity+'|'+mutation.type;
+    if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(mutation);
+  }
+  const keys=Array.from(buckets.keys()),bucketWeights=Object.create(null);
+  for(const key of keys){
+    const [rarity,type]=key.split('|');
+    bucketWeights[key]=(SKILL_MUTATION_RARITY_WEIGHTS[rarity]||0)*
+      ((SKILL_MUTATION_TYPE_WEIGHTS[rarity]||{})[type]||0)/100;
+  }
+  const key=weightedEvolutionKey(bucketWeights,keys,rng),candidates=buckets.get(key)||[],
     total=candidates.reduce((sum,mutation)=>sum+mutation.weight,0);
+  if(!candidates.length||total<=0)return null;
   let roll=clamp(rng(),0,.999999999)*total;
   for(let i=0;i<candidates.length;i++){
     roll-=candidates[i].weight;if(roll<0)return candidates[i];
@@ -9692,7 +9986,9 @@ function rollSkillMutationChoices(count=3,rng=Math.random){
     const pool=(SKILL_MUTATIONS_BY_SKILL[skill.baseId]||[]).filter(canApplySkillMutation);
     if(pool.length){pools[skill.baseId]=pool;skillIds.push(skill.baseId);}
   }
-  /* Target skill and authored node roll independently per card. This prevents a
+  /* Every pool above was derived from the player's current card (nextPoolId,
+     lineage aspect and tags), so a draft cannot jump to an unrelated branch.
+     Target skill and authored node roll independently per card. This prevents a
      skill with a larger catalogue from crowding every other move out, while still
      allowing all three cards to mutate the same move when RNG chooses it. */
   while(skillIds.length&&choices.length<count){
@@ -9710,14 +10006,28 @@ function rollSkillMutationChoices(count=3,rng=Math.random){
   return choices;
 }
 function applyMutationLayer(skill,mutation){
+  const previousAspect=skill.lineageAspect||'STABLE',previousIdentity=skill.lineageIdentity||skill.identityId;
+  const synthesisParentId=skillSynthesisParentId(skill),startsSynthesis=mutationStartsSkillSynthesis(skill,mutation),
+    synthesized=mutationUsesSkillSynthesis(skill,mutation);
   mutation.apply(skill);
   skill.mutationIds.push(mutation.id);
   if(mutation.removesTags.length)
     skill.tags=skill.tags.filter(tag=>!mutation.removesTags.includes(tag));
   for(const tag of mutation.grantsTags)if(!skill.tags.includes(tag))skill.tags.push(tag);
+  skill.lineageAspect=mutation.resultAspect;
+  skill.lineageIdentity=mutation.aspectIdentity;
+  if(startsSynthesis){skill.synthesisActive=true;skill.synthesisOriginMutationId=mutation.id;}
+  if(mutation.kind==='EVOLUTION'&&mutation.depth===1)skill.formAspectId=mutation.buildAspect;
+  skill.aspectLevel=mutation.resultAspect==='STABLE'?0:
+    previousAspect===mutation.resultAspect?(skill.aspectLevel||0)+1:1;
+  skill.frameMutation=mutation.resultAspect===mutation.type?mutation:
+    Object.freeze({...mutation,type:mutation.resultAspect});
   const historyNode={mutationId:mutation.id,familyId:mutation.familyId,kind:mutation.kind,
     variant:mutation.variant,type:mutation.type,rarity:mutation.rarity,depth:mutation.depth,
-    name:mutation.name,poolId:mutation.poolId,childPoolId:mutation.childPoolId};
+    name:mutation.name,poolId:mutation.poolId,childPoolId:mutation.childPoolId,
+    previousAspect,previousIdentity,resultAspect:mutation.resultAspect,
+    aspectIdentity:mutation.aspectIdentity,buildAspect:mutation.buildAspect,aspectLevel:skill.aspectLevel,
+    synthesized,synthesisParentId,synthesisOriginMutationId:skill.synthesisOriginMutationId};
   if(mutation.kind==='MASTERY'){
     skill.masteryIds.push(mutation.id);skill.masteryLevel++;
     skill.masteryRanks[mutation.id]=(skill.masteryRanks[mutation.id]||0)+1;
@@ -9728,8 +10038,9 @@ function applyMutationLayer(skill,mutation){
     if(mutation.group)skill.mutationGroups.push(mutation.group);
     skill.evolutionDepth=Math.max(skill.evolutionDepth,mutation.depth);
     skill.evolutionText=mutation.details.slice();skill.evolutionRarity=mutation.rarity;
-    skill.evolutionName=mutation.name;skill.evolutionType=mutation.type;
+    skill.evolutionName=mutation.name;skill.evolutionType=skill.lineageAspect;
     skill.nextPoolId=mutation.childPoolId;skill.evolutionHistory.push(historyNode);
+    if(synthesized)skill.synthesisHistory.push(historyNode);
   }
   return skill;
 }
@@ -9738,6 +10049,11 @@ function rebuildRunSkill(baseId,evolutionIds,masteryIds=[]){
   const skill=createRunSkill(definition);
   for(const id of evolutionIds.concat(masteryIds)){
     const mutation=SKILL_MUTATION_BY_ID[id];if(!mutation||mutation.skillId!==baseId)return null;
+    if(!mutationContinuesSkillAspect(skill,mutation))return null;
+    if(mutation.kind==='EVOLUTION'&&(
+      mutation.depth!==skill.evolutionDepth+1||!mutation.poolIds.includes(skill.nextPoolId)||
+      (mutation.parents.length&&!mutation.parents.some(parentId=>skill.mutationIds.includes(parentId)))))return null;
+    if(mutation.kind==='MASTERY'&&skill.evolutionDepth<activeSkillEvolutionRules().maxDepth)return null;
     applyMutationLayer(skill,mutation);
   }
   return skill;
@@ -9818,7 +10134,21 @@ function commandPostureDamage(command,chain=chainStacks){
 function commandHitBase(command,index){
   return command.hitDamages&&command.hitDamages[index]!==undefined?command.hitDamages[index]:command.damage;
 }
-function commandChainGain(command){return command.addsChain===false?0:Math.max(1,command.chainGainPerHit||1);}
+function commandChainGain(command,index=0){
+  if(command.addsChain===false)return 0;
+  if(command.chainGainPattern&&command.chainGainPattern[index]!==undefined)
+    return Math.max(0,command.chainGainPattern[index]|0);
+  return Math.max(1,command.chainGainPerHit||1);
+}
+function grantCommandResolve(command,amount,x,y){
+  if(!(amount>0))return 0;
+  const gained=addTurnResolve(amount),overflow=Math.max(0,amount-gained);
+  if(overflow&&command.resolveOverflowToChain){
+    addChainStack(overflow);
+    floater(x,y-84,'RESOLVE OVERFLOW · CHAIN +'+overflow,'#ffe37a',14);
+  }
+  return gained;
+}
 function fightCommand(actorId=activeTurnActorId()){
   if(actorId==='ally'&&hasCombatAlly()){
     const profile=companionProfile();
@@ -9903,12 +10233,12 @@ function resolveTurnActionHit(action){
     action.hits>1?150:205,75,action.hits>1?3.2:4.2,.5);
   logSkillLabActionHit(action,index,damage,chainStacks);
   const defeated=hurtBoss(damage,false,'turn_attack');
-  if(command.resolvePerHit)addTurnResolve(command.resolvePerHit);
+  if(command.resolvePerHit)grantCommandResolve(command,command.resolvePerHit,x,y);
   if(defeated){
     action.hitIndex=action.hits;
     return true;
   }
-  const chainGain=commandChainGain(command);if(chainGain)addChainStack(chainGain);
+  const chainGain=commandChainGain(command,index);if(chainGain)addChainStack(chainGain);
   if(action.hitIndex===action.hits){
     if(command.markGain){
       boss.mark=Math.min(3,bossMark()+command.markGain);
@@ -9919,7 +10249,7 @@ function resolveTurnActionHit(action){
     if(command.consumeChain){
       chainStacks=0;floater(x,y-86,'CHAIN CASHED','#c995ff',15);
     }
-    if(command.resolveOnComplete)addTurnResolve(command.resolveOnComplete);
+    if(command.resolveOnComplete)grantCommandResolve(command,command.resolveOnComplete,x,y);
   }
   return true;
 }
@@ -9942,7 +10272,9 @@ function performPlayerAction(command){
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionReturnMenu=skill?'skills':'root';
   const hits=command.hits||1,hitInterval=command.hitInterval||0,
-    duration=command.duration||Math.max(CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
+    /* An inherited Form duration may be shorter than a later five-hit Apex.
+       Always preserve enough time for the authored final contact and recovery. */
+    duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
     markStacks=command.consumeMark||command.useMark?bossMark():0,
     markDamage=commandMarkDamage(command,markStacks);
   if(command.consumeMark&&markStacks){
@@ -13864,7 +14196,8 @@ let relics=[null,null,null,null,null];        // FIVE equip slots
 let relicChoices=null, pendingRelic=null;
 let skillMutationChoices=null;
 const SKILL_EVOLUTION_CARD_Y=300,SKILL_EVOLUTION_CARD_W=140,SKILL_EVOLUTION_CARD_H=340;
-const SKILL_EVOLUTION_HISTORY_BTN=Object.freeze({x:170,y:174,w:140,h:34});
+const SKILL_EVOLUTION_TREE_BTN=Object.freeze({x:88,y:174,w:140,h:34});
+const SKILL_EVOLUTION_HISTORY_BTN=Object.freeze({x:252,y:174,w:140,h:34});
 const SKILL_LAB_CARD_W=140,SKILL_LAB_CARD_H=340,SKILL_LAB_CARD_Y=190;
 const SKILL_LAB_CATALOG_RECTS=Object.freeze(Array.from({length:6},(_,i)=>Object.freeze({
   x:14+(i%2)*230,y:190+((i/2)|0)*116,w:222,h:106
@@ -13885,6 +14218,7 @@ function giveSkillEvolution(){
 }
 function skillEvolutionTap(pt){
   if(!skillMutationChoices)return false;
+  if(pointInRect(pt,SKILL_EVOLUTION_TREE_BTN)){openMoveTree();return true;}
   if(pointInRect(pt,SKILL_EVOLUTION_HISTORY_BTN)){openMoveHistory();return true;}
   for(let i=0;i<skillMutationChoices.length;i++){
     const rect=skillEvolutionCardRect(i);
@@ -14174,7 +14508,7 @@ function commitFinalScore(){
 }
 function resetRun(){
   stageRouteSeed=(Math.random()*0x7fffffff)|0;
-  loop=RUN_POLICY().startStage; dist=0; roadScroll=0; gold=0; goldEarned=0; runDistance=0; arrows=0; lances=0; paused=false; pausePhotoMode=false; moveHistoryOpen=false; env='forest'; biome=biomeOf(loop); oakUsed=false;
+  loop=RUN_POLICY().startStage; dist=0; roadScroll=0; gold=0; goldEarned=0; runDistance=0; arrows=0; lances=0; paused=false; pausePhotoMode=false; moveHistoryOpen=false;moveTreeOpen=false; env='forest'; biome=biomeOf(loop); oakUsed=false;
   scoreShown=0; newBestThisRun=false;
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
   runWeapon=createRunWeapon('longbow');
@@ -14379,11 +14713,13 @@ function drawHUD(){
   g.fillText(SFX.muted?'muted (M)':'',VW-10,VH-8-uiTop);
   g.restore();
 }
-function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true){
+function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true,move=null){
   g.fillStyle=enabled?'rgba(13,16,25,.94)':'rgba(10,11,16,.88)';
   g.fillRect(rect.x,rect.y,rect.w,rect.h);
   g.strokeStyle=enabled?col:'#4b4d58';g.lineWidth=2;
   g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
+  const mutation=moveFrameMutation(move);
+  if(mutation)drawSkillMutationRarityFrame(mutation,rect);
   g.textAlign='center';g.font='bold 16px monospace';
   g.fillStyle=enabled?col:'#656774';
   g.fillText(title,rect.x+rect.w/2,rect.y+(sub?22:rect.h/2+6));
@@ -14428,16 +14764,16 @@ function turnCommandDamageBreakdown(command){
     markPerHit=commandMarkDamage(command,markStacks),
     chainRate=chainBonus()+(command.extraChainBonus||0),breakMultiplier=boss.playerTurnBreak?1.5:1,
     rows=[];
-  let total=0;
+  let total=0,hitChain=chainStacks;
   for(let i=0;i<hits;i++){
-    const hitChain=chainStacks+commandChainGain(command)*i,base=commandHitBase(command,i),
+    const base=commandHitBase(command,i),
       subtotal=base+markPerHit,
       chainDamage=subtotal*chainRate*hitChain,
       beforeBreak=subtotal+chainDamage,
       breakDamage=beforeBreak*(breakMultiplier-1),final=Math.round(beforeBreak*breakMultiplier);
     rows.push({hit:i+1,base,mark:markPerHit,chainStacks:hitChain,
       chain:chainDamage,break:breakDamage,final});
-    total+=final;
+    total+=final;hitChain+=commandChainGain(command,i);
   }
   return {rows,total,markStacks};
 }
@@ -14570,7 +14906,7 @@ function drawPlayerTurnUI(){
     drawTurnButton(TURN_BACK_BTN,'BACK','','#aeb2c2',true);
     for(let i=0;i<skills.length;i++){
       const skill=skills[i],enabled=boss.ap>0&&boss.resolve>=skill.cost;
-      drawTurnButton(TURN_SKILL_BTNS[i],skill.name,skillButtonSubtitle(skill),skill.col,enabled);
+      drawTurnButton(TURN_SKILL_BTNS[i],skill.name,skillButtonSubtitle(skill),skill.col,enabled,skill);
     }
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
     g.fillText('HOLD FOR DETAILS · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
@@ -15543,26 +15879,197 @@ function drawSkillLabButton(rect,label,col='#e8e2d0',enabled=true,active=false){
   g.textAlign='center';g.font='bold 10px monospace';g.fillStyle=enabled?col:'#626570';
   g.fillText(label,rect.x+rect.w/2,rect.y+rect.h/2+4);
 }
-function drawSkillMutationTypeFrame(mutation,rect,inset=6){
-  if(!mutation||mutation.type==='STABLE')return;
-  const col=SKILL_MUTATION_TYPE_COL[mutation.type]||'#ffffff',
-    x=rect.x+inset,y=rect.y+inset,w=rect.w-inset*2,h=rect.h-inset*2;
-  g.save();g.strokeStyle=col;g.lineWidth=2;
-  if(mutation.type==='DISTORTED'){
-    g.setLineDash([9,5]);g.lineDashOffset=-((perfNow*18)|0)%14;
-    g.strokeRect(x+.5,y+.5,w-1,h-1);g.setLineDash([]);
-    /* Offset magenta corner fragments make Distorted readable even when its
-       cyan line sits inside a blue Uncommon or purple Rare rarity frame. */
-    g.strokeStyle='#ff4fd8';g.lineWidth=2;
-    g.beginPath();g.moveTo(x+5,y-2);g.lineTo(x+27,y-2);g.moveTo(x-2,y+5);g.lineTo(x-2,y+23);
-    g.moveTo(x+w-27,y+h+2);g.lineTo(x+w-5,y+h+2);g.moveTo(x+w+2,y+h-23);g.lineTo(x+w+2,y+h-5);g.stroke();
-  }else{
-    g.strokeRect(x+.5,y+.5,w-1,h-1);
-    /* Corruption grows short inward teeth under the rarity frame. */
-    const tooth=7;g.beginPath();
-    for(const px of [x+w*.25,x+w*.5,x+w*.75]){g.moveTo(px,y);g.lineTo(px,y+tooth);g.moveTo(px,y+h);g.lineTo(px,y+h-tooth);}
-    for(const py of [y+h*.33,y+h*.66]){g.moveTo(x,py);g.lineTo(x+tooth,py);g.moveTo(x+w,py);g.lineTo(x+w-tooth,py);}g.stroke();
+function moveFrameMutation(move){
+  if(!move)return null;if(move.kind)return move;
+  const ids=move.masteryIds&&move.masteryIds.length?move.masteryIds:move.evolutionMutationIds;
+  const mutation=ids&&ids.length?SKILL_MUTATION_BY_ID[ids[ids.length-1]]:null;
+  /* Reward cards show the aspect that caused the mutation. A live combat move
+     shows its resulting lineage instead, so a future double-Distortion recovery
+     can visibly return to Stable while its history still records the strange card. */
+  return move.frameMutation||mutation;
+}
+function drawSkillMutationRarityFrame(mutation,rect){
+  if(!mutation)return;const col=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col||'#cfd3df';
+  /* One immutable frame grammar everywhere. Aspect is data/text, never a
+     second border, and rarity changes only the color. */
+  const x=Math.round(rect.x)+.5,y=Math.round(rect.y)+.5,
+    w=Math.round(rect.w)-1,h=Math.round(rect.h)-1;
+  g.save();g.strokeStyle=col;g.lineWidth=2;g.setLineDash([]);
+  g.strokeRect(x,y,w,h);
+  g.restore();
+}
+function drawMoveSelectionFrame(rect,col='#ffe37a'){
+  /* Selection is a marker, not a competing frame. */
+  const x=Math.round(rect.x+rect.w-9),y=Math.round(rect.y+5);
+  g.save();g.fillStyle=col;g.translate(x,y);g.rotate(Math.PI/4);g.fillRect(-3,-3,6,6);g.restore();
+}
+function moveTreeSkillId(){return BASE_TURN_SKILLS[moveTreeSkillIndex].id;}
+function moveTreeForms(){
+  return (SKILL_MUTATIONS_BY_SKILL[moveTreeSkillId()]||[]).filter(node=>node.kind==='EVOLUTION'&&node.depth===1);
+}
+function moveTreeChildren(parent){
+  if(!parent||!parent.childPoolId)return [];
+  const rarityOrder={COMMON:0,UNCOMMON:1,RARE:2,LEGENDARY:3};
+  return (SKILL_MUTATIONS_BY_SKILL[parent.skillId]||[]).filter(node=>node.kind==='EVOLUTION'&&
+    node.depth===parent.depth+1&&node.poolIds.includes(parent.childPoolId)&&
+    (!node.parents.length||node.parents.includes(parent.id))).sort((a,b)=>
+      (rarityOrder[a.rarity]||0)-(rarityOrder[b.rarity]||0)||a.name.localeCompare(b.name));
+}
+function syncMoveTreeBranch(preferRun=false){
+  const forms=moveTreeForms();if(!forms.length){
+    moveTreeFormIndex=0;moveTreeSpecId=moveTreeTwistId=moveTreeSelectedId=null;return;
   }
+  const skill=runSkill(moveTreeSkillId()),history=skill?skill.evolutionMutationIds:[],
+    preferredForm=preferRun&&history[0]?forms.findIndex(node=>node.id===history[0]):-1;
+  if(preferredForm>=0)moveTreeFormIndex=preferredForm;
+  else moveTreeFormIndex=clamp(moveTreeFormIndex,0,forms.length-1);
+  const form=forms[moveTreeFormIndex],specs=moveTreeChildren(form),
+    preferredSpec=preferRun&&history[1]?history[1]:moveTreeSpecId;
+  if(!specs.some(node=>node.id===preferredSpec))moveTreeSpecId=null;
+  else moveTreeSpecId=preferredSpec;
+  const spec=SKILL_MUTATION_BY_ID[moveTreeSpecId],twists=moveTreeChildren(spec),
+    preferredTwist=preferRun&&history[2]?history[2]:moveTreeTwistId;
+  if(!twists.some(node=>node.id===preferredTwist))moveTreeTwistId=null;
+  else moveTreeTwistId=preferredTwist;
+  moveTreeSelectedId=preferRun&&history.length?history[history.length-1]:form.id;
+  moveTreePages=[0,0,0];
+}
+function openMoveTree(skillIndex=null){
+  if(skillIndex===null){
+    const preferred=skillLabSession&&mode==='skilllab'?skillLabSession.skillIndex:
+      skillMutationChoices&&skillMutationChoices.length?
+        BASE_TURN_SKILLS.findIndex(skill=>skill.id===skillMutationChoices[0].skillId):0;
+    skillIndex=preferred<0?0:preferred;
+  }
+  moveTreeSkillIndex=clamp(skillIndex,0,BASE_TURN_SKILLS.length-1);moveTreeFormIndex=0;
+  moveTreeOpen=true;syncMoveTreeBranch(true);SFX.relic();
+}
+function closeMoveTree(){moveTreeOpen=false;moveTreeHitNodes.length=0;moveTreePageButtons.length=0;SFX.duck();}
+function cycleMoveTreeForm(delta){
+  const forms=moveTreeForms();if(!forms.length)return false;
+  moveTreeFormIndex=(moveTreeFormIndex+delta+forms.length)%forms.length;
+  moveTreeSpecId=moveTreeTwistId=null;moveTreePages=[0,0,0];syncMoveTreeBranch(false);
+  moveTreeSelectedId=forms[moveTreeFormIndex].id;SFX.swipe();return true;
+}
+function moveTreeTap(pt){
+  if(pointInRect(pt,MOVE_HISTORY_BACK)){closeMoveTree();return true;}
+  for(const tab of MOVE_HISTORY_SKILL_TABS)if(pointInRect(pt,tab)){
+    moveTreeSkillIndex=tab.index;moveTreeFormIndex=0;moveTreeSpecId=moveTreeTwistId=null;
+    moveTreePages=[0,0,0];syncMoveTreeBranch(true);SFX.swipe();return true;
+  }
+  if(pointInRect(pt,{x:12,y:164,w:40,h:32}))return cycleMoveTreeForm(-1);
+  if(pointInRect(pt,{x:428,y:164,w:40,h:32}))return cycleMoveTreeForm(1);
+  for(const entry of moveTreeHitNodes)if(pointInRect(pt,entry.rect)){
+    moveTreeSelectedId=entry.node.id;
+    if(entry.node.depth===1){moveTreeSpecId=moveTreeTwistId=null;}
+    else if(entry.node.depth===2){moveTreeSpecId=entry.node.id;moveTreeTwistId=null;}
+    else if(entry.node.depth===3){moveTreeTwistId=entry.node.id;}
+    SFX.swipe();return true;
+  }
+  return false;
+}
+function drawMoveTreeConnection(from,to,col,width=1.5){
+  if(!from||!to)return;const x1=from.x+from.w/2,y1=from.y+from.h,x2=to.x+to.w/2,y2=to.y,
+    /* The parent is centred on the gap between both columns. Stay in that empty
+       vertical gutter until the row immediately above the selected child, then
+       turn through the horizontal gutter. No route may cross a sibling card. */
+    turnY=Math.max(y1+5,y2-6);
+  g.strokeStyle=col;g.lineWidth=width;g.beginPath();g.moveTo(x1,y1);g.lineTo(x1,turnY);g.lineTo(x2,turnY);g.lineTo(x2,y2);g.stroke();
+}
+function drawMoveTreeNode(node,rect,selected,onRunPath){
+  const rarityCol=SKILL_MUTATION_RARITY_COL[node.rarity]||node.col,typeCol=SKILL_MUTATION_TYPE_COL[node.type]||'#cfd3df';
+  g.fillStyle=selected?'rgba(255,227,122,.13)':onRunPath?'rgba(158,203,255,.10)':'rgba(8,11,18,.96)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  drawSkillMutationRarityFrame(node,rect);
+  const size=Math.max(7,Math.min(10,Math.floor((rect.w-12)/Math.max(1,node.name.length*.61))));
+  g.textAlign='center';g.font='bold '+size+'px monospace';g.fillStyle='#f4f1e8';g.fillText(node.name,rect.x+rect.w/2,rect.y+21);
+  g.font='bold 7px monospace';g.fillStyle=rarityCol;g.fillText(node.rarity+' · '+node.type,rect.x+rect.w/2,rect.y+38);
+  if(onRunPath){g.textAlign='right';g.fillStyle=typeCol;g.fillText('◆',rect.x+rect.w-7,rect.y+rect.h-7);}
+  if(selected)drawMoveSelectionFrame(rect,'#ffe37a');
+}
+function moveTreeGridRects(count,y){
+  const w=210,h=44,gapX=12,gapY=8;
+  return Array.from({length:count},(_,index)=>({
+    x:24+(index%2)*(w+gapX),y:y+((index/2)|0)*(h+gapY),w,h
+  }));
+}
+function drawMoveTreePlaceholder(rect,label,index){
+  g.fillStyle='rgba(255,255,255,.018)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.save();g.strokeStyle='#2b2e38';g.lineWidth=1;g.setLineDash([5,4]);
+  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);g.restore();
+  g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#4c4f5a';
+  g.fillText(label+' '+(index+1),rect.x+rect.w/2,rect.y+17);
+  g.font='7px monospace';g.fillText('NOT AUTHORED',rect.x+rect.w/2,rect.y+32);
+}
+function drawMoveTree(){
+  if(!moveTreeOpen)return;
+  const forms=moveTreeForms(),form=forms[moveTreeFormIndex]||null,specs=moveTreeChildren(form),
+    spec=SKILL_MUTATION_BY_ID[moveTreeSpecId]||null,twists=moveTreeChildren(spec),
+    twist=SKILL_MUTATION_BY_ID[moveTreeTwistId]||null,apexes=moveTreeChildren(twist),
+    runPath=new Set((runSkill(moveTreeSkillId())||{}).evolutionMutationIds||[]);
+  moveTreeHitNodes.length=0;moveTreePageButtons.length=0;
+  g.save();g.fillStyle='#05070c';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.textAlign='center';g.font='bold 23px monospace';g.fillStyle='#9ecbff';g.fillText('MOVE TREE',VW/2,62);
+  g.font='9px monospace';g.fillStyle='#8b8fa0';g.fillText('PARENT ABOVE · CURRENT CHILDREN BELOW',VW/2,81);
+  drawSkillLabButton(MOVE_HISTORY_BACK,'◀ BACK','#e8e2d0');
+  for(const tab of MOVE_HISTORY_SKILL_TABS){
+    const tabSkill=BASE_TURN_SKILLS[tab.index];
+    drawSkillLabButton(tab,tabSkill.name.replace('SHIELD ','SH. ').replace('ROYAL ','R. '),'#9ecbff',true,tab.index===moveTreeSkillIndex);
+  }
+  drawSkillLabButton({x:12,y:164,w:40,h:32},'◀','#9ecbff',forms.length>1);
+  drawSkillLabButton({x:428,y:164,w:40,h:32},'▶','#9ecbff',forms.length>1);
+  const formRect={x:90,y:164,w:300,h:46};
+  if(form){
+    moveTreeHitNodes.push({node:form,rect:formRect});
+    drawMoveTreeNode(form,formRect,form.id===moveTreeSelectedId,runPath.has(form.id));
+    g.font='bold 7px monospace';g.fillStyle='#8b8fa0';g.fillText('FORM '+(moveTreeFormIndex+1)+' / '+forms.length,VW/2,222);
+  }
+  let visibleNodes=[],rects=[],childLabel='',expected=0,parentRect=formRect;
+  if(!spec){
+    visibleNodes=specs;expected=SKILL_EVOLUTION_DEPTHS[2].poolFamilies;childLabel='SPECIALIZATIONS';
+    rects=moveTreeGridRects(expected,254);
+  }else{
+    const specRect={x:90,y:229,w:300,h:46};
+    drawMoveTreeConnection(formRect,specRect,'#ffe37a',2.5);
+    moveTreeHitNodes.push({node:spec,rect:specRect});
+    drawMoveTreeNode(spec,specRect,spec.id===moveTreeSelectedId,runPath.has(spec.id));
+    if(!twist){
+      visibleNodes=twists;expected=SKILL_EVOLUTION_DEPTHS[3].poolFamilies;childLabel='TWISTS';
+      rects=moveTreeGridRects(expected,319);parentRect=specRect;
+    }else{
+      const twistRect={x:90,y:294,w:300,h:46};
+      drawMoveTreeConnection(specRect,twistRect,'#ffe37a',2.5);
+      moveTreeHitNodes.push({node:twist,rect:twistRect});
+      drawMoveTreeNode(twist,twistRect,twist.id===moveTreeSelectedId,runPath.has(twist.id));
+      visibleNodes=apexes;expected=SKILL_EVOLUTION_DEPTHS[4].poolFamilies;childLabel='APEX';
+      rects=moveTreeGridRects(expected,384);parentRect=twistRect;
+    }
+  }
+  const labelY=rects.length?rects[0].y-12:244;
+  for(let i=0;i<expected;i++){
+    const rect=rects[i],node=visibleNodes[i];
+    if(!node){drawMoveTreePlaceholder(rect,childLabel.replace(/S$/,''),i);continue;}
+    if(node.id===moveTreeSelectedId)drawMoveTreeConnection(parentRect,rect,'#ffe37a',2.5);
+    moveTreeHitNodes.push({node,rect});
+    drawMoveTreeNode(node,rect,node.id===moveTreeSelectedId,runPath.has(node.id));
+  }
+  g.fillStyle='#05070c';g.fillRect(118,labelY-10,244,14);
+  g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#8b8fa0';
+  g.fillText(childLabel+' · '+visibleNodes.length+' / '+expected+' AUTHORED',VW/2,labelY);
+  if(!form){g.font='bold 15px monospace';g.fillStyle='#565963';g.fillText('THIS MOVE HAS NO EVOLUTION TREE YET',VW/2,390);}
+  const selected=SKILL_MUTATION_BY_ID[moveTreeSelectedId]||form;
+  g.font='bold 8px monospace';g.fillStyle='#626570';
+  if(spec)g.fillText(twist?'TAP THE SPECIALIZATION TO RETURN TO ITS TWISTS':'TAP THE FORM TO RETURN TO ALL SPECIALIZATIONS',VW/2,548);
+  g.fillText('HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,562);
+  g.fillStyle='rgba(255,255,255,.045)';g.fillRect(18,574,444,176);g.strokeStyle='#3a3d48';g.lineWidth=1.5;g.strokeRect(18.5,574.5,443,175);
+  if(selected){
+    const col=SKILL_MUTATION_RARITY_COL[selected.rarity]||selected.col;
+    g.textAlign='left';g.font='bold 13px monospace';g.fillStyle=col;g.fillText(selected.name,32,599);
+    g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
+    g.fillText(selected.rarity+' · '+selected.type+' · '+skillProgressionLabel(selected),32,616);
+    g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
+    g.fillText('FORM ASPECT · '+mutationIdentityLabel(selected),32,631);
+    g.font='9px monospace';g.fillStyle='#cfd3df';drawWrappedTooltipText(selected.summary,32,652,416,14);
+  }else{g.textAlign='center';g.font='11px monospace';g.fillStyle='#626570';g.fillText('Select a move with authored descendants.',VW/2,660);}
   g.restore();
 }
 function openMoveHistory(skillIndex=0){
@@ -15594,11 +16101,10 @@ function drawMoveHistoryNode(rect,mutation,depth){
   }
   const rarityCol=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col;
   g.fillStyle='rgba(8,11,18,.96)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle=rarityCol;g.lineWidth=mutation.rarity==='LEGENDARY'?3:2;
-  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);drawSkillMutationTypeFrame(mutation,rect,6);
+  drawSkillMutationRarityFrame(mutation,rect);
   g.textAlign='left';g.font='bold 13px monospace';g.fillStyle='#f4f1e8';g.fillText(mutation.name,rect.x+14,rect.y+23);
   g.font='bold 8px monospace';g.fillStyle=rarityCol;
-  g.fillText(mutation.rarity+' · '+mutation.type+' · '+depth.name,rect.x+14,rect.y+39);
+  g.fillText(mutation.rarity+' · '+mutation.type+' · '+depth.name+' · '+mutationIdentityLabel(mutation),rect.x+14,rect.y+39);
   g.font='9px monospace';g.fillStyle='#aeb2c2';
   drawWrappedTooltipText(mutation.summary,rect.x+14,rect.y+57,rect.w-28,12);
 }
@@ -15622,8 +16128,7 @@ function drawMoveMasteryHistory(skill){
       rarityCol=SKILL_MUTATION_RARITY_COL[node.rarity]||'#ffe37a',
       typeCol=SKILL_MUTATION_TYPE_COL[node.type]||'#cfd3df';
     g.fillStyle='rgba(8,11,18,.96)';g.fillRect(28,y,424,64);
-    g.strokeStyle=rarityCol;g.lineWidth=node.rarity==='LEGENDARY'?3:1.5;g.strokeRect(28.5,y+.5,423,63);
-    if(mutation)drawSkillMutationTypeFrame(mutation,{x:28,y,w:424,h:64},5);
+    if(mutation)drawSkillMutationRarityFrame(mutation,{x:28,y,w:424,h:64});
     g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#f4f1e8';
     g.fillText('#'+(first+i+1)+'  '+node.name,42,y+23);
     g.font='bold 8px monospace';g.fillStyle=rarityCol;
@@ -15655,7 +16160,8 @@ function drawMoveHistory(){
   g.fillStyle='rgba(255,255,255,.045)';g.fillRect(baseRect.x,baseRect.y,baseRect.w,baseRect.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(baseRect.x+.5,baseRect.y+.5,baseRect.w-1,baseRect.h-1);
   g.textAlign='left';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.fillText(definition.name,baseRect.x+14,baseRect.y+23);
-  g.font='9px monospace';g.fillStyle='#8b8fa0';g.fillText('BASE TECHNIQUE · THE CHASSIS BEFORE EVOLUTION',baseRect.x+14,baseRect.y+43);
+  g.font='9px monospace';g.fillStyle='#8b8fa0';
+  g.fillText('BASE STANDARD · '+skillIdentityName(definition.identityId),baseRect.x+14,baseRect.y+43);
   for(let depthIndex=1;depthIndex<=4;depthIndex++){
     const mutationId=skill&&skill.evolutionMutationIds[depthIndex-1],mutation=SKILL_MUTATION_BY_ID[mutationId],
       rect={x:34,y:238+(depthIndex-1)*84,w:412,h:72};
@@ -15681,16 +16187,18 @@ function drawMoveHistory(){
   if(skill&&commandPostureDamage(skill,0))effects.push(commandPostureDamage(skill,0)+' POSTURE');
   effects.push(skill&&skill.addsChain===false?'NO CHAIN':'CHAIN PER HIT');
   g.fillText(effects.join(' · '),40,643);
+  g.fillStyle=SKILL_MUTATION_TYPE_COL[skill?skill.lineageAspect:'STABLE']||'#cfd3df';
+  g.fillText('CURRENT FORM · '+skillLineageLabel(skill||createRunSkill(definition)),40,665);
   g.fillStyle=skill&&skill.masteryLevel?'#ffe37a':'#686b76';
-  g.fillText('MASTERY ×'+(skill?skill.masteryLevel:0)+(masteryNames.length?' · '+masteryNames.join(' > '):' · OPENS AFTER APEX'),40,665);
+  g.fillText('MASTERY ×'+(skill?skill.masteryLevel:0)+(masteryNames.length?' · '+masteryNames.join(' > '):' · OPENS AFTER APEX'),40,683);
   g.fillStyle=corruptions+masteryCorruptions?'#ff334f':'#8b8fa0';
-  g.fillText('CORRUPTION ×'+(corruptions+masteryCorruptions),40,687);
+  g.fillText('CORRUPTION ×'+(corruptions+masteryCorruptions),40,701);
   g.fillStyle=distortions+masteryDistortions?'#35e4ff':'#8b8fa0';
-  g.fillText('DISTORTIONS ×'+(distortions+masteryDistortions),210,687);
+  g.fillText('DISTORTIONS ×'+(distortions+masteryDistortions),210,701);
   g.fillStyle='#8b8fa0';g.font='9px monospace';
   const nextLabel=skill&&skill.nextPoolId?'EVOLUTION · '+skill.nextPoolId.toUpperCase():
     skill&&skill.evolutionDepth>=activeSkillEvolutionRules().maxDepth?'MASTERY · LONG-TAIL OPEN':'EVOLUTION COMPLETE';
-  g.fillText('NEXT  '+nextLabel,40,711);
+  g.fillText('NEXT  '+nextLabel,40,719);
   g.restore();
 }
 function drawSkillLabHeader(){
@@ -15736,9 +16244,7 @@ function drawSkillLabCatalogCard(mutation,rect,selected){
   const status=skillLabMutationStatus(mutation),rarityCol=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col,
     statusCol=status==='READY'?'#c0f79a':status==='APPLIED'||status==='MASTERED'?'#9ecbff':status==='REPLACE'?'#ffe37a':'#626570';
   g.fillStyle=selected?'rgba(158,203,255,.13)':'rgba(8,11,18,.9)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle=selected?'#ffffff':statusCol;g.lineWidth=selected?3:1.5;
-  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
-  drawSkillMutationTypeFrame(mutation,rect,5);
+  drawSkillMutationRarityFrame(mutation,rect);
   g.fillStyle=rarityCol;g.fillRect(rect.x,rect.y,4,rect.h);
   g.textAlign='left';g.font='bold 11px monospace';g.fillStyle='#f4f1e8';
   g.fillText(mutation.name,rect.x+12,rect.y+20);
@@ -15749,6 +16255,7 @@ function drawSkillLabCatalogCard(mutation,rect,selected){
   drawWrappedTooltipText(mutation.summary,rect.x+12,rect.y+52,rect.w-24,12);
   g.restore();
   g.font='bold 9px monospace';g.fillStyle=statusCol;g.fillText(status,rect.x+12,rect.y+rect.h-10);
+  if(selected)drawMoveSelectionFrame(rect,'#ffffff');
 }
 function drawSkillLabCatalog(){
   const baseId=skillLabCurrentBaseId(),skill=runSkill(baseId),mutations=skillLabCurrentMutations(),
@@ -15773,8 +16280,10 @@ function drawSkillLabCatalog(){
   if(selected){
     const status=skillLabMutationStatus(selected);
     g.font='bold 13px monospace';g.fillStyle=selected.col;g.fillText(selected.name+' · '+status,VW/2,612);
+    g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
+    g.fillText('FORM ASPECT · '+mutationIdentityLabel(selected),VW/2,628);
     g.textAlign='left';g.font='9px monospace';g.fillStyle='#cfd3df';
-    drawWrappedTooltipText(selected.summary,34,632,412,13);
+    drawWrappedTooltipText(selected.summary,34,645,412,13);
     const label=status==='READY'?'APPLY SELECTED':status==='REPLACE'?'REPLACE CURRENT FORM':status;
     drawSkillLabButton({x:90,y:682,w:300,h:46},label,
       status==='READY'?'#c0f79a':status==='REPLACE'?'#ffe37a':'#626570',status==='READY'||status==='REPLACE');
@@ -15802,7 +16311,7 @@ function skillLabMutationDamagePreview(command){
   let chain=0;
   for(let i=0;i<hits;i++){
     values.push(Math.round(commandHitBase(command,i)*(1+rate*chain)));
-    chain+=commandChainGain(command);
+    chain+=commandChainGain(command,i);
   }
   return {values,total:values.reduce((sum,value)=>sum+value,0)};
 }
@@ -15811,12 +16320,14 @@ function skillLabMutationMechanics(command){
   if(command.hitDamages)lines.push('Base damage pattern: '+command.hitDamages.join(' / ')+'.');
   if(hits>1)lines.push(hits+' separate hits. Every hit calculates damage and Chain independently.');
   if(command.addsChain===false)lines.push('This attack adds no Chain.');
+  else if(command.chainGainPattern)lines.push('Chain gain pattern: '+command.chainGainPattern.join(' / ')+'. Later hits use the Chain created earlier.');
   else lines.push('Every landed hit adds '+commandChainGain(command)+' Chain; later hits benefit from Chain created earlier.');
   if(command.markGain)lines.push('After the final hit, apply '+command.markGain+' Mark (maximum 3).');
   if(command.consumeMark)lines.push('Consume every Mark before attacking. Mark bonus is added to every hit.');
   else if(command.useMark)lines.push('Read every Mark for bonus damage without consuming the stacks.');
   if(command.resolvePerHit)lines.push('Every hit grants '+command.resolvePerHit+' Resolve.');
   if(command.resolveOnComplete)lines.push('After the final hit, grant '+command.resolveOnComplete+' Resolve.');
+  if(command.resolveOverflowToChain)lines.push('Resolve that exceeds the current maximum becomes the same amount of Chain.');
   if(command.posture||command.posturePerChain){
     let posture='After the final hit, deal '+(command.posture||0)+' Posture';
     if(command.posturePerChain)posture+=' plus '+command.posturePerChain+' for each starting Chain';
@@ -15834,15 +16345,14 @@ function drawSkillLabMutationTooltip(){
     x=20,y=70,w=440,h=660;
   g.save();g.fillStyle='rgba(2,3,7,.86)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.fillStyle='rgba(8,11,18,.99)';g.fillRect(x,y,w,h);
-  g.strokeStyle=rarityCol;g.lineWidth=3;g.strokeRect(x+.5,y+.5,w-1,h-1);
-  drawSkillMutationTypeFrame(mutation,{x,y,w,h},7);
+  drawSkillMutationRarityFrame(mutation,{x,y,w,h});
   g.fillStyle=rarityCol;g.fillRect(x,y,w,6);
   g.textAlign='left';g.font='bold 23px monospace';g.fillStyle='#f4f1e8';
   g.fillText(mutation.name,x+20,y+42);
   g.font='bold 10px monospace';g.fillStyle=rarityCol;
   g.fillText(mutation.rarity+' · '+mutation.type+' · '+skillProgressionLabel(mutation),x+20,y+64);
   g.font='bold 10px monospace';g.fillStyle=typeCol;
-  g.fillText(command.source+' SKILL · TRANSFORMS '+mutation.skillId.toUpperCase(),x+20,y+83);
+  g.fillText('BASE '+skillIdentityName(command.identityId)+'  →  '+mutationIdentityLabel(mutation),x+20,y+83);
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+99,w-32,72);
   g.font='bold 13px monospace';g.fillStyle='#7fc9ff';
   g.fillText('1 AP · '+command.cost+' RESOLVE · '+(command.hits||1)+' HIT'+((command.hits||1)===1?'':'S'),x+28,y+124);
@@ -15877,6 +16387,7 @@ function skillLabTap(pt){
   if(pointInRect(pt,{x:374,y:48,w:92,h:34})){resetSkillLabBuild();return true;}
   for(const tab of SKILL_LAB_TABS)if(pointInRect(pt,tab)){
     if(tab.id==='combat')startSkillLabCombat();
+    else if(tab.id==='tree')openMoveTree(skillLabSession.skillIndex);
     else if(tab.id==='history')openMoveHistory();
     else{skillLabSession.view=tab.id;SFX.swipe();}
     return true;
@@ -16091,21 +16602,24 @@ function drawBossIntro(){
 function drawSkillMutationCard(mutation,rect,footer='TAP TO EVOLVE'){
   const col=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col;
   g.fillStyle='rgba(8,11,18,.97)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle=col;g.lineWidth=mutation.rarity==='LEGENDARY'?4:2;
-  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
-  drawSkillMutationTypeFrame(mutation,rect,mutation.rarity==='LEGENDARY'?7:6);
+  drawSkillMutationRarityFrame(mutation,rect);
   g.fillStyle=col;g.fillRect(rect.x,rect.y,rect.w,5);
   const skill=runSkill(mutation.skillId),progression=skillProgressionLabel(mutation),
     typeCol=SKILL_MUTATION_TYPE_COL[mutation.type]||'#cfd3df';
   g.textAlign='center';g.font='bold 9px monospace';g.fillStyle=col;
   g.fillText(mutation.rarity+' · '+mutation.type,rect.x+rect.w/2,rect.y+21);
   g.font='bold 8px monospace';g.fillStyle=typeCol;
-  g.fillText((skill?skill.name:mutation.skillId.toUpperCase())+' / '+progression,rect.x+rect.w/2,rect.y+34);
+  g.fillText(progression+' · '+mutationIdentityLabel(mutation),rect.x+rect.w/2,rect.y+34);
+  const parentName=skill?(skill.evolutionName||skill.name):mutation.skillId.toUpperCase(),
+    parentLabel='FROM '+parentName,
+    parentSize=Math.max(7,Math.min(8,Math.floor((rect.w-18)/Math.max(1,parentLabel.length*.61))));
+  g.font='bold '+parentSize+'px monospace';g.fillStyle='#8b8fa0';
+  g.fillText(parentLabel,rect.x+rect.w/2,rect.y+47);
   const titleSize=Math.max(10,Math.min(15,Math.floor((rect.w-18)/Math.max(1,mutation.name.length*.61))));
   g.font='bold '+titleSize+'px monospace';g.fillStyle='#f4f1e8';
-  g.fillText(mutation.name,rect.x+rect.w/2,rect.y+55);
+  g.fillText(mutation.name,rect.x+rect.w/2,rect.y+66);
   g.textAlign='left';g.font='bold 10px monospace';g.fillStyle=mutation.col;
-  let y=drawWrappedTooltipText(mutation.summary,rect.x+10,rect.y+78,rect.w-20,14)+8;
+  let y=drawWrappedTooltipText(mutation.summary,rect.x+10,rect.y+89,rect.w-20,14)+8;
   g.strokeStyle='#ffffff22';g.lineWidth=1;g.beginPath();
   g.moveTo(rect.x+10,y);g.lineTo(rect.x+rect.w-10,y);g.stroke();y+=17;
   g.font='9px monospace';
@@ -16119,13 +16633,16 @@ function drawSkillMutationCard(mutation,rect,footer='TAP TO EVOLVE'){
 }
 function drawSkillEvolutionScreen(){
   g.fillStyle='rgba(5,7,12,.86)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  drawSkillLabButton(SKILL_EVOLUTION_TREE_BTN,'MOVE TREE','#ffe37a');
   drawSkillLabButton(SKILL_EVOLUTION_HISTORY_BTN,'MOVE HISTORY','#9ecbff');
   g.textAlign='center';g.font='bold 25px monospace';g.fillStyle='#9ecbff';
   const masteryOnly=skillMutationChoices&&skillMutationChoices.length&&
-    skillMutationChoices.every(mutation=>mutation.kind==='MASTERY');
-  g.fillText(masteryOnly?'MASTERY DEEPENS':'A TECHNIQUE MUTATES',VW/2,222);
+    skillMutationChoices.every(mutation=>mutation.kind==='MASTERY'),
+    synthesisDraft=skillMutationChoices&&skillMutationChoices.some(mutation=>
+      mutationUsesSkillSynthesis(runSkill(mutation.skillId),mutation));
+  g.fillText(masteryOnly?'MASTERY DEEPENS':synthesisDraft?'A TECHNIQUE SYNTHESIZES':'A TECHNIQUE MUTATES',VW/2,222);
   g.font='12px monospace';g.fillStyle='#aeb2c2';
-  g.fillText('only these paths emerged this run — choose one',VW/2,246);
+  g.fillText(synthesisDraft?'each possibility inherits the card you built':'only these paths emerged this run — choose one',VW/2,246);
   g.font='bold 13px monospace';g.fillStyle='#e8e2d0';
   g.fillText(masteryOnly?'THREE WAYS TO DEEPEN THE FINISHED FORM':'THREE POSSIBILITIES FROM YOUR CURRENT BUILD',VW/2,272);
   if(!skillMutationChoices)return;
@@ -16550,6 +17067,7 @@ function render(){
     }
   }
   if(moveHistoryOpen)drawMoveHistory();
+  if(moveTreeOpen)drawMoveTree();
   if(skillTooltipIndex>=0)drawSkillTooltip();
   if(skillLabTooltipMutationId)drawSkillLabMutationTooltip();
   if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
