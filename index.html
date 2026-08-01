@@ -457,6 +457,11 @@ const MODEL_DUCK_CLEARANCE_Y=DUCK_ATTACK_Y+34-MODEL_HELMET_CLEARANCE_SHIFT;
    apex. Only their final palm-to-palm rotation lowers the top to JUMP clearance. */
 const MODEL_PINCH_WALL_TOP_Y=PLAYER_Y-110;
 const cvs=document.getElementById('game');
+/* Keep boot failures machine-readable in headless smoke tests. This has no frame
+   cost and avoids treating a rendered loading frame as a successful game boot. */
+window.addEventListener('error',event=>{
+  cvs.dataset.bootError=(event.message||'Unknown boot error')+' @ '+(event.lineno||0);
+});
 /* opaque context: skips per-frame alpha compositing with the page — measurably
    cheaper on older phones. `let`, so draw helpers can retarget g at offscreen
    cache layers (identical output, drawn once instead of every frame). */
@@ -9222,10 +9227,10 @@ function transformSharpshoot(skill,patch){
    future climb policy may admit explicitly-authored player loops, but the current
    endless build filters them out before they can enter a draft. */
 const SKILL_EVOLUTION_DEPTHS=Object.freeze({
-  1:Object.freeze({id:'FORM',name:'FORM',poolFamilies:10}),
-  2:Object.freeze({id:'SPECIALIZATION',name:'SPECIALIZATION',poolFamilies:8}),
+  1:Object.freeze({id:'FORM',name:'FORM',poolFamilies:6}),
+  2:Object.freeze({id:'SPECIALIZATION',name:'SPECIALIZATION',poolFamilies:6}),
   3:Object.freeze({id:'TWIST',name:'TWIST',poolFamilies:6}),
-  4:Object.freeze({id:'APEX',name:'APEX',poolFamilies:4}),
+  4:Object.freeze({id:'APEX',name:'APEX',poolFamilies:6}),
 });
 const SKILL_PROGRESSION_KINDS=Object.freeze(['EVOLUTION','MASTERY']);
 const SKILL_MASTERY_THEMES=Object.freeze(['REFINEMENT','RESONANCE','MUTATION']);
@@ -9268,7 +9273,7 @@ function activeSkillEvolutionRules(){
 /* A form mutation replaces Sharpshoot's combat role in one decisive step. */
 const SKILL_EVOLUTIONS=Object.freeze([
   skillMutation({id:'split_sight',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'SPLIT SIGHT',rarity:'COMMON',weight:22,buildAspect:'SPLIT_VOLLEY',col:'#c0f79a',
+    name:'SPLIT SIGHT',rarity:'COMMON',weight:22,buildAspect:'SPLIT_VOLLEY',expectedChildren:6,col:'#c0f79a',
     grantsTags:['multihit','chain','engine'],
     summary:'Two arrows build Chain rapidly.',details:[
       'Transform into 2 hits of 9 base damage.',
@@ -9277,7 +9282,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'SPLIT SIGHT',damage:9,hits:2,
       hitInterval:.42,duration:1.02,markGain:1,cost:1,addsChain:true})}),
   skillMutation({id:'blood_mark',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'BLOOD MARK',rarity:'COMMON',weight:20,buildAspect:'MARK_SATURATION',col:'#ff596d',
+    name:'BLOOD MARK',rarity:'UNCOMMON',weight:12,buildAspect:'MARK_SATURATION',col:'#ff596d',
     grantsTags:['mark','setup'],
     summary:'Sacrifice damage to prepare 2 Mark.',details:[
       'Transform into a 6 damage setup shot that applies 2 Mark.',
@@ -9294,15 +9299,6 @@ const SKILL_EVOLUTIONS=Object.freeze([
       'Costs 1 AP and 2 Resolve.'
     ],apply:skill=>transformSharpshoot(skill,{name:'PINNING SHOT',damage:10,hits:1,
       markGain:1,posture:35,cost:2,col:'#9ecbff',addsChain:true})}),
-  skillMutation({id:'quickdraw',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'QUICKDRAW',rarity:'UNCOMMON',weight:12,buildAspect:'RESOLVE_ECONOMY',col:'#ffe37a',
-    grantsTags:['economy','mark','setup'],
-    summary:'A free Resolve-neutral setup.',details:[
-      'Transform into a 10 damage shot that applies 1 Mark.',
-      'It still costs 1 AP but costs no Resolve.',
-      'Use it to begin a combo without draining the saved Resolve pool.'
-    ],apply:skill=>transformSharpshoot(skill,{name:'QUICKDRAW',damage:10,hits:1,
-      markGain:1,cost:0,col:'#ffe37a',addsChain:true})}),
   skillMutation({id:'deadeye',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'DEADEYE',rarity:'RARE',weight:7,buildAspect:'MARK_READER',col:'#c995ff',
     grantsTags:['mark','read','precision'],
@@ -9321,33 +9317,6 @@ const SKILL_EVOLUTIONS=Object.freeze([
       'Costs 1 AP and 2 Resolve.'
     ],apply:skill=>transformSharpshoot(skill,{name:'ECHO BARRAGE',damage:7,hits:3,
       hitInterval:.46,duration:1.3,markGain:1,cost:2,col:'#ff9a3a',addsChain:true})}),
-  skillMutation({id:'rangers_rhythm',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:"RANGER'S RHYTHM",rarity:'RARE',weight:7,buildAspect:'RHYTHM_ENGINE',col:'#7fc9ff',
-    grantsTags:['multihit','chain','economy','engine','mark'],
-    summary:'Build Mark through a low-impact Resolve rhythm.',details:[
-      'Transform into 3 hits of 4 base damage and apply 1 Mark after the rhythm.',
-      'Every arrow grants 1 Resolve and adds 1 Chain.',
-      'Costs 1 AP and 2 Resolve. AP prevents this engine from looping forever.'
-    ],apply:skill=>transformSharpshoot(skill,{name:"RANGER'S RHYTHM",damage:4,hits:3,
-      hitInterval:.4,duration:1.18,cost:2,markGain:1,resolvePerHit:1,col:'#7fc9ff',addsChain:true})}),
-  skillMutation({id:'barbed_anchor',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'BARBED ANCHOR',rarity:'UNCOMMON',weight:11,buildAspect:'CHAIN_SIEGE',col:'#ff9a3a',
-    grantsTags:['mark','chain','posture','break'],
-    summary:'Build Mark while cashing Chain into a ranged Break attempt.',details:[
-      'Deal 14 base damage, apply 1 Mark, then consume every Chain.',
-      'Deal 10 Posture plus 5 additional Posture for every consumed Chain.',
-      'Costs 1 AP and 2 Resolve. The shot adds no new Chain.'
-    ],apply:skill=>transformSharpshoot(skill,{name:'BARBED ANCHOR',damage:14,hits:1,
-      cost:2,markGain:1,posture:10,posturePerChain:5,consumeChain:true,col:'#ff9a3a',addsChain:false})}),
-  skillMutation({id:'signal_arrow',skillId:'sharpshoot',group:'sharpshoot_form',
-    name:'SIGNAL ARROW',rarity:'UNCOMMON',weight:10,buildAspect:'SIGNAL_SETUP',col:'#ff596d',
-    grantsTags:['mark','setup','burst_setup'],
-    summary:'Spend a whole action to expose the target completely.',details:[
-      'Deal only 3 base damage but immediately apply 3 Mark.',
-      'The setup shot adds no Chain. Follow with Longbow Attack or Arrow Rain.',
-      'Costs 1 AP and 2 Resolve.'
-    ],apply:skill=>transformSharpshoot(skill,{name:'SIGNAL ARROW',damage:3,hits:1,
-      markGain:3,cost:2,col:'#ff596d',addsChain:false})}),
   skillMutation({id:'war_draw',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'WAR DRAW',rarity:'COMMON',weight:18,buildAspect:'HEAVY_DRAW',col:'#e8e2d0',
     grantsTags:['direct','damage','mark'],
@@ -9368,9 +9337,24 @@ function sharpshootLayer(data){
    branches into economy, Mark, Break or high-rarity multihit identities. Every
    number below is authored; rarity never procedurally invents combat stats. */
 const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
+  /* Former Form-sized ideas are narrowed into Split Sight specializations. */
+  sharpshootLayer({id:'rangers_rhythm',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
+    parents:['split_sight'],familyId:'rangers_rhythm',name:"RANGER'S RHYTHM",rarity:'COMMON',weight:20,col:'#c0f79a',
+    grantsTags:['multihit','chain','economy','rhythm'],summary:'Trade impact for a third Chain beat and a partial refund.',details:[
+      'Fire 3 arrows for 6 base damage each and apply 1 Mark.','All three arrows add Chain; regain 1 Resolve after the rhythm.',
+      'Costs 1 AP and 2 Resolve, spending 1 net Resolve.'
+    ],patch:{damage:6,hitDamages:null,hits:3,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:1,
+      chainGainPerHit:1,hitInterval:.38}}),
+  sharpshootLayer({id:'signal_pair',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
+    parents:['split_sight'],familyId:'signal_pair',name:'SIGNAL PAIR',rarity:'COMMON',weight:20,col:'#c0f79a',
+    grantsTags:['mark','setup','burst_setup'],summary:'Sacrifice the paired Chain engine to expose the target completely.',details:[
+      'Fire 2 arrows for 7 base damage each and apply the maximum 3 Mark.','The signal arrows add no Chain.',
+      'Costs 1 AP and 2 Resolve.'
+    ],patch:{damage:7,hitDamages:null,hits:2,cost:2,markGain:3,resolvePerHit:0,resolveOnComplete:0,
+      addsChain:false,hitInterval:.46}}),
   sharpshootLayer({id:'twin_rhythm',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
     parents:['split_sight'],familyId:'twin_rhythm',branchId:'TWIN_RHYTHM',expectedChildren:6,
-    name:'TWIN RHYTHM',rarity:'COMMON',weight:22,col:'#7fc9ff',
+    name:'TWIN RHYTHM',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
     grantsTags:['economy','rhythm'],summary:'Make the paired shot Resolve-neutral.',details:[
       'Fire 2 arrows for 10 base damage each and apply 1 Mark.','After the second arrow, regain 1 Resolve.',
       'Both arrows add Chain. Costs 1 AP and 1 Resolve.'
@@ -9384,55 +9368,40 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   sharpshootLayer({id:'siege_pair',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
     parents:['split_sight'],familyId:'siege_pair',name:'SIEGE PAIR',rarity:'RARE',weight:7,col:'#9ecbff',
     grantsTags:['posture','break','siege'],summary:'Turn both arrows into a Break setup.',details:[
-      'Fire 2 arrows for 9 base damage each and apply 1 Mark.','After the volley, deal 28 Posture damage.',
+      'Fire 2 arrows for 9 base damage each and apply 1 Mark.','After the final arrow, deal 28 Posture damage.',
       'Both arrows add Chain. Costs 1 AP and 2 Resolve.'
     ],patch:{damage:9,hitDamages:null,hits:2,cost:2,markGain:1,posture:28,resolveOnComplete:0,hitInterval:.44}}),
   sharpshootLayer({id:'crowns_refraction',skillId:'sharpshoot',depth:2,poolId:'split_sight_specialization',
     parents:['split_sight'],familyId:'crowns_refraction',name:"CROWN'S REFRACTION",rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    grantsTags:['multihit','royal','engine'],summary:'Split the paired shot into a royal triple volley.',details:[
-      'Fire 3 arrows for 9 base damage each and apply 1 Mark.','All three arrows add Chain and scale inside the volley.',
+    grantsTags:['multihit','royal','engine'],summary:'Split the paired shot into a royal triple shot.',details:[
+      'Fire 3 arrows for 9 base damage each and apply 1 Mark.','All three arrows add Chain and scale inside the same attack.',
       'Costs 1 AP and 2 Resolve.'
     ],patch:{damage:9,hitDamages:null,hits:3,cost:2,markGain:1,resolveOnComplete:0,hitInterval:.4}}),
-  /* TWIN RHYTHM — economy Twists. */
-  sharpshootLayer({id:'triple_cadence',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'triple_cadence',branchId:'TWIN_RHYTHM',expectedChildren:4,
-    name:'TRIPLE CADENCE',rarity:'COMMON',weight:20,col:'#7fc9ff',
-    grantsTags:['multihit','cadence'],summary:'Add a third beat without increasing the cost.',details:[
-      'Fire 3 arrows for 8 base damage each and apply 1 Mark.','Regain 1 Resolve after the volley.',
-      'All three arrows add Chain. Costs 1 AP and 1 Resolve.'
-    ],patch:{damage:8,hitDamages:null,hits:3,cost:1,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.38}}),
+  /* TWIN RHYTHM — six distinct Mark/Resolve/Chain Twists. */
   sharpshootLayer({id:'stored_tempo',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'stored_tempo',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    parents:['twin_rhythm'],familyId:'stored_tempo',branchId:'TWIN_RHYTHM',expectedChildren:6,
     name:'STORED TEMPO',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
     grantsTags:['backloaded','reserve'],summary:'Bank the first beat and release it through the second.',details:[
-      'Deal 8 base damage, then 16. Apply 1 Mark afterward.','Regain 2 Resolve after the second arrow.',
-      'Both arrows add Chain. Costs 1 AP and 2 Resolve.'
-    ],patch:{damage:8,hitDamages:[8,16],hits:2,cost:2,markGain:1,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.55}}),
+      'Deal 8 base damage, then 20. Apply 2 Mark afterward.','Regain 2 Resolve after the second arrow.',
+      'Both arrows add Chain. Costs 1 AP and 3 Resolve.'
+    ],patch:{damage:8,hitDamages:[8,20],hits:2,cost:3,markGain:2,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.55}}),
   sharpshootLayer({id:'double_time',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'double_time',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    parents:['twin_rhythm'],familyId:'double_time',branchId:'TWIN_RHYTHM',expectedChildren:6,
     name:'DOUBLE TIME',rarity:'RARE',weight:7,col:'#c995ff',
     grantsTags:['chain','engine','accelerating'],summary:'Each arrow advances Chain twice.',details:[
-      'Fire 2 arrows for 9 base damage each and apply 1 Mark.','Each landed arrow adds 2 Chain instead of 1.',
-      'Regain 1 Resolve. Costs 1 AP and 1 Resolve.'
-    ],patch:{damage:9,hitDamages:null,hits:2,cost:1,markGain:1,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.4}}),
-  sharpshootLayer({id:'steady_refrain',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'steady_refrain',branchId:'TWIN_RHYTHM',expectedChildren:4,
-    name:'STEADY REFRAIN',rarity:'COMMON',weight:18,col:'#c0f79a',
-    grantsTags:['economy','safe_refund','even'],summary:'Recover the investment one arrow at a time.',details:[
-      'Fire 2 arrows for 11 base damage each and apply 1 Mark.','Every arrow immediately restores 1 Resolve instead of waiting for the volley.',
-      'Costs 1 AP and 2 Resolve; a completed attack is Resolve-neutral.'
-    ],patch:{damage:11,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,
-      chainGainPerHit:1,hitInterval:.46}}),
+      'Fire 2 arrows for 14 base damage each and apply 1 Mark.','Each landed arrow adds 2 Chain instead of 1.',
+      'Regain 1 Resolve. Costs 1 AP and 2 Resolve; the Chain engine spends 1 net Resolve.'
+    ],patch:{damage:14,hitDamages:null,hits:2,cost:2,markGain:1,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.4}}),
   sharpshootLayer({id:'pulse_exchange',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'pulse_exchange',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    parents:['twin_rhythm'],familyId:'pulse_exchange',branchId:'TWIN_RHYTHM',expectedChildren:6,
     name:'PULSE EXCHANGE',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
     grantsTags:['multihit','investment','chain'],summary:'Spend one net Resolve to buy four immediate beats.',details:[
-      'Fire 4 arrows for 6 base damage each and apply 1 Mark.','The four arrows build 4 Chain, then the volley refunds 2 Resolve.',
+      'Fire 4 arrows for 7 base damage each and apply 1 Mark.','The four arrows build 4 Chain, then the final arrow restores 2 Resolve.',
       'Costs 1 AP and 3 Resolve; the final net cost is 1 Resolve.'
-    ],patch:{damage:6,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,
+    ],patch:{damage:7,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,
       chainGainPerHit:1,hitInterval:.3}}),
   sharpshootLayer({id:'crown_tempo',skillId:'sharpshoot',depth:3,poolId:'twin_rhythm_twist',
-    parents:['twin_rhythm'],familyId:'crown_tempo',branchId:'TWIN_RHYTHM',expectedChildren:4,
+    parents:['twin_rhythm'],familyId:'crown_tempo',branchId:'TWIN_RHYTHM',expectedChildren:6,
     name:'CROWN TEMPO',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
     grantsTags:['royal','economy','mark','safe_refund'],summary:'A royal rhythm refunds power on every impact.',details:[
       'Fire 3 arrows for 11 base damage each and apply 2 Mark.','Every arrow immediately restores 1 Resolve and adds 1 Chain.',
@@ -9440,112 +9409,70 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
     ],patch:{damage:11,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,
       chainGainPerHit:1,hitInterval:.38}}),
 
-  /* TRIPLE CADENCE — Apex. */
-  sharpshootLayer({id:'marching_measure',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'marching_measure',branchId:'TWIN_RHYTHM',
-    name:'MARCHING MEASURE',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'The cadence marches toward one emphatic final beat.',details:['Deal 8, 8, then 12 base damage.','Apply 1 Mark and regain 1 Resolve after the volley.','Costs 1 AP and 1 Resolve.'],
-    patch:{damage:8,hitDamages:[8,8,12],hits:3,cost:1,markGain:1,resolvePerHit:0,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.38}}),
-  sharpshootLayer({id:'fourth_beat',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'fourth_beat',branchId:'TWIN_RHYTHM',
-    name:'FOURTH BEAT',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'Invest an extra Resolve to extend the neutral rhythm.',details:['Fire 4 arrows for 7 base damage each.','Apply 1 Mark and regain both Resolve after the fourth beat.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:7,hitDamages:null,hits:4,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.33}}),
-  sharpshootLayer({id:'clockwork_volley',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'clockwork_volley',branchId:'TWIN_RHYTHM',name:'CLOCKWORK VOLLEY',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'A measured volley accelerates into a Chain engine.',details:['Fire 4 arrows for 8 base damage each.','The arrows add 1 / 1 / 2 / 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:4,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPattern:[1,1,2,2],hitInterval:.34}}),
-  sharpshootLayer({id:'unbroken_measure',skillId:'sharpshoot',depth:4,poolId:'triple_cadence_apex',
-    parents:['triple_cadence'],familyId:'unbroken_measure',branchId:'TWIN_RHYTHM',name:'UNBROKEN MEASURE',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'The unbroken final beat crowns both damage and momentum.',details:['Deal 10, 10, then 15 base damage.','The final arrow adds 3 Chain; apply 1 Mark and regain 1 Resolve.','Costs only 1 AP and 1 Resolve.'],
-    patch:{damage:10,hitDamages:[10,10,15],hits:3,cost:1,markGain:1,resolveOnComplete:1,chainGainPattern:[1,1,3],hitInterval:.38}}),
   /* STORED TEMPO — Apex. */
   sharpshootLayer({id:'balanced_account',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
     parents:['stored_tempo'],familyId:'balanced_account',branchId:'TWIN_RHYTHM',name:'BALANCED ACCOUNT',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'A modest first deposit funds a much stronger second arrow.',details:['Deal 8 base damage, then 18.','Apply 1 Mark and regain both Resolve after the second arrow.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:8,hitDamages:[8,18],hits:2,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,extraChainBonus:0,chainGainPerHit:1,hitInterval:.57}}),
+    summary:'A modest first deposit funds damage and two fresh targets.',details:['Deal 10 base damage, then 21.','Apply 2 Mark and regain 2 Resolve after the second arrow.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:10,hitDamages:[10,21],hits:2,cost:3,markGain:2,resolvePerHit:0,resolveOnComplete:2,extraChainBonus:0,chainGainPerHit:1,hitInterval:.57}}),
   sharpshootLayer({id:'banked_thunder',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
     parents:['stored_tempo'],familyId:'banked_thunder',branchId:'TWIN_RHYTHM',name:'BANKED THUNDER',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'The stored second arrow lands like a Chain-scaled finisher.',details:['Deal 9 base damage, then 25.','Regain 2 Resolve and apply 1 Mark. Chain scaling gains an extra 2% per stack.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:9,hitDamages:[9,25],hits:2,cost:2,markGain:1,resolveOnComplete:2,extraChainBonus:.02,chainGainPerHit:1,hitInterval:.62}}),
+    summary:'The stored second arrow lands like a Chain-scaled finisher.',details:['Deal 10 base damage, then 29.','Regain 2 Resolve and apply 1 Mark. Chain scaling gains an extra 4% per stack.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:10,hitDamages:[10,29],hits:2,cost:3,markGain:1,resolveOnComplete:2,extraChainBonus:.04,chainGainPerHit:1,hitInterval:.62}}),
   sharpshootLayer({id:'compound_interest',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
     parents:['stored_tempo'],familyId:'compound_interest',branchId:'TWIN_RHYTHM',name:'COMPOUND INTEREST',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Three delayed payments compound into one lethal return.',details:['Deal 6, then 12, then 24 base damage.','Apply 1 Mark, regain all 3 Resolve and gain +1% Chain scaling per stack.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:6,hitDamages:[6,12,24],hits:3,cost:3,markGain:1,resolveOnComplete:3,extraChainBonus:.01,chainGainPerHit:1,hitInterval:.46}}),
+    summary:'Three delayed payments compound existing Chain into one lethal return.',details:['Deal 7, then 14, then 28 base damage.','Apply 1 Mark, regain 3 Resolve and gain +5% Chain scaling per stack.','Costs 1 AP and 4 Resolve; its power, not a free cast, is the reward.'],
+    patch:{damage:7,hitDamages:[7,14,28],hits:3,cost:4,markGain:1,resolveOnComplete:3,extraChainBonus:.05,chainGainPerHit:1,hitInterval:.46}}),
   sharpshootLayer({id:'patient_dividend',skillId:'sharpshoot',depth:4,poolId:'stored_tempo_apex',
     parents:['stored_tempo'],familyId:'patient_dividend',branchId:'TWIN_RHYTHM',name:'PATIENT DIVIDEND',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'A nearly harmless pause precedes a brutal cheap release.',details:['Deal 5 base damage, then 24.','Apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
-    patch:{damage:5,hitDamages:[5,24],hits:2,cost:1,markGain:1,resolveOnComplete:1,extraChainBonus:0,chainGainPerHit:1,hitInterval:.68}}),
+    summary:'A nearly harmless pause precedes a brutal double-marked release.',details:['Deal 5 base damage, then 26.','Apply 2 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
+    patch:{damage:5,hitDamages:[5,26],hits:2,cost:1,markGain:2,resolveOnComplete:1,extraChainBonus:0,chainGainPerHit:1,hitInterval:.68}}),
 
   /* DOUBLE TIME — Apex. */
   sharpshootLayer({id:'taut_weave',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
     parents:['double_time'],familyId:'taut_weave',branchId:'TWIN_RHYTHM',name:'TAUT WEAVE',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'Tighten the paired rhythm without changing its cost.',details:['Fire 2 arrows for 10 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 1 Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:2,cost:1,markGain:1,resolvePerHit:0,resolveOnComplete:1,chainGainPerHit:2,hitInterval:.4}}),
+    summary:'Front-load a compact weave so the second arrow inherits more Chain.',details:['Fire 2 arrows for 14 base damage each.','The arrows add 3 then 2 Chain; apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:14,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:1,chainGainPattern:[3,2],hitInterval:.4}}),
   sharpshootLayer({id:'chain_loom',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
     parents:['double_time'],familyId:'chain_loom',branchId:'TWIN_RHYTHM',name:'CHAIN LOOM',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Weave six Chain from one action.',details:['Fire 3 arrows for 9 base damage each.','Every arrow adds 2 Chain; apply 1 Mark and regain both Resolve.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:9,hitDamages:null,hits:3,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:2,hitInterval:.34}}),
+    summary:'Weave nine Chain from one rare, perfectly even sequence.',details:['Fire 3 arrows for 13 base damage each.','Every arrow adds 3 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:13,hitDamages:null,hits:3,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:3,hitInterval:.34}}),
   sharpshootLayer({id:'accelerando',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
     parents:['double_time'],familyId:'accelerando',branchId:'TWIN_RHYTHM',name:'ACCELERANDO',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Every impact accelerates the next step of the Chain engine.',details:['Fire 4 arrows for 8 base damage each.','The arrows add 1 / 2 / 3 / 4 Chain; apply 1 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:3,chainGainPattern:[1,2,3,4],hitInterval:.3}}),
+    summary:'Every impact accelerates into a fully refunded royal Chain engine.',details:['Fire 4 arrows for 11 base damage each.','The arrows add 1 / 2 / 3 / 5 Chain; apply 2 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:11,hitDamages:null,hits:4,cost:3,markGain:2,resolvePerHit:0,resolveOnComplete:3,chainGainPattern:[1,2,3,5],hitInterval:.3}}),
   sharpshootLayer({id:'snap_rhythm',skillId:'sharpshoot',depth:4,poolId:'double_time_apex',
     parents:['double_time'],familyId:'snap_rhythm',branchId:'TWIN_RHYTHM',name:'SNAP RHYTHM',rarity:'UNCOMMON',weight:12,col:'#7fc9ff',
-    summary:'Two hard shots, three Chain each.',details:['Fire 2 arrows for 12 base damage each.','Every arrow adds 3 Chain; apply 1 Mark and regain both Resolve.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:12,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:3,hitInterval:.48}}),
-
-  /* STEADY REFRAIN — per-hit refund Apex. */
-  sharpshootLayer({id:'even_measure',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
-    parents:['steady_refrain'],familyId:'even_measure',branchId:'TWIN_RHYTHM',name:'EVEN MEASURE',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'Two equal arrows return their cost as they land.',details:['Fire 2 arrows for 12 base damage each.','Every arrow restores 1 Resolve; apply 1 Mark after the second.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:12,hitDamages:null,hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.46}}),
-  sharpshootLayer({id:'clear_cadence',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
-    parents:['steady_refrain'],familyId:'clear_cadence',branchId:'TWIN_RHYTHM',name:'CLEAR CADENCE',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'A light refunded opening clears space for a heavier answer.',details:['Deal 9 base damage, then 17.','Every arrow restores 1 Resolve; apply 1 Mark after the second.','Costs 1 AP and 2 Resolve.'],
-    patch:{damage:9,hitDamages:[9,17],hits:2,cost:2,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.52}}),
-  sharpshootLayer({id:'silver_interval',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
-    parents:['steady_refrain'],familyId:'silver_interval',branchId:'TWIN_RHYTHM',name:'SILVER INTERVAL',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'A third safe beat extends the live refund rhythm.',details:['Fire 3 arrows for 10 base damage each.','Every arrow restores 1 Resolve; apply 1 Mark after the third.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:3,cost:3,markGain:1,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.4}}),
-  sharpshootLayer({id:'perfect_refrain',skillId:'sharpshoot',depth:4,poolId:'steady_refrain_apex',
-    parents:['steady_refrain'],familyId:'perfect_refrain',branchId:'TWIN_RHYTHM',name:'PERFECT REFRAIN',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Perfect refunds never disappear; excess Resolve becomes momentum.',details:['Fire 3 arrows for 12 base damage each and apply 2 Mark.','Every arrow restores 1 Resolve; overflow Resolve becomes the same amount of Chain.','Costs 1 AP and 2 Resolve, producing 1 net Resolve.'],
-    patch:{damage:12,hitDamages:null,hits:3,cost:2,markGain:2,resolvePerHit:1,resolveOnComplete:0,
-      resolveOverflowToChain:true,chainGainPerHit:1,hitInterval:.38}}),
+    summary:'Two hard shots, three Chain each.',details:['Fire 2 arrows for 17 base damage each.','Every arrow adds 3 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:17,hitDamages:null,hits:2,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:3,hitInterval:.48}}),
 
   /* PULSE EXCHANGE — net-cost multihit Apex. */
   sharpshootLayer({id:'fourfold_current',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
     parents:['pulse_exchange'],familyId:'fourfold_current',branchId:'TWIN_RHYTHM',name:'FOURFOLD CURRENT',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'Four stronger pulses preserve the one-Resolve exchange.',details:['Fire 4 arrows for 7 base damage each.','Build 4 Chain, apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:7,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.3}}),
+    summary:'Four stronger pulses preserve the one-Resolve exchange.',details:['Fire 4 arrows for 8 base damage each.','Build 4 Chain, apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:8,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.3}}),
   sharpshootLayer({id:'open_circuit',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
     parents:['pulse_exchange'],familyId:'open_circuit',branchId:'TWIN_RHYTHM',name:'OPEN CIRCUIT',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'A fifth pulse opens a longer Chain circuit.',details:['Fire 5 arrows for 6 base damage each.','Build 5 Chain, apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:6,hitDamages:null,hits:5,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.27}}),
+    summary:'Overcharge five pulses now to open a larger accelerating circuit.',details:['Fire 5 arrows for 8 base damage each.','The hits add 1 / 1 / 1 / 2 / 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 4 Resolve; commit 2 net Resolve for the stronger circuit.'],
+    patch:{damage:8,hitDamages:null,hits:5,cost:4,markGain:1,resolvePerHit:0,resolveOnComplete:2,chainGainPattern:[1,1,1,2,2],hitInterval:.27}}),
   sharpshootLayer({id:'returning_current',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
     parents:['pulse_exchange'],familyId:'returning_current',branchId:'TWIN_RHYTHM',name:'RETURNING CURRENT',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'The fourth current returns the entire investment.',details:['Fire 4 arrows for 8 base damage each.','Build 4 Chain, apply 1 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:4,cost:3,markGain:1,resolvePerHit:0,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.3}}),
+    summary:'The fourth current returns the investment and fully exposes the target.',details:['Fire 4 arrows for 9 base damage each.','Build 4 Chain, apply the maximum 3 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:9,hitDamages:null,hits:4,cost:3,markGain:3,resolvePerHit:0,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.3}}),
   sharpshootLayer({id:'crown_circuit',skillId:'sharpshoot',depth:4,poolId:'pulse_exchange_apex',
     parents:['pulse_exchange'],familyId:'crown_circuit',branchId:'TWIN_RHYTHM',name:'CROWN CIRCUIT',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
-    summary:'Five royal currents return their price and surge at the end.',details:['Fire 5 arrows for 8 base damage each.','The arrows add 1 / 1 / 1 / 2 / 3 Chain; apply 2 Mark and regain all 3 Resolve.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:8,hitDamages:null,hits:5,cost:3,markGain:2,resolvePerHit:0,resolveOnComplete:3,
-      chainGainPattern:[1,1,1,2,3],hitInterval:.27}}),
+    summary:'Five royal currents spend Resolve to unleash the branch\'s largest Chain surge.',details:['Fire 5 arrows for 9 base damage each.','The arrows add 1 / 2 / 2 / 3 / 4 Chain; apply 2 Mark and regain 3 Resolve.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:9,hitDamages:null,hits:5,cost:4,markGain:2,resolvePerHit:0,resolveOnComplete:3,
+      chainGainPattern:[1,2,2,3,4],hitInterval:.27}}),
 
   /* CROWN TEMPO — royal economy Apex. */
-  sharpshootLayer({id:'lesser_coronation',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
-    parents:['crown_tempo'],familyId:'lesser_coronation',branchId:'TWIN_RHYTHM',name:'LESSER CORONATION',rarity:'COMMON',weight:20,col:'#c0f79a',
-    summary:'Three royal impacts strengthen the established tempo.',details:['Fire 3 arrows for 12 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark after the third.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:12,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.38}}),
   sharpshootLayer({id:'royal_refrain',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
     parents:['crown_tempo'],familyId:'royal_refrain',branchId:'TWIN_RHYTHM',name:'ROYAL REFRAIN',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
-    summary:'A fourth royal beat produces one spare Resolve.',details:['Fire 4 arrows for 10 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark after the fourth.','Costs 1 AP and 3 Resolve, producing 1 net Resolve.'],
-    patch:{damage:10,hitDamages:null,hits:4,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.32}}),
+    summary:'Four royal beats repay their rhythm while doubling the Chain engine.',details:['Fire 4 arrows for 10 base damage each.','Every arrow restores 1 Resolve and adds 2 Chain; apply 2 Mark after the fourth.','Costs 1 AP and 5 Resolve, spending 1 net Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:4,cost:5,markGain:2,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:2,hitInterval:.32}}),
   sharpshootLayer({id:'sovereign_pulse',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
     parents:['crown_tempo'],familyId:'sovereign_pulse',branchId:'TWIN_RHYTHM',name:'SOVEREIGN PULSE',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Three sovereign impacts trade speed for Chain-scaled force.',details:['Fire 3 arrows for 16 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark. Chain scaling gains +2% per stack.','Costs 1 AP and 3 Resolve.'],
-    patch:{damage:16,hitDamages:null,hits:3,cost:3,markGain:2,resolvePerHit:1,resolveOnComplete:0,
+    summary:'Three sovereign impacts trade speed for Chain-scaled force.',details:['Fire 3 arrows for 18 base damage each.','Every arrow restores 1 Resolve; apply 2 Mark. Chain scaling gains +2% per stack.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:18,hitDamages:null,hits:3,cost:4,markGain:2,resolvePerHit:1,resolveOnComplete:0,
       extraChainBonus:.02,chainGainPerHit:1,hitInterval:.48}}),
   sharpshootLayer({id:'endless_anthem',skillId:'sharpshoot',depth:4,poolId:'crown_tempo_apex',
     parents:['crown_tempo'],familyId:'endless_anthem',branchId:'TWIN_RHYTHM',name:'ENDLESS ANTHEM',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
@@ -9557,7 +9484,7 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   sharpshootLayer({id:'crimson_map',skillId:'sharpshoot',depth:3,poolId:'forked_barbs_twist',
     parents:['forked_barbs'],familyId:'crimson_map',name:'CRIMSON MAP',rarity:'COMMON',weight:20,col:'#ff596d',
     grantsTags:['mark','saturation'],summary:'Paint all three weak points at once.',details:[
-      'Fire 2 arrows for 6 base damage each.','Apply the maximum 3 Mark after the volley.',
+      'Fire 2 arrows for 6 base damage each.','Apply the maximum 3 Mark after the final arrow.',
       'The setup adds no Chain. Costs 1 AP and 1 Resolve.'
     ],patch:{damage:6,hitDamages:null,hits:2,cost:1,markGain:3,consumeMark:false,useMark:false,addsChain:false,resolveOnComplete:0,hitInterval:.42}}),
   sharpshootLayer({id:'fixed_sightline',skillId:'sharpshoot',depth:3,poolId:'forked_barbs_twist',
@@ -9599,7 +9526,7 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   sharpshootLayer({id:'hammer_pair',skillId:'sharpshoot',depth:3,poolId:'siege_pair_twist',
     parents:['siege_pair'],familyId:'hammer_pair',name:'HAMMER PAIR',rarity:'COMMON',weight:20,col:'#9ecbff',
     grantsTags:['posture','impact'],summary:'Commit both arrows to reliable Posture damage.',details:[
-      'Fire 2 arrows for 10 base damage each.','Deal 42 Posture damage and apply 1 Mark after the volley.',
+      'Fire 2 arrows for 10 base damage each.','Deal 42 Posture damage and apply 1 Mark after the final arrow.',
       'Costs 1 AP and 2 Resolve.'
     ],patch:{damage:10,hitDamages:null,hits:2,cost:2,markGain:1,posture:42,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.46}}),
   sharpshootLayer({id:'chain_ram',skillId:'sharpshoot',depth:3,poolId:'siege_pair_twist',
@@ -9618,7 +9545,7 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
   /* HAMMER PAIR — Apex. */
   sharpshootLayer({id:'gatebreaker',skillId:'sharpshoot',depth:4,poolId:'hammer_pair_apex',
     parents:['hammer_pair'],familyId:'gatebreaker',name:'GATEBREAKER',rarity:'RARE',weight:8,col:'#c995ff',
-    summary:'Three impacts threaten a Break from an empty bar.',details:['Fire 3 arrows for 10 base damage each.','Deal 60 Posture and apply 1 Mark after the volley.','Costs 1 AP and 3 Resolve.'],
+    summary:'Three impacts threaten a Break from an empty bar.',details:['Fire 3 arrows for 10 base damage each.','Deal 60 Posture and apply 1 Mark after the final arrow.','Costs 1 AP and 3 Resolve.'],
     patch:{damage:10,hitDamages:null,hits:3,cost:3,markGain:1,posture:60,posturePerChain:0,consumeChain:false,addsChain:true,hitInterval:.4}}),
   sharpshootLayer({id:'royal_ballista',skillId:'sharpshoot',depth:4,poolId:'hammer_pair_apex',
     parents:['hammer_pair'],familyId:'royal_ballista',name:'ROYAL BALLISTA',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
@@ -9659,7 +9586,7 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
 
   /* CROWN'S REFRACTION — high-rarity multihit Twists. */
   sharpshootLayer({id:'prism_volley',skillId:'sharpshoot',depth:3,poolId:'crowns_refraction_twist',
-    parents:['crowns_refraction'],familyId:'prism_volley',name:'PRISM VOLLEY',rarity:'COMMON',weight:20,col:'#7fc9ff',
+    parents:['crowns_refraction'],familyId:'prism_volley',name:'PRISM SHOT',rarity:'COMMON',weight:20,col:'#7fc9ff',
     grantsTags:['multihit','prism'],summary:'Refract the triple shot into four lighter rays.',details:[
       'Fire 4 arrows for 7 base damage each and apply 1 Mark.','Every arrow adds Chain and scales the next ray.',
       'Costs 1 AP and 2 Resolve.'
@@ -9672,7 +9599,7 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
     ],patch:{damage:8,hitDamages:[8,12,16],hits:3,cost:2,markGain:1,extraChainBonus:.02,chainGainPerHit:1,hitInterval:.44}}),
   sharpshootLayer({id:'sovereign_echo',skillId:'sharpshoot',depth:3,poolId:'crowns_refraction_twist',
     parents:['crowns_refraction'],familyId:'sovereign_echo',name:'SOVEREIGN ECHO',rarity:'RARE',weight:7,col:'#ffe37a',
-    grantsTags:['economy','mark','royal'],summary:'The royal volley echoes back as Resolve and Mark.',details:[
+    grantsTags:['economy','mark','royal'],summary:'The royal sequence echoes back as Resolve and Mark.',details:[
       'Fire 3 arrows for 10 base damage each.','Apply 2 Mark and regain 1 Resolve.',
       'Costs 1 AP and 2 Resolve.'
     ],patch:{damage:10,hitDamages:null,hits:3,cost:2,markGain:2,resolveOnComplete:1,extraChainBonus:0,chainGainPerHit:1,hitInterval:.38}}),
@@ -9714,12 +9641,113 @@ const SPLIT_SIGHT_EVOLUTIONS=Object.freeze([
     summary:'Fewer arrows, heavier orders, efficient recovery.',details:['Fire 3 arrows for 14 base damage each.','Apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
     patch:{damage:14,hitDamages:null,hits:3,cost:2,markGain:1,resolveOnComplete:1,extraChainBonus:0,addsChain:true,chainGainPerHit:1,hitInterval:.4}}),
 ]);
+/* Twin Rhythm's complete 6-Twist × 6-Apex Stable vertical slice. These are handcrafted
+   outcomes expressed through reusable combat primitives, not random stat rolls. */
+function twinRhythmExpansion(data){
+  return sharpshootLayer({skillId:'sharpshoot',branchId:'TWIN_RHYTHM',...data});
+}
+function twinRhythmTwist(data){
+  return twinRhythmExpansion({depth:3,poolId:'twin_rhythm_twist',parents:['twin_rhythm'],expectedChildren:6,...data});
+}
+function twinRhythmApex(parent,data){
+  return twinRhythmExpansion({depth:4,poolId:parent+'_apex',parents:[parent],...data});
+}
+const TWIN_RHYTHM_EXPANSIONS=Object.freeze([
+  /* Two Mark-centered Twists complete the 2C / 2U / 1R / 1L pool. */
+  twinRhythmTwist({id:'marked_refrain',familyId:'marked_refrain',name:'MARKED REFRAIN',rarity:'COMMON',weight:20,col:'#ff596d',
+    grantsTags:['mark','reader','rhythm'],summary:'Read the existing target without consuming it.',details:[
+      'Fire 2 arrows for 9 base damage each; every Mark adds scaling damage to both hits.',
+      'Preserve the existing Mark, then apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'
+    ],patch:{damage:9,hitDamages:null,hits:2,cost:2,useMark:true,consumeMark:false,markDamagePerHit:2,
+      markStackGrowth:1,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.44}}),
+  twinRhythmTwist({id:'red_reprise',familyId:'red_reprise',name:'RED REPRISE',rarity:'COMMON',weight:20,col:'#ff596d',
+    grantsTags:['mark','consume','rebuild','rhythm'],summary:'Cash the target for force, then begin the Mark cycle again.',details:[
+      'Consume every Mark, then fire 2 arrows for 11 base damage with stronger Mark scaling.',
+      'Apply 1 fresh Mark and regain 1 Resolve after the second hit.','Costs 1 AP and 2 Resolve.'
+    ],patch:{damage:11,hitDamages:null,hits:2,cost:2,useMark:false,consumeMark:true,markDamagePerHit:3,
+      markStackGrowth:2,markGain:1,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.46}}),
+
+  /* STORED TEMPO — additional back-loaded arrangements. */
+  twinRhythmApex('stored_tempo',{id:'triple_deposit',familyId:'triple_deposit',name:'TRIPLE DEPOSIT',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Split the stored payment into three rising deposits.',details:['Deal 6, 9, then 19 base damage.','Apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:6,hitDamages:[6,9,19],hits:3,cost:3,markGain:1,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.44}}),
+  twinRhythmApex('stored_tempo',{id:'royal_interest',familyId:'royal_interest',name:'ROYAL INTEREST',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'The delayed royal payment converts its final impact into future momentum.',details:['Deal 7, then 25 base damage.','The final hit adds 4 Chain; apply 2 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:7,hitDamages:[7,25],hits:2,cost:3,markGain:2,resolveOnComplete:2,chainGainPattern:[0,4],hitInterval:.7}}),
+
+  /* DOUBLE TIME — additional Chain weaving patterns. */
+  twinRhythmApex('double_time',{id:'threefold_weave',familyId:'threefold_weave',name:'THREEFOLD WEAVE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Three cheap arrows weave five Chain.',details:['Fire 3 arrows for 11 base damage each.','The arrows add 1 / 2 / 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:11,hitDamages:null,hits:3,cost:3,markGain:1,resolveOnComplete:2,chainGainPattern:[1,2,2],hitInterval:.34}}),
+  twinRhythmApex('double_time',{id:'braided_volley',familyId:'braided_volley',name:'BRAIDED SHOT',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'Commit a larger reserve to braid existing Chain into six accelerating links.',details:['Fire 3 arrows for 11 base damage each with +2% Chain scaling.','The arrows add 1 / 2 / 3 Chain; apply 1 Mark and regain 3 Resolve.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:11,hitDamages:null,hits:3,cost:4,markGain:1,resolveOnComplete:3,extraChainBonus:.02,chainGainPattern:[1,2,3],hitInterval:.34}}),
+
+  /* PULSE EXCHANGE — additional one-net-Resolve circuits. */
+  twinRhythmApex('pulse_exchange',{id:'live_wire',familyId:'live_wire',name:'LIVE WIRE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Five light contacts end in a larger Chain discharge.',details:['Fire 5 arrows for 6 base damage each.','The last hit adds 2 Chain; apply 1 Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:6,hitDamages:null,hits:5,cost:3,markGain:1,resolveOnComplete:2,chainGainPattern:[1,1,1,1,2],hitInterval:.27}}),
+  twinRhythmApex('pulse_exchange',{id:'closed_loop',familyId:'closed_loop',name:'CLOSED LOOP',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A larger reserve closes five pulses around two fresh targets.',details:['Fire 5 arrows for 7 base damage each.','Apply 2 Mark and regain 3 Resolve after the circuit closes.','Costs 1 AP and 4 Resolve; the larger reserve still spends 1 net Resolve.'],
+    patch:{damage:7,hitDamages:null,hits:5,cost:4,markGain:2,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.27}}),
+
+  /* CROWN TEMPO — additional royal hybrid outcomes. */
+  twinRhythmApex('crown_tempo',{id:'minor_crown',familyId:'minor_crown',name:'MINOR CROWN',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Two heavy royal beats expose the complete target.',details:['Fire 2 arrows for 20 base damage each.','Each hit restores 1 Resolve; apply the maximum 3 Mark.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:20,hitDamages:null,hits:2,cost:3,markGain:3,resolvePerHit:1,resolveOnComplete:0,chainGainPerHit:1,hitInterval:.52}}),
+  twinRhythmApex('crown_tempo',{id:'fourth_jewel',familyId:'fourth_jewel',name:'FOURTH JEWEL',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'A fourth jewel trades force for an additional Chain contact.',details:['Fire 4 arrows for 10 base damage each.','After the final arrow, restore 3 Resolve and apply 2 Mark.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:10,hitDamages:null,hits:4,cost:4,markGain:2,resolvePerHit:0,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.32}}),
+  twinRhythmApex('crown_tempo',{id:'gilded_refrain',familyId:'gilded_refrain',name:'GILDED REFRAIN',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'A gilded triple shot spends one Resolve to expose the entire target.',details:['Fire 3 arrows for 14 base damage each.','Regain 3 Resolve and apply the maximum 3 Mark.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:14,hitDamages:null,hits:3,cost:4,markGain:3,resolvePerHit:0,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.42}}),
+
+  /* MARKED REFRAIN — non-consuming Mark-reader Apex pool. */
+  twinRhythmApex('marked_refrain',{id:'held_target',familyId:'held_target',name:'HELD TARGET',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'A Chain payoff: hold the sightline and amplify both Mark readings with existing Chain.',details:['Deal 6, then 15 base damage; gain an extra 3% damage per Chain stack.','Read and preserve every Mark, then apply 1 Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:6,hitDamages:[6,15],hits:2,cost:2,useMark:true,consumeMark:false,markDamagePerHit:2,markStackGrowth:1,markGain:1,resolveOnComplete:1,extraChainBonus:.03,chainGainPerHit:1,hitInterval:.56}}),
+  twinRhythmApex('marked_refrain',{id:'open_scope',familyId:'open_scope',name:'OPEN SCOPE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'A pure Mark payoff: invest more Resolve for a stronger damage coefficient on every Mark.',details:['Fire 2 arrows for 11 base damage; every Mark adds more damage.','Preserve Mark, apply 1 more and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:11,hits:2,cost:3,useMark:true,consumeMark:false,markDamagePerHit:3,markStackGrowth:1,markGain:1,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.46}}),
+  twinRhythmApex('marked_refrain',{id:'red_horizon',familyId:'red_horizon',name:'RED HORIZON',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'Three readings leave two fresh target points.',details:['Fire 3 arrows for 9 base damage and read every Mark.','Preserve Mark, apply 2 more and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:9,hits:3,cost:3,useMark:true,consumeMark:false,markDamagePerHit:3,markStackGrowth:1,markGain:2,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.36}}),
+  twinRhythmApex('marked_refrain',{id:'perfect_range',familyId:'perfect_range',name:'PERFECT RANGE',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'Abandon Chain generation for two stationary, high-coefficient Mark readings.',details:['Fire 2 arrows for 16 base damage; stacked Marks scale harder.','Preserve Mark, apply 1 more and regain 2 Resolve, but add no Chain.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:16,hits:2,cost:3,useMark:true,consumeMark:false,markDamagePerHit:4,markStackGrowth:2,markGain:1,resolveOnComplete:2,addsChain:false,hitInterval:.5}}),
+  twinRhythmApex('marked_refrain',{id:'constellation_fire',familyId:'constellation_fire',name:'CONSTELLATION FIRE',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'Four readings turn the existing marks into a constellation.',details:['Fire 4 arrows for 9 base damage with strong Mark scaling.','Preserve Mark, apply 2 more and regain 3 Resolve.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:9,hits:4,cost:4,useMark:true,consumeMark:false,markDamagePerHit:4,markStackGrowth:2,markGain:2,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.3}}),
+  twinRhythmApex('marked_refrain',{id:'all_targets_one',familyId:'all_targets_one',name:'ALL TARGETS, ONE',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'Five royal readings make every existing Mark overwhelming.',details:['Fire 5 arrows for 9 base damage with extreme stacked-Mark growth.','Preserve Mark, apply 3 and regain 5 Resolve.','Costs 1 AP and 4 Resolve, producing 1 net Resolve.'],
+    patch:{damage:9,hits:5,cost:4,useMark:true,consumeMark:false,markDamagePerHit:5,markStackGrowth:3,markGain:3,resolveOnComplete:5,chainGainPerHit:1,hitInterval:.28}}),
+
+  /* RED REPRISE — consume-and-rebuild Apex pool. */
+  twinRhythmApex('red_reprise',{id:'threefold_reprise',familyId:'threefold_reprise',name:'THREEFOLD REPRISE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'Spread the consumed target across three forceful contacts.',details:['Consume Mark, then fire 3 arrows for 9 base damage with strong Mark scaling.','Apply 1 fresh Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:9,hits:3,cost:3,consumeMark:true,useMark:false,markDamagePerHit:3,markStackGrowth:2,markGain:1,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.36}}),
+  twinRhythmApex('red_reprise',{id:'clean_reprise',familyId:'clean_reprise',name:'CLEAN REPRISE',rarity:'COMMON',weight:20,col:'#c0f79a',
+    summary:'A cleaner two-hit cashout immediately rebuilds two Mark.',details:['Consume Mark, then fire 2 arrows for 13 base damage with concentrated scaling.','Apply 2 fresh Mark and regain 1 Resolve.','Costs 1 AP and 2 Resolve.'],
+    patch:{damage:13,hits:2,cost:2,consumeMark:true,useMark:false,markDamagePerHit:4,markStackGrowth:2,markGain:2,resolveOnComplete:1,chainGainPerHit:1,hitInterval:.46}}),
+  twinRhythmApex('red_reprise',{id:'blood_echo',familyId:'blood_echo',name:'BLOOD ECHO',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'The final blood echo converts a stronger cashout into future momentum.',details:['Consume Mark, then fire 3 arrows for 11 base damage with severe scaling.','The final hit adds 5 Chain; apply 2 fresh Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:11,hits:3,cost:3,consumeMark:true,useMark:false,markDamagePerHit:4,markStackGrowth:3,markGain:2,resolveOnComplete:2,chainGainPattern:[0,0,5],hitInterval:.36}}),
+  twinRhythmApex('red_reprise',{id:'reloaded_quarrel',familyId:'reloaded_quarrel',name:'RELOADED QUARREL',rarity:'UNCOMMON',weight:12,col:'#9ecbff',
+    summary:'Two heavy quarrels spend one Resolve on a concentrated cashout.',details:['Consume Mark, then fire 2 arrows for 17 base damage with extreme per-hit scaling.','Apply 2 fresh Mark and regain 2 Resolve.','Costs 1 AP and 3 Resolve.'],
+    patch:{damage:17,hits:2,cost:3,consumeMark:true,useMark:false,markDamagePerHit:5,markStackGrowth:3,markGain:2,resolveOnComplete:2,chainGainPerHit:1,hitInterval:.52}}),
+  twinRhythmApex('red_reprise',{id:'red_cycle',familyId:'red_cycle',name:'RED CYCLE',rarity:'RARE',weight:8,col:'#c995ff',
+    summary:'Four contacts turn the Mark cashout into a complete violent cycle.',details:['Consume Mark, then fire 4 arrows for 11 base damage with extreme scaling.','Apply 2 fresh Mark and regain 3 Resolve.','Costs 1 AP and 4 Resolve.'],
+    patch:{damage:11,hits:4,cost:4,consumeMark:true,useMark:false,markDamagePerHit:5,markStackGrowth:4,markGain:2,resolveOnComplete:3,chainGainPerHit:1,hitInterval:.3}}),
+  twinRhythmApex('red_reprise',{id:'eternal_reprise',familyId:'eternal_reprise',name:'ETERNAL REPRISE',rarity:'LEGENDARY',weight:3,col:'#ffe37a',
+    summary:'The target is consumed, maximally rebuilt and ready to be consumed forever.',details:['Consume Mark, then fire 5 arrows for 11 base damage with overwhelming scaling.','Apply 3 fresh Mark and regain 5 Resolve.','Costs 1 AP and 4 Resolve, producing 1 net Resolve.'],
+    patch:{damage:11,hits:5,cost:4,consumeMark:true,useMark:false,markDamagePerHit:6,markStackGrowth:4,markGain:3,resolveOnComplete:5,chainGainPerHit:1,hitInterval:.28}}),
+]);
 /* Mastery is deliberately a separate content lane, not a fifth evolution depth.
    It opens only after Apex. Future handcrafted Refinement, Resonance and Mutation
    nodes are registered here without changing the four-layer identity tree. */
 const SKILL_MASTERIES=Object.freeze([
 ]);
-const SKILL_MUTATIONS=Object.freeze([...SKILL_EVOLUTIONS,...SPLIT_SIGHT_EVOLUTIONS,...SKILL_MASTERIES]);
+const SKILL_MUTATIONS=Object.freeze([...SKILL_EVOLUTIONS,...SPLIT_SIGHT_EVOLUTIONS,...TWIN_RHYTHM_EXPANSIONS,...SKILL_MASTERIES]);
 const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(m=>[m.id,m])));
 const SKILL_MUTATION_RARITY_COL=Object.freeze({COMMON:'#c0f79a',UNCOMMON:'#9ecbff',RARE:'#c995ff',LEGENDARY:'#ffe37a'});
 const SKILL_MUTATION_TYPE_COL=Object.freeze({
@@ -9730,7 +9758,10 @@ function skillIdentityName(id){
   const identity=SKILL_IDENTITIES[id];
   return identity?identity.name:String(id||'UNDEFINED').replace(/_/g,' ');
 }
-function skillBuildAspectName(id){return String(id||'UNFORMED').replace(/_/g,' ');}
+const SKILL_BUILD_ASPECT_LABELS=Object.freeze({SPLIT_VOLLEY:'SPLIT SHOT'});
+function skillBuildAspectName(id){
+  return SKILL_BUILD_ASPECT_LABELS[id]||String(id||'UNFORMED').replace(/_/g,' ');
+}
 function skillLineageLabel(skill){
   if(!skill)return 'STABLE';
   const aspect=skill.lineageAspect||'STABLE',level=skill.aspectLevel||0;
@@ -9780,7 +9811,7 @@ function validateTwinRhythmGuideline(mutation){
     if(!(state.markGain>0))
       throw new Error('Twin Rhythm '+mutation.id+' must end by generating Mark');
     if(refund<=0)throw new Error('Twin Rhythm '+mutation.id+' must contain a Resolve rhythm');
-    if(netResolve < -1||netResolve > 1)
+    if(netResolve < -3||netResolve > 1)
       throw new Error('Twin Rhythm '+mutation.id+' exceeds the Stable Resolve budget');
     if((state.posture||0)>0||state.consumeChain)
       throw new Error('Twin Rhythm '+mutation.id+' cannot steal another Specialization role');
@@ -9797,37 +9828,157 @@ function evolutionCombatState(mutation){
 /* This value is a guardrail, not the final balance formula. It compares siblings
    at zero starting Chain so a higher rarity cannot accidentally be a strict
    numerical downgrade; authored utility and live boss balance are still tested. */
-function stableEvolutionGuardrailValue(state){
+function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
   const hits=state.hits||1,rate=CFG.CHAIN_BONUS+(state.extraChainBonus||0);
-  let chain=0,damage=0;
+  const markDamage=state.consumeMark||state.useMark?commandMarkDamage(state,markStacks):0;
+  let chain=startingChain,damage=0;
   for(let i=0;i<hits;i++){
-    damage+=Math.round(commandHitBase(state,i)*(1+rate*chain));
+    damage+=Math.round((commandHitBase(state,i)+markDamage)*(1+rate*chain));
     chain+=commandChainGain(state,i);
   }
   const refund=(state.resolvePerHit||0)*hits+(state.resolveOnComplete||0),
     netResolve=refund-(state.cost||0);
-  return damage+chain*2+(state.markGain||0)*6+netResolve*4+
-    (state.resolveOverflowToChain?4:0)+(state.posture||0)*.35;
+  return damage+(chain-startingChain)*2+(state.markGain||0)*6+netResolve*4+
+    (state.resolvePerHit?2:0)+(state.resolveOverflowToChain?4:0)+(state.posture||0)*.35;
+}
+function stableEvolutionCombinedGuardrailValue(state){
+  return (stableEvolutionGuardrailValue(state,0,0)+stableEvolutionGuardrailValue(state,3,0)+
+    stableEvolutionGuardrailValue(state,0,10)+stableEvolutionGuardrailValue(state,3,10))/4;
+}
+function stableEvolutionScenarioDamage(state,markStacks,startingChain){
+  const hits=state.hits||1,rate=CFG.CHAIN_BONUS+(state.extraChainBonus||0),
+    markDamage=state.consumeMark||state.useMark?commandMarkDamage(state,markStacks):0;
+  let chain=startingChain,damage=0;
+  for(let i=0;i<hits;i++){
+    damage+=Math.round((commandHitBase(state,i)+markDamage)*(1+rate*chain));
+    chain+=commandChainGain(state,i);
+  }
+  return damage;
+}
+function stableEvolutionOutcomeVector(state){
+  const hits=state.hits||1,refund=(state.resolvePerHit||0)*hits+(state.resolveOnComplete||0);
+  let chainGain=0;for(let i=0;i<hits;i++)chainGain+=commandChainGain(state,i);
+  return [
+    stableEvolutionScenarioDamage(state,0,0),stableEvolutionScenarioDamage(state,0,10),
+    stableEvolutionScenarioDamage(state,3,0),stableEvolutionScenarioDamage(state,3,10),
+    chainGain,state.markGain||0,state.useMark&&!state.consumeMark?1:0,
+    refund-(state.cost||0),-(state.cost||0),
+    state.posture||0,hits
+  ];
+}
+function stableEvolutionStrictlyDominates(a,b){
+  let strictlyBetter=false;
+  for(let i=0;i<a.length;i++){
+    if(a[i]<b[i])return false;
+    if(a[i]>b[i])strictlyBetter=true;
+  }
+  return strictlyBetter;
 }
 function stableEvolutionMechanicSignature(state){
   return JSON.stringify({hits:state.hits||1,damage:state.hitDamages||state.damage,cost:state.cost||0,
     refundHit:state.resolvePerHit||0,refundEnd:state.resolveOnComplete||0,mark:state.markGain||0,
     chain:state.chainGainPattern||state.chainGainPerHit||1,overflow:!!state.resolveOverflowToChain,
-    chainScale:state.extraChainBonus||0,posture:state.posture||0});
+    chainScale:state.extraChainBonus||0,addsChain:state.addsChain!==false,
+    readsMark:!!state.useMark,consumesMark:!!state.consumeMark,markDamage:state.markDamagePerHit||0,
+    markGrowth:state.markStackGrowth||0,posture:state.posture||0});
 }
-function validateTwinRhythmApexPool(twist){
-  if(twist.kind!=='EVOLUTION'||twist.branchId!=='TWIN_RHYTHM'||twist.depth!==3)return;
-  const apexes=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.depth===4&&
-    node.parents.includes(twist.id)).sort((a,b)=>SKILL_RARITY_ORDER.indexOf(a.rarity)-SKILL_RARITY_ORDER.indexOf(b.rarity));
-  const rarities=apexes.map(node=>node.rarity);
-  if(rarities.join('|')!==SKILL_RARITY_ORDER.join('|'))
-    throw new Error('Twin Rhythm '+twist.id+' Apex pool needs exactly Common, Uncommon, Rare and Legendary');
-  const states=apexes.map(evolutionCombatState),signatures=new Set(states.map(stableEvolutionMechanicSignature));
-  if(signatures.size!==apexes.length)
-    throw new Error('Twin Rhythm '+twist.id+' Apex cards need four distinct combat outcomes');
-  const values=states.map(stableEvolutionGuardrailValue);
-  for(let i=1;i<values.length;i++)if(values[i]<=values[i-1])
-    throw new Error('Twin Rhythm '+twist.id+' rarity power regresses from '+rarities[i-1]+' to '+rarities[i]);
+/* Base damage and its hit distribution deliberately do not appear here. Two
+   siblings need a different tactical lever; changing 10+10 into 7+13 alone is
+   not enough to justify another card. */
+function stableEvolutionDecisionSignature(state){
+  const pattern=state.chainGainPattern||null,chainMode=state.addsChain===false?'NONE':pattern?
+    (pattern[0]>pattern[pattern.length-1]?'FRONT_LOADED':
+      pattern[0]<pattern[pattern.length-1]?'BACK_LOADED':'SHAPED'):
+    (state.chainGainPerHit||1)>1?'AMPLIFIED_EVEN':'EVEN',
+    markFlow=state.consumeMark?'CONSUME':state.useMark?'READ':state.markGain?'BUILD':'NONE',
+    markResult=!state.markGain?'NONE':state.markGain>=3?'MAX':'ADDS',
+    markScaling=!(state.markDamagePerHit>0)?'NONE':state.markStackGrowth>0?'GROWING':'LINEAR';
+  return JSON.stringify({hits:state.hits||1,cost:state.cost||0,
+    refundHit:state.resolvePerHit||0,refundEnd:state.resolveOnComplete||0,
+    markFlow,markResult,markScaling,chainMode,chainScale:state.extraChainBonus>0,
+    overflow:!!state.resolveOverflowToChain,posture:state.posture>0,
+    consumesChain:!!state.consumeChain});
+}
+function validateStableSixCardSet(label,sourceChildren){
+  const children=sourceChildren.slice().sort((a,b)=>
+    SKILL_RARITY_ORDER.indexOf(a.rarity)-SKILL_RARITY_ORDER.indexOf(b.rarity));
+  const rarityCounts=Object.fromEntries(SKILL_RARITY_ORDER.map(rarity=>[
+    rarity,children.filter(node=>node.rarity===rarity).length
+  ])),target={COMMON:2,UNCOMMON:2,RARE:1,LEGENDARY:1};
+  if(children.length!==6||SKILL_RARITY_ORDER.some(rarity=>rarityCounts[rarity]!==target[rarity]))
+    throw new Error(label+' pool needs 2 Common, 2 Uncommon, 1 Rare and 1 Legendary');
+  const states=children.map(evolutionCombatState);let freeEconomyCards=0;
+  for(let i=0;i<children.length;i++){
+    const hits=states[i].hits||1,refund=(states[i].resolvePerHit||0)*hits+
+      (states[i].resolveOnComplete||0),netResolve=refund-(states[i].cost||0);
+    if(children[i].rarity==='COMMON'&&netResolve>=0)
+      throw new Error(children[i].id+' Common move must spend at least 1 net Resolve');
+    if(netResolve>0&&SKILL_RARITY_ORDER.indexOf(children[i].rarity)<SKILL_RARITY_ORDER.indexOf('RARE'))
+      throw new Error(children[i].id+' must be Rare or Legendary to produce net Resolve');
+    if(netResolve>=0)freeEconomyCards++;
+  }
+  if(freeEconomyCards>1)
+    throw new Error(label+' pool may contain at most 1 full-refund or Resolve-producing card');
+  const signatures=new Set(states.map(stableEvolutionMechanicSignature)),
+    decisionSignatures=new Set(states.map(stableEvolutionDecisionSignature));
+  if(signatures.size!==children.length)
+    throw new Error(label+' pool needs six distinct combat outcomes');
+  if(decisionSignatures.size!==children.length)
+    throw new Error(label+' pool contains cards separated only by damage numbers');
+  const outcomeVectors=states.map(stableEvolutionOutcomeVector);
+  for(const rarity of SKILL_RARITY_ORDER){
+    const peers=children.map((node,index)=>({node,index})).filter(entry=>entry.node.rarity===rarity);
+    for(let i=0;i<peers.length;i++)for(let j=0;j<peers.length;j++)if(i!==j&&
+      stableEvolutionStrictlyDominates(outcomeVectors[peers[i].index],outcomeVectors[peers[j].index]))
+      throw new Error(label+' same-rarity choice '+peers[i].node.id+' dominates '+peers[j].node.id);
+  }
+  return {children,states};
+}
+function validateStableSixCardChildPool(parent){
+  if(parent.kind!=='EVOLUTION'||parent.resultAspect!=='STABLE'||
+    parent.depth<1||parent.depth>3||parent.expectedChildren!==6)return;
+  const checked=validateStableSixCardSet(parent.id+' child',SKILL_MUTATIONS.filter(node=>
+    node.kind==='EVOLUTION'&&node.resultAspect==='STABLE'&&node.depth===parent.depth+1&&
+    node.parents.includes(parent.id)));
+  if(parent.depth!==3)return;
+  const {children,states}=checked;
+  const parentState=evolutionCombatState(parent),parentValue=stableEvolutionCombinedGuardrailValue(parentState),
+    minimumGain={COMMON:3,UNCOMMON:6,RARE:10,LEGENDARY:16},rarityAverage={};
+  for(let i=0;i<children.length;i++){
+    const value=stableEvolutionCombinedGuardrailValue(states[i]);
+    if(value-parentValue+1e-6<minimumGain[children[i].rarity])
+      throw new Error(children[i].id+' is too small an upgrade over '+parent.id);
+  }
+  for(const rarity of SKILL_RARITY_ORDER){
+    const values=children.map((node,index)=>node.rarity===rarity?
+      stableEvolutionCombinedGuardrailValue(states[index]):null).filter(value=>value!==null);
+    rarityAverage[rarity]=values.reduce((sum,value)=>sum+value,0)/values.length;
+  }
+  if(rarityAverage.UNCOMMON<rarityAverage.COMMON+2||
+     rarityAverage.RARE<rarityAverage.UNCOMMON+2||
+     rarityAverage.LEGENDARY<rarityAverage.RARE+5)
+    throw new Error(parent.id+' child rarity bands do not rise clearly: '+
+      SKILL_RARITY_ORDER.map(rarity=>rarity+' '+rarityAverage[rarity].toFixed(1)).join(', '));
+  /* An average can hide one over-tuned Common or one disappointing Rare. Require
+     every higher-rarity result to clear the strongest card below it; different
+     timing/build axes remain valid, but rarity is always a net advantage. */
+  const scored=children.map((node,index)=>({node,value:stableEvolutionCombinedGuardrailValue(states[index])})),
+    boundaryGaps=[1,2,5];
+  for(let i=1;i<SKILL_RARITY_ORDER.length;i++){
+    const lower=scored.filter(entry=>entry.node.rarity===SKILL_RARITY_ORDER[i-1]),
+      upper=scored.filter(entry=>entry.node.rarity===SKILL_RARITY_ORDER[i]),
+      strongestLower=lower.reduce((best,entry)=>entry.value>best.value?entry:best),
+      weakestUpper=upper.reduce((best,entry)=>entry.value<best.value?entry:best);
+    if(weakestUpper.value<strongestLower.value+boundaryGaps[i-1])
+      throw new Error(parent.id+' rarity boundary fails: '+
+        weakestUpper.node.id+' '+weakestUpper.value.toFixed(1)+' must beat '+
+        strongestLower.node.id+' '+strongestLower.value.toFixed(1));
+  }
+}
+function validateStableSixCardFormPool(skill){
+  const forms=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.resultAspect==='STABLE'&&
+    node.skillId===skill.id&&node.depth===1);
+  if(forms.length)validateStableSixCardSet(skill.id+' Form',forms);
 }
 const SKILL_MUTATIONS_BY_SKILL=(()=>{
   const index=Object.create(null),seenIds=new Set();
@@ -9836,6 +9987,7 @@ const SKILL_MUTATIONS_BY_SKILL=(()=>{
     if(!identity)throw new Error('Base skill '+skill.id+' needs a registered identity');
     if(!identity.accepts(createRunSkill(skill)))throw new Error('Base skill '+skill.id+
       ' violates its own identity '+identity.id);
+    validateStableSixCardFormPool(skill);
     index[skill.id]=[];
   }
   for(const mutation of SKILL_MUTATIONS){
@@ -9901,17 +10053,34 @@ const SKILL_MUTATIONS_BY_SKILL=(()=>{
         ' identity '+parent.aspectIdentity+' without an authored aspect shift');
   }
   for(const mutation of SKILL_MUTATIONS)if(mutation.expectedChildren!==null){
-    const childCount=SKILL_MUTATIONS.filter(child=>child.kind==='EVOLUTION'&&
+    const childFamilies=new Set(SKILL_MUTATIONS.filter(child=>child.kind==='EVOLUTION'&&
       child.depth===mutation.depth+1&&child.poolIds.includes(mutation.childPoolId)&&
-      (!child.parents.length||child.parents.includes(mutation.id))).length;
-    if(childCount!==mutation.expectedChildren)throw new Error('Mutation '+mutation.id+' needs '+
-      mutation.expectedChildren+' children; found '+childCount);
+      (!child.parents.length||child.parents.includes(mutation.id))).map(child=>child.familyId));
+    if(childFamilies.size!==mutation.expectedChildren)throw new Error('Mutation '+mutation.id+' needs '+
+      mutation.expectedChildren+' child families; found '+childFamilies.size);
   }
   for(const mutation of SKILL_MUTATIONS){
-    validateStableSkillIdentity(mutation);validateTwinRhythmGuideline(mutation);validateTwinRhythmApexPool(mutation);
+    validateStableSkillIdentity(mutation);validateTwinRhythmGuideline(mutation);
+    validateStableSixCardChildPool(mutation);
   }
   for(const id of Object.keys(index))index[id]=Object.freeze(index[id]);
   return Object.freeze(index);
+})();
+/* A compact, read-only health record for automated smoke tests. Content counts
+   come from the live graph, so a future edit cannot silently leave the UI and
+   the authored tree disagreeing about what actually exists. */
+const SKILL_EVOLUTION_CONTENT_AUDIT=(()=>{
+  const forms=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.depth===1&&
+    node.skillId==='sharpshoot');
+  const specializations=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.depth===2&&
+    node.parents.includes('split_sight'));
+  const twists=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.depth===3&&
+    node.parents.includes('twin_rhythm'));
+  const apexes=twists.flatMap(twist=>SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&
+    node.depth===4&&node.parents.includes(twist.id)));
+  return Object.freeze({sharpshootForms:forms.length,splitSightSpecializations:specializations.length,
+    twinRhythmNodes:1+twists.length+apexes.length,
+    twinRhythmTwists:twists.length,twinRhythmApexes:apexes.length});
 })();
 function mutationAllowedByRules(mutation,rules=activeSkillEvolutionRules()){
   if(mutation.loopRisk==='automatic')return false;
@@ -15980,14 +16149,18 @@ function drawMoveTreeNode(node,rect,selected,onRunPath){
   const rarityCol=SKILL_MUTATION_RARITY_COL[node.rarity]||node.col,typeCol=SKILL_MUTATION_TYPE_COL[node.type]||'#cfd3df';
   g.fillStyle=selected?'rgba(255,227,122,.13)':onRunPath?'rgba(158,203,255,.10)':'rgba(8,11,18,.96)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
   drawSkillMutationRarityFrame(node,rect);
-  const size=Math.max(7,Math.min(10,Math.floor((rect.w-12)/Math.max(1,node.name.length*.61))));
-  g.textAlign='center';g.font='bold '+size+'px monospace';g.fillStyle='#f4f1e8';g.fillText(node.name,rect.x+rect.w/2,rect.y+21);
-  g.font='bold 7px monospace';g.fillStyle=rarityCol;g.fillText(node.rarity+' · '+node.type,rect.x+rect.w/2,rect.y+38);
+  const compact=rect.h<40,nameY=rect.y+(compact?14:21),metaY=rect.y+(compact?28:38),
+    size=Math.max(7,Math.min(compact?9:10,Math.floor((rect.w-12)/Math.max(1,node.name.length*.61))));
+  g.textAlign='center';g.font='bold '+size+'px monospace';g.fillStyle='#f4f1e8';g.fillText(node.name,rect.x+rect.w/2,nameY);
+  g.font='bold 7px monospace';g.fillStyle=rarityCol;g.fillText(node.rarity+' · '+node.type,rect.x+rect.w/2,metaY);
   if(onRunPath){g.textAlign='right';g.fillStyle=typeCol;g.fillText('◆',rect.x+rect.w-7,rect.y+rect.h-7);}
   if(selected)drawMoveSelectionFrame(rect,'#ffe37a');
 }
-function moveTreeGridRects(count,y){
-  const w=210,h=44,gapX=12,gapY=8;
+function moveTreeGridRects(count,y,maxBottom=542){
+  /* Keep two readable columns and compress only the vertical dimension when a
+     full Apex pool must fit above the fixed explanation panel. */
+  const w=210,gapX=12,rows=Math.max(1,Math.ceil(count/2)),gapY=6,
+    h=Math.min(44,Math.max(32,Math.floor((maxBottom-y-gapY*(rows-1))/rows)));
   return Array.from({length:count},(_,index)=>({
     x:24+(index%2)*(w+gapX),y:y+((index/2)|0)*(h+gapY),w,h
   }));
@@ -15996,9 +16169,10 @@ function drawMoveTreePlaceholder(rect,label,index){
   g.fillStyle='rgba(255,255,255,.018)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
   g.save();g.strokeStyle='#2b2e38';g.lineWidth=1;g.setLineDash([5,4]);
   g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);g.restore();
+  const compact=rect.h<40;
   g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#4c4f5a';
-  g.fillText(label+' '+(index+1),rect.x+rect.w/2,rect.y+17);
-  g.font='7px monospace';g.fillText('NOT AUTHORED',rect.x+rect.w/2,rect.y+32);
+  g.fillText(label+' '+(index+1),rect.x+rect.w/2,rect.y+(compact?13:17));
+  g.font='7px monospace';g.fillText('NOT AUTHORED',rect.x+rect.w/2,rect.y+(compact?27:32));
 }
 function drawMoveTree(){
   if(!moveTreeOpen)return;
@@ -16058,8 +16232,8 @@ function drawMoveTree(){
   if(!form){g.font='bold 15px monospace';g.fillStyle='#565963';g.fillText('THIS MOVE HAS NO EVOLUTION TREE YET',VW/2,390);}
   const selected=SKILL_MUTATION_BY_ID[moveTreeSelectedId]||form;
   g.font='bold 8px monospace';g.fillStyle='#626570';
-  if(spec)g.fillText(twist?'TAP THE SPECIALIZATION TO RETURN TO ITS TWISTS':'TAP THE FORM TO RETURN TO ALL SPECIALIZATIONS',VW/2,548);
-  g.fillText('HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,562);
+  g.fillText(spec?'TAP THE PATH TO NAVIGATE · HOLD A MOVE FOR MECHANICS':
+    'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,558);
   g.fillStyle='rgba(255,255,255,.045)';g.fillRect(18,574,444,176);g.strokeStyle='#3a3d48';g.lineWidth=1.5;g.strokeRect(18.5,574.5,443,175);
   if(selected){
     const col=SKILL_MUTATION_RARITY_COL[selected.rarity]||selected.col;
@@ -16296,13 +16470,25 @@ function drawSkillLabCatalog(){
 function skillLabMutationPreviewCommand(mutation){
   const definition=mutation&&BASE_TURN_SKILLS.find(skill=>skill.id===mutation.skillId);
   if(!definition)return null;
+  if(mutation.kind==='EVOLUTION'){
+    const current=runSkill(mutation.skillId),history=new Set(current?current.evolutionMutationIds:[]),
+      lineages=evolutionLineagesTo(mutation);
+    if(!lineages.length)return null;
+    /* A tree tooltip describes the selected historical node, not the live Apex.
+       Prefer the lineage sharing most of the current build when a synthesized
+       node eventually has multiple valid parents. */
+    const lineage=lineages.slice().sort((a,b)=>
+      b.reduce((sum,node)=>sum+(history.has(node.id)?1:0),0)-
+      a.reduce((sum,node)=>sum+(history.has(node.id)?1:0),0))[0],
+      command=createRunSkill(definition);
+    for(const layer of lineage)applyMutationLayer(command,layer);
+    return command;
+  }
   const current=runSkill(mutation.skillId),command=current
     ?rebuildRunSkill(current.baseId,current.evolutionMutationIds,current.masteryIds)
     :createRunSkill(definition);
   if(!command)return null;
-  const canPreview=mutation.kind==='MASTERY'
-    ?(command.masteryRanks[mutation.id]||0)<mutation.maxRank
-    :!command.mutationIds.includes(mutation.id);
+  const canPreview=(command.masteryRanks[mutation.id]||0)<mutation.maxRank;
   if(canPreview)applyMutationLayer(command,mutation);
   return command;
 }
@@ -17112,6 +17298,12 @@ function frame(now){
   update(dt*moveLabTimeScale()*(reaction?parryReactionProfile(reaction).timeScale:1));
   render();
 }
+cvs.dataset.bootReady='1';
+cvs.dataset.evolutionAudit=SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmNodes+'-'+
+  SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmTwists+'-'+SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmApexes;
+cvs.dataset.evolutionPoolAudit=SKILL_EVOLUTION_CONTENT_AUDIT.sharpshootForms+'-'+
+  SKILL_EVOLUTION_CONTENT_AUDIT.splitSightSpecializations+'-'+
+  SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmTwists+'-'+SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmApexes;
 requestAnimationFrame(frame);
 </script>
 </body>
