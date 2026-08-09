@@ -674,6 +674,16 @@ function dismissSkillLabTooltip(audible=true){
   if(!skillLabTooltipMutationId)return false;
   skillLabTooltipMutationId=null;if(audible)SFX.swipe();return true;
 }
+function selectSkillLabTooltipRarity(pt){
+  if(!pt||!skillLabTooltipMutationId||!moveTreeOpen)return false;
+  const node=moveTreeNodeById(skillLabTooltipMutationId);
+  if(!node||!moveTreeSynthesisRarityLadder(node).length)return false;
+  for(const rect of moveTreeSynthesisRarityCellRects(SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT)){
+    if(!pointInRect(pt,rect))continue;
+    moveTreeSynthesisRarityByDepth[node.depth]=rect.rarity;SFX.swipe();return true;
+  }
+  return false;
+}
 function clearSkillTooltipHold(start=tStart){
   if(start&&start.skillHoldTimer)clearTimeout(start.skillHoldTimer);
   if(start)start.skillHoldTimer=0;
@@ -706,7 +716,10 @@ function armSkillLabTooltipHold(start,cx,cy){
 function handleAction(a,pt,parryIntent=null){
   SFX.init();
   if(skillTooltipIndex>=0){if(a==='tap')dismissSkillTooltip();return;}
-  if(skillLabTooltipMutationId){if(a==='tap')dismissSkillLabTooltip();return;}
+  if(skillLabTooltipMutationId){
+    if(a==='tap'&&selectSkillLabTooltipRarity(pt))return;
+    if(a==='tap')dismissSkillLabTooltip();return;
+  }
   if(moveTreeOpen){if(a==='tap'&&pt)moveTreeTap(pt);return;}
   if(moveHistoryOpen){if(a==='tap'&&pt)moveHistoryTap(pt);return;}
   if(!paused&&debugParryInputFrozen){
@@ -1112,7 +1125,10 @@ addEventListener('touchstart',e=>{e.preventDefault();
   SFX.unlock();
   const t=e.changedTouches[0];
   if(skillTooltipIndex>=0){dismissSkillTooltip();tStart={x:t.clientX,y:t.clientY,done:true};return;}
-  if(skillLabTooltipMutationId){dismissSkillLabTooltip();tStart={x:t.clientX,y:t.clientY,done:true};return;}
+  if(skillLabTooltipMutationId){
+    if(!selectSkillLabTooltipRarity(toGame(t.clientX,t.clientY)))dismissSkillLabTooltip();
+    tStart={x:t.clientX,y:t.clientY,done:true};return;
+  }
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); tStart=null; return; }
   if(debugParryInputFrozen&&!paused){
     handleAction('tap',toGame(t.clientX,t.clientY));
@@ -1146,7 +1162,8 @@ addEventListener('mousedown',e=>{
     dismissSkillTooltip();mDown=true;tStart={x:e.clientX,y:e.clientY,done:true};return;
   }
   if(skillLabTooltipMutationId){
-    dismissSkillLabTooltip();mDown=true;tStart={x:e.clientX,y:e.clientY,done:true};return;
+    if(!selectSkillLabTooltipRarity(toGame(e.clientX,e.clientY)))dismissSkillLabTooltip();
+    mDown=true;tStart={x:e.clientX,y:e.clientY,done:true};return;
   }
   if(paused&&pausePhotoMode){ pausePhotoMode=false; SFX.swipe(); mDown=false; tStart=null; return; }
   if(debugParryInputFrozen&&!paused){
@@ -1583,7 +1600,9 @@ function drawSerJonathanRider(x,y,scale,o){
     bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
     riderBob=air>0?-leap*.24:Math.sin(gal*2+.9)*.34,
     atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
-    counter=clamp(o.counter||0,0,1),swordClock=Math.max(atk,parry),swordActive=swordClock>0||!!combo,
+    bow=o.bowAction||null,bowActive=!!(bow&&bow.visible>0),
+    counter=clamp(o.counter||0,0,1),swordClock=Math.max(atk,parry),
+    swordActive=!bowActive&&(swordClock>0||!!combo),
     attackProgress=swordActive?1-swordClock:0,
     baseCut=swordClock>0?(attackProgress<.58
       ?easeInOut(clamp(attackProgress/.58,0,1))
@@ -1676,6 +1695,18 @@ function drawSerJonathanRider(x,y,scale,o){
       rightElbowX=shoulderX+4.9*depthScale,rightElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
       rightHandX=lerp(11.1,10.65,duckFold),rightHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
       swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0;
+  let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
+  if(bowActive){
+    const raise=bow.raise||0,draw=bow.drawAmount||0,recoil=bow.recoil||0;
+    bowCenterY=lerp(shoulderY+.5,shoulderY-5.2,raise)+recoil*1.5;
+    bowHalfWidth=(6.3+draw*1.8)*(1-recoil*.08);
+    leftHandX=bowCenterX-1.1;leftHandY=bowCenterY+.2;
+    leftElbowX=lerp(leftShoulderX,leftHandX,.52)-1.1;
+    leftElbowY=lerp(leftShoulderY,leftHandY,.52)-1.2*raise;
+    rightHandX=bowCenterX+.7;rightHandY=bowCenterY+1.1+draw*6.1;
+    rightElbowX=rightShoulderX+3.2+draw*1.6;
+    rightElbowY=lerp(rightShoulderY,rightHandY,.52)-1.4;
+  }
   if(swordActive){
     if(combo){
       const k=combo.k,from=combo.from,to=combo.to,
@@ -1732,10 +1763,10 @@ function drawSerJonathanRider(x,y,scale,o){
     rightElbowX=lerp(straightElbowX,bentElbowX,swordReturnK);
     rightElbowY=lerp(straightElbowY,bentElbowY,swordReturnK);
   }
-  const rightActive=swordActive;
+  const rightActive=swordActive||bowActive;
   /* Reins and resting arms are BEHIND the back plate. From this camera the hands
      are ahead of the torso and should almost disappear, never form a chest X. */
-  rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
+  if(!bowActive)rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
   drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
   if(!rightActive){
     rigSegment(rightHandX,rightHandY,10.4,5.2+bob+headLift,.38,'#241915');
@@ -1756,6 +1787,23 @@ function drawSerJonathanRider(x,y,scale,o){
       rigSegment(bladeBaseX,bladeBaseY,bladeX,bladeY,1.45,steelL);
       rigSegment(bladeX-dx/len*1.25,bladeY-dy/len*1.25,bladeX,bladeY,1.0,'#ffffff');
     }
+  }
+  if(bowActive){
+    const recipe=bow.recipe||bowAnimationRecipeById('BOW_STANDARD'),draw=bow.drawAmount||0,
+      leftX=bowCenterX-bowHalfWidth,rightX=bowCenterX+bowHalfWidth,
+      limbY=bowCenterY+2.1+draw*.9,stringY=rightHandY,
+      bowCol=recipe.visualStyle==='AFFLICTION'?'#653541':
+        recipe.visualStyle==='CHARGE'?'#5d76a8':'#805634',bowHi=recipe.glowColor;
+    g.globalAlpha=bow.visible;
+    rigSegment(leftX,limbY,bowCenterX,bowCenterY,1.0,bowCol);
+    rigSegment(bowCenterX,bowCenterY,rightX,limbY,1.0,bowCol);
+    rigSegment(leftX,limbY,rightHandX,stringY,.34,'#d9d2c0');
+    rigSegment(rightX,limbY,rightHandX,stringY,.34,'#d9d2c0');
+    rigSegment(rightHandX,stringY,bowCenterX,bowCenterY-8.8,draw>.12?.48:.30,'#a7814b');
+    rigTriangle(bowCenterX,bowCenterY-10.4,bowCenterX-.8,bowCenterY-8.5,
+      bowCenterX+.8,bowCenterY-8.5,bowHi);
+    rigJoint(leftX,limbY,1.0,bowHi);rigJoint(rightX,limbY,1.0,bowHi);
+    g.globalAlpha=1;
   }
 
   const helmetTopY=lerp(-2,-1.05,duckFold),helmetBottomY=lerp(3.5,1.85,duckFold),
@@ -5622,7 +5670,7 @@ function drawCoin(x,y,s,t){
    pickups, the HUD count, and the shot itself, so it always reads as the same arrow */
 function drawArrowSprite(x,y,s,ang,glow){
   g.save(); g.translate(x,y); g.rotate(ang); g.scale(s,s);
-  if(glow){ g.shadowColor='#c0f79a'; g.shadowBlur=10; }
+  if(glow){ g.shadowColor=typeof glow==='string'?glow:'#c0f79a'; g.shadowBlur=10; }
   g.fillStyle='#8a6a3a'; g.fillRect(-1.1,-9,2.2,20);              // cedar shaft
   g.fillStyle='#c9a86a'; g.fillRect(-1.1,-9,1,20);
   g.fillStyle='#dfe8ff';                                          // steel BROADHEAD
@@ -7762,7 +7810,7 @@ function drawPlayer(){
     feather:playerChar.feather, horse:playerChar.horse, chubby:playerChar.chubby,
     monkey:playerChar.monkey, caveman:playerChar.caveman,
     attack:player.attackAnim, counter:player.counterAnim, parry:player.parryAnim,
-    swordCombo:player.swordCombo,
+    swordCombo:player.swordCombo,bowAction:activePlayerBowPose(),
   });
   g.globalAlpha=1;
 }
@@ -7823,6 +7871,15 @@ function counterDmg(){
 let debugRun=false, godMode=false, debugBossStart=false, debugMiniStart=false,
     debugMiniMoves=false, debugLoop=1, debugSel={},skillLabSession=null;
 function damagePlayer(reason,unstoppable=false){
+  if(activeSkillLabCombat()){
+    if(!unstoppable&&player.invuln>0)return;
+    chainStacks=0;player.invuln=.45;
+    if(skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
+    SFX.hit();flash('#ff4d3a',.32);shake(8,.28);stopTime(.08);
+    burst(laneX(player.x,1),PLAYER_Y-40,18,['#ff4d3a','#8f9bb0','#ffffff'],210,160,4,.7);
+    floater(laneX(player.x,1),PLAYER_Y-96,'LAB HIT · CHAIN LOST','#ff7a82',17);
+    return;
+  }
   if(godMode){ flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
     hazards=[]; return; }
   if(!unstoppable&&player.invuln>0) return;
@@ -9178,6 +9235,74 @@ function applyCriticalHealthDamage(damage,result){
 function applyCriticalPostureDamage(posture,result){
   return result&&result.critical?posture*result.multiplier:posture;
 }
+/* Bleed is a short two-beat DoT. Two aggregate buckets avoid per-application
+   objects: NEXT is paid at the next defense-phase end, LATER survives for the
+   following one. A defense Break boosts only the tick it closes by ×1.25. */
+const BLEED_STATUS=Object.freeze({id:'BLEED',durationTicks:2,breakMultiplier:1.25,
+  totalDamageFactor:2,technicalCap:999,displayFloor:.05});
+function commandBleedAmount(command){
+  const affliction=command&&command.affliction;
+  return affliction&&affliction.id===BLEED_STATUS.id?Math.max(0,Number(affliction.amount)||0):0;
+}
+function bossBleed(){return boss?Math.max(0,Math.min(BLEED_STATUS.technicalCap,Number(boss.bleed)||0)):0;}
+function bossBleedLater(){return boss?Math.max(0,Math.min(BLEED_STATUS.technicalCap,
+  Number(boss.bleedLater)||0)):0;}
+function addBossBleed(amount){
+  if(!boss||!(amount>0))return 0;
+  const before=bossBleed(),later=bossBleedLater();
+  boss.bleed=stableCombatNumber(Math.min(BLEED_STATUS.technicalCap,before+amount));
+  boss.bleedLater=stableCombatNumber(Math.min(BLEED_STATUS.technicalCap,later+amount));
+  return stableCombatNumber(boss.bleed-before);
+}
+function bleedPhaseTick(next,later=0,fromBreak=false){
+  const current=Math.max(0,Number(next)||0),following=Math.max(0,Number(later)||0);
+  return Object.freeze({damage:stableDamage(current*(fromBreak?BLEED_STATUS.breakMultiplier:1)),
+    next:stableCombatNumber(following),later:0});
+}
+function resolveBossPhaseBleed(fromBreak=false){
+  if(!boss||boss.state==='dying'||boss.state==='finisher')return false;
+  const tick=bleedPhaseTick(bossBleed(),bossBleedLater(),fromBreak);
+  boss.bleed=tick.next<BLEED_STATUS.displayFloor?0:tick.next;boss.bleedLater=0;
+  return tick.damage>0?hurtBoss(tick.damage,false,fromBreak?'bleed_break':'bleed',false):false;
+}
+/* Charge Secondary banks one bounded defense-phase result. It never scans
+   history or allocates during combat: one stored integer and one in-progress
+   integer are enough for every Parry/Perfect/Break hook. */
+const DEFENSE_CHARGE=Object.freeze({max:3,phaseBase:1,successGain:1,breakFloor:2,
+  expectedSpend:2});
+function commandDefenseTemperRate(command){
+  return Math.max(0,Number(command&&command.defenseTemperDamagePerCharge)||0);
+}
+function chargeRouteEquipped(){return runSkills.some(command=>commandDefenseTemperRate(command)>0);}
+function bossChargeEnabled(){return !!(boss&&boss.chargeEnabled);}
+function bossCharge(){return boss?Math.max(0,Math.min(DEFENSE_CHARGE.max,Number(boss.charge)||0)):0;}
+function startDefenseChargePhase(){
+  if(!boss)return 0;
+  boss.defenseChargeProgress=bossChargeEnabled()?DEFENSE_CHARGE.phaseBase:0;
+  return boss.defenseChargeProgress;
+}
+function recordDefenseChargeSuccess(){
+  if(!boss||boss.phase!=='dodge'||!bossChargeEnabled())return 0;
+  const before=Math.max(0,Number(boss.defenseChargeProgress)||0);
+  boss.defenseChargeProgress=Math.min(DEFENSE_CHARGE.max,before+DEFENSE_CHARGE.successGain);
+  return boss.defenseChargeProgress-before;
+}
+function defenseChargeBankResult(stored,progress,fromBreak=false){
+  const completed=Math.min(DEFENSE_CHARGE.max,Math.max(Number(progress)||0,
+    fromBreak?DEFENSE_CHARGE.breakFloor:0));
+  return Math.max(0,Math.min(DEFENSE_CHARGE.max,Math.max(Number(stored)||0,completed)));
+}
+function finalizeDefenseChargePhase(fromBreak=false){
+  if(!boss||!bossChargeEnabled()){if(boss)boss.defenseChargeProgress=0;return 0;}
+  const before=bossCharge();
+  boss.charge=defenseChargeBankResult(before,boss.defenseChargeProgress,fromBreak);
+  boss.defenseChargeProgress=0;
+  if(boss.charge>before)floater(VW/2-112,278,'CHARGE BANKED ×'+boss.charge,'#7fc9ff',14);
+  return boss.charge-before;
+}
+function consumeBossCharge(){
+  const value=bossCharge();if(boss)boss.charge=0;return value;
+}
 /* Mark is an encounter resource, not a three-token damage buff. The technical
    ceiling only protects arithmetic/save data; authored moves must balance gain
    through their own rules instead of treating this as a gameplay cap. */
@@ -9226,23 +9351,9 @@ const SKILL_IDENTITIES=Object.freeze({
 const BASE_TURN_SKILLS=Object.freeze([
   Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
     damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,deliveryProfileId:'OWNER_BOW',
+    bowAnimationRecipeId:'BOW_STANDARD',
     identityId:'MARK_BUILDER',
     tags:Object.freeze(['weapon','ranged','mark','setup'])}),
-  Object.freeze({id:'arrow_rain',name:'ARROW RAIN',source:'WEAPON',skill:true,cost:2,
-    damage:6,hits:3,hitInterval:.55,markRule:markRule({mode:'CONSUME',timing:'PER_HIT',
-      cap:1,damagePerMark:6,curve:'FULL'}),
-    duration:1.65,col:'#ffe37a',slash:-.52,deliveryProfileId:'OWNER_BOW',
-    identityId:'MARK_PAYOFF',
-    tags:Object.freeze(['weapon','ranged','multihit','mark','payoff'])}),
-  Object.freeze({id:'shield_kick',name:'SHIELD KICK',source:'CLASS',skill:true,cost:1,
-    damage:8,hits:1,posture:25,col:'#9ecbff',slash:.18,deliveryProfileId:'OWNER_SHIELD',
-    identityId:'POSTURE_BUILDER',
-    tags:Object.freeze(['class','melee','posture','setup'])}),
-  Object.freeze({id:'royal_slash',name:'ROYAL SLASH',source:'CLASS',skill:true,cost:3,
-    damage:24,hits:1,extraChainBonus:.08,consumeChain:true,addsChain:false,
-    col:'#c995ff',slash:.62,deliveryProfileId:'OWNER_SWORD',
-    identityId:'CHAIN_FINISHER',
-    tags:Object.freeze(['class','melee','chain','payoff'])}),
 ]);
 /* Immutable definitions are read by synthesis, validators, labs and combat setup.
    Index once instead of rescanning the catalogue as weapon/skill content grows. */
@@ -9264,7 +9375,8 @@ function createRunSkill(definition){
     synthesisBaseResolveCost:definition.cost||0,synthesisQuality:0,synthesisResolvePressure:0,
     synthesisProjectedResolveCost:definition.cost||0,synthesisRarityCounts:null,
     synthesisEffectiveQuality:0,synthesisDepthBonus:0,synthesisTargetPower:0,
-    synthesisAxisCredits:null,synthesisAxisReserve:null,synthesisQualityReceipts:[],
+    synthesisAxisCredits:null,synthesisAxisReserve:null,synthesisIdentityAllocation:null,
+    synthesisQualityReceipts:[],
     synthesisScenarioScores:null,synthesisScenarioRatios:null,synthesisImpactFloor:null,
     synthesisCompilerVersion:0,legendaryStampSlots:0,legendaryStamps:[],
     rarityResonanceLevel:0,rarityResonanceScore:0,rarityResonancePair:null,
@@ -9316,11 +9428,14 @@ function skillMastery(data){
 function transformSharpshoot(skill,patch){
   return Object.assign(skill,{
     damage:16,hitDamages:null,hits:1,hitInterval:0,duration:undefined,cost:1,markGain:0,
+    impactDelay:0,projectileStyle:null,bowAnimationRecipeId:skill.bowAnimationRecipeId||'BOW_STANDARD',
+    bowAnimationOverrides:null,
     markRule:null,
-    posture:0,posturePerChain:0,resolvePerHit:0,resolveOnComplete:0,resolveRule:null,
+    posture:0,posturePerChain:0,affliction:null,resolvePerHit:0,resolveOnComplete:0,resolveRule:null,
     resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,
     addsChain:true,chainGainPerHit:1,chainGainPattern:null,
-    critChance:0,critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,col:'#c0f79a'
+    critChance:0,critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
+    defenseTemperDamagePerCharge:0,defenseTemperMaxCharge:DEFENSE_CHARGE.max,col:'#c0f79a'
   },patch);
 }
 /* Evolution is authored as a four-deep tree, while rarity and mutation type stay
@@ -9593,14 +9708,14 @@ const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(
    authoring/compiler data only and adds no per-frame combat work. */
 const COMBAT_ATTRIBUTE_IDS=Object.freeze(['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE']);
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
-  'DIRECT_DAMAGE','MARK_GAIN','MARK_MANAGEMENT','CHAIN_SCALING','CHAIN_MANAGEMENT',
+  'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','CHAIN_SCALING','CHAIN_MANAGEMENT',
   'POSTURE_DAMAGE','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION',
-  'AFFLICTION_STACKS','AFFLICTION_POTENCY','AFFLICTION_DECAY',
+  'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION',
   'CHARGE_RELEASE','DEFENSE_TEMPER'
 ]);
 const COMBAT_ATTRIBUTE_SCALING_AXIS_SET=new Set(COMBAT_ATTRIBUTE_SCALING_AXES);
 const COMBAT_ATTRIBUTE_CAPABILITIES=Object.freeze([
-  'MARK_GENERATE','MARK_MANAGE','MARK_SUPPORT',
+  'MARK_GENERATE','MARK_CONTROL','MARK_SUPPORT',
   'CHAIN_SCALE','CHAIN_MANAGE','CHAIN_SUPPORT','SEQUENTIAL_WEIGHT',
   'POSTURE_GENERATE','BREAK_PRESSURE','POSTURE_SUPPORT',
   'CRIT_LOCAL','CRIT_PRECISION','CRIT_SUPPORT',
@@ -9645,10 +9760,10 @@ const SECONDARY_ATTRIBUTE_SHARE=Object.freeze({min:.20,target:.30,max:.35});
 const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
 [
   combatAttributeDefinition({id:'MARK',name:'MARK',
-    summary:'Shape future contacts by producing and managing target Marks.',
-    contactPolicy:'DIRECT_CONTACTS_ONLY',primaryOnlyCapabilities:['MARK_MANAGE'],
-    primary:{promise:'Mark production and management are the move\'s main purpose and strongest scaling route.',
-      capabilities:['MARK_GENERATE','MARK_MANAGE'],scalingAxes:['MARK_GAIN','MARK_MANAGEMENT'],
+    summary:'Shape future contacts by producing, preserving and reading target Marks.',
+    contactPolicy:'DIRECT_CONTACTS_ONLY',primaryOnlyCapabilities:['MARK_CONTROL'],
+    primary:{promise:'Mark production and non-destructive control are the move\'s main purpose and strongest scaling route.',
+      capabilities:['MARK_GENERATE','MARK_CONTROL'],scalingAxes:['MARK_GAIN','MARK_CONTROL'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
     secondary:{promise:'Add a bounded amount of Mark support without replacing the Primary engine.',
@@ -9692,13 +9807,13 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
   combatAttributeDefinition({id:'AFFLICTION',name:'AFFLICTION',
     summary:'Apply Bleed whose delayed damage belongs to the affliction rather than the delivery.',
     contactPolicy:'DIRECT_APPLY_DOT_TICKS_ON_BOSS_PHASE_END',primaryOnlyCapabilities:['BLEED_ENGINE'],
-    primary:{promise:'Bleed application, potency and decay form a meaningful share of expected damage.',
+    primary:{promise:'Bleed application, potency and duration form a meaningful share of expected damage.',
       capabilities:['BLEED_APPLY','BLEED_ENGINE'],
-      scalingAxes:['AFFLICTION_STACKS','AFFLICTION_POTENCY','AFFLICTION_DECAY'],
+      scalingAxes:['AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
     secondary:{promise:'Add smaller Bleed support while direct damage and the Primary remain in control.',
-      capabilities:['BLEED_APPLY','BLEED_SUPPORT'],scalingAxes:['AFFLICTION_STACKS','AFFLICTION_POTENCY'],
+      capabilities:['BLEED_APPLY','BLEED_SUPPORT'],scalingAxes:['AFFLICTION_APPLICATION'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
   combatAttributeDefinition({id:'CHARGE',name:'CHARGE',
@@ -9882,6 +9997,119 @@ const COMBAT_DELIVERY_PROFILES=new DefinitionRegistry('combat delivery profile')
 Object.freeze(COMBAT_DELIVERY_PROFILES.ids);Object.freeze(COMBAT_DELIVERY_PROFILES.list);
 Object.freeze(COMBAT_DELIVERY_PROFILES.byId);Object.freeze(COMBAT_DELIVERY_PROFILES);
 
+/* Bow presentation is a data recipe, not a skill-specific animation branch. Delivery
+   owns contact structure; these bounded values own pose rhythm, projectile travel and
+   impact feel. Twist recipes may select a profile and apply small overrides without
+   coupling combat effects to hardcoded seconds. */
+const BOW_ANIMATION_LIMITS=Object.freeze({
+  raiseTime:Object.freeze([.04,.65]),drawTime:Object.freeze([.12,1.20]),
+  holdTime:Object.freeze([0,1]),releaseTime:Object.freeze([.04,.30]),
+  recoveryTime:Object.freeze([.12,.90]),arrowSpeed:Object.freeze([400,2400]),
+  arrowArc:Object.freeze([0,90]),arrowScale:Object.freeze([.65,2.40]),
+  drawStrength:Object.freeze([.35,1]),releaseRecoil:Object.freeze([0,1]),
+  trailStrength:Object.freeze([0,1]),impactScale:Object.freeze([.5,2.25]),
+  impactShake:Object.freeze([0,10]),hitStop:Object.freeze([0,.14]),
+  shotInterval:Object.freeze([.10,.75]),holdPerCharge:Object.freeze([0,.12]),
+  scalePerCharge:Object.freeze([0,.18]),recoilPerCharge:Object.freeze([0,.16])
+});
+const BOW_VISUAL_STYLES=Object.freeze(new Set([
+  'STANDARD','MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'
+]));
+function bowAnimationRecipe(data){
+  if(!data||typeof data.id!=='string'||!data.id||!BOW_VISUAL_STYLES.has(data.visualStyle))
+    throw new Error('Bow animation recipe needs an id and visual style');
+  const recipe={id:data.id,visualStyle:data.visualStyle,
+    trailColor:data.trailColor||'#c0f79a',glowColor:data.glowColor||data.trailColor||'#c0f79a',
+    impactColor:data.impactColor||data.glowColor||data.trailColor||'#c0f79a'};
+  for(const [key,range] of Object.entries(BOW_ANIMATION_LIMITS)){
+    const value=Number(data[key]);
+    if(!Number.isFinite(value))throw new Error(data.id+' Bow recipe is missing '+key);
+    recipe[key]=clamp(value,range[0],range[1]);
+  }
+  return Object.freeze(recipe);
+}
+const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
+[
+  bowAnimationRecipe({id:'BOW_STANDARD',visualStyle:'STANDARD',raiseTime:.10,drawTime:.28,holdTime:.05,
+    releaseTime:.07,recoveryTime:.28,arrowSpeed:1220,arrowArc:16,arrowScale:1,drawStrength:.72,
+    releaseRecoil:.24,trailStrength:.24,impactScale:1,impactShake:1.5,hitStop:.025,
+    shotInterval:.34,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_MARK_FOCUS',visualStyle:'MARK',raiseTime:.11,drawTime:.31,holdTime:.08,
+    releaseTime:.07,recoveryTime:.28,arrowSpeed:1200,arrowArc:14,arrowScale:1.02,drawStrength:.78,
+    releaseRecoil:.25,trailStrength:.38,impactScale:1.05,impactShake:1.7,hitStop:.03,
+    shotInterval:.35,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CHAIN',visualStyle:'CHAIN',raiseTime:.07,drawTime:.21,holdTime:.02,
+    releaseTime:.05,recoveryTime:.18,arrowSpeed:1580,arrowArc:8,arrowScale:.88,drawStrength:.62,
+    releaseRecoil:.16,trailStrength:.55,impactScale:.86,impactShake:1.1,hitStop:.015,
+    shotInterval:.24,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_POSTURE',visualStyle:'POSTURE',raiseTime:.17,drawTime:.42,holdTime:.16,
+    releaseTime:.12,recoveryTime:.44,arrowSpeed:900,arrowArc:28,arrowScale:1.42,drawStrength:1,
+    releaseRecoil:.72,trailStrength:.72,impactScale:1.48,impactShake:5.2,hitStop:.075,
+    shotInterval:.58,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CRITICAL',visualStyle:'CRITICAL',raiseTime:.12,drawTime:.30,holdTime:.15,
+    releaseTime:.04,recoveryTime:.22,arrowSpeed:2050,arrowArc:3,arrowScale:.82,drawStrength:.86,
+    releaseRecoil:.18,trailStrength:.68,impactScale:.92,impactShake:2.1,hitStop:.045,
+    shotInterval:.29,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_AFFLICTION',visualStyle:'AFFLICTION',raiseTime:.12,drawTime:.32,holdTime:.08,
+    releaseTime:.08,recoveryTime:.31,arrowSpeed:1080,arrowArc:19,arrowScale:1.05,drawStrength:.76,
+    releaseRecoil:.27,trailStrength:.82,impactScale:1.08,impactShake:1.8,hitStop:.03,
+    shotInterval:.38,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CHARGE',visualStyle:'CHARGE',raiseTime:.14,drawTime:.36,holdTime:.10,
+    releaseTime:.10,recoveryTime:.36,arrowSpeed:1040,arrowArc:21,arrowScale:1.12,drawStrength:.88,
+    releaseRecoil:.42,trailStrength:.88,impactScale:1.20,impactShake:3.2,hitStop:.05,
+    shotInterval:.42,holdPerCharge:.035,scalePerCharge:.07,recoilPerCharge:.09})
+].forEach(recipe=>BOW_ANIMATION_RECIPES.register(recipe));
+Object.freeze(BOW_ANIMATION_RECIPES.ids);Object.freeze(BOW_ANIMATION_RECIPES.list);
+Object.freeze(BOW_ANIMATION_RECIPES.byId);Object.freeze(BOW_ANIMATION_RECIPES);
+const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
+  mark_primary_form:'BOW_STANDARD',mark_focus_spec:'BOW_MARK_FOCUS',mark_chain_spec:'BOW_CHAIN',
+  mark_posture_spec:'BOW_POSTURE',mark_critical_spec:'BOW_CRITICAL',
+  mark_affliction_spec:'BOW_AFFLICTION',mark_charge_spec:'BOW_CHARGE',
+  mark_chain_direct_twist:'BOW_CHAIN'
+});
+function bowAnimationRecipeById(id){return BOW_ANIMATION_RECIPES.get(id||'BOW_STANDARD');}
+function resolveBowAnimationRecipe(command,charge=0){
+  const base=bowAnimationRecipeById(command&&command.bowAnimationRecipeId||'BOW_STANDARD'),
+    overrides=command&&command.bowAnimationOverrides||null,result={...base};
+  if(overrides)for(const [key,value] of Object.entries(overrides)){
+    const range=BOW_ANIMATION_LIMITS[key];
+    if(range&&Number.isFinite(Number(value)))result[key]=clamp(Number(value),range[0],range[1]);
+  }
+  const bank=Math.max(0,Math.min(3,Number(charge)||0));
+  result.holdTime=clamp(result.holdTime+result.holdPerCharge*bank,...BOW_ANIMATION_LIMITS.holdTime);
+  result.arrowScale=clamp(result.arrowScale+result.scalePerCharge*bank,...BOW_ANIMATION_LIMITS.arrowScale);
+  result.releaseRecoil=clamp(result.releaseRecoil+result.recoilPerCharge*bank,
+    ...BOW_ANIMATION_LIMITS.releaseRecoil);
+  result.chargeIntensity=bank/3;
+  return Object.freeze(result);
+}
+function buildBowActionTimeline(command,delivery,charge=0,distance=600){
+  if(!delivery||delivery.family!=='PROJECTILE'||delivery.profileId!=='OWNER_BOW')return null;
+  const recipe=resolveBowAnimationRecipe(command,charge),hits=Math.max(1,command&&command.hits||1),
+    flightTime=Math.max(.08,Math.max(1,Number(distance)||600)/recipe.arrowSpeed),
+    firstRelease=recipe.raiseTime+recipe.drawTime+recipe.holdTime,
+    interval=delivery.pattern==='SIMULTANEOUS_PACKET'?0:
+      Math.max(.10,Number(command&&command.hitInterval)||recipe.shotInterval),
+    releases=Object.freeze(Array.from({length:hits},(_,index)=>Number((firstRelease+index*interval).toFixed(4)))),
+    contacts=Object.freeze(releases.map(value=>Number((value+flightTime).toFixed(4)))),
+    recoveryEnd=Number((contacts[contacts.length-1]+recipe.releaseTime+recipe.recoveryTime).toFixed(4));
+  return Object.freeze({recipe,releases,contacts,firstRelease,flightTime,interval,recoveryEnd});
+}
+const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
+  const delivery=Object.freeze({family:'PROJECTILE',profileId:'OWNER_BOW',pattern:'SINGLE'}),
+    standard=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_STANDARD'},delivery,0,600),
+    heavy=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_POSTURE'},delivery,0,600),
+    charged=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_CHARGE'},delivery,3,600),
+    bounded=resolveBowAnimationRecipe({bowAnimationRecipeId:'BOW_STANDARD',bowAnimationOverrides:{
+      arrowSpeed:99999,holdTime:-5}},0);
+  if(BOW_ANIMATION_RECIPES.list.length!==7||!(standard.contacts[0]>standard.releases[0])||
+     !(heavy.contacts[0]>standard.contacts[0])||!(charged.recipe.arrowScale>
+       bowAnimationRecipeById('BOW_CHARGE').arrowScale)||bounded.arrowSpeed!==2400||bounded.holdTime!==0)
+    throw new Error('Bow Animation Recipe audit failed timing, variation or safe bounds');
+  return Object.freeze({profiles:BOW_ANIMATION_RECIPES.list.length,
+    standardContact:standard.contacts[0],heavyContact:heavy.contacts[0],chargedScale:charged.recipe.arrowScale});
+})();
+
 function combatDeliveryProfileById(id){return COMBAT_DELIVERY_PROFILES.get(id);}
 function inferLegacyDeliveryProfileId(command){
   if(command&&command.deliveryProfileId)return command.deliveryProfileId;
@@ -9950,7 +10178,7 @@ function runCombatDeliveryRegistrySelfTests(){
       fail(profile.id+' is mutable');
   }
   const single=commandDeliveryContract({id:'sharpshoot',source:'WEAPON',tags:['ranged'],hits:1}),
-    sequence=commandDeliveryContract({id:'arrow_rain',source:'WEAPON',tags:['ranged'],hits:3}),
+    sequence=commandDeliveryContract({id:'audit_bow_sequence',source:'WEAPON',tags:['ranged'],hits:3}),
     packet=commandDeliveryContract({id:'test_packet',deliveryProfileId:'OWNER_BOW',
       deliveryPattern:'SIMULTANEOUS_PACKET',hits:5,payloadApplication:{NATURAL_CHAIN:'NATURAL_CONTACTS'}}),
     companion=commandDeliveryContract({id:'wolf_fang',source:'COMPANION',hits:2}),
@@ -10191,6 +10419,235 @@ const SKILL_SYNTHESIS_IDENTITY_AUDIT=(()=>{
   return Object.freeze({passed:true,version:SKILL_SYNTHESIS_IDENTITY_SCHEMA_VERSION,
     zeroMarkChain:true,rejectedImmediateCharge});
 })();
+
+/* ======================= SHARPSHOOT MARK VERTICAL SLICE =======================
+   This is the first final Attribute-v1 content contract. Preview nodes remain
+   outside the live draft catalogue; materialized routes can be equipped only in
+   Skill Lab until the complete vertical slice is ready for live rewards. */
+const SHARPSHOOT_MARK_ECONOMY_CONTRACT=Object.freeze({
+  skillId:'sharpshoot',resource:'MARK',role:'SOURCE',stableMinimumNetGain:1,
+  stableConsumePolicy:'EXPLICIT_EXCEPTION_ONLY',stableConsumeCap:1,
+  stableReadPolicy:'READ_WITHOUT_CONSUMING',fullSpendOwner:'SECOND_WEAPON_SKILL'
+});
+function skillAttributeRouteContract(data){
+  if(!data||typeof data.id!=='string'||!data.id||![1,2,3].includes(data.depth)||
+     typeof data.promise!=='string'||!data.promise||!(data.powerBudget>0))
+    throw new Error('Skill Attribute route needs id, Form/Spec/Twist depth, promise and power budget');
+  if(!Number.isInteger(data.formSlot)||data.formSlot<1||
+     (data.depth>1&&(!Number.isInteger(data.slot)||data.slot<1))||
+     (data.depth===3&&(!Number.isInteger(data.specializationSlot)||data.specializationSlot<1)))
+    throw new Error(data.id+' needs a valid tree address');
+  if(!COMBAT_ATTRIBUTES.has(data.primaryAttributeId))
+    throw new Error(data.id+' needs a registered Primary Attribute');
+  if(data.depth===1&&data.secondaryAttributeId!==null)
+    throw new Error(data.id+' Form cannot own a Secondary Attribute');
+  if(data.depth>1&&!COMBAT_ATTRIBUTES.has(data.secondaryAttributeId))
+    throw new Error(data.id+' Specialization/Twist needs a registered Secondary Attribute');
+  if(data.depth===2&&(data.deliveryProfileId||data.deliveryPattern||data.deliveryTiming||data.contacts))
+    throw new Error(data.id+' Specialization cannot replace Delivery before Twist');
+  const delivery=data.depth!==2?commandDeliveryContract({id:'route_'+data.id,hits:data.contacts,
+     deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
+     deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
+  if(data.depth===1){
+    const primary=combatAttributeRoleContract(data.primaryAttributeId,'PRIMARY');
+    if(!primary.deliveryPatterns.includes(delivery.pattern)||!primary.deliveryTimings.includes(delivery.timing))
+      throw new Error(data.id+' Delivery violates its Primary Attribute');
+  }
+  const pair=data.depth>1?combatAttributePairContract(data.primaryAttributeId,data.secondaryAttributeId):null,
+     identityBudget=Object.freeze(data.depth===1?{[data.primaryAttributeId]:1}:
+      data.primaryAttributeId===data.secondaryAttributeId?{[data.primaryAttributeId]:1}:{
+        [data.primaryAttributeId]:pair.primary.identityShare.target,
+        [data.secondaryAttributeId]:pair.secondary.identityShare.target}),
+    mechanics=Object.freeze({...data.mechanics}),qualityProfile=Object.freeze({...data.qualityProfile}),
+    qualityAxes=Object.freeze(Object.keys(qualityProfile));
+  if(qualityAxes.some(axis=>!COMBAT_ATTRIBUTE_SCALING_AXIS_SET.has(axis)))
+    throw new Error(data.id+' references an unknown semantic Quality axis');
+  const qualityTotal=Object.values(qualityProfile).reduce((sum,value)=>sum+value,0);
+  if(!qualityAxes.length||Object.values(qualityProfile).some(value=>!Number.isFinite(value)||value<0)||
+     Math.abs(qualityTotal-1)>1e-6)
+    throw new Error(data.id+' needs one normalized semantic Quality profile');
+  const address='F'+data.formSlot+(data.depth===2?'S'+data.slot:
+      data.depth===3?'S'+data.specializationSlot+'T'+data.slot:''),
+    semanticLabel=data.primaryAttributeId+(data.depth>1?'/'+data.secondaryAttributeId:''),
+    name=address+' · '+semanticLabel,
+    baselineAttack=data.baselineAttack?Object.freeze({...data.baselineAttack}):null,
+    deliveryPolicy=data.depth===1?'LOCK_FORM_BASELINE':
+      data.depth===2?'INHERIT_FORM_UNTIL_TWIST':'TWIST_SELECTS_COMPATIBLE_DELIVERY';
+  if(data.runtimeReadiness==='MATERIALIZED'&&(!baselineAttack||!Number.isInteger(baselineAttack.hits)||
+     baselineAttack.hits<1||!Number.isInteger(baselineAttack.markGain)||baselineAttack.markGain<1||
+     !Number.isInteger(baselineAttack.resolveCost)||baselineAttack.resolveCost<0))
+    throw new Error(data.id+' materialized baseline needs hits, positive Mark and Resolve cost');
+  return Object.freeze({...data,address,semanticLabel,name,identityBudget,mechanics,qualityProfile,qualityAxes,
+    baselineAttack,delivery,deliveryPolicy});
+}
+const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
+  skillAttributeRouteContract({id:'mark_primary_form',depth:1,parentId:null,formSlot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:null,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.65},
+    promise:'Establish Sharpshoot as a working single-shot Mark source; Twist later changes its behavior.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'NONE',markRule:'NET_OUTPUT_REQUIRED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_focus_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'MARK',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.30,MARK_GAIN:.70},
+    promise:'Concentrate the complete attribute budget into reliable Mark production.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',markRule:'NET_OUTPUT_ABOVE_PARENT'},
+    baselineAttack:{hits:1,markGain:2,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:2,primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,CHAIN_SCALING:.20},
+    promise:'Keep Mark dominant and add baseline Chain scaling; Delivery still remains the Form shot.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',markRule:'NET_OUTPUT_REQUIRED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:3,primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,POSTURE_DAMAGE:.20},
+    promise:'Keep Mark dominant and add meaningful but bow-weight-capped Break pressure.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',markRule:'NET_OUTPUT_REQUIRED',
+      postureRule:'WEAPON_WEIGHT_CAPPED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:4,primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,CRIT_CHANCE:.20},
+    promise:'Keep Mark dominant and add bounded local Critical chance without a Precision engine.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',markRule:'NET_OUTPUT_REQUIRED',
+      criticalRule:'LOCAL_FLAT_CHANCE'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:5,primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,AFFLICTION_APPLICATION:.20},
+    promise:'Keep direct Mark setup dominant while adding a smaller two-tick Bleed payload.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',markRule:'NET_OUTPUT_REQUIRED',
+      afflictionRule:'BLEED_PER_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
+    slot:6,primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,DEFENSE_TEMPER:.20},
+    promise:'Keep Mark dominant and convert one banked defense score into bounded base damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',markRule:'NET_OUTPUT_REQUIRED',
+      chargeRule:'BANK_MAX_THREE_CONSUME_ON_USE'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_direct_twist',depth:3,parentId:'mark_chain_spec',
+    formSlot:1,specializationSlot:2,slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CHAIN_SCALING:.35},
+    promise:'Keep the single-arrow chassis, preserve net Mark output, and deepen readable starting-Chain damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
+      relationship:'DIRECT_CHAIN_READ',markRule:'NET_OUTPUT_REQUIRED',chainRule:'READ_WITHOUT_CONSUMING'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'})
+]);
+const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
+  SHARPSHOOT_MARK_ROUTE_CONTRACTS.map(route=>[route.id,route])));
+const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
+  const form=SHARPSHOOT_MARK_ROUTE_CONTRACTS.find(route=>route.depth===1),
+    specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2),
+    twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3),
+    expectedSecondaries=new Set(COMBAT_ATTRIBUTE_IDS),actualSecondaries=new Set(specs.map(route=>route.secondaryAttributeId));
+  if(!form||form.primaryAttributeId!=='MARK'||specs.length!==6||
+     expectedSecondaries.size!==actualSecondaries.size||
+     [...expectedSecondaries].some(id=>!actualSecondaries.has(id)))
+    throw new Error('Sharpshoot Mark slice needs one Mark Form and all six Secondary routes');
+  if(new Set(SHARPSHOOT_MARK_ROUTE_CONTRACTS.map(route=>route.id)).size!==SHARPSHOOT_MARK_ROUTE_CONTRACTS.length||
+     new Set(SHARPSHOOT_MARK_ROUTE_CONTRACTS.map(route=>route.address)).size!==SHARPSHOOT_MARK_ROUTE_CONTRACTS.length||
+     new Set(specs.map(route=>route.slot)).size!==6||
+     SHARPSHOOT_MARK_ROUTE_CONTRACTS.some(route=>route.name!==route.address+' · '+route.semanticLabel))
+    throw new Error('Sharpshoot Mark slice route ids, addresses and slots must be unique');
+  const primaryShares=[];
+  for(const route of SHARPSHOOT_MARK_ROUTE_CONTRACTS){
+    if(route.powerBudget!==form.powerBudget||route.primaryAttributeId!=='MARK'||
+       route.mechanics.primaryOutput!=='MARK_GENERATE'||route.mechanics.markRule.indexOf('NET_OUTPUT')!==0)
+      throw new Error(route.id+' breaks Mark Primary or the equal route budget');
+    if(route.depth===2&&route.parentId!==form.id)
+      throw new Error(route.id+' leaves the Mark Form lineage');
+    if(route.depth===2&&(route.delivery!==null||route.deliveryPolicy!=='INHERIT_FORM_UNTIL_TWIST'||
+       Object.prototype.hasOwnProperty.call(route.mechanics,'relationship')))
+      throw new Error(route.id+' chooses Delivery or a relationship mechanic before Twist');
+    if(route.depth===2)validateAttributeDeliveryCompatibility(route.primaryAttributeId,
+      route.secondaryAttributeId,form.delivery);
+    if(route.depth===2&&route.secondaryAttributeId!=='MARK'){
+      const primaryPower=route.qualityProfile.MARK_GAIN||0,
+        secondaryAxes=combatAttributeRoleContract(route.secondaryAttributeId,'SECONDARY').scalingAxes,
+        secondaryPower=secondaryAxes.reduce((sum,axis)=>sum+(route.qualityProfile[axis]||0),0),
+        share=primaryPower/(primaryPower+secondaryPower),band=combatAttribute('MARK').primary.identityShare;
+      if(!(share>=band.min&&share<=band.max)||secondaryPower<=0)
+        throw new Error(route.id+' violates the Primary/Secondary identity budget');
+      primaryShares.push(share);
+    }
+  }
+  for(const route of twists){
+    const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
+    if(!parent||parent.depth!==2||route.primaryAttributeId!==parent.primaryAttributeId||
+       route.secondaryAttributeId!==parent.secondaryAttributeId||!route.mechanics.relationship||
+       route.deliveryPolicy!=='TWIST_SELECTS_COMPATIBLE_DELIVERY'||!route.delivery)
+      throw new Error(route.id+' does not preserve its Specialization identity through a Twist relationship');
+    validateAttributeDeliveryCompatibility(route.primaryAttributeId,route.secondaryAttributeId,route.delivery);
+  }
+  const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
+  if(twists.length!==1||!directChain||directChain.parentId!=='mark_chain_spec'||
+     directChain.delivery.pattern!=='SINGLE'||directChain.mechanics.chainRule!=='READ_WITHOUT_CONSUMING')
+    throw new Error('F1S2T1 pilot Twist contract is incomplete');
+  const focus=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_focus_spec;
+  if(SHARPSHOOT_MARK_ECONOMY_CONTRACT.role!=='SOURCE'||
+     SHARPSHOOT_MARK_ECONOMY_CONTRACT.stableMinimumNetGain<1||
+     SHARPSHOOT_MARK_ECONOMY_CONTRACT.stableConsumeCap>1||
+     SHARPSHOOT_MARK_ECONOMY_CONTRACT.fullSpendOwner!=='SECOND_WEAPON_SKILL')
+    throw new Error('Sharpshoot must remain the bounded Mark source rather than the full Mark spender');
+  if(form.delivery.pattern!=='SINGLE'||form.delivery.timing!=='IMMEDIATE'||
+     !form.baselineAttack||!focus.baselineAttack||focus.baselineAttack.markGain<=form.baselineAttack.markGain)
+    throw new Error('F1 and F1S1 need an inherited single-shot baseline with increased Mark output');
+  return Object.freeze({passed:true,routes:SHARPSHOOT_MARK_ROUTE_CONTRACTS.length,
+    specializations:specs.length,materialized:specs.filter(route=>route.runtimeReadiness==='MATERIALIZED').length,
+    twists:twists.length,baselinePending:specs.filter(route=>route.runtimeReadiness==='BASELINE_PENDING').length,
+    equalPowerBudget:form.powerBudget,
+    minPrimaryShare:Number(Math.min(...primaryShares).toFixed(3)),
+    maxPrimaryShare:Number(Math.max(...primaryShares).toFixed(3))});
+})();
+const COMBAT_ATTRIBUTE_UI_COLORS=Object.freeze({MARK:'#ff596d',CHAIN:'#ffe37a',POSTURE:'#9ecbff',
+  CRITICAL:'#c995ff',AFFLICTION:'#d9788b',CHARGE:'#7fc9ff'});
+const SHARPSHOOT_MARK_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  .filter(route=>route.depth===2).map(route=>Object.freeze({
+    id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:2,
+    type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',
+    name:route.name,col:COMBAT_ATTRIBUTE_UI_COLORS[route.secondaryAttributeId],
+    buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
+    focusAxis:'PRIMARY_SECONDARY_BALANCE',summary:route.promise,
+    details:Object.freeze([
+      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Delivery: inherited from F1 until a Twist explicitly transforms it.',
+      route.runtimeReadiness==='MATERIALIZED'?'Working baseline attack and rarity synthesis ready.':
+        'Attribute budget ready; working baseline output still pending.'
+     ]),prototypeContract:true})));
+const SHARPSHOOT_MARK_TWIST_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  .filter(route=>route.depth===3).map(route=>Object.freeze({
+    id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:3,
+    type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',
+    name:route.name,col:COMBAT_ATTRIBUTE_UI_COLORS[route.secondaryAttributeId],
+    buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
+    focusAxis:'PRIMARY_SECONDARY_RELATIONSHIP',summary:route.promise,
+    details:Object.freeze([
+      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Relationship: '+route.mechanics.relationship.replace(/_/g,' ')+'.',
+      'Delivery: '+route.delivery.pattern.replace(/_/g,' ')+' · '+route.delivery.timing.replace(/_/g,' ')+'.'
+    ]),prototypeContract:true})));
+const SHARPSHOOT_MARK_ALL_LAB_NODES=Object.freeze([
+  ...SHARPSHOOT_MARK_LAB_NODES,...SHARPSHOOT_MARK_TWIST_LAB_NODES
+]);
+const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
+  SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
+const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
+  if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
+     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==1||
+     Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
+     SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
+    throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
+  return Object.freeze({passed:true,nodes:SHARPSHOOT_MARK_LAB_NODES.length,
+    twists:SHARPSHOOT_MARK_TWIST_LAB_NODES.length,liveMutations:0});
+})();
+function sharpshootMarkRouteFromNode(node){
+  if(node&&node.id==='blood_mark')return SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form;
+  return node&&node.prototypeContract?SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId]||null:null;
+}
 /* Authoring and runtime tree traversal share one parent->children index. This keeps
    validation linear as the catalogue grows into hundreds of handcrafted cards. */
 const SKILL_MUTATION_CHILDREN_BY_PARENT=(()=>{
@@ -10207,12 +10664,14 @@ const SKILL_MUTATION_TYPE_COL=Object.freeze({
 });
 const SKILL_MUTATION_TYPES=Object.freeze(['STABLE','DISTORTED','CORRUPTED']);
 const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
-  'name','col','damage','hitDamages','hits','hitInterval','duration','cost','markGain',
-  'markRule','posture','posturePerChain',
+  'name','col','damage','hitDamages','hits','hitInterval','impactDelay','duration','cost','markGain',
+  'markRule','posture','posturePerChain','affliction',
   'resolvePerHit','resolveOnComplete','resolveRule','resolveOverflowToChain','consumeChain',
   'extraChainBonus','addsChain','chainGainPerHit','chainGainPattern',
   'critChance','critDamageMultiplier','critPrecisionGain',
-  'deliveryProfileId','deliveryPattern','deliveryTiming','targeting','animationProfile','payloadApplication'
+  'defenseTemperDamagePerCharge','defenseTemperMaxCharge',
+  'deliveryProfileId','deliveryPattern','deliveryTiming','targeting','animationProfile','projectileStyle',
+  'bowAnimationRecipeId','bowAnimationOverrides','payloadApplication'
 ]);
 function skillIdentityName(id){
   const identity=SKILL_IDENTITIES[id];
@@ -10284,27 +10743,35 @@ const SKILL_RARITY_ORDER=Object.freeze(['COMMON','UNCOMMON','RARE','LEGENDARY'])
    relative synthesis recipe, preventing a half-migrated build from changing. */
 const SKILL_RARITY_SYNTHESIS_ECONOMY=Object.freeze({
   COMMON:Object.freeze({quality:1,resolvePressure:0}),
-  UNCOMMON:Object.freeze({quality:2,resolvePressure:1}),
-  RARE:Object.freeze({quality:4,resolvePressure:2}),
-  LEGENDARY:Object.freeze({quality:7,resolvePressure:3})
+  UNCOMMON:Object.freeze({quality:4,resolvePressure:1}),
+  RARE:Object.freeze({quality:8,resolvePressure:2}),
+  LEGENDARY:Object.freeze({quality:14,resolvePressure:3})
 });
-/* Quality is the rounded self-information of the base rarity roll. This makes
-   power reflect statistical surprise without using destructive inverse-odds
-   scaling: -log2(65/100,27/100,7/100,1/100) -> 1,2,4,7. Chance artifacts may
-   alter future rolls, but never rewrite Quality already carried by a card. */
+/* Base rarity stays 65/27/7/1. Quality deliberately rises faster than rounded
+   self-information because a three-card draft makes high rarity more available
+   than one isolated roll: 1/4/8/14 gives Uncommon a visible step, keeps Rare a
+   build event, and leaves part of Legendary's jackpot budget to carried Stamps.
+   Chance artifacts may alter future rolls, but never rewrite carried Quality. */
 const SKILL_RARITY_INFORMATION_AUDIT=(()=>{
   const total=SKILL_RARITY_ORDER.reduce((sum,rarity)=>sum+SKILL_MUTATION_RARITY_WEIGHTS[rarity],0),
-    values=Object.create(null);
+    values=Object.create(null),qualities=[];
+  if(total!==100)throw new Error('Skill rarity weights must remain percentages');
   for(const rarity of SKILL_RARITY_ORDER){
     const probability=SKILL_MUTATION_RARITY_WEIGHTS[rarity]/total,
-      information=-Math.log2(probability),rounded=Math.max(1,Math.round(information)),
-      authored=SKILL_RARITY_SYNTHESIS_ECONOMY[rarity].quality;
-    if(rounded!==authored)throw new Error(rarity+' Quality no longer matches rounded rarity information');
+      information=-Math.log2(probability),authored=SKILL_RARITY_SYNTHESIS_ECONOMY[rarity].quality;
+    if(!(authored>0))throw new Error(rarity+' needs positive authored Quality');
+    qualities.push(authored);
     values[rarity]=Number(information.toFixed(3));
   }
+  if(qualities.some((quality,index)=>index&&quality<=qualities[index-1])||qualities.join('|')!=='1|4|8|14')
+    throw new Error('Rarity Quality reward curve must remain 1/4/8/14 and strictly increasing');
   return Object.freeze(values);
 })();
 const SKILL_SYNTHESIS_DEPTH_LEVERAGE=Object.freeze({1:1.20,2:1.12,3:1.05,4:1.00,MASTERY:1.00});
+/* Every real evolution advances the move even when its rarity is Common.
+   Structural Quality pays for that guaranteed layer; rarity is the RNG premium.
+   Only migrated wallet compilers consume this table during the vertical slice. */
+const SKILL_SYNTHESIS_STRUCTURAL_QUALITY=Object.freeze({1:2,2:2,3:3,4:4,MASTERY:4});
 const SKILL_QUALITY_POWER_UNIT=2.75;
 /* Guardrail power is an internal comparison currency, never bonus combat damage.
    A generated resource receives the value of the future option it creates; a
@@ -10326,7 +10793,7 @@ const SKILL_GUARDRAIL_POLICY_AUDIT=(()=>{
   return Object.freeze({values:Object.keys(SKILL_GUARDRAIL_POWER_VALUES).length,
     scenarios:SKILL_GUARDRAIL_SCENARIOS.length});
 })();
-const SKILL_QUALITY_COMPILER_VERSION=2;
+const SKILL_QUALITY_COMPILER_VERSION=3;
 const SKILL_RESOLVE_PRESSURE_STEP=3;
 function skillSynthesisEconomyLedger(history,baseResolveCost=1){
   const counts=Object.fromEntries(SKILL_RARITY_ORDER.map(rarity=>[rarity,0]));
@@ -10342,17 +10809,21 @@ function skillSynthesisEconomyLedger(history,baseResolveCost=1){
 }
 function refreshSkillSynthesisEconomy(skill){
   const ledger=skillSynthesisEconomyLedger(skill&&skill.evolutionHistory,
-    skill&&skill.synthesisBaseResolveCost||0);
-  skill.synthesisQuality=ledger.quality;skill.synthesisResolvePressure=ledger.resolvePressure;
+    skill&&skill.synthesisBaseResolveCost||0),structuralQuality=(skill&&skill.evolutionHistory||[])
+      .reduce((sum,node)=>sum+(Number(node&&node.structuralQualityContribution)||0),0);
+  skill.synthesisRarityQuality=ledger.quality;skill.synthesisStructuralQuality=structuralQuality;
+  skill.synthesisQuality=ledger.quality+structuralQuality;skill.synthesisResolvePressure=ledger.resolvePressure;
   skill.synthesisProjectedResolveCost=ledger.projectedResolveCost;
   skill.synthesisRarityCounts=ledger.counts;return ledger;
 }
 function skillSynthesisEconomyText(skill){
   if(!skill||!skill.evolutionHistory||!skill.evolutionHistory.length)return '';
-  const weighted=skill.synthesisCompilerVersion?' · effective '+
-    Number(skill.synthesisEffectiveQuality||0).toFixed(2)+' (depth +'+
-    Number(skill.synthesisDepthBonus||0).toFixed(2)+')':'';
-  return 'Synthesis ledger: Quality '+(skill.synthesisQuality||0)+weighted+', Resolve Pressure '+
+  const structural=Number(skill.synthesisStructuralQuality)||0,
+    rarity=Number(skill.synthesisRarityQuality),quality=Number(skill.synthesisQuality)||0,
+    weighted=skill.synthesisCompilerVersion?' · effective '+
+      Number(skill.synthesisEffectiveQuality||0).toFixed(2)+(structural?' (rarity '+
+      (Number.isFinite(rarity)?rarity:Math.max(0,quality-structural))+' + evolution '+structural+')':''):'';
+  return 'Synthesis ledger: Quality '+quality+weighted+', Resolve Pressure '+
     (skill.synthesisResolvePressure||0)+', projected recipe cost '+
     (skill.synthesisProjectedResolveCost||0)+'.';
 }
@@ -10450,30 +10921,51 @@ const SKILL_QUALITY_RESERVE_AUDIT=(()=>{
     throw new Error('Discrete Quality reserve accounting is invalid');
   return Object.freeze({before,after});
 })();
-function compileSkillQualityLedger(path,recipeById){
+function compileSkillQualityLedger(path,recipeById,options=null){
   if(!recipeById)throw new Error('Quality compiler needs an explicit route recipe index');
-  const axisCredits=Object.create(null),receipts=[];let rawQuality=0,effectiveQuality=0;
+  const includeStructural=!!(options&&options.includeStructural),axisCredits=Object.create(null),
+    axisPowerCredits=Object.create(null),receipts=[];
+  let rawQuality=0,structuralQuality=0,effectiveQuality=0,rarityEffectiveQuality=0,
+    structuralEffectiveQuality=0,powerBudget=0;
   for(const entry of path){
     const recipe=recipeById[entry.routeId],
       economy=SKILL_RARITY_SYNTHESIS_ECONOMY[entry.rarity],
       leverage=SKILL_SYNTHESIS_DEPTH_LEVERAGE[entry.depth]||1;
     if(!recipe||recipe.depth!==entry.depth||!economy)
       throw new Error('Invalid Quality compiler path entry '+entry.routeId+' / '+entry.rarity+' / depth '+entry.depth);
-    const effective=economy.quality*leverage,allocation=Object.create(null);
-    rawQuality+=economy.quality;effectiveQuality+=effective;
+    const structural=includeStructural?(SKILL_SYNTHESIS_STRUCTURAL_QUALITY[entry.depth]||0):0,
+      packetQuality=economy.quality+structural,rarityEffective=economy.quality*leverage,
+      structuralEffective=structural*leverage,effective=packetQuality*leverage,
+      packetPower=effective*SKILL_QUALITY_POWER_UNIT,allocation=Object.create(null),
+      powerAllocation=Object.create(null);
+    rawQuality+=economy.quality;structuralQuality+=structural;effectiveQuality+=effective;
+    rarityEffectiveQuality+=rarityEffective;structuralEffectiveQuality+=structuralEffective;
+    powerBudget+=packetPower;
     for(const [axis,weight] of Object.entries(recipe.qualityProfile)){
-      const credit=effective*weight;axisCredits[axis]=(axisCredits[axis]||0)+credit;
+      const credit=effective*weight,powerCredit=packetPower*weight;
+      axisCredits[axis]=(axisCredits[axis]||0)+credit;
+      axisPowerCredits[axis]=(axisPowerCredits[axis]||0)+powerCredit;
       allocation[axis]=Number(credit.toFixed(4));
+      powerAllocation[axis]=Number(powerCredit.toFixed(4));
     }
     receipts.push(Object.freeze({routeId:entry.routeId,depth:entry.depth,rarity:entry.rarity,
-      quality:economy.quality,depthLeverage:leverage,effectiveQuality:Number(effective.toFixed(4)),
-      allocation:Object.freeze(allocation),legendaryStampSlot:entry.rarity==='LEGENDARY'}));
+      rarityQuality:economy.quality,structuralQuality:structural,quality:packetQuality,
+      depthLeverage:leverage,rarityEffectiveQuality:Number(rarityEffective.toFixed(4)),
+      structuralEffectiveQuality:Number(structuralEffective.toFixed(4)),
+      effectiveQuality:Number(effective.toFixed(4)),powerBudget:Number(packetPower.toFixed(4)),
+      allocation:Object.freeze(allocation),powerAllocation:Object.freeze(powerAllocation),
+      legendaryStampSlot:entry.rarity==='LEGENDARY'}));
   }
   const roundedAxes=Object.fromEntries(Object.entries(axisCredits).map(([axis,value])=>
-    [axis,Number(value.toFixed(4))]));
-  return Object.freeze({rawQuality,effectiveQuality:Number(effectiveQuality.toFixed(4)),
-    depthBonus:Number((effectiveQuality-rawQuality).toFixed(4)),
-    axisCredits:Object.freeze(roundedAxes),receipts:Object.freeze(receipts)});
+      [axis,Number(value.toFixed(4))])),roundedPowerAxes=Object.fromEntries(
+      Object.entries(axisPowerCredits).map(([axis,value])=>[axis,Number(value.toFixed(4))]));
+  return Object.freeze({rawQuality,structuralQuality,totalQuality:rawQuality+structuralQuality,
+    rarityEffectiveQuality:Number(rarityEffectiveQuality.toFixed(4)),
+    structuralEffectiveQuality:Number(structuralEffectiveQuality.toFixed(4)),
+    effectiveQuality:Number(effectiveQuality.toFixed(4)),
+    depthBonus:Number((effectiveQuality-rawQuality-structuralQuality).toFixed(4)),
+    powerBudget:Number(powerBudget.toFixed(4)),axisCredits:Object.freeze(roundedAxes),
+    axisPowerCredits:Object.freeze(roundedPowerAxes),receipts:Object.freeze(receipts)});
 }
 function f1QualitySetDamageShape(command,total,shape,shapeCredit=0){
   total=Math.max((command.hits||1)*.25,total);const hits=command.hits||1;
@@ -10591,6 +11083,544 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
   ];
   return command;
 }
+
+/* Mark Source is the first final Attribute-v1 materialization. Form and
+   Specialization are complete attacks; they inherit Sharpshoot's one-arrow
+   Delivery. Twist will later choose Delivery transformations and relationship
+   mechanics. Specialization may express its declared Secondary through one
+   bounded output axis, but may not change contacts or consume Mark/Chain. */
+const SHARPSHOOT_MARK_COMPILER_VERSION=10;
+const SHARPSHOOT_MARK_GAIN_THRESHOLDS=Object.freeze(Array.from({length:24},(_,index)=>(index+1)*
+  SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN));
+const SHARPSHOOT_CHAIN_SCALING_REFERENCE=SKILL_GUARDRAIL_SCENARIOS.reduce(
+  (sum,scenario)=>sum+scenario.chain,0)/SKILL_GUARDRAIL_SCENARIOS.length;
+/* Output expression is a compiler policy, not a rarity lookup table. Role says how
+   much of an Attribute wallet may become a supporting output; Handling says how
+   naturally the current weapon can express that Attribute. Their product is
+   linear and deterministic. Unexpressed wallet power returns to Primary, so a
+   light bow changes distribution without losing or inventing total card power. */
+const SKILL_ATTRIBUTE_ROLE_EXPRESSION=Object.freeze({PRIMARY:1,SECONDARY:.8});
+const SKILL_ATTRIBUTE_CONTEXT_EXPRESSION=Object.freeze({
+  LIGHT_RANGED:Object.freeze({POSTURE:.4}),
+  STABLE_SUPPORT:Object.freeze({CRITICAL:.5})
+});
+function skillAttributeExpressionRatio(attributeId,role,contextProfileId){
+  const roleRatio=SKILL_ATTRIBUTE_ROLE_EXPRESSION[role],context=
+    SKILL_ATTRIBUTE_CONTEXT_EXPRESSION[contextProfileId],contextRatio=context&&context[attributeId];
+  if(!(roleRatio>0)||!(contextRatio>0))
+    throw new Error('Missing output expression policy for '+role+' '+contextProfileId+' '+attributeId);
+  return Number((roleRatio*contextRatio).toFixed(4));
+}
+const SKILL_ATTRIBUTE_EXPRESSION_AUDIT=(()=>{
+  const posture=skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED'),
+    critical=skillAttributeExpressionRatio('CRITICAL','SECONDARY','STABLE_SUPPORT');
+  if(posture!==.32||critical!==.4)
+    throw new Error('Stable Secondary output expression policy drifted');
+  return Object.freeze({passed:true,lightRangedSecondaryPosture:posture,stableSecondaryCritical:critical});
+})();
+/* F1S3 keeps the reference Break bar at 100. It has no hard or soft output cap:
+   every additional Quality point follows the same linear conversion. The current
+   two-layer ceiling is an audit only, not runtime clipping. */
+const SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE=Object.freeze({
+  deliveryProfileId:'OWNER_BOW',weightClass:'LIGHT_RANGED',role:'SECONDARY',referencePostureMax:100,
+  expressionRatio:skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED'),
+  specializationShareGuardrail:.20,powerPerPosture:SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE
+});
+const SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE=Object.freeze({
+  deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionProfileId:'STABLE_SUPPORT',
+  expressionRatio:skillAttributeExpressionRatio('CRITICAL','SECONDARY','STABLE_SUPPORT'),
+  specializationChanceGuardrail:.35,multiplier:CFG.CRIT_DAMAGE_MULT
+});
+const SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE=Object.freeze({
+  deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
+  powerPerBleed:BLEED_STATUS.totalDamageFactor,specializationApplicationGuardrail:11
+});
+const SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE=Object.freeze({
+  deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
+  expectedCharge:DEFENSE_CHARGE.expectedSpend,maxCharge:DEFENSE_CHARGE.max,
+  specializationRateGuardrail:11
+});
+function sharpshootSecondaryExpressionRatio(attributeId){
+  if(attributeId==='POSTURE')return SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.expressionRatio;
+  if(attributeId==='CRITICAL')return SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.expressionRatio;
+  if(attributeId==='AFFLICTION')return SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.expressionRatio;
+  return 1;
+}
+function skillLinearOutputProgress(power,powerPerUnit,precision=1){
+  const credit=Math.max(0,Number(power)||0),scale=10**precision,
+    output=Math.floor((credit/powerPerUnit+1e-9)*scale)/scale,
+    spent=output*powerPerUnit,reserve=Math.max(0,credit-spent);
+  return Object.freeze({output,rank:output,credit:Number(credit.toFixed(4)),
+    spent:Number(spent.toFixed(4)),reserve:Number(reserve.toFixed(4)),next:null,needed:null,progress:1});
+}
+/* Local Crit is priced by expected direct Health damage. A 10% chance on a 40
+   damage arrow therefore costs twice as much as the same chance on a 20 damage
+   arrow. Precision and global Crit are deliberately outside this wallet. */
+function skillLocalCritChanceProgress(power,directDamage,multiplier=CFG.CRIT_DAMAGE_MULT,precision=4){
+  const credit=Math.max(0,Number(power)||0),fullChancePower=Math.max(.001,
+      Math.max(0,Number(directDamage)||0)*(Math.max(1,Number(multiplier)||1)-1)),scale=10**precision,
+    output=Math.floor((credit/fullChancePower+1e-9)*scale)/scale,
+    spent=output*fullChancePower,reserve=Math.max(0,credit-spent);
+  return Object.freeze({output,rank:output,credit:Number(credit.toFixed(4)),
+    spent:Number(spent.toFixed(4)),reserve:Number(reserve.toFixed(4)),next:null,needed:null,progress:1,
+    fullChancePower:Number(fullChancePower.toFixed(4))});
+}
+/* Form power is immutable foundation. A mixed Specialization may distribute only
+   its own Attribute packet, but it observes the complete foundation and spends
+   that new packet toward the authored whole-card Primary/Secondary target. */
+function compileSharpshootCumulativeIdentityAllocation(routes,ledger){
+  const rawReceipts=ledger.receipts,rawResult=()=>Object.freeze({
+    axisPowerCredits:ledger.axisPowerCredits,axisCredits:ledger.axisCredits,
+    receipts:rawReceipts,identity:Object.freeze({mode:'PACKET_LOCAL',primaryShare:1,
+      secondaryShare:0,secondaryAttributeId:null,
+      foundationPrimaryPower:ledger.axisPowerCredits.MARK_GAIN||0,
+      specializationAttributePower:0,desiredSecondaryPower:0,secondaryPower:0,
+      expressionRatio:1,handlingRedirectPower:0})});
+  if(routes.length<2)return rawResult();
+  const form=routes[0],specialization=routes[1];
+  if(form.primaryAttributeId===specialization.secondaryAttributeId)return rawResult();
+  const secondaryAxes=Object.keys(specialization.qualityProfile).filter(axis=>
+      axis!=='DIRECT_DAMAGE'&&axis!=='MARK_GAIN'),secondaryWeight=secondaryAxes.reduce(
+      (sum,axis)=>sum+specialization.qualityProfile[axis],0);
+  if(!secondaryAxes.length||!(secondaryWeight>0))return rawResult();
+  const formReceipt=rawReceipts[0],specializationReceipt=rawReceipts[1],
+    foundationPrimaryPower=formReceipt.powerAllocation.MARK_GAIN||0,
+    directPower=specializationReceipt.powerAllocation.DIRECT_DAMAGE||0,
+    specializationAttributePower=Number((specializationReceipt.powerBudget-directPower).toFixed(4)),
+    totalAttributePower=foundationPrimaryPower+specializationAttributePower,
+    secondaryShare=specialization.identityBudget[specialization.secondaryAttributeId]||
+      SECONDARY_ATTRIBUTE_SHARE.target,
+    desiredSecondaryPower=totalAttributePower*secondaryShare,
+    expressionRatio=sharpshootSecondaryExpressionRatio(specialization.secondaryAttributeId),
+    targetSecondaryPower=Math.min(specializationAttributePower,desiredSecondaryPower),
+    secondaryPower=targetSecondaryPower*expressionRatio,
+    handlingRedirectPower=targetSecondaryPower-secondaryPower,
+    specializationPrimaryPower=specializationAttributePower-secondaryPower,
+    specializationPowerAllocation={DIRECT_DAMAGE:directPower,MARK_GAIN:specializationPrimaryPower};
+  for(const axis of secondaryAxes)
+    specializationPowerAllocation[axis]=secondaryPower*specialization.qualityProfile[axis]/secondaryWeight;
+  const compiledReceipts=rawReceipts.map((receipt,index)=>{
+    if(index!==1)return receipt;
+    const powerAllocation=Object.freeze(Object.fromEntries(Object.entries(specializationPowerAllocation)
+        .map(([axis,value])=>[axis,Number(value.toFixed(4))]))),allocation=Object.freeze(
+      Object.fromEntries(Object.entries(powerAllocation).map(([axis,value])=>
+        [axis,Number((value/SKILL_QUALITY_POWER_UNIT).toFixed(4))])));
+    return Object.freeze({...receipt,allocation,powerAllocation});
+  }),axisPowerCredits=Object.create(null);
+  for(const receipt of compiledReceipts)for(const [axis,value] of Object.entries(receipt.powerAllocation))
+    axisPowerCredits[axis]=(axisPowerCredits[axis]||0)+value;
+  const roundedPower=Object.freeze(Object.fromEntries(Object.entries(axisPowerCredits).map(([axis,value])=>
+      [axis,Number(value.toFixed(4))]))),roundedCredits=Object.freeze(Object.fromEntries(
+      Object.entries(roundedPower).map(([axis,value])=>
+        [axis,Number((value/SKILL_QUALITY_POWER_UNIT).toFixed(4))]))),
+    compiledTotal=Object.values(roundedPower).reduce((sum,value)=>sum+value,0),
+    formMarkAfter=compiledReceipts[0].powerAllocation.MARK_GAIN||0;
+  if(Math.abs(compiledTotal-ledger.powerBudget)>.01||Math.abs(formMarkAfter-foundationPrimaryPower)>.001)
+    throw new Error('Sharpshoot cumulative allocation spent history twice or rewrote its Form foundation');
+  return Object.freeze({axisPowerCredits:roundedPower,axisCredits:roundedCredits,
+    receipts:Object.freeze(compiledReceipts),identity:Object.freeze({mode:'CUMULATIVE_TARGET',
+      primaryShare:1-secondaryShare,secondaryShare,
+      secondaryAttributeId:specialization.secondaryAttributeId,
+      foundationPrimaryPower:Number(foundationPrimaryPower.toFixed(4)),
+      specializationAttributePower,desiredSecondaryPower:Number(desiredSecondaryPower.toFixed(4)),
+      secondaryPower:Number(secondaryPower.toFixed(4)),
+      expressionRatio,handlingRedirectPower:Number(handlingRedirectPower.toFixed(4)),
+      overflowToPrimary:Number(Math.max(0,specializationAttributePower-secondaryPower).toFixed(4))})});
+}
+function sharpshootChainScalingRate(power,damage){
+  const denominator=Math.max(.001,damage*SHARPSHOOT_CHAIN_SCALING_REFERENCE);
+  return Number((Math.max(0,power)/denominator).toFixed(6));
+}
+function commandDirectDamageTotal(command){
+  return Array.from({length:Math.max(1,command&&command.hits||1)},(_,index)=>
+    Math.max(0,Number(commandHitBase(command,index))||0)).reduce((sum,value)=>sum+value,0);
+}
+function commandExpectedLocalCritPower(command){
+  const chance=clamp(Math.max(0,Number(command&&command.critChance)||0),0,1),
+    multiplier=Math.max(1,Number(command&&command.critDamageMultiplier)||CFG.CRIT_DAMAGE_MULT);
+  return commandDirectDamageTotal(command)*(multiplier-1)*chance;
+}
+function commandExpectedAfflictionPower(command){
+  return commandBleedAmount(command)*BLEED_STATUS.totalDamageFactor;
+}
+function commandExpectedDefenseTemperPower(command){
+  return commandDefenseTemperRate(command)*DEFENSE_CHARGE.expectedSpend;
+}
+function sharpshootMarkBaselinePower(command){
+  const chain=Array.from({length:command.hits||1},(_,index)=>commandChainGain(command,index))
+    .reduce((sum,value)=>sum+value,0),values=SKILL_GUARDRAIL_POWER_VALUES;
+  return (command.damage||0)+chain*values.CHAIN_GAIN+(command.markGain||0)*values.MARK_GAIN-
+    (command.cost||0)*values.NET_RESOLVE+(command.posture||0)*values.POSTURE_DAMAGE+
+    commandExpectedLocalCritPower(command)+commandExpectedAfflictionPower(command)+
+    commandExpectedDefenseTemperPower(command);
+}
+function sharpshootMarkHistoryNode(route,rarity,receipt,index){
+  const economy=SKILL_RARITY_SYNTHESIS_ECONOMY[rarity],
+    structuralPower=receipt.structuralEffectiveQuality*SKILL_QUALITY_POWER_UNIT,
+    rarityPower=receipt.rarityEffectiveQuality*SKILL_QUALITY_POWER_UNIT,
+    commonPower=structuralPower+receipt.depthLeverage*SKILL_QUALITY_POWER_UNIT;
+  return Object.freeze({mutationId:index===0?'blood_mark':route.id,routeId:route.id,familyId:route.id,
+    kind:'EVOLUTION',variant:'STABLE',type:'STABLE',resultAspect:'STABLE',rarity,depth:route.depth,
+    name:route.name,buildAspect:'MARK_SOURCE',qualityContribution:receipt.quality,
+    rarityQualityContribution:economy.quality,structuralQualityContribution:receipt.structuralQuality,
+    resolvePressureContribution:economy.resolvePressure,depthLeverage:receipt.depthLeverage,
+    effectiveQualityContribution:receipt.effectiveQuality,qualityAllocation:receipt.allocation,
+    powerAllocation:receipt.powerAllocation,structuralPower:Number(structuralPower.toFixed(3)),
+    commonRoutePower:Number(commonPower.toFixed(3)),rarityPower:Number(rarityPower.toFixed(3)),
+    totalPower:receipt.powerBudget,legendaryStampSlot:receipt.legendaryStampSlot,
+    legendaryStampId:null,synthesized:true});
+}
+function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
+  specializationRarity='COMMON',twistId=null,twistRarity='COMMON'){
+  if(!SKILL_RARITY_SYNTHESIS_ECONOMY[formRarity]||
+     (specializationId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[specializationRarity])||
+     (twistId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[twistRarity]))return null;
+  const form=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form,
+    specialization=specializationId&&SHARPSHOOT_MARK_ROUTE_BY_ID[specializationId],
+    twist=twistId&&SHARPSHOOT_MARK_ROUTE_BY_ID[twistId];
+  if(specializationId&&(!specialization||specialization.parentId!==form.id||
+     specialization.runtimeReadiness!=='MATERIALIZED'))return null;
+  if(twistId&&(!specialization||!twist||twist.parentId!==specialization.id||
+     twist.runtimeReadiness!=='MATERIALIZED'))return null;
+  const routes=twist?[form,specialization,twist]:specialization?[form,specialization]:[form],
+    rarities=[formRarity,specializationRarity,twistRarity],path=routes.map((route,index)=>Object.freeze({
+      routeId:route.id,rarity:rarities[index],depth:route.depth})),
+    ledger=compileSkillQualityLedger(path,SHARPSHOOT_MARK_ROUTE_BY_ID,{includeStructural:true}),
+    compiledAllocation=compileSharpshootCumulativeIdentityAllocation(routes,ledger),
+    history=routes.map((route,index)=>sharpshootMarkHistoryNode(route,path[index].rarity,
+      compiledAllocation.receipts[index],index)),
+    finalRoute=routes[routes.length-1],blueprint=finalRoute.baselineAttack,
+    delivery=finalRoute.delivery||form.delivery,
+    definition=BASE_TURN_SKILL_BY_ID.sharpshoot,command=createRunSkill(definition),
+    markProgress=skillQualityThresholdProgress(compiledAllocation.axisPowerCredits.MARK_GAIN||0,
+      SHARPSHOOT_MARK_GAIN_THRESHOLDS),markGain=(definition.markGain||0)+markProgress.rank;
+  command.evolutionHistory=history;command.evolutionMutationIds=history.map(node=>node.mutationId);
+  command.mutationIds=command.evolutionMutationIds.slice();command.synthesisHistory=history.slice();
+  command.evolutionDepth=finalRoute.depth;command.synthesisActive=true;command.synthesisEconomyApplied=true;
+  command.formAspectId='MARK_SOURCE';command.lineageAspect='STABLE';
+  command.evolutionRarity=history[history.length-1].rarity;command.synthesisBaseResolveCost=blueprint.resolveCost;
+  refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;command.apCost=1;
+  const costPower=Math.max(0,command.cost-(definition.cost||0))*SKILL_GUARDRAIL_POWER_VALUES.NET_RESOLVE,
+    damage=Number(((definition.damage||0)+(compiledAllocation.axisPowerCredits.DIRECT_DAMAGE||0)+costPower).toFixed(3)),
+    chainScalingPower=compiledAllocation.axisPowerCredits.CHAIN_SCALING||0,
+    extraChainBonus=sharpshootChainScalingRate(chainScalingPower,damage),
+    posturePower=compiledAllocation.axisPowerCredits.POSTURE_DAMAGE||0,
+    postureProgress=skillLinearOutputProgress(posturePower,
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture),posture=postureProgress.output,
+    critPower=compiledAllocation.axisPowerCredits.CRIT_CHANCE||0,
+    critProgress=skillLocalCritChanceProgress(critPower,damage,
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier),critChance=critProgress.output,
+    afflictionPower=compiledAllocation.axisPowerCredits.AFFLICTION_APPLICATION||0,
+    afflictionProgress=skillLinearOutputProgress(afflictionPower,
+      SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.powerPerBleed),bleed=afflictionProgress.output,
+    affliction=bleed?Object.freeze({id:BLEED_STATUS.id,amount:bleed}):null,
+    chargePower=compiledAllocation.axisPowerCredits.DEFENSE_TEMPER||0,
+    chargeProgress=skillLinearOutputProgress(chargePower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),chargeRate=chargeProgress.output;
+  transformSharpshoot(command,{name:finalRoute.name,damage,hits:1,hitDamages:null,markGain,cost:command.cost,
+    markRule:null,addsChain:true,chainGainPerHit:1,chainGainPattern:null,consumeChain:false,extraChainBonus,posture,
+    critChance,critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
+    affliction,defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
+    impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
+    bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||'BOW_STANDARD',
+    deliveryProfileId:delivery.profileId,deliveryPattern:delivery.pattern,
+    deliveryTiming:delivery.timing});
+  const basePower=sharpshootMarkBaselinePower(createRunSkill(definition)),
+    targetPower=basePower+ledger.powerBudget,
+    expressedChainPower=extraChainBonus*damage*SHARPSHOOT_CHAIN_SCALING_REFERENCE,
+    accountedPower=sharpshootMarkBaselinePower(command)+markProgress.reserve+postureProgress.reserve+
+      critProgress.reserve+afflictionProgress.reserve+chargeProgress.reserve+expressedChainPower,
+    error=Number(Math.abs(accountedPower-targetPower).toFixed(4)),
+    allocationTotal=Object.values(compiledAllocation.axisPowerCredits).reduce((sum,value)=>sum+value,0)||1;
+  command.synthesisRarityQuality=ledger.rawQuality;command.synthesisStructuralQuality=ledger.structuralQuality;
+  command.synthesisQuality=ledger.totalQuality;command.synthesisEffectiveQuality=ledger.effectiveQuality;
+  command.synthesisDepthBonus=ledger.depthBonus;command.synthesisTargetPower=Number(targetPower.toFixed(3));
+  command.synthesisPowerError=error;command.synthesisAxisCredits=compiledAllocation.axisPowerCredits;
+  command.synthesisBuildVector=Object.freeze(Object.fromEntries(Object.entries(compiledAllocation.axisPowerCredits)
+    .map(([axis,value])=>[axis,Number((value/allocationTotal).toFixed(4))])));
+  command.synthesisAxisReserve=Object.freeze({MARK_GAIN:markProgress,POSTURE_DAMAGE:postureProgress,
+    CRIT_CHANCE:critProgress,AFFLICTION_APPLICATION:afflictionProgress,DEFENSE_TEMPER:chargeProgress});
+  command.synthesisSecondaryPower=Object.freeze({CHAIN_SCALING:Number(chainScalingPower.toFixed(4)),
+    POSTURE_DAMAGE:Number(posturePower.toFixed(4)),CRIT_CHANCE:Number(critPower.toFixed(4)),
+    AFFLICTION_APPLICATION:Number(afflictionPower.toFixed(4)),DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
+  command.synthesisIdentityAllocation=compiledAllocation.identity;
+  command.synthesisReserveUnit='POWER';
+  command.synthesisQualityReceipts=Array.from(compiledAllocation.receipts);
+  const scenario=stableEvolutionScenarioVector(command);
+  command.synthesisScenarioScores=scenario.scores;command.synthesisScenarioRatios=scenario.ratios;
+  command.synthesisImpactFloor=Object.freeze({minTotalDamage:6,minPerHitDamage:6});
+  command.synthesisCompilerVersion=SKILL_QUALITY_COMPILER_VERSION;
+  command.synthesisSemanticCompilerVersion=SHARPSHOOT_MARK_COMPILER_VERSION;
+  command.evolutionName=command.name;command.evolutionType='STABLE';
+  command.legendaryStampSlots=history.filter(node=>node.legendaryStampSlot).length;
+  command.legendaryStamps=[];refreshSkillRarityResonance(command);
+  const secondaryText=extraChainBonus?'Chain Secondary: +'+(extraChainBonus*100).toFixed(1)+
+      '% damage per starting Chain; Chain is preserved.':posture?
+      'Posture Secondary: '+posture+' Posture after the final hit; linear Light Bow expression '+
+      (SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.expressionRatio*100).toFixed(0)+'%.':critChance?
+      'Critical Secondary: '+(critChance*100).toFixed(1)+'% local chance at ×'+
+      damagePart(SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier)+'; no Precision or global Crit.':bleed?
+      'Affliction Secondary: +'+bleed+' Bleed for two phase-end ticks; Break tick ×'+
+      damagePart(BLEED_STATUS.breakMultiplier)+'.':chargeRate?
+      'Charge Secondary: +'+chargeRate+' base damage per banked Charge; expected at ×'+
+      DEFENSE_CHARGE.expectedSpend+', capped at ×'+DEFENSE_CHARGE.max+'.':
+      'No Secondary output before Specialization.';
+  command.evolutionText=[
+    'Mark Source Compiler v'+SHARPSHOOT_MARK_COMPILER_VERSION+': '+command.hits+' hit, '+
+      healthDamageText(command.damage,true)+' damage, +'+command.markGain+' Mark.',
+    'Stable inheritance floor: base stats never fall; unspent Mark power stays in Reserve.',
+    secondaryText,
+    skillSynthesisEconomyText(command)
+  ];
+  return command;
+}
+const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
+  const definition=BASE_TURN_SKILL_BY_ID.sharpshoot,
+    formLadder=SKILL_RARITY_ORDER.map(rarity=>synthesizeSharpshootMarkPath(rarity)),matrix=[],chainMatrix=[],
+    postureMatrix=[],criticalMatrix=[],afflictionMatrix=[],chargeMatrix=[],directTwistMatrix=[];
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
+    const command=synthesizeSharpshootMarkPath(formRarity,'mark_focus_spec',specRarity),
+      delivery=commandDeliveryContract(command);
+    if(!command||command.hits!==1||commandMarkMode(command)!=='NONE'||
+       delivery.pattern!=='SINGLE'||delivery.timing!=='IMMEDIATE'||command.synthesisPowerError>.01||
+       command.markGain<SHARPSHOOT_MARK_ECONOMY_CONTRACT.stableMinimumNetGain)
+      throw new Error('F1S1 failed working Mark Source materialization at '+formRarity+' / '+specRarity);
+    matrix.push(Object.freeze({formRarity,specRarity,damage:command.damage,mark:command.markGain,
+      cost:command.cost,score:Number(sharpshootMarkBaselinePower(command).toFixed(3))}));
+    const chainCommand=synthesizeSharpshootMarkPath(formRarity,'mark_chain_spec',specRarity),
+      chainDelivery=commandDeliveryContract(chainCommand);
+    if(!chainCommand||chainCommand.hits!==1||commandMarkMode(chainCommand)!=='NONE'||
+       chainDelivery.pattern!=='SINGLE'||chainDelivery.timing!=='IMMEDIATE'||
+       chainCommand.synthesisPowerError>.01||!(chainCommand.extraChainBonus>0)||chainCommand.consumeChain||
+       commandChainGain(chainCommand,0)!==1)
+      throw new Error('F1S2 failed working Mark/Chain materialization at '+formRarity+' / '+specRarity);
+    chainMatrix.push(Object.freeze({formRarity,specRarity,damage:chainCommand.damage,
+      mark:chainCommand.markGain,cost:chainCommand.cost,chainRate:chainCommand.extraChainBonus,
+      secondaryPower:chainCommand.synthesisIdentityAllocation.secondaryPower,
+      score:Number(stableEvolutionCombinedGuardrailValue(chainCommand).toFixed(3))}));
+    const postureCommand=synthesizeSharpshootMarkPath(formRarity,'mark_posture_spec',specRarity),
+      postureDelivery=commandDeliveryContract(postureCommand),postureReserve=
+        postureCommand&&postureCommand.synthesisAxisReserve.POSTURE_DAMAGE;
+    if(!postureCommand||postureCommand.hits!==1||commandMarkMode(postureCommand)!=='NONE'||
+       postureDelivery.pattern!=='SINGLE'||postureDelivery.timing!=='IMMEDIATE'||
+       postureCommand.synthesisPowerError>.01||!(postureCommand.posture>0)||postureCommand.consumeChain||
+       commandChainGain(postureCommand,0)!==1||!postureReserve||
+       postureCommand.bowAnimationRecipeId!=='BOW_POSTURE'||postureCommand.projectileStyle)
+      throw new Error('F1S3 failed working Mark/Posture materialization at '+formRarity+' / '+specRarity);
+    postureMatrix.push(Object.freeze({formRarity,specRarity,damage:postureCommand.damage,
+      mark:postureCommand.markGain,cost:postureCommand.cost,posture:postureCommand.posture,
+      postureReserve:postureReserve.reserve,
+      secondaryPower:postureCommand.synthesisIdentityAllocation.secondaryPower,
+      score:Number(stableEvolutionCombinedGuardrailValue(postureCommand).toFixed(3))}));
+    const criticalCommand=synthesizeSharpshootMarkPath(formRarity,'mark_critical_spec',specRarity),
+      criticalDelivery=commandDeliveryContract(criticalCommand),criticalReserve=
+        criticalCommand&&criticalCommand.synthesisAxisReserve.CRIT_CHANCE;
+    if(!criticalCommand||criticalCommand.hits!==1||commandMarkMode(criticalCommand)!=='NONE'||
+       criticalDelivery.pattern!=='SINGLE'||criticalDelivery.timing!=='IMMEDIATE'||
+       criticalCommand.synthesisPowerError>.01||!(criticalCommand.critChance>0)||
+       criticalCommand.critPrecisionGain!==0||criticalCommand.consumeChain||
+       criticalCommand.critDamageMultiplier!==CFG.CRIT_DAMAGE_MULT||
+       commandChainGain(criticalCommand,0)!==1||!criticalReserve)
+      throw new Error('F1S4 failed working Mark/Critical materialization at '+formRarity+' / '+specRarity);
+    criticalMatrix.push(Object.freeze({formRarity,specRarity,damage:criticalCommand.damage,
+      mark:criticalCommand.markGain,cost:criticalCommand.cost,critChance:criticalCommand.critChance,
+      critReserve:criticalReserve.reserve,
+      secondaryPower:criticalCommand.synthesisIdentityAllocation.secondaryPower,
+      score:Number(stableEvolutionCombinedGuardrailValue(criticalCommand).toFixed(3))}));
+    const afflictionCommand=synthesizeSharpshootMarkPath(formRarity,'mark_affliction_spec',specRarity),
+      afflictionDelivery=commandDeliveryContract(afflictionCommand),afflictionReserve=
+        afflictionCommand&&afflictionCommand.synthesisAxisReserve.AFFLICTION_APPLICATION,
+      bleed=commandBleedAmount(afflictionCommand);
+    if(!afflictionCommand||afflictionCommand.hits!==1||commandMarkMode(afflictionCommand)!=='NONE'||
+       afflictionDelivery.pattern!=='SINGLE'||afflictionDelivery.timing!=='IMMEDIATE'||
+       afflictionCommand.synthesisPowerError>.01||!(bleed>0)||afflictionCommand.consumeChain||
+       commandChainGain(afflictionCommand,0)!==1||!afflictionReserve||
+       afflictionDelivery.payloadApplication.AFFLICTION!=='PER_ACTION'||
+       afflictionCommand.critChance>0||afflictionCommand.posture>0)
+      throw new Error('F1S5 failed working Mark/Affliction materialization at '+formRarity+' / '+specRarity);
+    afflictionMatrix.push(Object.freeze({formRarity,specRarity,damage:afflictionCommand.damage,
+      mark:afflictionCommand.markGain,cost:afflictionCommand.cost,bleed,
+      afflictionReserve:afflictionReserve.reserve,
+      secondaryPower:afflictionCommand.synthesisIdentityAllocation.secondaryPower,
+      score:Number(stableEvolutionCombinedGuardrailValue(afflictionCommand).toFixed(3))}));
+    const chargeCommand=synthesizeSharpshootMarkPath(formRarity,'mark_charge_spec',specRarity),
+      chargeDelivery=commandDeliveryContract(chargeCommand),chargeReserve=
+        chargeCommand&&chargeCommand.synthesisAxisReserve.DEFENSE_TEMPER,
+      chargeRate=commandDefenseTemperRate(chargeCommand);
+    if(!chargeCommand||chargeCommand.hits!==1||commandMarkMode(chargeCommand)!=='NONE'||
+       chargeDelivery.pattern!=='SINGLE'||chargeDelivery.timing!=='IMMEDIATE'||
+       chargeCommand.synthesisPowerError>.01||!(chargeRate>0)||chargeCommand.consumeChain||
+       commandChainGain(chargeCommand,0)!==1||!chargeReserve||
+       chargeCommand.defenseTemperMaxCharge!==DEFENSE_CHARGE.max||chargeCommand.affliction||
+       chargeCommand.critChance>0||chargeCommand.posture>0)
+      throw new Error('F1S6 failed working Mark/Charge materialization at '+formRarity+' / '+specRarity);
+    chargeMatrix.push(Object.freeze({formRarity,specRarity,damage:chargeCommand.damage,
+      mark:chargeCommand.markGain,cost:chargeCommand.cost,chargeRate,
+      chargeReserve:chargeReserve.reserve,
+      secondaryPower:chargeCommand.synthesisIdentityAllocation.secondaryPower,
+      score:Number(stableEvolutionCombinedGuardrailValue(chargeCommand).toFixed(3))}));
+  }
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
+    const parent=synthesizeSharpshootMarkPath(formRarity,'mark_chain_spec',specRarity),
+      parentScore=stableEvolutionCombinedGuardrailValue(parent);
+    for(const twistRarity of SKILL_RARITY_ORDER){
+      const command=synthesizeSharpshootMarkPath(formRarity,'mark_chain_spec',specRarity,
+          'mark_chain_direct_twist',twistRarity),delivery=command&&commandDeliveryContract(command),
+        score=command&&stableEvolutionCombinedGuardrailValue(command);
+      if(!command||command.evolutionHistory.length!==3||command.hits!==1||commandMarkMode(command)!=='NONE'||
+         delivery.pattern!=='SINGLE'||delivery.timing!=='IMMEDIATE'||command.synthesisPowerError>.01||
+         command.consumeChain||commandChainGain(command,0)!==1||command.markGain<parent.markGain||
+         !(command.extraChainBonus>parent.extraChainBonus)||!(score>parentScore))
+        throw new Error('F1S2T1 failed rarity-neutral Twist synthesis at '+formRarity+' / '+
+          specRarity+' / '+twistRarity);
+      directTwistMatrix.push(Object.freeze({formRarity,specRarity,twistRarity,damage:command.damage,
+        mark:command.markGain,cost:command.cost,chainRate:command.extraChainBonus,
+        score:Number(score.toFixed(3))}));
+    }
+  }
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
+    const row=directTwistMatrix.filter(entry=>entry.formRarity===formRarity&&entry.specRarity===specRarity);
+    if(row.length!==SKILL_RARITY_ORDER.length)
+      throw new Error('F1S2T1 needs one independent rarity ladder for every complete parent history');
+    for(let index=1;index<row.length;index++)if(row[index].score<=row[index-1].score||
+       row[index].mark<row[index-1].mark||row[index].chainRate<=row[index-1].chainRate)
+      throw new Error('F1S2T1 rarity ladder regresses at '+formRarity+' / '+specRarity+' / '+
+        row[index].twistRarity);
+  }
+  for(let i=1;i<formLadder.length;i++)if(
+    sharpshootMarkBaselinePower(formLadder[i])<=sharpshootMarkBaselinePower(formLadder[i-1])||
+    formLadder[i].damage<=formLadder[i-1].damage||formLadder[i].markGain<formLadder[i-1].markGain)
+    throw new Error('F1 rarity ladder regresses at '+SKILL_RARITY_ORDER[i]);
+  if(formLadder[0].damage<=definition.damage||formLadder[0].markGain<(definition.markGain||0)||
+     formLadder.some(command=>command.synthesisPowerError>.01))
+    throw new Error('F1 Stable wallet must upgrade base damage without losing Mark or packet power');
+  for(const formRarity of SKILL_RARITY_ORDER){
+    const row=matrix.filter(entry=>entry.formRarity===formRarity),parent=formLadder[
+      SKILL_RARITY_ORDER.indexOf(formRarity)];
+    if(row[0].damage<=parent.damage||row[0].mark<=parent.markGain)
+      throw new Error('F1S1 Common must improve both parent damage and Mark at '+formRarity);
+    for(let i=1;i<row.length;i++)if(row[i].score<=row[i-1].score||
+       row[i].damage<=row[i-1].damage||row[i].mark<row[i-1].mark)
+      throw new Error('F1S1 rarity ladder regresses at '+formRarity+' / '+row[i].specRarity);
+    const chainRow=chainMatrix.filter(entry=>entry.formRarity===formRarity);
+    if(chainRow[0].damage<=parent.damage||chainRow[0].mark<parent.markGain||!(chainRow[0].chainRate>0))
+      throw new Error('F1S2 Common must preserve Mark and add damage plus Chain scaling at '+formRarity);
+    for(let i=1;i<chainRow.length;i++)if(chainRow[i].score<=chainRow[i-1].score||
+       chainRow[i].damage<=chainRow[i-1].damage||chainRow[i].mark<chainRow[i-1].mark||
+       chainRow[i].chainRate<=chainRow[i-1].chainRate)
+      throw new Error('F1S2 rarity ladder regresses at '+formRarity+' / '+chainRow[i].specRarity);
+    const postureRow=postureMatrix.filter(entry=>entry.formRarity===formRarity);
+    if(postureRow[0].damage<=parent.damage||postureRow[0].mark<parent.markGain||!(postureRow[0].posture>0))
+      throw new Error('F1S3 Common must preserve Mark and add damage plus Posture at '+formRarity);
+    for(let i=1;i<postureRow.length;i++)if(postureRow[i].score<=postureRow[i-1].score||
+       postureRow[i].damage<=postureRow[i-1].damage||postureRow[i].mark<postureRow[i-1].mark||
+       postureRow[i].posture<=postureRow[i-1].posture)
+      throw new Error('F1S3 rarity ladder regresses at '+formRarity+' / '+postureRow[i].specRarity);
+    const criticalRow=criticalMatrix.filter(entry=>entry.formRarity===formRarity);
+    if(criticalRow[0].damage<=parent.damage||criticalRow[0].mark<parent.markGain||
+       !(criticalRow[0].critChance>0))
+      throw new Error('F1S4 Common must preserve Mark and add damage plus local Crit at '+formRarity);
+    for(let i=1;i<criticalRow.length;i++)if(criticalRow[i].score<=criticalRow[i-1].score||
+       criticalRow[i].damage<=criticalRow[i-1].damage||criticalRow[i].mark<criticalRow[i-1].mark||
+       criticalRow[i].critChance<=criticalRow[i-1].critChance)
+      throw new Error('F1S4 rarity ladder regresses at '+formRarity+' / '+criticalRow[i].specRarity);
+    const afflictionRow=afflictionMatrix.filter(entry=>entry.formRarity===formRarity);
+    if(afflictionRow[0].damage<=parent.damage||afflictionRow[0].mark<parent.markGain||
+       !(afflictionRow[0].bleed>0))
+      throw new Error('F1S5 Common must preserve Mark and add damage plus Bleed at '+formRarity);
+    for(let i=1;i<afflictionRow.length;i++)if(afflictionRow[i].score<=afflictionRow[i-1].score||
+       afflictionRow[i].damage<=afflictionRow[i-1].damage||afflictionRow[i].mark<afflictionRow[i-1].mark||
+       afflictionRow[i].bleed<=afflictionRow[i-1].bleed)
+      throw new Error('F1S5 rarity ladder regresses at '+formRarity+' / '+afflictionRow[i].specRarity);
+    const chargeRow=chargeMatrix.filter(entry=>entry.formRarity===formRarity);
+    if(chargeRow[0].damage<=parent.damage||chargeRow[0].mark<parent.markGain||
+       !(chargeRow[0].chargeRate>0))
+      throw new Error('F1S6 Common must preserve Mark and add damage plus Charge temper at '+formRarity);
+    for(let i=1;i<chargeRow.length;i++)if(chargeRow[i].score<=chargeRow[i-1].score||
+       chargeRow[i].damage<=chargeRow[i-1].damage||chargeRow[i].mark<chargeRow[i-1].mark||
+       chargeRow[i].chargeRate<=chargeRow[i-1].chargeRate)
+      throw new Error('F1S6 rarity ladder regresses at '+formRarity+' / '+chargeRow[i].specRarity);
+  }
+  const commonChainByForm=SKILL_RARITY_ORDER.map(formRarity=>chainMatrix.find(entry=>
+      entry.formRarity===formRarity&&entry.specRarity==='COMMON')),
+    commonPostureByForm=SKILL_RARITY_ORDER.map(formRarity=>postureMatrix.find(entry=>
+      entry.formRarity===formRarity&&entry.specRarity==='COMMON')),
+    commonAfflictionByForm=SKILL_RARITY_ORDER.map(formRarity=>afflictionMatrix.find(entry=>
+      entry.formRarity===formRarity&&entry.specRarity==='COMMON')),
+    commonChargeByForm=SKILL_RARITY_ORDER.map(formRarity=>chargeMatrix.find(entry=>
+      entry.formRarity===formRarity&&entry.specRarity==='COMMON'));
+  for(let i=1;i<SKILL_RARITY_ORDER.length;i++)if(
+    commonChainByForm[i].secondaryPower<commonChainByForm[i-1].secondaryPower||
+    commonPostureByForm[i].secondaryPower<commonPostureByForm[i-1].secondaryPower||
+    commonAfflictionByForm[i].secondaryPower<commonAfflictionByForm[i-1].secondaryPower||
+    commonChargeByForm[i].secondaryPower<commonChargeByForm[i-1].secondaryPower)
+    throw new Error('A stronger Form foundation cannot weaken a Common Secondary allocation');
+  if(commonChainByForm[0].secondaryPower>=commonChainByForm[commonChainByForm.length-1].secondaryPower||
+     commonPostureByForm[0].posture>=commonPostureByForm[commonPostureByForm.length-1].posture||
+     commonAfflictionByForm[0].bleed>=commonAfflictionByForm[commonAfflictionByForm.length-1].bleed||
+     commonChargeByForm[0].chargeRate>=commonChargeByForm[commonChargeByForm.length-1].chargeRate)
+    throw new Error('Cumulative allocation must let stronger Form history fund more Common Secondary output');
+  const strongestPosture=postureMatrix.reduce((best,entry)=>entry.posture>best.posture?entry:best,
+    postureMatrix[0]),referenceCeiling=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.specializationShareGuardrail;
+  if(strongestPosture.posture>referenceCeiling)
+    throw new Error('Light Bow Secondary Posture exceeded its two-layer identity guardrail');
+  const weakestCritical=criticalMatrix.reduce((best,entry)=>entry.critChance<best.critChance?entry:best,
+      criticalMatrix[0]),strongestCritical=criticalMatrix.reduce((best,entry)=>
+      entry.critChance>best.critChance?entry:best,criticalMatrix[0]);
+  if(strongestCritical.critChance>SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.specializationChanceGuardrail)
+    throw new Error('Stable Secondary local Crit exceeded its two-layer identity guardrail');
+  const weakestAffliction=afflictionMatrix.reduce((best,entry)=>entry.bleed<best.bleed?entry:best,
+      afflictionMatrix[0]),strongestAffliction=afflictionMatrix.reduce((best,entry)=>
+      entry.bleed>best.bleed?entry:best,afflictionMatrix[0]);
+  if(strongestAffliction.bleed>SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.specializationApplicationGuardrail)
+    throw new Error('Stable Secondary Bleed exceeded its application guardrail');
+  const weakestCharge=chargeMatrix.reduce((best,entry)=>entry.chargeRate<best.chargeRate?entry:best,
+      chargeMatrix[0]),strongestCharge=chargeMatrix.reduce((best,entry)=>
+      entry.chargeRate>best.chargeRate?entry:best,chargeMatrix[0]);
+  if(strongestCharge.chargeRate>SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.specializationRateGuardrail)
+    throw new Error('Stable Secondary Charge temper exceeded its per-Charge guardrail');
+  for(const routeId of Object.keys(SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID)){
+    const route=SHARPSHOOT_MARK_ROUTE_BY_ID[routeId],command=routeId==='mark_primary_form'?
+      synthesizeSharpshootMarkPath('COMMON'):route&&route.depth===3?
+      synthesizeSharpshootMarkPath('COMMON',route.parentId,'COMMON',routeId,'COMMON'):
+      synthesizeSharpshootMarkPath('COMMON',routeId,'COMMON');
+    if(!command||command.bowAnimationRecipeId!==SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[routeId])
+      throw new Error(routeId+' failed its inherited Bow presentation recipe');
+  }
+  const common=synthesizeSharpshootMarkPath('COMMON','mark_focus_spec','COMMON');
+  if(common.markGain<=formLadder[0].markGain)
+    throw new Error('F1S1 Common must increase Mark output above its Common Form parent');
+  const chainCommon=synthesizeSharpshootMarkPath('COMMON','mark_chain_spec','COMMON');
+  const postureCommon=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON'),
+    criticalCommon=synthesizeSharpshootMarkPath('COMMON','mark_critical_spec','COMMON'),
+    afflictionCommon=synthesizeSharpshootMarkPath('COMMON','mark_affliction_spec','COMMON'),
+    chargeCommon=synthesizeSharpshootMarkPath('COMMON','mark_charge_spec','COMMON'),
+    directTwistCommon=synthesizeSharpshootMarkPath('COMMON','mark_chain_spec','COMMON',
+      'mark_chain_direct_twist','COMMON');
+  return Object.freeze({passed:true,formCards:formLadder.length,focusCards:matrix.length,
+    chainCards:chainMatrix.length,postureCards:postureMatrix.length,criticalCards:criticalMatrix.length,
+    afflictionCards:afflictionMatrix.length,chargeCards:chargeMatrix.length,
+    directTwistCards:directTwistMatrix.length,
+    common:Object.freeze({damage:common.damage,mark:common.markGain,cost:common.cost}),
+    chainCommon:Object.freeze({damage:chainCommon.damage,mark:chainCommon.markGain,cost:chainCommon.cost,
+      chainRate:chainCommon.extraChainBonus}),
+    postureCommon:Object.freeze({damage:postureCommon.damage,mark:postureCommon.markGain,
+      cost:postureCommon.cost,posture:postureCommon.posture}),
+    criticalCommon:Object.freeze({damage:criticalCommon.damage,mark:criticalCommon.markGain,
+      cost:criticalCommon.cost,critChance:criticalCommon.critChance}),
+    criticalRange:Object.freeze({min:weakestCritical.critChance,max:strongestCritical.critChance}),
+    afflictionCommon:Object.freeze({damage:afflictionCommon.damage,mark:afflictionCommon.markGain,
+      cost:afflictionCommon.cost,bleed:commandBleedAmount(afflictionCommon)}),
+    afflictionRange:Object.freeze({min:weakestAffliction.bleed,max:strongestAffliction.bleed}),
+    chargeCommon:Object.freeze({damage:chargeCommon.damage,mark:chargeCommon.markGain,
+      cost:chargeCommon.cost,chargeRate:commandDefenseTemperRate(chargeCommon)}),
+    chargeRange:Object.freeze({min:weakestCharge.chargeRate,max:strongestCharge.chargeRate}),
+    directTwistCommon:Object.freeze({damage:directTwistCommon.damage,mark:directTwistCommon.markGain,
+      cost:directTwistCommon.cost,chainRate:directTwistCommon.extraChainBonus}),
+    directTwistLadder:Object.freeze(SKILL_RARITY_ORDER.map(rarity=>directTwistMatrix.find(entry=>
+      entry.formRarity==='COMMON'&&entry.specRarity==='COMMON'&&entry.twistRarity===rarity)))});
+})();
 const SKILL_RESOLVE_RULE_TRIGGERS=Object.freeze(['START_CHAIN','START_MARK_THRESHOLD','CONSUMED_MARKS','BREAK']);
 function evolutionCombatState(mutation){
   const definition=mutation&&BASE_TURN_SKILL_BY_ID[mutation.skillId],
@@ -10697,6 +11727,15 @@ function validateStableCommandSchema(mutation,state,lineage){
   if(!Number.isFinite(state.critPrecisionGain||0)||(state.critPrecisionGain||0)<0||
       (state.critPrecisionGain||0)>1)
     throw new Error(mutation.id+' Crit Precision gain must be between 0 and 1');
+  if(!Number.isFinite(state.defenseTemperDamagePerCharge||0)||(state.defenseTemperDamagePerCharge||0)<0)
+    throw new Error(mutation.id+' defense-temper damage must be finite and non-negative');
+  if(!Number.isInteger(state.defenseTemperMaxCharge||DEFENSE_CHARGE.max)||
+      (state.defenseTemperMaxCharge||DEFENSE_CHARGE.max)!==DEFENSE_CHARGE.max)
+    throw new Error(mutation.id+' Stable Charge Secondary must use the shared bounded Charge maximum');
+  if(state.affliction&&(
+      state.affliction.id!==BLEED_STATUS.id||!Number.isFinite(state.affliction.amount)||
+      state.affliction.amount<=0||state.affliction.amount>BLEED_STATUS.technicalCap))
+    throw new Error(mutation.id+' Bleed application must be finite and inside the technical ceiling');
   if(!Number.isInteger(state.markGain||0)||(state.markGain||0)<0||
       (state.markGain||0)>MARK_GAIN_AUTHORING_LIMIT)
     throw new Error(mutation.id+' Mark gain must be an integer from 0 to '+MARK_GAIN_AUTHORING_LIMIT);
@@ -11040,7 +12079,8 @@ function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
   return damage+(chain-startingChain)*values.CHAIN_GAIN+(state.markGain||0)*values.MARK_GAIN+
     netResolve*values.NET_RESOLVE+(state.resolvePerHit?values.RESOLVE_PER_HIT_ENGINE:0)+
     (state.resolveOverflowToChain?values.RESOLVE_OVERFLOW_OPTION:0)+
-    (state.posture||0)*values.POSTURE_DAMAGE;
+    (state.posture||0)*values.POSTURE_DAMAGE+commandExpectedLocalCritPower(state)+
+    commandExpectedAfflictionPower(state)+commandExpectedDefenseTemperPower(state);
 }
 function stableEvolutionCombinedGuardrailValue(state){
   let total=0;for(const scenario of SKILL_GUARDRAIL_SCENARIOS)
@@ -11195,10 +12235,10 @@ const F1_SYNTHESIS_BALANCE_AUDIT=(()=>{
     legendaryPair=synthesizeF1StablePath('LEGENDARY','twin_rhythm','LEGENDARY'),
     earlyFoundation=synthesizeF1StablePath('LEGENDARY','twin_rhythm','COMMON'),
     lateExpression=synthesizeF1StablePath('COMMON','twin_rhythm','LEGENDARY');
-  if(rarePair.synthesisQuality!==8||rarePair.synthesisResolvePressure!==4||rarePair.cost!==2||
+  if(rarePair.synthesisQuality!==16||rarePair.synthesisResolvePressure!==4||rarePair.cost!==2||
      rarePair.rarityResonanceLevel!==1||skillRarityResonanceRefund(rarePair)!==1)
     throw new Error('F1 Rare + Rare stacking ledger is invalid');
-  if(legendaryPair.synthesisQuality!==14||legendaryPair.synthesisResolvePressure!==6||
+  if(legendaryPair.synthesisQuality!==28||legendaryPair.synthesisResolvePressure!==6||
      legendaryPair.cost!==3||legendaryPair.rarityResonanceLevel!==3||
      skillRarityResonanceRefund(legendaryPair)!==3||legendaryPair.legendaryStampSlots!==2)
     throw new Error('F1 Legendary + Legendary stacking ledger is invalid');
@@ -11547,8 +12587,8 @@ function runSkillEvolutionValidatorSelfTests(){
   const economyLedger=skillSynthesisEconomyLedger([
     {rarity:'LEGENDARY'},{rarity:'COMMON'},{rarity:'RARE'}
   ],1);
-  if(economyLedger.quality!==12||economyLedger.resolvePressure!==5||economyLedger.projectedResolveCost!==2)
-    throw new Error('Legendary + Common + Rare must preserve a 12 Quality / 5 Pressure / 2 Resolve ledger');
+  if(economyLedger.quality!==23||economyLedger.resolvePressure!==5||economyLedger.projectedResolveCost!==2)
+    throw new Error('Legendary + Common + Rare must preserve a 23 Quality / 5 Pressure / 2 Resolve ledger');
   passed++;
   const blueprintRolls=[.01,.99,.01,.51,.40,.20,.99,.10,.70],blueprint=rollSynthesisDraftBlueprint(
     F1_SYNTHESIS_ROUTE_RECIPES.filter(recipe=>recipe.depth===2),3,()=>blueprintRolls.shift()||0);
@@ -11565,14 +12605,14 @@ function runSkillEvolutionValidatorSelfTests(){
   const mixedJackpot=createRunSkill(definition);
   for(const layer of [split,twin,marked,SKILL_MUTATION_BY_ID.all_targets_one])applyMutationLayer(mixedJackpot,layer);
   if(mixedJackpot.cost!==5||mixedJackpot.rarityResonanceLevel!==2||skillRarityResonanceRefund(mixedJackpot)!==3||
-     mixedJackpot.synthesisQuality!==14||mixedJackpot.synthesisResolvePressure!==6||
+     mixedJackpot.synthesisQuality!==27||mixedJackpot.synthesisResolvePressure!==6||
      mixedJackpot.synthesisProjectedResolveCost!==3)
     throw new Error('Authored Rare + Legendary route must preserve combat and synthesis economy ledgers');
   passed++;
   const crownJackpot=createRunSkill(definition);
   for(const layer of [split,twin,royal,SKILL_MUTATION_BY_ID.eternal_reprise])applyMutationLayer(crownJackpot,layer);
   if(crownJackpot.cost!==6||crownJackpot.rarityResonanceLevel!==3||skillRarityResonanceRefund(crownJackpot)!==6||
-     crownJackpot.synthesisQuality!==17||crownJackpot.synthesisResolvePressure!==7||
+     crownJackpot.synthesisQuality!==33||crownJackpot.synthesisResolvePressure!==7||
      crownJackpot.synthesisProjectedResolveCost!==3)
     throw new Error('Authored Legendary + Legendary route must preserve full-refund and synthesis ledgers');
   passed++;
@@ -11655,10 +12695,11 @@ function runSkillEvolutionValidatorSelfTests(){
 const SKILL_EVOLUTION_VALIDATOR_AUDIT=runSkillEvolutionValidatorSelfTests();
 function runMarkSystemSelfTests(){
   let passed=0;
-  const arrow=BASE_TURN_SKILL_BY_ID.arrow_rain,arrowPlan=commandMarkPlan(arrow,8);
+  const arrowFixture={hits:3,markRule:markRule({mode:'CONSUME',timing:'PER_HIT',
+      cap:1,damagePerMark:6,curve:'FULL'})},arrowPlan=commandMarkPlan(arrowFixture,8);
   if(arrowPlan.consumedTotal!==3||arrowPlan.remaining!==5||
      arrowPlan.markDamageByHit.some(value=>value!==6))
-    throw new Error('Arrow Rain must consume one full-value Mark per hit and leave the reserve');
+    throw new Error('Per-hit Mark fixture must consume one full-value Mark per hit and leave the reserve');
   passed++;
   const fightPlan=commandMarkPlan({hits:1,markRule:WEAPON_DEFS.longbow.markRule},8);
   if(fightPlan.consumedTotal!==1||fightPlan.remaining!==7||fightPlan.markDamageByHit[0]!==8)
@@ -12247,6 +13288,10 @@ function commandPostureDamage(command,chain=chainStacks){
 function commandHitBase(command,index){
   return command.hitDamages&&command.hitDamages[index]!==undefined?command.hitDamages[index]:command.damage;
 }
+function commandDefenseTemperBonus(command,charge=bossCharge()){
+  return stableDamage(commandDefenseTemperRate(command)*Math.max(0,Math.min(
+    command&&command.defenseTemperMaxCharge||DEFENSE_CHARGE.max,Number(charge)||0)));
+}
 function commandChainGain(command,index=0){
   if(command.addsChain===false)return 0;
   if(command.chainGainPattern&&command.chainGainPattern[index]!==undefined)
@@ -12299,6 +13344,14 @@ function fightCommand(actorId=activeTurnActorId()){
 }
 function beginPlayerTurn(fromBreak=false){
   if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
+  /* Normal exhaustion and a defense Break both close exactly one boss phase. Bleed
+     resolves before the new player activation, so a lethal tick cannot leave a
+     playable turn attached to a dying boss. */
+  const defenseEnded=boss.phase==='dodge';
+  if(defenseEnded&&resolveBossPhaseBleed(fromBreak))return false;
+  if(defenseEnded)finalizeDefenseChargePhase(fromBreak);
+  if(defenseEnded&&activeSkillLabCombat()&&skillLabSession.defenseStats)
+    skillLabSession.defenseStats.phases++;
   skillTooltipIndex=-1;
   boss.phase='player';boss.playerTurnBreak=fromBreak;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
@@ -12313,7 +13366,6 @@ function beginPlayerTurn(fromBreak=false){
 }
 function endPlayerTurn(){
   if(!isTurnCombat()||(boss.phase!=='player'&&boss.phase!=='playerResolve')) return false;
-  if(activeSkillLabCombat())return resetSkillLabTurn();
   skillTooltipIndex=-1;
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
@@ -12328,6 +13380,7 @@ function endPlayerTurn(){
   boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
   boss.partyActor='knight';boss.turnAction=null;
+  startDefenseChargePhase();
   floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
   return true;
 }
@@ -12350,28 +13403,88 @@ function applyTurnSkillPosture(amount){
   }
   return boss.posture-before;
 }
+
+const BOW_ACTION_GEOMETRY_SCRATCH={from:{x:0,y:0},to:{x:0,y:0},distance:1};
+function bowTurnActionGeometry(){
+  const geometry=BOW_ACTION_GEOMETRY_SCRATCH,projection=boss?proj(boss.z):null;
+  geometry.from.x=laneX(player.x,1);geometry.from.y=PLAYER_Y-88;
+  geometry.to.x=boss?laneX(boss.x,projection.t):VW/2;
+  geometry.to.y=projection?projection.y-66*projection.s:170;
+  geometry.distance=Math.max(1,Math.hypot(geometry.to.x-geometry.from.x,
+    geometry.to.y-geometry.from.y));
+  return geometry;
+}
+function isBowTurnAction(action){return !!(action&&action.bowTimeline&&action.actorId==='knight');}
+const PLAYER_BOW_POSE_SCRATCH={visible:0,raise:0,drawAmount:0,recoil:0,recipe:null,chargeIntensity:0};
+function activePlayerBowPose(){
+  const action=boss&&boss.turnAction;if(!isBowTurnAction(action))return null;
+  const timeline=action.bowTimeline,recipe=timeline.recipe,t=action.t,releases=timeline.releases,
+    shotIndex=Math.min(releases.length-1,Math.max(0,action.nextReleaseIndex||0)),
+    releaseAt=releases[shotIndex],previousRelease=shotIndex?releases[shotIndex-1]:0,
+    prepStart=shotIndex?previousRelease+recipe.releaseTime:0,
+    drawStart=Math.max(prepStart,releaseAt-recipe.drawTime-recipe.holdTime),
+    drawEnd=releaseAt-recipe.holdTime,afterRelease=Math.max(0,t-releaseAt),
+    lastContact=timeline.contacts[timeline.contacts.length-1],fadeStart=lastContact+recipe.releaseTime,
+    visible=t<fadeStart?clamp(t/recipe.raiseTime,0,1):1-easeInOut(clamp(
+      (t-fadeStart)/Math.max(.001,recipe.recoveryTime),0,1));
+  let drawAmount=0;
+  if(t>=drawStart&&t<drawEnd)drawAmount=easeInOut(clamp((t-drawStart)/Math.max(.001,drawEnd-drawStart),0,1));
+  else if(t>=drawEnd&&t<releaseAt)drawAmount=1;
+  else if(t>=releaseAt&&afterRelease<recipe.releaseTime)
+    drawAmount=1-easeOut(clamp(afterRelease/recipe.releaseTime,0,1));
+  PLAYER_BOW_POSE_SCRATCH.visible=visible;
+  PLAYER_BOW_POSE_SCRATCH.raise=easeOut(clamp(t/recipe.raiseTime,0,1));
+  PLAYER_BOW_POSE_SCRATCH.drawAmount=drawAmount*recipe.drawStrength;
+  PLAYER_BOW_POSE_SCRATCH.recoil=Math.sin(Math.PI*clamp(afterRelease/recipe.releaseTime,0,1))*
+    recipe.releaseRecoil;
+  PLAYER_BOW_POSE_SCRATCH.recipe=recipe;
+  PLAYER_BOW_POSE_SCRATCH.chargeIntensity=recipe.chargeIntensity||0;
+  return PLAYER_BOW_POSE_SCRATCH;
+}
+function emitBowRelease(action,index){
+  const recipe=action.bowTimeline.recipe,point=bowTurnActionGeometry().from,
+    intensity=.55+recipe.trailStrength*.45;
+  SFX.arrow();
+  burst(point.x,point.y,Math.round(3+4*intensity),[recipe.trailColor,recipe.glowColor,'#ffffff'],
+    70+50*intensity,50,2.2+intensity,.28);
+  if(recipe.visualStyle==='CHARGE'&&action.chargeSpent)
+    spawnSlash(point.x,point.y,-Math.PI/2,recipe.glowColor);
+}
 function resolveTurnActionHit(action){
   if(!action||!boss||action.hitIndex>=action.hits)return false;
   const command=action.command,index=action.hitIndex++,markConsumed=action.markPlan.consumedByHit[index]||0;
   const critContact=commitCommandCritContact(action.critPlan,index),critical=!!(critContact&&critContact.critical),
     critMultiplier=action.critPlan?action.critPlan.multiplier:CFG.CRIT_DAMAGE_MULT;
   if(markConsumed){boss.mark=Math.max(0,bossMark()-markConsumed);action.consumedMark+=markConsumed;}
-  const base=commandHitBase(command,index),markPayload=action.markPlan.markDamageByHit[index]||0,
+  const base=stableDamage(commandHitBase(command,index)+(index===0?action.chargeBonus||0:0)),
+    markPayload=action.markPlan.markDamageByHit[index]||0,
     damageResult=combatTurnHitDamageBreakdown(base,markPayload,command.extraChainBonus||0,
       chainStacks,boss.playerTurnBreak===true,chainBonus(),critical,critMultiplier),damage=damageResult.final,
     p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
   if(action.actorId==='ally')boss.allyAttackAnim=1;
-  else {
+  else if(isBowTurnAction(action)){
+    player.swordCombo=null;player.attackAnim=0;player.counterAnim=0;
+  }else{
     if(action.hits>1)triggerPlayerSwordCombo(action,index);
     else {player.swordCombo=null;player.attackAnim=1;}
     player.counterAnim=.42;
   }
-  if(command.id==='sharpshoot'||command.id==='arrow_rain'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
-  else SFX.slash();
+  if(!isBowTurnAction(action)){
+    if(command.id==='sharpshoot'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
+    else SFX.slash();
+  }
+  const bowRecipe=isBowTurnAction(action)?action.bowTimeline.recipe:null,
+    impactScale=bowRecipe?bowRecipe.impactScale:1,
+    impactColors=bowRecipe?[bowRecipe.impactColor,bowRecipe.glowColor,'#ffffff']:
+      [command.col||'#ffffff','#ffffff','#ffe37a'];
   spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
-  burst(x,y,action.hits>1?9:15,[command.col||'#ffffff','#ffffff','#ffe37a'],
-    action.hits>1?150:205,75,action.hits>1?3.2:4.2,.5);
+  burst(x,y,Math.round((action.hits>1?9:15)*impactScale),impactColors,
+    (action.hits>1?150:205)*impactScale,75,Math.min(7,(action.hits>1?3.2:4.2)*impactScale),.5);
+  if(bowRecipe){
+    if(bowRecipe.impactShake>0)shake(bowRecipe.impactShake,.16);
+    if(bowRecipe.hitStop>0)stopTime(bowRecipe.hitStop);
+  }
   if(critical)floater(x,y-70,'CRITICAL ×'+damagePart(critMultiplier),'#ffcc4d',17);
   if(markConsumed)floater(x,y-42,'MARK -'+markConsumed,'#ff4d5f',13);
   logSkillLabActionHit(action,index,damage,chainStacks,markPayload,critical,critContact&&critContact.chance);
@@ -12386,6 +13499,11 @@ function resolveTurnActionHit(action){
     if(command.markGain){
       addBossMark(command.markGain);
       floater(x,y-55,'MARK ×'+boss.mark,'#ff4d5f',16);
+    }
+    const bleed=commandBleedAmount(command);
+    if(bleed){
+      const added=addBossBleed(bleed);
+      floater(x,y-82,'BLEED +'+damagePart(added),'#d9788b',15);
     }
     const postureBase=commandPostureDamage(command,action.chainAtStart),
       posture=critical?postureBase*critMultiplier:postureBase,postureBefore=boss.posture||0,
@@ -12415,7 +13533,12 @@ function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
   boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
   action.t+=dt;
-  while(action.hitIndex<action.hits&&action.t+1e-6>=action.hitIndex*action.hitInterval)
+  if(action.bowTimeline)while(action.nextReleaseIndex<action.bowTimeline.releases.length&&
+      action.t+1e-6>=action.bowTimeline.releases[action.nextReleaseIndex]){
+    emitBowRelease(action,action.nextReleaseIndex);action.nextReleaseIndex++;
+  }
+  while(action.hitIndex<action.hits&&action.t+1e-6>=(action.bowTimeline?
+      action.bowTimeline.contacts[action.hitIndex]:action.impactDelay+action.hitIndex*action.hitInterval))
     resolveTurnActionHit(action);
 }
 function performPlayerAction(command){
@@ -12425,14 +13548,21 @@ function performPlayerAction(command){
     cost=command.cost||0,apCost=command.apCost||1;
   if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
   beginSkillLabActionLog(command);
+  const chargeSpent=actorId==='knight'&&commandDefenseTemperRate(command)>0?consumeBossCharge():0,
+    chargeBonus=commandDefenseTemperBonus(command,chargeSpent);
   boss.ap-=apCost;
   boss.resolve-=cost;
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionReturnMenu=skill?'skills':'root';
-  const delivery=commandDeliveryContract(command),hits=command.hits||1,hitInterval=command.hitInterval||0,
+  const delivery=commandDeliveryContract(command),hits=command.hits||1,
+    bowGeometry=actorId==='knight'&&delivery.profileId==='OWNER_BOW'?bowTurnActionGeometry():null,
+    bowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance):null,
+    hitInterval=bowTimeline?bowTimeline.interval:command.hitInterval||0,
+    impactDelay=bowTimeline?bowTimeline.contacts[0]:Math.max(0,command.impactDelay||0),
     /* An inherited Form duration may be shorter than a later five-hit Apex.
        Always preserve enough time for the authored final contact and recovery. */
-    duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,(hits-1)*hitInterval+.34),
+    duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,bowTimeline?bowTimeline.recoveryEnd:
+      impactDelay+(hits-1)*hitInterval+.34),
     markPlan=commandMarkPlan(command,bossMark());
   if(markPlan.consumedAtStart){
     boss.mark=markPlan.remaining;
@@ -12444,14 +13574,17 @@ function performPlayerAction(command){
     floater(VW/2,326,'MARK CONVERSION · CHAIN +'+markPlan.chainGain,'#ffe37a',14);
   }
   boss.playerActionTimer=duration;
-  boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,
+  boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,impactDelay,
+    bowTimeline,nextReleaseIndex:0,
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
-    chainAtStart:chainStacks,resolveSpent:cost,critPlan:createCommandCritPlan(command,actorId,Math.random,
+    chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,
+    critPlan:createCommandCritPlan(command,actorId,Math.random,
       activeSkillLabCombat()&&skillLabSession.forceCritical?1:null)};
   const breakAttack=boss.playerTurnBreak===true;
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
+  if(chargeSpent)floater(VW/2,344,'CHARGE ×'+chargeSpent+' · BASE +'+damagePart(chargeBonus),'#7fc9ff',15);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×'+damagePart(CFG.BREAK_DAMAGE_MULT),'#ffe37a',16);
-  resolveTurnActionHit(boss.turnAction);
+  if(!bowTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
   return true;
 }
 function handlePlayerTurnTap(pt){
@@ -12547,6 +13680,9 @@ function beginBossBreak(actor,entryPresentation=null){
 }
 function doPerfectDodge(src){
   if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
+  if(src!==MINIBOSS_SOURCE&&activeSkillLabCombat()&&skillLabSession.defenseStats)
+    skillLabSession.defenseStats.perfects++;
+  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess();
   addKnightRush(CFG.RUSH_PER_DODGE);
   doCounter(src);
 }
@@ -12603,6 +13739,9 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   const reaction=beginParryReaction(actor,move,x,y,strikeT);
   player.parryAnim=1; player.counterAnim=.55;
   if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
+  if(src!==MINIBOSS_SOURCE&&activeSkillLabCombat()&&skillLabSession.defenseStats)
+    skillLabSession.defenseStats.parries++;
+  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess();
   addKnightRush(CFG.RUSH_PER_PARRY);
   const crit=src!==MINIBOSS_SOURCE?rollGlobalCritical():null;
   if(src!==MINIBOSS_SOURCE)applyBossPosture(
@@ -13693,10 +14832,13 @@ function startBoss(definitionId=null){
     ap:CFG.TURN_AP_BASE,apMax:CFG.TURN_AP_BASE,
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
     playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
+    bleed:0,bleedLater:0,charge:0,defenseChargeProgress:0,chargeEnabled:false,
     partyActor:'knight',playerActionReturnMenu:'root',allyAttackAnim:0,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
   boss.maxhp=boss.hp;
+  boss.chargeEnabled=chargeRouteEquipped();
+  startDefenseChargePhase();
   chainStacks=0; knightRush=0; knightRushQueued=false; knightRushSequence=null; // fight resources belong to this boss only
   obstacles=[]; pickups=[]; roadsideScenery=[]; // full focus on the fight
   env='cave';                               // you rode in under the arch — now it has you
@@ -13978,8 +15120,9 @@ function chooseBossAttack(movesLeft=boss.attacksLeft){
 function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',critical=false){
   if(!boss||boss.state==='dying'||boss.state==='finisher') return false;
   /* Turn combat resolves lethal damage immediately, regardless of its source. */
+  const bleedBreak=damageSource==='bleed_break',bleed=damageSource==='bleed'||bleedBreak;
   dmg=stableDamage(dmg);boss.hp=stableCombatNumber(boss.hp-dmg);
-  if(boss.phase!=='dodge')boss.dealt=stableDamage((boss.dealt||0)+dmg);
+  if(boss.phase!=='dodge'||bleed)boss.dealt=stableDamage((boss.dealt||0)+dmg);
   if(damageSource==='counter'&&hasRelic('venom')){ boss.poisonT=8; // VENOM VIAL: the counter envenoms
     floater(laneX(boss.x,proj(boss.z).t),proj(boss.z).y-160*proj(boss.z).s,'POISONED!','#7ade6a',15); }
   if(damageSource==='weapon'&&hasRelic('brand')){ boss.burnT=4;    // BRAND OF EMBERS: steel ignites
@@ -13990,10 +15133,11 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
     rushFinal=damageSource==='rush';
   burst(laneX(boss.x,p.t),p.y-60*p.s,critical?18:rush?(rushFinal?20:8):12,
     critical?['#ffcc4d','#ffffff','#ff7a3d']:
-      rush?['#8d46d8','#c995ff','#ffffff']:['#ff4d3a','#ffe37a'],
+      rush?['#8d46d8','#c995ff','#ffffff']:bleed?['#68152a','#d9788b','#ffb0ba']:['#ff4d3a','#ffe37a'],
     rush?(rushFinal?220:145):180,120,rush?(rushFinal?5:3.5):4,.6);
-  floater(laneX(boss.x,p.t),p.y-120*p.s,'-'+healthDamageText(dmg),
-    critical?'#ffcc4d':rush?'#c995ff':fromCounter?'#ffe37a':'#fff',
+  floater(laneX(boss.x,p.t),p.y-120*p.s,(bleed?(bleedBreak?'BLEED BREAK -':'BLEED -'):'-')+
+    healthDamageText(dmg),
+    critical?'#ffcc4d':rush?'#c995ff':bleed?'#d9788b':fromCounter?'#ffe37a':'#fff',
     critical?23:rush?(rushFinal?24:19):fromCounter?22:18);
   return boss.hp<=0?defeatBoss():false;
 }
@@ -14308,8 +15452,37 @@ function updateProjectiles(dt){
     }
   }
 }
+function drawTurnActionProjectile(){
+  const action=boss&&boss.turnAction;if(!isBowTurnAction(action))return;
+  const timeline=action.bowTimeline,recipe=timeline.recipe,geometry=bowTurnActionGeometry(),
+    pulse=.5+.5*Math.sin(perfNow*15),packet=action.delivery.pattern==='SIMULTANEOUS_PACKET';
+  for(let index=0;index<timeline.releases.length;index++){
+    const releaseAt=timeline.releases[index],contactAt=timeline.contacts[index];
+    if(action.t<releaseAt||action.t>=contactAt)continue;
+    const flight=clamp((action.t-releaseAt)/Math.max(.001,contactAt-releaseAt),0,1),travel=flight,
+      spread=packet?(index-(timeline.releases.length-1)/2)*10:0,
+      targetX=geometry.to.x+spread,targetY=geometry.to.y,
+      x=lerp(geometry.from.x,targetX,travel),
+      y=lerp(geometry.from.y,targetY,travel)-Math.sin(travel*Math.PI)*recipe.arrowArc,
+      angle=Math.atan2(targetY-geometry.from.y,targetX-geometry.from.x),
+      tailTravel=Math.max(0,travel-(.06+.12*recipe.trailStrength)),
+      tx=lerp(geometry.from.x,targetX,tailTravel),
+      ty=lerp(geometry.from.y,targetY,tailTravel)-Math.sin(tailTravel*Math.PI)*recipe.arrowArc;
+    g.save();
+    if(recipe.trailStrength>0){
+      g.globalAlpha=.18+.62*recipe.trailStrength;
+      g.strokeStyle=recipe.trailColor;g.lineWidth=.8+3.2*recipe.trailStrength*(1-flight*.45);
+      g.beginPath();g.moveTo(tx,ty);g.lineTo(x,y);g.stroke();g.globalAlpha=1;
+    }
+    g.shadowColor=recipe.glowColor;g.shadowBlur=5+recipe.trailStrength*10+
+      recipe.chargeIntensity*pulse*10;
+    drawArrowSprite(x,y,recipe.arrowScale,angle+Math.PI/2,recipe.glowColor);
+    g.shadowBlur=0;g.restore();
+  }
+}
 function drawProjectiles(){
   if(!boss) return;
+  drawTurnActionProjectile();
   const p1={x:laneX(player.x,1),y:PLAYER_Y-70}, p2=proj(boss.z);
   const bx=laneX(boss.x,p2.t), by=p2.y-60*p2.s;
   for(const pr of projectiles){
@@ -16442,7 +17615,8 @@ function openSkillLab(){
   resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;skillLabTooltipMutationId=null;
   skillLabSession={view:'draft',seed:((Math.random()*0xffffffff)>>>0)||1,
     choices:[],skillIndex:0,catalogPage:0,selectedMutationId:null,inCombat:false,
-    preset:'clean',combatHud:true,forceCritical:false,lastLog:null,pendingLog:null};
+    preset:'clean',combatHud:true,forceCritical:false,lastLog:null,pendingLog:null,
+    defenseStats:{hits:0,perfects:0,parries:0,phases:0}};
   setMode('skilllab');SFX.relic();
 }
 function closeSkillLab(){
@@ -16479,12 +17653,14 @@ function cycleSkillLabSkill(delta){
 }
 function skillLabStateSnapshot(){
   return boss?{hp:boss.hp,ap:boss.ap,resolve:boss.resolve,mark:bossMark(),chain:chainStacks,
-    posture:boss.posture||0,broken:boss.playerTurnBreak===true}:null;
+    posture:boss.posture||0,bleed:bossBleed(),bleedLater:bossBleedLater(),charge:bossCharge(),
+    broken:boss.playerTurnBreak===true}:null;
 }
 function startSkillLabCombat(){
   if(!skillLabSession)return false;
   skillLabSession.inCombat=true;skillLabSession.lastLog=null;skillLabSession.pendingLog=null;
   skillLabSession.combatHud=true;
+  skillLabSession.defenseStats={hits:0,perfects:0,parries:0,phases:0};
   startBoss('bear');
   boss.skillLabDummy=true;boss.entering=false;boss.x=boss.xTarget=1;boss.rise=1;
   boss.maxhp=9999;boss.hp=boss.maxhp;boss.dealt=0;boss.turnCombat=true;
@@ -16492,6 +17668,7 @@ function startSkillLabCombat(){
   boss.state='idle';boss.stateT=0;boss.attack=null;boss.pendingBreak=null;
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
   boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.mark=0;
+  boss.bleed=0;boss.bleedLater=0;boss.charge=0;boss.defenseChargeProgress=0;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
 }
@@ -16512,18 +17689,29 @@ function applySkillLabPreset(id,audible=true){
     broken:{mark:0,chain:0,posture:boss.postureMax,broken:true},
   }[id];
   if(!values)return false;
-  skillTooltipIndex=-1;boss.hp=boss.maxhp;boss.mark=values.mark;chainStacks=values.chain;
+  skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
+  boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
+  boss.charge=0;boss.defenseChargeProgress=0;
+  chainStacks=values.chain;
   boss.posture=values.posture;boss.playerTurnBreak=values.broken;
   boss.state=values.broken?'break':'idle';boss.stateT=values.broken?CFG.BREAK_POSE_IN:0;
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
-  boss.pendingBreak=null;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
+  boss.attacksLeft=boss.enemyTurnBudget;boss.atkTimer=encounterAttackDelay();
+  boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   skillLabSession.preset=id;skillLabSession.pendingLog=null;
   if(audible)SFX.swipe();return true;
 }
 function resetSkillLabTurn(){
   if(!activeSkillLabCombat())return false;
-  skillTooltipIndex=-1;boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
-  boss.turnAction=null;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  /* Emergency lab reset: aborts the current simulation without manufacturing
+     a fake defense result, Charge, Bleed tick, or Break reward. */
+  skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
+  boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
+  boss.turnAction=null;boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
+  boss.state='idle';boss.stateT=0;boss.playerTurnBreak=false;boss.posture=0;
+  boss.attacksLeft=boss.enemyTurnBudget;boss.atkTimer=encounterAttackDelay();
+  boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   skillLabSession.pendingLog=null;SFX.relic();return true;
 }
 function beginSkillLabActionLog(command){
@@ -16532,7 +17720,8 @@ function beginSkillLabActionLog(command){
 }
 function logSkillLabActionHit(action,index,damage,chainBefore,markPayload=0,critical=false,critChance=0){
   const log=skillLabSession&&skillLabSession.pendingLog;if(!log)return;
-  log.hits.push({index:index+1,damage,base:stableDamage(commandHitBase(action.command,index)),
+  log.hits.push({index:index+1,damage,base:stableDamage(commandHitBase(action.command,index)+
+      (index===0?action.chargeBonus||0:0)),
     mark:stableDamage(markPayload),chain:chainBefore,critical,critChance,
     breakBonus:boss.playerTurnBreak===true});
 }
@@ -16732,6 +17921,26 @@ const CRITICAL_SYSTEM_AUDIT=(()=>{
   return Object.freeze({contacts:plan.contacts.length,multiplier:plan.multiplier,
     postureCrit:30});
 })();
+const BLEED_SYSTEM_AUDIT=(()=>{
+  const first=bleedPhaseTick(4,4,false),second=bleedPhaseTick(first.next,first.later,false),
+    broken=bleedPhaseTick(4,4,true);
+  if(first.damage!==4||first.next!==4||first.later!==0||second.damage!==4||second.next!==0||
+     broken.damage!==5||broken.next!==4||BLEED_STATUS.totalDamageFactor!==2)
+    throw new Error('Bleed must pay exactly two ticks and boost only the defense-Break tick by 25%');
+  return Object.freeze({first:first.damage,second:second.damage,broken:broken.damage,
+    expired:second.next,totalFactor:BLEED_STATUS.totalDamageFactor});
+})();
+const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
+  const command={defenseTemperDamagePerCharge:2,defenseTemperMaxCharge:DEFENSE_CHARGE.max},
+    stacked=combatTurnHitDamageBreakdown(10+commandDefenseTemperBonus(command,3),0,0,0,true,.05,true,1.5);
+  if(commandDefenseTemperBonus(command,0)!==0||commandDefenseTemperBonus(command,2)!==4||
+     commandDefenseTemperBonus(command,3)!==6||commandDefenseTemperBonus(command,99)!==6||
+     commandExpectedDefenseTemperPower(command)!==4||defenseChargeBankResult(0,1,false)!==1||
+     defenseChargeBankResult(0,1,true)!==2||defenseChargeBankResult(3,1,false)!==3||stacked.final!==36)
+    throw new Error('Charge Secondary must price ×2, cap ×3 and add bounded base damage');
+  return Object.freeze({expected:commandDefenseTemperBonus(command,2),
+    maximum:commandDefenseTemperBonus(command,3),cap:DEFENSE_CHARGE.max,critBreak:stacked.final});
+})();
 function uiConfirm(){
   if(mode==='menu'){ debugBossStart=false; debugMiniStart=false; debugMiniMoves=false; }
   if(mode==='menu'){ debugRun=false; godMode=false; setMode('charsel'); SFX.swipe(); }  // PLAY → an honest ride
@@ -16841,6 +18050,8 @@ function drawHUD(){
     drawHPBar(activeBossDefinition().name,boss.hp,boss.maxhp,st);
     drawBossPostureBar(boss);
     drawBossMarkTokens(boss);
+    drawBossBleedStatus(boss);
+    drawDefenseChargeStatus(boss);
     if(isTurnCombat()&&boss.phase==='dodge'){
       g.textAlign='right';g.font='bold 9px monospace';g.fillStyle='#7fc9ff';
       g.fillText('RESOLVE '+boss.resolve+'/'+boss.resolveMax,VW/2+160,145);
@@ -16941,22 +18152,22 @@ function skillButtonSubtitle(skill){
   if(skill.baseId==='sharpshoot'){
     const breakdown=turnCommandDamageBreakdown(skill),
       damage=(skill.hits||1)>1?(healthDamageText(breakdown.total)+' TOTAL'):healthDamageText(breakdown.total),
-      posture=commandPostureDamage(skill),markMode=commandMarkMode(skill),
-      effect=markMode==='CONSUME'?'MARK CASH':markMode==='READ'?'MARK READ':
-        markMode==='CONVERT_CHAIN'?'MARK → CHAIN':posture?(posture+' POST'+(skill.consumeChain?' · CASH':'')):
-        skill.markGain?('MARK +'+skill.markGain):
-          skill.resolvePerHit?('RESOLVE +'+skill.resolvePerHit*(skill.hits||1)):
-          skill.resolveOnComplete?('RESOLVE +'+skill.resolveOnComplete):'';
+      posture=commandPostureDamage(skill),bleed=commandBleedAmount(skill),
+      chargeRate=commandDefenseTemperRate(skill),charge=bossCharge(),
+      markMode=commandMarkMode(skill),effects=[];
+    if(markMode==='CONSUME')effects.push('MARK CASH');
+    else if(markMode==='READ')effects.push('MARK READ');
+    else if(markMode==='CONVERT_CHAIN')effects.push('MARK → CHAIN');
+    if(posture)effects.push(posture+' POST'+(skill.consumeChain?' · CASH':''));
+    if(skill.critChance)effects.push((skill.critChance*100).toFixed(1)+'% LOCAL CRIT');
+    if(bleed)effects.push('BLEED +'+damagePart(bleed));
+    if(chargeRate)effects.push('CHARGE '+charge+' · +'+damagePart(chargeRate)+' DMG/EACH');
+    if(skill.markGain)effects.push('MARK +'+skill.markGain);
+    if(skill.resolvePerHit)effects.push('RESOLVE +'+skill.resolvePerHit*(skill.hits||1));
+    else if(skill.resolveOnComplete)effects.push('RESOLVE +'+skill.resolveOnComplete);
+    const effect=effects.join(' · ');
     return finish('1AP · '+skill.cost+'R · '+damage+(effect?' · '+effect:''));
   }
-  if(skill.id==='arrow_rain'){
-    const breakdown=turnCommandDamageBreakdown(skill);
-    return finish('1AP · '+skill.cost+'R · '+healthDamageText(breakdown.total)+' TOTAL · MARK/HIT');
-  }
-  if(skill.id==='shield_kick')
-    return finish('1AP · '+skill.cost+'R · '+healthDamageText(turnDamage(skill.damage))+' DMG · '+skill.posture+' POST');
-  if(skill.id==='royal_slash')
-    return finish('1AP · '+skill.cost+'R · '+healthDamageText(turnDamage(skill.damage,skill.extraChainBonus))+' · CHAIN FINISH');
   return finish('1AP · '+skill.cost+'R · '+healthDamageText(turnDamage(skill.damage))+' DMG · MARK +1');
 }
 function turnTooltipCommand(){
@@ -16966,22 +18177,25 @@ function turnTooltipCommand(){
 function turnCommandDamageBreakdown(command){
   const hits=command.hits||1,markStacks=bossMark(),markPlan=commandMarkPlan(command,markStacks),rows=[],
     forcedCritical=activeSkillLabCombat()&&skillLabSession.forceCritical,
-    critMultiplier=commandCritProfile(command,activeTurnActorId()).multiplier;
+    critMultiplier=commandCritProfile(command,activeTurnActorId()).multiplier,
+    chargeBonus=commandDefenseTemperBonus(command,bossCharge());
   let total=0,hitChain=chainStacks+markPlan.chainGain;
   for(let i=0;i<hits;i++){
-    const row=combatTurnHitDamageBreakdown(commandHitBase(command,i),markPlan.markDamageByHit[i],
+    const authoredBase=commandHitBase(command,i),charge=i===0?chargeBonus:0,
+      row=combatTurnHitDamageBreakdown(authoredBase+charge,markPlan.markDamageByHit[i],
       command.extraChainBonus||0,hitChain,boss.playerTurnBreak===true,chainBonus(),
       forcedCritical,critMultiplier);
-    rows.push({hit:i+1,...row});total+=row.final;hitChain+=commandChainGain(command,i);
+    rows.push({hit:i+1,authoredBase,charge,...row});total+=row.final;hitChain+=commandChainGain(command,i);
   }
-  return {rows,total,markStacks,markPlan};
+  return {rows,total,markStacks,markPlan,chargeBonus};
 }
 function damagePart(value){
   if(Math.abs(value)<.001)return '0';
   return Number.isInteger(value)?String(value):value.toFixed(1).replace(/\.0$/,'');
 }
 function damageBreakdownLine(row){
-  let line='HIT '+row.hit+'  BASE '+healthDamageText(row.base,true);
+  let line='HIT '+row.hit+'  BASE '+healthDamageText(row.authoredBase===undefined?row.base:row.authoredBase,true);
+  if(row.charge>0)line+='  CHARGE +'+healthDamageText(row.charge,true);
   if(row.mark>0)line+='  MARK +'+healthDamageText(row.mark,true);
   if(row.chainStacks>0)line+='  CHAIN×'+row.chainStacks+' +'+healthDamageText(row.chain,true);
   if(row.crit>0)line+='  CRIT +'+healthDamageText(row.crit,true);
@@ -17016,12 +18230,23 @@ function commandCritCombatText(command,actorId='knight'){
       ?' Each non-Crit contact adds '+Math.round(profile.precisionGain*100)+'% Precision to this move until it Crits.'
       :' Sequential contacts roll independently.');
 }
+function commandBowAnimationText(command){
+  if(!command||inferLegacyDeliveryProfileId(command)!=='OWNER_BOW')return '';
+  const recipe=resolveBowAnimationRecipe(command,commandDefenseTemperRate(command)>0?bossCharge():0);
+  return 'Bow motion: '+recipe.visualStyle.replace(/_/g,' ')+' · draw '+
+    damagePart(recipe.drawTime)+'s · hold '+damagePart(recipe.holdTime)+'s · arrow speed '+
+    Math.round(recipe.arrowSpeed)+'.';
+}
 function skillTooltipContent(command){
   if(command.evolutionText){
     const additions=[],markText=commandMarkRuleCombatText(command),economy=skillSynthesisEconomyText(command),
-      resonance=skillRarityResonanceText(command),critText=commandCritCombatText(command);
+      resonance=skillRarityResonanceText(command),critText=commandCritCombatText(command),
+      bowText=commandBowAnimationText(command),bleed=commandBleedAmount(command),
+      chargeRate=commandDefenseTemperRate(command);
     if(markText)additions.push(markText);if(critText)additions.push(critText);
-    if(economy)additions.push(economy);if(resonance)additions.push(resonance);
+    if(bleed)additions.push('Bleed adds '+damagePart(bleed)+' to each of the next two defense-phase ticks. A defense Break closes one phase and gives only that tick ×'+damagePart(BLEED_STATUS.breakMultiplier)+'. Bleed then advances normally; Crit, Chain and the direct Break bonus do not apply.');
+    if(chargeRate)additions.push('Charge banks up to 3: completing a defense phase gives 1, every Perfect Dodge or Parry adds 1, and a defense Break guarantees at least 2. This move consumes the bank for +'+damagePart(chargeRate)+' base damage per Charge; the bonus can scale with Chain, Crit and Break.');
+    if(bowText)additions.push(bowText);if(economy)additions.push(economy);if(resonance)additions.push(resonance);
     return {paragraphs:command.evolutionText.concat(additions)};
   }
   if(command.source==='COMPANION'&&!command.skill)return {paragraphs:[
@@ -17048,17 +18273,6 @@ function skillTooltipContent(command){
     'Fire one precise arrow and apply 1 Mark. Mark has no gameplay stack cap.',
     'Mark persists across enemy and player phases until an attack reads, consumes or converts it.',
     'A successful hit also adds 1 Chain.'
-  ]};
-  if(command.id==='arrow_rain')return {paragraphs:[
-    'Each of the three arrows consumes at most 1 Mark and gains 6 Mark damage. Unspent Mark remains on the boss.',
-    'Every arrow adds 1 Chain. The next arrow uses that new Chain, so all three hits are calculated separately.',
-    'Mark damage is not multiplied by Chain. Break damage still applies to all three hits.'
-  ]};
-  if(command.id==='shield_kick')return {paragraphs:[
-    'Strike the boss and deal 25 Posture damage.',
-    'Every Break grants 2 Resolve. If an attack causes it during your phase, also regain 1 AP.',
-    'The kick lands before Break. Only attacks made after it receive the '+
-      Math.round((CFG.BREAK_DAMAGE_MULT-1)*100)+'% Break bonus.'
   ]};
   const chainPercent=Math.round((chainBonus()+(command.extraChainBonus||0))*100);
   return {paragraphs:[
@@ -17274,6 +18488,29 @@ function drawBossMarkTokens(actor){
     crosshair(left+tw+11);
   }
   g.restore();
+}
+function drawBossBleedStatus(actor){
+  const value=actor?Math.max(0,Number(actor.bleed)||0):0,
+    later=actor?Math.max(0,Number(actor.bleedLater)||0):0;
+  if(value<BLEED_STATUS.displayFloor&&later<BLEED_STATUS.displayFloor)return;
+  const x=VW/2+160,y=163,label='BLEED '+damagePart(value)+' > '+damagePart(later);
+  g.save();g.textAlign='right';g.textBaseline='middle';g.font='bold 9px monospace';
+  g.fillStyle='#d9788b';g.fillText(label,x,y);
+  const left=x-Math.ceil(g.measureText(label).width)-10;
+  g.fillStyle='#68152a';g.fillRect(left-2,y-4,5,7);g.fillStyle='#d9788b';
+  g.fillRect(left-1,y-7,3,4);g.fillRect(left-3,y-2,7,4);g.fillStyle='#ffb0ba';
+  g.fillRect(left-1,y-2,2,2);g.restore();
+}
+function drawDefenseChargeStatus(actor){
+  if(!actor||!actor.chargeEnabled)return;
+  const progress=actor.phase==='dodge'?Math.max(0,Number(actor.defenseChargeProgress)||0):0,
+    value=Math.max(bossCharge(),progress);if(!(value>0))return;
+  const x=VW/2-160,y=163,label='CHARGE '+value+'/'+DEFENSE_CHARGE.max;
+  g.save();g.textAlign='left';g.textBaseline='middle';g.font='bold 9px monospace';
+  g.fillStyle='#7fc9ff';g.fillText(label,x,y);
+  const right=x+Math.ceil(g.measureText(label).width)+7;g.fillStyle='#29536d';
+  g.fillRect(right,y-5,5,10);g.fillStyle='#7fc9ff';g.fillRect(right+1,y-7,3,4);
+  g.fillStyle='#d8f2ff';g.fillRect(right+2,y-3,2,4);g.restore();
 }
 function drawHPBar(name,hp,max,status,col='#ff4d3a'){
   const bw=320,bx=VW/2-bw/2,by=108;
@@ -18121,7 +19358,7 @@ function drawSkillLabButton(rect,label,col='#e8e2d0',enabled=true,active=false){
 function moveFrameMutation(move){
   if(!move)return null;if(move.kind)return move;
   const ids=move.masteryIds&&move.masteryIds.length?move.masteryIds:move.evolutionMutationIds;
-  const mutation=ids&&ids.length?SKILL_MUTATION_BY_ID[ids[ids.length-1]]:null;
+  const mutation=ids&&ids.length?moveTreeNodeById(ids[ids.length-1]):null;
   /* Reward cards show the aspect that caused the mutation. A live combat move
      shows its resulting lineage instead, so a future double-Distortion recovery
      can visibly return to Stable while its history still records the strange card. */
@@ -18143,8 +19380,11 @@ function drawMoveSelectionFrame(rect,col='#ffe37a'){
   g.save();g.fillStyle=col;g.translate(x,y);g.rotate(Math.PI/4);g.fillRect(-3,-3,6,6);g.restore();
 }
 function moveTreeSkillId(){return BASE_TURN_SKILLS[moveTreeSkillIndex].id;}
+function moveTreeNodeById(id){return SKILL_MUTATION_BY_ID[id]||SHARPSHOOT_MARK_LAB_NODE_BY_ID[id]||null;}
 const MOVE_TREE_SYNTHESIS_RARITY_RECTS=Object.freeze(SKILL_RARITY_ORDER.map((rarity,index)=>
   Object.freeze({x:24+index*108,y:532,w:96,h:28,rarity})));
+const SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT=Object.freeze({x:40,y:588,w:400,h:104});
+const MOVE_TREE_EQUIP_TEST=Object.freeze({x:326,y:710,w:120,h:28});
 const F1_SYNTHESIS_ROUTE_PROMISES=Object.freeze({
   split_sight:'Two-hit Chain chassis that always retains Sharpshoot Mark output.',
   rangers_rhythm:'More independent contacts with even Chain delivery.',
@@ -18158,28 +19398,62 @@ function moveTreeSynthesisRecipe(node){
   return node&&moveTreeSkillId()==='sharpshoot'?F1_SYNTHESIS_ROUTE_RECIPE_BY_ID[node.id]||null:null;
 }
 function moveTreeSynthesisRarity(node){
-  const recipe=moveTreeSynthesisRecipe(node);return recipe?moveTreeSynthesisRarityByDepth[recipe.depth]:'COMMON';
+  const route=sharpshootMarkRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
+  return route?moveTreeSynthesisRarityByDepth[route.depth]:
+    recipe?moveTreeSynthesisRarityByDepth[recipe.depth]:'COMMON';
 }
 function moveTreeSynthesisDisplayNode(node){
+  const route=sharpshootMarkRouteFromNode(node);
+  if(route){
+    const materialized=route.runtimeReadiness==='MATERIALIZED';
+    return {...node,name:route.name,summary:route.promise,rarity:moveTreeSynthesisRarityByDepth[route.depth],
+      type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
+      contractPreview:!materialized,synthesisPreview:materialized};
+  }
   const recipe=moveTreeSynthesisRecipe(node);if(!recipe||recipe.depth>2)return node;
   return {...node,rarity:moveTreeSynthesisRarity(node),type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
     summary:F1_SYNTHESIS_ROUTE_PROMISES[node.id]||node.summary,synthesisPreview:true};
 }
 function moveTreeSynthesisSelectedNode(){
-  const selected=SKILL_MUTATION_BY_ID[moveTreeSelectedId];
+  const selected=moveTreeNodeById(moveTreeSelectedId);
+  const route=sharpshootMarkRouteFromNode(selected);
+  if(route&&route.runtimeReadiness==='MATERIALIZED')return selected;
   return moveTreeSynthesisRecipe(selected)&&selected.depth<=2?selected:null;
 }
 function moveTreeSynthesisPreviewCommand(node){
+  const route=sharpshootMarkRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
+  if(route&&route.runtimeReadiness==='MATERIALIZED'){
+    if(route.depth===1)return synthesizeSharpshootMarkPath(formRarity);
+    if(route.depth===2)return synthesizeSharpshootMarkPath(formRarity,route.id,
+      moveTreeSynthesisRarityByDepth[2]);
+    const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
+    return parent&&synthesizeSharpshootMarkPath(formRarity,parent.id,
+      moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]);
+  }
   const recipe=moveTreeSynthesisRecipe(node);if(!recipe||recipe.depth>2)return null;
-  const formRarity=moveTreeSynthesisRarityByDepth[1];
   return recipe.depth===1?synthesizeF1StablePath(formRarity):
     synthesizeF1StablePath(formRarity,node.id,moveTreeSynthesisRarityByDepth[2]);
 }
 function moveTreeForms(){
-  return (SKILL_MUTATIONS_BY_SKILL[moveTreeSkillId()]||[]).filter(node=>node.kind==='EVOLUTION'&&node.depth===1);
+  const forms=(SKILL_MUTATIONS_BY_SKILL[moveTreeSkillId()]||[])
+    .filter(node=>node.kind==='EVOLUTION'&&node.depth===1);
+  if(moveTreeSkillId()==='sharpshoot')forms.sort((a,b)=>{
+    const routeA=sharpshootMarkRouteFromNode(a),routeB=sharpshootMarkRouteFromNode(b);
+    return (routeA?routeA.formSlot:Number.MAX_SAFE_INTEGER)-
+      (routeB?routeB.formSlot:Number.MAX_SAFE_INTEGER);
+  });
+  return forms;
 }
 function moveTreeChildren(parent){
-  if(!parent||!parent.childPoolId)return [];
+  if(!parent)return [];
+  if(moveTreeSkillId()==='sharpshoot'){
+    if(parent.id==='blood_mark')return SHARPSHOOT_MARK_LAB_NODES;
+    const route=sharpshootMarkRouteFromNode(parent);
+    if(route)return SHARPSHOOT_MARK_ALL_LAB_NODES.filter(node=>{
+      const child=SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId];return child&&child.parentId===route.id;
+    });
+  }
+  if(!parent.childPoolId)return [];
   const rarityOrder={COMMON:0,UNCOMMON:1,RARE:2,LEGENDARY:3};
   return skillMutationChildren(parent.id).filter(node=>node.kind==='EVOLUTION'&&
     node.depth===parent.depth+1&&node.poolIds.includes(parent.childPoolId)).sort((a,b)=>
@@ -18197,7 +19471,7 @@ function syncMoveTreeBranch(preferRun=false){
     preferredSpec=preferRun&&history[1]?history[1]:moveTreeSpecId;
   if(!specs.some(node=>node.id===preferredSpec))moveTreeSpecId=null;
   else moveTreeSpecId=preferredSpec;
-  const spec=SKILL_MUTATION_BY_ID[moveTreeSpecId],twists=moveTreeChildren(spec),
+  const spec=moveTreeNodeById(moveTreeSpecId),twists=moveTreeChildren(spec),
     preferredTwist=preferRun&&history[2]?history[2]:moveTreeTwistId;
   if(!twists.some(node=>node.id===preferredTwist))moveTreeTwistId=null;
   else moveTreeTwistId=preferredTwist;
@@ -18215,6 +19489,14 @@ function openMoveTree(skillIndex=null){
   moveTreeOpen=true;syncMoveTreeBranch(true);SFX.relic();
 }
 function closeMoveTree(){moveTreeOpen=false;moveTreeHitNodes.length=0;moveTreePageButtons.length=0;SFX.duck();}
+function equipMoveTreeSynthesisPreview(){
+  if(!skillLabSession||mode!=='skilllab')return false;
+  const node=moveTreeSynthesisSelectedNode(),command=moveTreeSynthesisPreviewCommand(node),
+    index=command&&runSkills.findIndex(skill=>skill.baseId===command.baseId);
+  if(!command||index<0)return false;
+  runSkills[index]=command;skillLabSession.selectedMutationId=node.id;
+  closeMoveTree();SFX.relic();return true;
+}
 function cycleMoveTreeForm(delta){
   const forms=moveTreeForms();if(!forms.length)return false;
   moveTreeFormIndex=(moveTreeFormIndex+delta+forms.length)%forms.length;
@@ -18223,13 +19505,14 @@ function cycleMoveTreeForm(delta){
 }
 function moveTreeTap(pt){
   if(pointInRect(pt,MOVE_HISTORY_BACK)){closeMoveTree();return true;}
-  for(const tab of MOVE_HISTORY_SKILL_TABS)if(pointInRect(pt,tab)){
+  for(const tab of MOVE_HISTORY_SKILL_TABS)if(tab.index<BASE_TURN_SKILLS.length&&pointInRect(pt,tab)){
     moveTreeSkillIndex=tab.index;moveTreeFormIndex=0;moveTreeSpecId=moveTreeTwistId=null;
     moveTreePages=[0,0,0];syncMoveTreeBranch(true);SFX.swipe();return true;
   }
   if(pointInRect(pt,{x:12,y:164,w:40,h:32}))return cycleMoveTreeForm(-1);
   if(pointInRect(pt,{x:428,y:164,w:40,h:32}))return cycleMoveTreeForm(1);
   const synthesisNode=moveTreeSynthesisSelectedNode();
+  if(synthesisNode&&pointInRect(pt,MOVE_TREE_EQUIP_TEST))return equipMoveTreeSynthesisPreview();
   if(synthesisNode)for(const rect of MOVE_TREE_SYNTHESIS_RARITY_RECTS)if(pointInRect(pt,rect)){
     moveTreeSynthesisRarityByDepth[synthesisNode.depth]=rect.rarity;SFX.swipe();return true;
   }
@@ -18283,8 +19566,8 @@ function drawMoveTreePlaceholder(rect,label,index){
 function drawMoveTree(){
   if(!moveTreeOpen)return;
   const forms=moveTreeForms(),form=forms[moveTreeFormIndex]||null,specs=moveTreeChildren(form),
-    spec=SKILL_MUTATION_BY_ID[moveTreeSpecId]||null,twists=moveTreeChildren(spec),
-    twist=SKILL_MUTATION_BY_ID[moveTreeTwistId]||null,apexes=moveTreeChildren(twist),
+    spec=moveTreeNodeById(moveTreeSpecId),twists=moveTreeChildren(spec),
+    twist=moveTreeNodeById(moveTreeTwistId),apexes=moveTreeChildren(twist),
     runPath=new Set((runSkill(moveTreeSkillId())||{}).evolutionMutationIds||[]);
   moveTreeHitNodes.length=0;moveTreePageButtons.length=0;
   g.save();g.fillStyle='#05070c';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -18293,6 +19576,7 @@ function drawMoveTree(){
   drawSkillLabButton(MOVE_HISTORY_BACK,'◀ BACK','#e8e2d0');
   for(const tab of MOVE_HISTORY_SKILL_TABS){
     const tabSkill=BASE_TURN_SKILLS[tab.index];
+    if(!tabSkill)continue;
     drawSkillLabButton(tab,tabSkill.name.replace('SHIELD ','SH. ').replace('ROYAL ','R. '),'#9ecbff',true,tab.index===moveTreeSkillIndex);
   }
   drawSkillLabButton({x:12,y:164,w:40,h:32},'◀','#9ecbff',forms.length>1);
@@ -18336,16 +19620,17 @@ function drawMoveTree(){
   g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#8b8fa0';
   g.fillText(childLabel+' · '+visibleNodes.length+' / '+expected+' AUTHORED',VW/2,labelY);
   if(!form){g.font='bold 15px monospace';g.fillStyle='#565963';g.fillText('THIS MOVE HAS NO EVOLUTION TREE YET',VW/2,390);}
-  const selectedRaw=SKILL_MUTATION_BY_ID[moveTreeSelectedId]||form,
+  const selectedRaw=moveTreeNodeById(moveTreeSelectedId)||form,
     selected=moveTreeSynthesisDisplayNode(selectedRaw),synthesisNode=moveTreeSynthesisSelectedNode();
   g.font='bold 8px monospace';g.fillStyle='#626570';
   g.fillText(spec?'TAP THE PATH TO NAVIGATE · HOLD A MOVE FOR MECHANICS':
     'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,synthesisNode?518:558);
   if(synthesisNode){
-    const depthName=synthesisNode.depth===1?'FORM':'SPECIALIZATION';
+    const depthName=synthesisNode.depth===1?'FORM':synthesisNode.depth===2?'SPECIALIZATION':'TWIST';
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#9ecbff';
-    g.fillText('SYNTHESIS '+depthName+' RARITY · FORM '+moveTreeSynthesisRarityByDepth[1]+
-      ' · SPEC '+moveTreeSynthesisRarityByDepth[2],VW/2,529);
+    g.fillText('SYNTHESIS '+depthName+' · F '+moveTreeSynthesisRarityByDepth[1].slice(0,3)+
+      ' · S '+moveTreeSynthesisRarityByDepth[2].slice(0,3)+
+      (synthesisNode.depth>=3?' · T '+moveTreeSynthesisRarityByDepth[3].slice(0,3):''),VW/2,529);
     for(const rect of MOVE_TREE_SYNTHESIS_RARITY_RECTS)drawSkillLabButton(rect,rect.rarity.slice(0,3),
       SKILL_MUTATION_RARITY_COL[rect.rarity],true,
       moveTreeSynthesisRarityByDepth[synthesisNode.depth]===rect.rarity);
@@ -18359,6 +19644,8 @@ function drawMoveTree(){
     g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
     g.fillText('FORM ASPECT · '+mutationIdentityLabel(selected),32,631);
     g.font='9px monospace';g.fillStyle='#cfd3df';drawWrappedTooltipText(selected.summary,32,652,416,14);
+    if(synthesisNode&&skillLabSession&&mode==='skilllab')
+      drawSkillLabButton(MOVE_TREE_EQUIP_TEST,'EQUIP TEST','#c0f79a',true);
   }else{g.textAlign='center';g.font='11px monospace';g.fillStyle='#626570';g.fillText('Select a move with authored descendants.',VW/2,660);}
   g.restore();
 }
@@ -18372,7 +19659,7 @@ function moveHistoryTap(pt){
   if(pointInRect(pt,MOVE_HISTORY_VIEW_BTN)){
     moveHistoryView=moveHistoryView==='evolution'?'mastery':'evolution';moveHistoryMasteryPage=0;SFX.swipe();return true;
   }
-  for(const tab of MOVE_HISTORY_SKILL_TABS)if(pointInRect(pt,tab)){
+  for(const tab of MOVE_HISTORY_SKILL_TABS)if(tab.index<BASE_TURN_SKILLS.length&&pointInRect(pt,tab)){
     moveHistorySkillIndex=tab.index;moveHistoryMasteryPage=0;SFX.swipe();return true;
   }
   if(moveHistoryView==='mastery'){
@@ -18442,6 +19729,7 @@ function drawMoveHistory(){
   drawSkillLabButton(MOVE_HISTORY_VIEW_BTN,moveHistoryView==='evolution'?'MASTERY ▶':'◀ EVOLUTION','#ffe37a');
   for(const tab of MOVE_HISTORY_SKILL_TABS){
     const tabSkill=BASE_TURN_SKILLS[tab.index];
+    if(!tabSkill)continue;
     drawSkillLabButton(tab,tabSkill.name.replace('SHIELD ','SH. ').replace('ROYAL ','R. '),
       '#9ecbff',true,tab.index===moveHistorySkillIndex);
   }
@@ -18627,6 +19915,11 @@ function skillSynthesisObservationLines(command){
       return (layer?layer.name:'LAYER '+node.depth)+' '+node.rarity;
     });
   if(history.length)lines.push('Rarity path: '+history.join(' → ')+'.');
+  const allocation=command.synthesisIdentityAllocation;
+  if(allocation&&allocation.mode==='CUMULATIVE_TARGET')lines.push('Build allocation: '+
+    allocation.foundationPrimaryPower.toFixed(1)+' Mark foundation · '+
+    allocation.specializationAttributePower.toFixed(1)+' new power → '+
+    allocation.secondaryPower.toFixed(1)+' '+allocation.secondaryAttributeId+'.');
   const names={HIT_COUNT:'Hit',CHAIN_TOTAL:'Chain',MARK_GAIN:'Mark'},milestones=[];
   for(const [axis,name] of Object.entries(names)){
     const state=command.synthesisAxisReserve&&command.synthesisAxisReserve[axis];
@@ -18634,7 +19927,8 @@ function skillSynthesisObservationLines(command){
   }
   milestones.sort((a,b)=>a.needed-b.needed);
   if(milestones.length)lines.push('Closest reserve upgrade: +1 '+milestones[0].name+
-    ' needs '+milestones[0].needed.toFixed(2)+' more Quality.');
+    ' needs '+milestones[0].needed.toFixed(2)+' more '+
+    (command.synthesisReserveUnit==='POWER'?'allocated power':'Quality')+'.');
   const refund=skillRarityResonanceRefund(command);
   if(refund)lines.push('Rarity Resonance: regain '+refund+' Resolve after the attack.');
   return lines;
@@ -18659,6 +19953,14 @@ function skillLabMutationMechanics(command){
   }
   if(command.consumeChain)lines.push('Damage uses the starting Chain, then all Chain is consumed after the attack.');
   if(command.extraChainBonus)lines.push('Chain scaling: +'+Math.round(command.extraChainBonus*100)+'% damage per Chain.');
+  const chargeRate=commandDefenseTemperRate(command);
+  if(chargeRate)lines.push('Charge: consume up to '+DEFENSE_CHARGE.max+' banked defense Charge for +'+
+    damagePart(chargeRate)+' base damage each. Expected Quality value is priced at ×'+
+    DEFENSE_CHARGE.expectedSpend+'; only this move consumes the bank.');
+  const bleed=commandBleedAmount(command);
+  if(bleed)lines.push('Bleed: +'+damagePart(bleed)+' to each of the next two defense-phase ticks. '+
+    'A defense Break pays one tick at ×'+damagePart(BLEED_STATUS.breakMultiplier)+
+    ' and advances the queue. Bleed cannot Crit and gains no Chain or direct Break bonus.');
   const crit=commandCritProfile(command,'knight');
   if(crit.chance>0||crit.precisionGain>0)lines.push('Critical: '+Math.round(crit.chance*100)+
     '% local/global start chance · ×'+damagePart(crit.multiplier)+' Health and Posture'+
@@ -18671,10 +19973,25 @@ function moveTreeSynthesisRaritySnapshot(command){
     chain=Array.from({length:hits},(_,index)=>commandChainGain(command,index))
       .reduce((sum,value)=>sum+value,0);
   return Object.freeze({damage:Number(damage.toFixed(1)),hits,chain,
+    chainRate:Number(((command.extraChainBonus||0)*100).toFixed(1)),
+    posture:command.posture||0,critChance:Number(((command.critChance||0)*100).toFixed(1)),
+    bleed:commandBleedAmount(command),chargeRate:commandDefenseTemperRate(command),
     mark:command.markGain||0,cost:command.cost||0});
 }
 function moveTreeSynthesisRarityLadder(node){
-  const recipe=moveTreeSynthesisRecipe(node);if(!recipe||recipe.depth>2)return [];
+  const route=sharpshootMarkRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
+  if(route&&route.runtimeReadiness==='MATERIALIZED'){
+    const formRarity=moveTreeSynthesisRarityByDepth[1],
+      specRarity=moveTreeSynthesisRarityByDepth[2];
+    return SKILL_RARITY_ORDER.map(rarity=>{
+      const parent=route.depth===3&&SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId],command=
+        route.depth===1?synthesizeSharpshootMarkPath(rarity):
+        route.depth===2?synthesizeSharpshootMarkPath(formRarity,route.id,rarity):
+        parent&&synthesizeSharpshootMarkPath(formRarity,parent.id,specRarity,route.id,rarity);
+      return Object.freeze({rarity,command,stats:moveTreeSynthesisRaritySnapshot(command)});
+    });
+  }
+  if(!recipe||recipe.depth>2)return [];
   const formRarity=moveTreeSynthesisRarityByDepth[1];
   return SKILL_RARITY_ORDER.map(rarity=>{
     const command=recipe.depth===1?synthesizeF1StablePath(rarity):
@@ -18685,40 +20002,112 @@ function moveTreeSynthesisRarityLadder(node){
 function skillRarityDeltaText(value){
   const rounded=Number(value.toFixed(1));return (rounded>0?'+':'')+rounded;
 }
+function moveTreeSynthesisRarityCellRects(rect){
+  const gap=6,cellW=(rect.w-gap*3)/4;
+  return SKILL_RARITY_ORDER.map((rarity,index)=>({
+    x:rect.x+index*(cellW+gap),y:rect.y,w:cellW,h:rect.h,rarity
+  }));
+}
 function drawMoveTreeSynthesisRarityLadder(node,rect){
   const ladder=moveTreeSynthesisRarityLadder(node);if(!ladder.length)return;
-  const current=moveTreeSynthesisRarity(node),gap=6,cellW=(rect.w-gap*3)/4;
+  const current=moveTreeSynthesisRarity(node),selected=ladder.find(entry=>entry.rarity===current)||ladder[0],
+    cells=moveTreeSynthesisRarityCellRects(rect);
   g.textAlign='left';g.font='bold 9px monospace';g.fillStyle='#8f94a5';
-  g.fillText('SAME MOVE · EACH RANK COMPARED WITH THE PREVIOUS RANK',rect.x,rect.y-12);
+  g.fillText('TAP A RANK · ALL OTHERS COMPARED WITH SELECTED',rect.x,rect.y-12);
   for(let index=0;index<ladder.length;index++){
-    const entry=ladder[index],previous=index?ladder[index-1]:null,x=rect.x+index*(cellW+gap),
+    const entry=ladder[index],cell=cells[index],x=cell.x,cellW=cell.w,
       col=SKILL_MUTATION_RARITY_COL[entry.rarity],active=entry.rarity===current,lines=[];
-    g.fillStyle=active?col+'1f':'rgba(255,255,255,.025)';g.fillRect(x,rect.y,cellW,rect.h);
-    g.strokeStyle=col;g.lineWidth=active?2:1;g.strokeRect(x+.5,rect.y+.5,cellW-1,rect.h-1);
+    g.fillStyle=active?col+'1f':'rgba(255,255,255,.025)';g.fillRect(x,cell.y,cellW,cell.h);
+    g.strokeStyle=col;g.lineWidth=active?2:1;g.strokeRect(x+.5,cell.y+.5,cellW-1,cell.h-1);
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle=col;
-    g.fillText((active?'◆ ':'')+entry.rarity,x+cellW/2,rect.y+16);
-    if(!previous){
-      lines.push('BASE '+entry.stats.damage+' DMG');
-      lines.push(entry.stats.hits+' HIT · '+entry.stats.chain+' CHN');
+    g.fillText((active?'◆ ':'')+entry.rarity,x+cellW/2,cell.y+16);
+    if(active){
+      lines.push(entry.stats.damage+' DMG');
+      lines.push(entry.stats.chargeRate?('CHG +'+entry.stats.chargeRate+'/EACH · '+entry.stats.hits+' HIT'):
+        entry.stats.bleed?(entry.stats.bleed+' BLEED / '+entry.stats.hits+' HIT'):
+        entry.stats.posture?(entry.stats.posture+' POST / '+entry.stats.hits+' HIT'):
+        entry.stats.critChance?(entry.stats.critChance+'% LOCAL CRIT'):
+        entry.stats.chainRate?('CHN +'+entry.stats.chainRate+'%/STACK'):
+        (entry.stats.hits+' HIT · '+entry.stats.chain+' CHN'));
       lines.push(entry.stats.mark+' MRK · '+entry.stats.cost+' COST');
     }else{
       const metrics=[
-        ['DMG',entry.stats.damage-previous.stats.damage],
-        ['HIT',entry.stats.hits-previous.stats.hits],
-        ['CHN',entry.stats.chain-previous.stats.chain],
-        ['MRK',entry.stats.mark-previous.stats.mark],
-        ['COST',entry.stats.cost-previous.stats.cost]
+        ['DMG',entry.stats.damage-selected.stats.damage],
+        ['HIT',entry.stats.hits-selected.stats.hits],
+        ['CHN',entry.stats.chain-selected.stats.chain],
+        ['CHN%',entry.stats.chainRate-selected.stats.chainRate],
+        ['POST',entry.stats.posture-selected.stats.posture],
+        ['CRIT%',entry.stats.critChance-selected.stats.critChance],
+        ['BLD',entry.stats.bleed-selected.stats.bleed],
+        ['CHG',entry.stats.chargeRate-selected.stats.chargeRate],
+        ['MRK',entry.stats.mark-selected.stats.mark],
+        ['COST',entry.stats.cost-selected.stats.cost]
       ].filter(([,value])=>Math.abs(value)>.04).map(([name,value])=>name+' '+skillRarityDeltaText(value));
       if(!metrics.length)metrics.push('NO STAT CHANGE');
       for(let i=0;i<metrics.length;i+=2)lines.push(metrics.slice(i,i+2).join(' · '));
     }
     g.font='7px monospace';g.fillStyle='#d9dce6';
-    for(let line=0;line<Math.min(3,lines.length);line++)g.fillText(lines[line],x+cellW/2,rect.y+37+line*15);
-    if(active){g.font='bold 7px monospace';g.fillStyle=col;g.fillText('CURRENT',x+cellW/2,rect.y+rect.h-9);}
+    for(let line=0;line<Math.min(3,lines.length);line++)g.fillText(lines[line],x+cellW/2,cell.y+37+line*15);
+    if(active){g.font='bold 7px monospace';g.fillStyle=col;g.fillText('CURRENT',x+cellW/2,cell.y+cell.h-9);}
   }
 }
+function drawSkillAttributeRouteTooltip(node,route){
+  const x=20,y=70,w=440,h=660,secondary=route.secondaryAttributeId,
+    primaryShare=!secondary||secondary==='MARK'?1:(route.identityBudget.MARK||PRIMARY_ATTRIBUTE_SHARE.target),
+    secondaryShare=1-primaryShare,col=COMBAT_ATTRIBUTE_UI_COLORS[secondary||'MARK']||'#ffe37a',
+    inheritedDelivery=route.delivery||SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form.delivery;
+  g.save();g.fillStyle='rgba(2,3,7,.86)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.fillStyle='rgba(8,11,18,.99)';g.fillRect(x,y,w,h);
+  g.strokeStyle=col;g.lineWidth=2;g.strokeRect(x+.5,y+.5,w-1,h-1);g.fillStyle=col;g.fillRect(x,y,w,6);
+  g.textAlign='left';g.font='bold 22px monospace';g.fillStyle='#f4f1e8';g.fillText(route.name,x+20,y+42);
+  g.font='bold 10px monospace';g.fillStyle=col;
+  g.fillText('CONTRACT PREVIEW · '+(secondary?'MARK + '+secondary:'MARK FORM'),x+20,y+64);
+  g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+84,w-32,82);
+  g.font='bold 12px monospace';g.fillStyle='#ff596d';
+  g.fillText('PRIMARY MARK · '+Math.round(primaryShare*100)+'% IDENTITY',x+28,y+110);
+  g.fillStyle=col;g.fillText(secondary?'SECONDARY '+secondary+' · '+Math.round(secondaryShare*100)+'%':
+    'FORM FOUNDATION · SECONDARY NOT SELECTED',x+28,y+135);
+  g.font='9px monospace';g.fillStyle='#aeb2c2';
+  g.fillText('Direct damage is neutral and excluded from this identity ratio.',x+28,y+155);
+  g.font='bold 10px monospace';g.fillStyle='#7fc9ff';g.fillText('DELIVERY',x+20,y+194);
+  g.font='11px monospace';g.fillStyle='#d9dce6';
+  g.fillText(inheritedDelivery.family+' · '+inheritedDelivery.pattern.replace(/_/g,' '),x+28,y+219);
+  g.fillText(route.depth===1?
+    inheritedDelivery.timing.replace(/_/g,' ')+' · '+inheritedDelivery.animationProfile:
+    'INHERITED FROM F1 · TWIST MAY TRANSFORM IT',x+28,y+240);
+  g.font='bold 10px monospace';g.fillStyle='#ffe37a';g.fillText(
+    secondary&&secondary!=='MARK'?'NEW PACKET INPUT':'QUALITY ALLOCATION',x+20,y+278);
+  let textY=y+303;
+  for(const [axis,value] of Object.entries(route.qualityProfile)){
+    g.font='10px monospace';g.fillStyle=axis.indexOf('MARK_')===0?'#ff8794':
+      axis==='DIRECT_DAMAGE'?'#d9dce6':col;
+    g.fillText(axis.replace(/_/g,' ')+' · '+Math.round(value*100)+'%',x+28,textY);textY+=21;
+  }
+  if(secondary&&secondary!=='MARK'){
+    g.font='9px monospace';g.fillStyle='#aeb2c2';
+    textY=drawWrappedTooltipText('Only the new Attribute packet moves toward the whole-card 70/30 target; Form power stays locked.',
+      x+28,textY+2,w-56,15)+4;
+  }
+  g.font='bold 10px monospace';g.fillStyle='#ff8794';g.fillText('MECHANICAL PROMISE',x+20,textY+12);
+  g.font='11px monospace';g.fillStyle='#d9dce6';
+  textY=drawWrappedTooltipText(route.promise,x+28,textY+38,w-56,17)+14;
+  g.font='10px monospace';g.fillStyle='#aeb2c2';
+  textY=drawWrappedTooltipText('Mark net output may not regress. Secondary changes support the move without replacing Mark Primary.',
+    x+28,textY,w-56,16)+16;
+  g.fillStyle=route.runtimeReadiness==='MATERIALIZED'?'#c0f79a':'#ffe37a';g.font='bold 11px monospace';
+  g.fillText(route.runtimeReadiness==='MATERIALIZED'?'WORKING ATTACK · RARITY SYNTHESIS READY':
+    'ATTRIBUTE CONTRACT READY · BASELINE ATTACK PENDING',x+28,Math.min(textY,y+h-64));
+  g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#8f94a5';
+  g.fillText('NO FINAL DAMAGE OR RARITY NUMBERS YET',VW/2,y+h-38);
+  g.fillText('TAP ANYWHERE TO CLOSE',VW/2,y+h-18);g.restore();
+}
 function drawSkillLabMutationTooltip(){
-  const sourceMutation=SKILL_MUTATION_BY_ID[skillLabTooltipMutationId],
+  const sourceMutation=moveTreeNodeById(skillLabTooltipMutationId),
+    attributeRoute=sharpshootMarkRouteFromNode(sourceMutation);
+  if(attributeRoute&&attributeRoute.runtimeReadiness!=='MATERIALIZED'){
+    drawSkillAttributeRouteTooltip(sourceMutation,attributeRoute);return;
+  }
+  const
     command=skillLabMutationPreviewCommand(sourceMutation),
     mutation=moveTreeOpen?moveTreeSynthesisDisplayNode(sourceMutation):sourceMutation;
   if(!mutation||!command)return;
@@ -18756,9 +20145,10 @@ function drawSkillLabMutationTooltip(){
     g.fillStyle='#d9dce6';textY=drawWrappedTooltipText(detail,x+42,textY,w-72,17)+7;
   }
   if(moveTreeOpen&&command.synthesisCompilerVersion)
-    drawMoveTreeSynthesisRarityLadder(sourceMutation,{x:x+20,y:y+h-142,w:w-40,h:104});
+    drawMoveTreeSynthesisRarityLadder(sourceMutation,SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT);
   g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#8f94a5';
-  g.fillText('TAP ANYWHERE TO CLOSE',VW/2,y+h-18);g.restore();
+  g.fillText(moveTreeOpen&&command.synthesisCompilerVersion?
+    'TAP OUTSIDE RANKS TO CLOSE':'TAP ANYWHERE TO CLOSE',VW/2,y+h-18);g.restore();
 }
 function drawSkillLab(){
   if(!skillLabSession)return;
@@ -18809,7 +20199,9 @@ function skillLabCombatTap(pt){
     applySkillLabPreset(preset.id);return true;
   }
   if(pointInRect(pt,SKILL_LAB_COMBAT_CRIT)){
-    skillLabSession.forceCritical=!skillLabSession.forceCritical;SFX.swipe();return true;
+    if(bossChargeEnabled())boss.charge=(bossCharge()+1)%(DEFENSE_CHARGE.max+1);
+    else skillLabSession.forceCritical=!skillLabSession.forceCritical;
+    SFX.swipe();return true;
   }
   if(pointInRect(pt,SKILL_LAB_COMBAT_BACK)){leaveSkillLabCombat();return true;}
   if(pointInRect(pt,SKILL_LAB_COMBAT_HP)){
@@ -18841,6 +20233,8 @@ function drawSkillLabCombatLog(){
     '  CHAIN '+before.chain+'→'+after.chain+'  MARK '+before.mark+'→'+after.mark,22,337);
   g.fillStyle='#c995ff';
   g.fillText('POSTURE '+before.posture+'→'+after.posture+
+    '  BLEED '+damagePart(before.bleed)+'>'+damagePart(before.bleedLater)+'→'+
+    damagePart(after.bleed)+'>'+damagePart(after.bleedLater)+'  CHG '+before.charge+'→'+after.charge+
     (after.broken?'  ·  BREAK BONUS ACTIVE':''),22,354);
 }
 function drawSkillLabCombatOverlay(){
@@ -18848,19 +20242,29 @@ function drawSkillLabCombatOverlay(){
   if(!skillLabSession.combatHud){
     drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'SHOW LAB','#9ecbff');return;
   }
-  g.fillStyle='rgba(5,7,12,.9)';g.fillRect(4,195,472,174);
+  g.fillStyle='rgba(5,7,12,.9)';g.fillRect(4,195,472,198);
   g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#9ecbff';
-  g.fillText('SKILL LAB · STATIC TARGET · REAL COMBAT CODE',VW/2,200);
+  g.fillText('SKILL LAB · LIVE BOSS SIMULATOR · REAL COMBAT CODE',VW/2,200);
   for(const preset of SKILL_LAB_COMBAT_PRESETS)
     drawSkillLabButton(preset,preset.label,preset.id==='broken'?'#ffe37a':'#9ecbff',true,
       skillLabSession.preset===preset.id);
-  drawSkillLabButton(SKILL_LAB_COMBAT_CRIT,skillLabSession.forceCritical?'CRIT ✓':'CRIT',
-    '#ffcc4d',true,skillLabSession.forceCritical);
+  const chargeLab=bossChargeEnabled();
+  drawSkillLabButton(SKILL_LAB_COMBAT_CRIT,chargeLab?'CHG '+bossCharge():
+    (skillLabSession.forceCritical?'CRIT ✓':'CRIT'),chargeLab?'#7fc9ff':'#ffcc4d',true,
+    chargeLab?bossCharge()>0:skillLabSession.forceCritical);
   drawSkillLabButton(SKILL_LAB_COMBAT_BACK,'◀ BUILD','#e8e2d0');
   drawSkillLabButton(SKILL_LAB_COMBAT_HP,'TARGET','#ff7a82');
-  drawSkillLabButton(SKILL_LAB_COMBAT_TURN,'TURN','#c0f79a');
+  drawSkillLabButton(SKILL_LAB_COMBAT_TURN,boss.phase==='dodge'?'ABORT':'RESET','#c0f79a');
   drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'HIDE HUD','#8b8fa0');
   drawSkillLabCombatLog();
+  const stats=skillLabSession.defenseStats||{hits:0,perfects:0,parries:0,phases:0},
+    liveCharge=boss.phase==='dodge'?Math.max(bossCharge(),boss.defenseChargeProgress||0):bossCharge();
+  g.textAlign='center';g.font='bold 9px monospace';
+  g.fillStyle=boss.phase==='dodge'?'#ff9a3a':'#c0f79a';
+  g.fillText((boss.phase==='dodge'?'BOSS ACTIVE':'PLAYER ACTIVE')+
+    '  /  PHASE '+stats.phases+'  /  PERFECT '+stats.perfects+
+    '  /  PARRY '+stats.parries+'  /  HIT '+stats.hits+
+    (bossChargeEnabled()?'  /  CHG '+liveCharge+'/'+DEFENSE_CHARGE.max:''),VW/2,384);
 }
 function drawDebugCfg(){
   g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -19516,6 +20920,11 @@ cvs.dataset.decimalDamageAudit=DECIMAL_DAMAGE_SYSTEM_AUDIT.precision+'-'+
   DECIMAL_DAMAGE_SYSTEM_AUDIT.raw+'-'+DECIMAL_DAMAGE_SYSTEM_AUDIT.combat;
 cvs.dataset.criticalSystemAudit=CRITICAL_SYSTEM_AUDIT.contacts+'-'+
   CRITICAL_SYSTEM_AUDIT.multiplier+'-'+CRITICAL_SYSTEM_AUDIT.postureCrit;
+cvs.dataset.bleedSystemAudit=BLEED_SYSTEM_AUDIT.first+'-'+BLEED_SYSTEM_AUDIT.second+'-'+
+  BLEED_SYSTEM_AUDIT.broken+'-'+BLEED_SYSTEM_AUDIT.expired+'-'+BLEED_SYSTEM_AUDIT.totalFactor;
+cvs.dataset.defenseChargeSystemAudit=DEFENSE_CHARGE_SYSTEM_AUDIT.expected+'-'+
+  DEFENSE_CHARGE_SYSTEM_AUDIT.maximum+'-'+DEFENSE_CHARGE_SYSTEM_AUDIT.cap+'-'+
+  DEFENSE_CHARGE_SYSTEM_AUDIT.critBreak;
 cvs.dataset.combatAttributeRegistryAudit=COMBAT_ATTRIBUTE_REGISTRY_AUDIT.attributes+'-'+
   COMBAT_ATTRIBUTE_REGISTRY_AUDIT.pairs+'-'+COMBAT_ATTRIBUTE_REGISTRY_AUDIT.capabilities+'-'+
   COMBAT_ATTRIBUTE_REGISTRY_AUDIT.axes;
@@ -19525,6 +20934,38 @@ cvs.dataset.combatDeliveryRegistryAudit=COMBAT_DELIVERY_REGISTRY_AUDIT.profiles+
 cvs.dataset.synthesisIdentityAudit=SKILL_SYNTHESIS_IDENTITY_AUDIT.version+'-'+
   Number(SKILL_SYNTHESIS_IDENTITY_AUDIT.zeroMarkChain)+'-'+
   Number(SKILL_SYNTHESIS_IDENTITY_AUDIT.rejectedImmediateCharge);
+cvs.dataset.sharpshootMarkRouteAudit=SHARPSHOOT_MARK_ROUTE_AUDIT.routes+'-'+
+  SHARPSHOOT_MARK_ROUTE_AUDIT.specializations+'-'+SHARPSHOOT_MARK_ROUTE_AUDIT.materialized+'-'+
+  SHARPSHOOT_MARK_ROUTE_AUDIT.twists+'-'+SHARPSHOOT_MARK_ROUTE_AUDIT.baselinePending+'-'+
+  SHARPSHOOT_MARK_ROUTE_AUDIT.minPrimaryShare;
+cvs.dataset.sharpshootMarkLabAudit=SHARPSHOOT_MARK_LAB_AUDIT.nodes+'-'+
+  SHARPSHOOT_MARK_LAB_AUDIT.twists+'-'+SHARPSHOOT_MARK_LAB_AUDIT.liveMutations;
+cvs.dataset.sharpshootMarkMaterializationAudit=SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.formCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.focusCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chainCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.postureCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.criticalCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.afflictionCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chargeCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.directTwistCards+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.common.damage+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.common.mark+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.common.cost+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chainCommon.damage+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chainCommon.mark+'-'+
+  (SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chainCommon.chainRate*100).toFixed(1)+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.postureCommon.damage+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.postureCommon.mark+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.postureCommon.posture+'-'+
+  (SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.criticalCommon.critChance*100).toFixed(1)+'-'+
+  (SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.criticalRange.max*100).toFixed(1)+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.afflictionCommon.bleed+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.afflictionRange.max+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chargeCommon.chargeRate+'-'+
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.chargeRange.max;
+cvs.dataset.f1s2t1RarityAudit=SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.directTwistLadder.map(entry=>
+  entry.twistRarity+':'+entry.damage.toFixed(2)+':'+entry.mark+':'+
+  (entry.chainRate*100).toFixed(2)+':'+entry.cost+':'+entry.score.toFixed(2)).join('|');
 cvs.dataset.rarityResonanceAudit=[1,2,3].map(rarityResonanceLevel=>
   skillRarityResonanceRefund({rarityResonanceLevel},4)).join('-');
 cvs.dataset.synthesisEconomyAudit=(()=>{const ledger=skillSynthesisEconomyLedger([
@@ -19543,6 +20984,10 @@ cvs.dataset.f1SynthesisStackAudit=F1_SYNTHESIS_BALANCE_AUDIT.stackFixtures.rareP
   F1_SYNTHESIS_BALANCE_AUDIT.stackFixtures.legendaryPair.resonanceLevel;
 cvs.dataset.qualityCompilerAudit=SKILL_QUALITY_COMPILER_VERSION+'-'+SKILL_QUALITY_POWER_UNIT.toFixed(2)+'-'+
   [1,2,3,4].map(depth=>SKILL_SYNTHESIS_DEPTH_LEVERAGE[depth].toFixed(2)).join('-');
+cvs.dataset.bowAnimationRecipeAudit=BOW_ANIMATION_RECIPE_AUDIT.profiles+'-'+
+  BOW_ANIMATION_RECIPE_AUDIT.standardContact.toFixed(3)+'-'+
+  BOW_ANIMATION_RECIPE_AUDIT.heavyContact.toFixed(3)+'-'+
+  BOW_ANIMATION_RECIPE_AUDIT.chargedScale.toFixed(2);
 cvs.dataset.skillGuardrailAudit=SKILL_GUARDRAIL_POLICY_AUDIT.values+'-'+
   SKILL_GUARDRAIL_POLICY_AUDIT.scenarios+'-'+Object.values(SKILL_GUARDRAIL_POWER_VALUES).join('-');
 cvs.dataset.qualityAxisHandlerAudit=SKILL_SYNTHESIS_QUALITY_AXES.map(axis=>
