@@ -61,15 +61,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 git -C $repoRoot diff --cached --quiet
-if ($LASTEXITCODE -eq 0) {
-  Write-Host 'Nothing to publish; KnightRush.html and index.html are already synchronized.'
-  exit 0
+$stagedExit = $LASTEXITCODE
+if ($stagedExit -eq 1) {
+  git -C $repoRoot commit -m $Message
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Commit failed.'
+  }
+} elseif ($stagedExit -ne 0) {
+  throw 'Could not inspect the staged publish changes.'
+} else {
+  Write-Host 'KnightRush.html and index.html are already synchronized; checking unpublished commits.'
 }
 
-git -C $repoRoot commit -m $Message
-if ($LASTEXITCODE -ne 0) {
-  throw 'Commit failed.'
-}
 git -C $repoRoot push origin main
 if ($LASTEXITCODE -ne 0) {
   throw 'Push failed.'
