@@ -1,11 +1,11 @@
 # Knight Rush 3D Model Render Handoff
 
-Status: the reimagined Bear mesh in `knight rush fable finish.html` is the approved live-3D visual reference as of 2026-07-23. The normal progression encounter `MIGHTY BEAR` keeps its preserved 2D renderer, contact rig, and attacks. A progression-excluded `3D BEAR` remains only in Boss Move Lab. Full live-3D combat is not the production route; Turtle's approved shell-wheel is the production cached-2.5D proof. Read `CACHED_2_5D_RENDER_HANDOFF.md` completely before any new angle-changing art.
+Status: the reimagined Bear mesh in `KnightRush.html` is the approved live-3D visual reference as of 2026-07-23. The normal progression encounter `MIGHTY BEAR` keeps its preserved 2D renderer, contact rig, and attacks. A progression-excluded `3D BEAR` remains only in Boss Move Lab. Full live-3D combat is not the production route; Turtle's approved shell-wheel is the production cached-2.5D proof. Read `CACHED_2_5D_RENDER_HANDOFF.md` completely before any new angle-changing art.
 
 ## Current production direction: cached 2.5D
 
 - Do not replace an approved 2D creature with a live 3D mesh merely to gain turning. The Bear experiment showed that live 3D made existing fight animation stiffer, harder to author, and more expensive without reliably improving the 2D fight.
-- Keep the normal 2D renderer as the hero pose and combat source. Add prepared rotation frames only to moves that materially need a different angle, such as Turtle's horizontal shell spin or a future crocodile roll.
+- Keep the normal 2D renderer as the hero pose and combat source. Add prepared rotation frames only to anatomy that materially needs another angle, such as Turtle's horizontal shell spin, Wolf's pounce paws, or Mire Toad's airborne webbed feet.
 - Turtle's approved new 2D anatomy and normal renderer are `drawLavaTurtle()`. Do not rebuild, simplify, or restyle that model.
 - Turtle's spin uses `TURTLE_SHELL_OUTLINE`, `TURTLE_SHELL_PLATES`, `TURTLE_SHELL_KEELS`, `TURTLE_SHELL_LAVA`, and `TURTLE_SHELL_RIM` as one shared geometry/palette source for both the normal drawing and the cached angle clip. Never draw independent profile frames by eye in a different style.
 - `turtleShellProfileAtY()` derives every rotation row from the approved silhouette. `turtleShellProjected()` wraps the exact scutes around that silhouette. `paintProjectedTurtleShell()` keeps the outer contour stable and rotates only the surface anatomy, preventing size changes, gaps, and pseudo-3D distortion.
@@ -40,7 +40,10 @@ Status: the reimagined Bear mesh in `knight rush fable finish.html` is the appro
 
 The approved result is the current Bear built by `buildBearModel3D()` and displayed by `drawBearModelTurntable()` through the Boss Move Lab entry `bear_model_spin`. Inspect that implementation and reuse its architecture. Do not restart from the earlier projection/distortion experiments.
 
-`3dmodelrender.html` is an older preserved checkpoint from the Wolf experiment. Keep it untouched as historical/reversible reference, but the current Bear in `knight rush fable finish.html` is the stronger modeling standard.
+The obsolete `3dmodelrender.html` Wolf checkpoint and the Wolf WebGL/mesh/turntable
+pipeline were explicitly scrapped during the 2026-07-25 miniboss revamp. Bear's
+lab-only articulated model remains the live-3D reference; do not restore the old
+Wolf experiment.
 
 ## Approved visual direction
 

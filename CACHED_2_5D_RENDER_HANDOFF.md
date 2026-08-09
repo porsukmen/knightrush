@@ -1,6 +1,6 @@
 # Knight Rush Cached 2.5D Render Standard
 
-Status: approved production method as of 2026-07-23. The Lava Turtle shell-wheel in `knight rush fable finish.html` is the canonical proof. Read this entire document before adding rotation, a back view, a roll, or a perspective-changing attack to any boss. Also read `3DMODELRENDER_HANDOFF.md` for the separate live-3D experiment history.
+Status: approved production method as of 2026-07-23. The Lava Turtle shell-wheel in `KnightRush.html` is the canonical proof. Read this entire document before adding rotation, a back view, a roll, or a perspective-changing attack to any boss. Also read `3DMODELRENDER_HANDOFF.md` for the separate live-3D experiment history.
 
 ## One-sentence definition
 
@@ -21,7 +21,7 @@ It is not live 3D, a squeezed flat sprite, independent AI-generated side art, or
 Use cached 2.5D only when a move materially benefits from another angle:
 
 - horizontal shell/body spin;
-- crocodile death roll;
+- an airborne webbed-foot pitch such as Mire Toad's belly slam;
 - a brief back turn;
 - a weapon/body rotation whose direction matters;
 - an underside reveal.
@@ -122,6 +122,161 @@ At runtime:
 Nearest-neighbour enlargement exposed large stair steps during close attacks. The source remains crisp block art, but the already-high-resolution cache is smoothly down/up-sampled at presentation time.
 
 If a future creature needs more than 12 angles, increase frames only after a profile capture proves visible stepping. First improve shared geometry and markings; frame count is not a substitute for coherent anatomy.
+
+## Mire Toad pitch clips
+
+Mire Toad now provides the canonical non-yaw example of this standard. It does
+not scale or squeeze the live frog to imply pitch. Five lazy atlases own the
+surfaces that actually change viewing angle:
+
+- `TOAD_HEAD_PITCH_CLIP` / `toadHeadPitchClip('normal')` for idle and the
+  tongue head turn;
+- `TOAD_HEAD_POISON_PITCH_CLIP` / `toadHeadPitchClip('poison')` for the charged
+  bog glob mouth;
+- `TOAD_HEAD_SPIT_PITCH_CLIP` / `toadHeadPitchClip('spit')` for the brief
+  narrow rounded poison-release aperture;
+- `TOAD_AIR_PITCH_CLIP` / `toadAirPitchClip(false)` for takeoff and the
+  belly-slam underside;
+- `TOAD_AIR_LAND_PITCH_CLIP` / `toadAirPitchClip(true)` for the reverse
+  underside-to-planted strike landing handoff.
+
+All five atlases contain nine logical `44 x 46` frames with anchor `22,42` and
+raster scale `5`. `paintToadHeadPitch()` keeps one approved fused head, lip and
+lower-jaw contour for every state. Idle renders frame zero of that same atlas,
+including the same full-size jaw plate used by the open frames; opening only
+translates that fixed jaw and never creates or deletes it. The poison variant
+only adds the liquid pool; the spit variant pushes the upper lip and lower jaw
+together around a small pixel-rounded O. Spit contracts the actual lip and
+jaw boundaries; it must not fake this by painting face-colored polygons inside
+an unchanged large mouth. Its paired nostrils remain part of the contracted
+spit muzzle at full pitch instead of disappearing with the frontal-face layer.
+The head clock uses a monotonic, strain-free turn value so telegraph tremble
+cannot flip cached frame indices and make the mouth flicker.
+
+`paintToadAirPitch()` keeps the core contour and anchor stable while frontal face
+markings recede and the rounded, spotted belly/chin plane becomes visible from
+below. Launch and landing use separate air atlases because their frame-zero anatomy is
+different: launch begins from the fully crouched coil, while landing must return
+to the neutral planted face. Their full-underside frames are identical, so the
+atlas switch at the apex is invisible. Live face, eyes, lids, and nostrils are
+not drawn underneath an active cached head/core. Suppressing those hidden layers
+prevents a second pair of eyes, residual eyelid outlines, and one-frame flicker
+when the angle clip returns to live art.
+
+All five are created only on first use. Normal attack frames select one cached
+frame through `drawAngleClip()`; there is no per-frame canvas, offscreen repaint,
+flat body squeeze, or runtime polygon projection. The tongue itself is
+intentionally not cached 2.5D. Before it appears, a live overlay keeps the
+normal cached mouth closed and scrunches only the brows and nose without
+changing atlas frame. Mouth launch starts at normalized tell `.82`; tongue
+launch follows at `.84` and reaches full extension at the tell/strike boundary.
+The 96-sample near-vertical source continuously resamples its visible span into 64 fixed
+fractional render segments. It has no raised hold or tremble. The ribbon keeps a
+shallow bow and high down-curled tip, then opens directly into the `.24`-second
+downward lane whip. Its raised peak holds for normalized `.07` (about one 60 Hz
+frame) after the first slash beat; a remapped `easeOut` then reaches contact
+exactly at the second beat/frame-hit. During recovery it retracts completely by `.58` while the
+head and jaw stay fully open; mouth closure begins only after the ribbon is gone.
+
+The belly-slam landing is height-driven rather than tied to an arbitrary late
+time slice. On the descending half, remaining local distance from the model core
+to `groundY` drives `groundClose`: the rear legs begin folding at 52 local units
+of clearance and finish by 28, entirely above the red lane-warning plane. Their
+feet remain front-facing instead of quarter-turning sideways. A dedicated
+full-tell `easeInOut` preload keeps the model origin, front palms and rear feet
+fixed. Only the articulated core sinks while shoulder/elbow and hip/knee chains
+fold; strike frame zero inherits that skeleton. Takeoff pitch
+then eases across the first `.28` of the strike. On the main descent the landing
+atlas reverses into the neutral core before contact; the smaller post-impact
+return hop stays live 2D and must not reactivate either underside atlas.
+
+## Cave Bear parry pitch clips
+
+The Cave Bear successful bite-parry reaction is a visual-only cached-2.5D
+underside reveal. `paintBearParryHeadPitch()` and
+`bearParryHeadPitchClip()` own lazy normal/white-flicker atlases with ten
+logical `24 x 36` frames at raster scale `5`. Only the skull, jaw and throat
+plane is cached; the approved live torso, hind legs and articulated forelegs
+remain live.
+
+Frame zero preserves the frontal skull. As the Bear rises onto its hind legs,
+the eyes recede, the nose becomes the far/top edge, and the lower jaw plus
+throat face the camera. The underside lower jaw is a closed tapered plane: it
+covers the mouth completely and contains no mouth-color stripe. A separate
+staged pullback clock returns the skull continuously from the exact bite contact
+before `parryBearBitePoseAmount()` raises/pitches it; the cached frame never
+borrows idle as an intermediate pose. High Shove uses an earlier pitch clock
+shared by its skull and both straight raised forelegs, including their return,
+so its paws cannot lag the head. Bite recovery still uses
+`parryBearHeadPitchAmount()` to finish the downward skull roll before the longer
+live arm settle, so middle perspective frames do not linger near idle.
+
+`paintBearParryPawPitch()` / `bearParryPawPitchClip()` add lazy normal and
+white-flicker eight-frame `20 x 20` atlases at raster scale `5`. Only each
+selected paw plane is cached. Frame zero repeats the live front paw; the final
+angle exposes four toe pads, one broad central pad and claws while the existing
+live shoulder/elbow/wrist chain supplies all motion. Rebound builds a straight
+shoulder-to-paw segment and places the elbow on that line. On two-lane attacks
+the non-contacted partner uses a half-height straight target and a partial sole
+roll instead of remaining down. Ordinary mauls, doubles,
+swipes, pincers, bites and the Bear's three-lane duck frame hit use this same
+reversible paw-angle contract. Collision, timing, lane/posture truth and boss
+travel are unchanged.
+
+## Hydra parry head-pitch clip
+
+`paintHydraParryHeadPitch()` / `hydraParryHeadPitchClip()` own lazy normal and
+white-flicker fourteen-frame `24 x 34` skull atlases at raster scale `5`. Only the
+skull plane turns. Frame zero reproduces the compact live front head around the
+final neck joint at fixed atlas anchor `(12,26)`. The larger atlas is silhouette
+working space, not permission for smaller model pixels: every painted shape is
+quantized to broad two-atlas-pixel cells and the underside uses only three large
+ventral plates. Horizontal quantization rounds inward so broad cells cannot grow
+past the authored silhouette. Draw width is `12U`, matching the normal head's
+outer span more closely. Frills overlap the skull by one cell, and the jaw
+retains the live head's broad-upper/narrower-lower proportion before tapering
+into the throat. Its closed far-mouth band retains the live skull's `6U` width
+instead of pinching into a point, while height
+interpolates from the exact `20U` front match to a restrained `16U` underside.
+Each equally spaced angle is authored as a complete connected set of broad rows:
+skull, mouth, lower jaw, both overlapping frills and throat exist in every
+frame. This replaces the old interpolated tapers whose early rows collapsed,
+leaving detached eyes/frills and producing especially poor reverse playback.
+The reaction clock alone owns easing; lowering therefore walks the atlas evenly
+in reverse. A front-loaded cubic crossfade makes the front-facing stepped
+upper/lower jaw readable on the first descending atlas frame and completes it
+before half-lower, avoiding a late mouth-type swap. Visible cached eyes use
+the live renderer's exact `1.5U` footprint and only change opacity/position, not
+size. Front-angle jaw rows remain inside the cranium (`headBottom` starts at
+atlas y `32`), so the face-bearing skull never collapses to half height while
+eyes and mouth are already present. A separate `bodyBottom` reaches the live
+skull/jaw seam at atlas y `26`; pitched rows below it fade by `1-faceMouth`, so
+they cannot sit at full width behind the incoming front jaw and cause a final
+thin-pop. Explicit fourteen-entry top/body-bottom key arrays give neighbouring
+cranium frames the monotonic logical-height sequence
+`6,8,8,10,10,12,12,14,14,14,16,18,18,18`; independent rounding can no longer
+re-shrink the frame beside a corrected pose. The underside is one fixed-height
+`10`-atlas-pixel jaw plane translating from y `8` to y `22`; its three plates
+move with it and fade on the same ownership clock. It never expands downward with newly exposed skull rows, and
+crossfades into the stepped front jaw around the face centre. The stepped jaw's
+combined `5.1`-pixel height is capped inside `headBottom`, so no middle frame can
+extend it down the neck. At full pitch the cached throat overlaps the live neck
+by one coarse row only (`headBottom=22`, `socketBottom=24`); the live
+seven-segment rig owns all remaining neck length. Presentation lowers the clip
+by `pitch*1U` to close the socket gap without lengthening cached throat. Frill
+source heights compensate for the changing draw height, preserving the live
+`1.8U x 2U` screen footprint in all fourteen frames. Lowering completes within
+the first `.78` of limb-return progress; only the visual head roll is shortened,
+not the body stumble or reaction duration. The live dark-green neck/body palette
+keeps the underside readable without making it look like a separate pale model.
+`drawAngleClip(..., false)` enforces nearest-neighbour edges.
+The reference sketch defines only anatomy and viewing direction; its colored
+rectangles are not copied as final geometry. The live seven-segment neck still
+owns the socket and endpoint; its Hydra-specific slower rise keeps the pitching
+skull on screen while the boss returns from contact depth. Final return includes
+current live idle sway, so the cache cannot hand off to a differently positioned head.
+Twin/pair selection rules remain outside the cache, so only the contacted head
+changes perspective while its partner settles through the live rig.
 
 ## Transition choreography
 
@@ -242,4 +397,3 @@ Never move species geometry into the encounter table, and never move collision r
 The angle clip is visual-only. To roll back a conversion, route the affected animation state back through the accepted live 2D drawing and remove the clip/dust branch. Encounter tables, hazard creation, collision classes, progression, and rewards must require no edits.
 
 Do not delete the live hero renderer after approving cached angles. It is both the normal production art and the guaranteed rollback path.
-

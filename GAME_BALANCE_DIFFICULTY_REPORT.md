@@ -275,7 +275,7 @@ These are useful seeds, but most are flat bonuses, immunities, or duplicate reso
 
 Recommended build architecture:
 
-- Give artifacts tags such as `projectile`, `counter`, `guard`, `companion`, `status`, `economy`, `mobility`, and `score`.
+- Give artifacts tags such as `projectile`, `counter`, `guard`, `companion`, `status`, `economy`, `mobility`, and `sgg`.
 - Move scattered artifact checks toward shared combat/run events: `onPerfectDodge`, `onParry`, `onBossAttackStart`, `onVolleyHit`, `onStatusTick`, `onPickup`, and `onStageClear`.
 - Let common artifacts establish a build, uncommon artifacts convert mechanics, and rare artifacts multiply or break established engines.
 - Allow negative or awkward combinations. Not every run needs to be equally strong.

@@ -1,6 +1,6 @@
 # Knight Rush Efficiency and Scaling Handoff
 
-Status: targeted old-device refactor completed 2026-07-23. Read this after the maintainer block in `knight rush fable finish.html` when changing render architecture, caches, or encounter ownership. This pass intentionally did not change attack timing, collision, progression, approved art, or encounter selection.
+Status: targeted old-device refactor completed 2026-07-23. Read this after the maintainer block in `KnightRush.html` when changing render architecture, caches, or encounter ownership. This pass intentionally did not change attack timing, collision, progression, approved art, or encounter selection.
 
 ## What changed
 

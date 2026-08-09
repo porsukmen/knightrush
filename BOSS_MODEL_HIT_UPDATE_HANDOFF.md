@@ -2,6 +2,325 @@
 
 Status: Bear-first prototype implemented on 2026-07-20; visible-bound paw geometry accepted on 2026-07-21; shared hit classes, Hydra swipe/pinch contacts, and Boss Lab builder added on 2026-07-21.
 
+## Successful parry reaction
+
+- Successful parries now have two explicit, independently editable profiles.
+  `PARRY_STAGGER` (`id: 'parry_stagger'`) is the complete accepted reaction
+  preserved verbatim: `.60` simulation seconds at `.30x`, white flicker, full
+  body loss of balance and the approved Bear/Hydra/Turtle rebound values.
+  `PARRY_COUNTER` (`id: 'parry_counter'`) is a fixed `.96` real-time reaction at
+  `1x`: no white flicker, no whole-body kick/lean/shake, reduced anatomical
+  rebound, and a short return shared by every species. Its ordinary limb impulse
+  derives its normalized peak/return markers from fixed `.56s` and `.58s`
+  endpoints. The lift therefore reads over about `.56s`, while the idle return
+  has about `.38s`.
+  `syncToLaneHit` keeps Bear Bite/High Shove, every Hydra struck-head pitch plus
+  partner settle, and Turtle tube endpoints on that same absolute peak/return
+  schedule. Bear single overhead paws retain their approved front-loaded
+  `easeOut`. Larger Bear two-paw, bite, swipe, pincer and posture silhouettes use
+  a dedicated synchronized clock without changing the `.96s` total. Ordinary
+  large silhouettes retain their linear travel to normalized `.55`; actual Bear
+  Bite alone now begins one shared eased recovery at normalized `.40`. The still
+  rising captured arm pose is blended continuously toward idle, so torso, both
+  arms and paws begin settling together without snapping at the overlap. The
+  settle then consumes the complete remaining 60% of either profile rather than
+  dropping the body late. World x/z return still uses `easeInOut` across the
+  complete reaction. Turtle bite keeps its necessary two-stage recoil/retraction
+  anatomy, but its stage ratios are stretched to the shared base peak.
+  Camera shake, the square
+  galaxy sparks and attack/combo interruption remain.
+  `PARRY_REACTION_PROFILES` is the registry and `parryReactionProfile(reaction)`
+  is the only lookup path. Every reaction captures `reaction.style` at contact,
+  so changing the debug option cannot alter an in-flight animation.
+  The debug settings sheet exposes `PARRY STAGGER`: ON selects the preserved
+  profile; OFF selects the fast counter profile. It defaults OFF.
+  `validateEncounterHierarchy()` rejects mutable/misordered profile clocks and
+  rejects any fast profile that regains slow motion, flicker or species/body
+  stagger. Both profiles therefore share one stable duration across all species.
+- `doParry()` captures the interrupted move, strike animation, contact point and
+  contact side plus the exact normalized strike pose in actor-owned
+  `parryReaction` state before the existing interrupt sends the complete attack or
+  combo to full recovery. Rebound therefore begins at the accepted parry frame,
+  never by completing the strike first. A parried combo never cues its next step.
+- Parry start progress is hazard-owned, never inferred from the actor's current
+  `stateT`. Scheduled frame hits pass their authored impact pose (`strikeT=1`)
+  even when the 75ms input/grace resolver runs after the actor entered recovery.
+  Model-contact hazards pass the exact captured `lastProgress`; continuously
+  swept hazards pass their exact `raw` contact progress. This distinction removes
+  the intermittent Middle Bite recovery-pose teleport without snapping physical
+  paws/heads away from their actual parry point.
+- Slow motion scales the normal simulation clock; collision, animation, particles
+  and recovery do not gain a parallel timing system. The initial hit-stop remains
+  deliberately tiny so the anatomical rebound is visible instead of frozen.
+- Every articulated reaction lazily captures its exact first rendered parry
+  frame. Anatomy then follows one monotonic path: captured contact pose ->
+  reflected/raised target -> literal idle pose. Do not restore a reversing strike
+  clock plus a decaying recoil offset; that combination caused the old start
+  teleport and down/up/down return.
+- Bear recoil edits the complete selected shoulder/elbow/paw chain. Single hits
+  raise the contacted arm higher. Rebound targets are constructed shoulder-to-paw
+  first, then the elbow is placed halfway along that exact segment: raised arms are
+  always completely straight, either vertical or diagonal, never independently
+  bent at the elbow. The straight-down one/two-lane attacks
+  (`strike_paw_left`, `strike_paw_right`, `strike_double_paw`) lock the contacted
+  shoulder to idle X. Whichever arm was actually parried keeps an editable,
+  restrained `3.2U` outward spread: midway between the rejected perfectly
+  vertical silhouette and the older excessive diagonal. Diagonal
+  targets remain exclusive to swipes and other direction-bearing moves. On
+  two-lane crushes the contacted arm uses full rebound;
+  its partner uses the same straight chain at 55% height and still rolls 78%
+  toward its visible sole. Traveling swipes also lift/roll the free arm by a
+  restrained 32%/50%, while ordinary one-lane hits use 40%/62%, so the free paw
+  reacts to the body stumble without competing with the reflected attacking paw.
+  Every free-arm lift starts from its idle shoulder socket and goes vertically
+  upward; it never inherits the attacking swipe's diagonal contact socket.
+  Pincers raise both arms fully. Swipe direction
+  still selects the side the paw came from. Every raised/rebounding paw rolls through
+  its own lazy cached-2.5D
+  clip until the sole faces the camera: four digital pads, a broad central pad
+  and the claws remain readable in normal and white-flicker variants. The arm
+  sockets and both live bones remain authoritative. All values remain in the
+  shared Bear sub-profile.
+- Bear bite and the three-lane duck frame hit share a dedicated cached-2.5D
+  parry pose. The Bear rises on its hind legs, spreads both forelegs upward and
+  pitches the skull back. The re-authored head atlas hides the eyes and keeps the
+  nose on the far/top edge, but no longer substitutes the old long fully-closed
+  underside. The current `8U` burgundy cavity, stepped upper/lower teeth, dark
+  root gums, light chin and `#80604a` centre shade foreshorten and remain visible
+  throughout the upward pitch; throat blocks attach beneath that open jaw.
+  A dedicated staged clock first pulls the skull continuously out of its exact
+  bite-contact pose, then raises the body/head/arms into the rear-up pose. This
+  prevents an idle-head teleport before the pitch. It has normal and
+  white-flicker variants. High Shove starts this skull pitch on its first reaction
+  frames and drives both straight raised forelegs from that same head-pitch clock,
+  so the paws travel back/up with the skull rather than visibly lagging it. They
+  also settle with the High Shove skull. Actual Bite recovery is now a unified
+  body clock: at normalized `.40`, torso rear-up, both articulated arms, paw
+  pitch, skull descent and jaw closure all enter recovery. Torso and arms use a
+  visible smoothstep settle over the complete remaining `.60`; the skull uses
+  the same natural curve through `.40 -> .75` instead of the former fast
+  `easeOut`. Collision
+  and attack timing remain on the existing frame-hit contract. Actual Bite
+  reactions hand the returning head from the cached 2.5D atlas to
+  the live frontal mouth as soon as pitch reaches the atlas' frame-zero range.
+  The atlas is no longer full-open-only. It owns separate lazy rise and return
+  clips; each of the ten return angles contains its matching jaw opening. Head
+  angle and mouth therefore change on the same cache frame instead of two
+  independently rounded axes producing a one-frame lead/lag. The last two return
+  cells share frontal skull topology, so the former short underside cell cannot
+  snap into the much taller live muzzle on the following frame.
+  `biteJawCloseStart:.40` exactly matches skull recovery start, and
+  `parryBearBiteJawOpenAmount()` eases the jaw to fully closed at the skull's
+  `.75` return endpoint. The live frontal handoff therefore preserves the
+  current jaw opening instead of hiding the close until the final frames. The
+  cached rig now remains authoritative down to its true frontal endpoint
+  (`.015`) rather than handing off at `.10`. Its closed frame is aligned to the
+  live muzzle. Bite pullback deliberately remains locked after reaching the neck
+  socket: releasing it during body recovery reintroduced the strike's long
+  contact `headY` and visibly dropped the whole skull below the torso. Reaction
+  cleanup changes that locked zero only to the idle breathing offset (under
+  `.35U`), not back through the attack path.
+  The snarl floor is multiplied by the
+  same jaw clock, so neither `parry_stagger` nor `parry_counter` can retain an
+  open mouth and teleport to closed idle on reaction cleanup. High Shove is not
+  routed through this Bite-only jaw clock.
+  The three-lane jump keeps its normal reaction, but its
+  authored dirt ridge is suppressed once parried so terrain art never plays
+  backward; already emitted particles continue independently.
+- The live 2D Bear mouth is an isolated editable rig (`BEAR_MOUTH_2D` /
+  `drawBearMouth2D`). Its `8U` cavity opens through `7.2U`, with deep-red
+  mouth/gum/tongue layers, six symmetric stepped-pixel upper teeth (large outer
+  canines plus incisors), four lower teeth, and a block-tapered articulated chin.
+  All mouth planes share the exact centred `8U` width. Open cavity begins on the
+  upper root row, eliminating every lip/outline/separator pixel above it. Upper
+  and lower gums both use the photographed rebound colour `#2a0c11`, one canvas
+  pixel, and draw in front of the teeth to cap both root rows visibly.
+  Idle uses one physical dark pixel.
+  Endpoint-rounded rectangles share snapped `top`, `jawY`, cavity, tongue, gum
+  and root anchors. The live nose endpoint and upper root additionally share the
+  exact snapped `snoutY+9.8`, preventing their brown gap from flickering 0/1
+  pixels during motion. Tooth bands overlap by `.38U` and contain a continuous
+  spine. Chin tiers overlap by `.7U`; the base uses outer-muzzle `#9b795b` and
+  the sole centre panel uses nose-adjacent `#80604a`. The removed warm `sun`
+  inset remains removed. Every outer/inner ear pair also shares one snapped Y
+  anchor, so inner colour squares cannot jump a frame before their ear shells.
+  All Bear `tele_*` states open through the photographed former full maximum
+  (`5.2U`), stored as editable `hesitationDrop`. Because the live mouth applies
+  its own cubic ease, pose sampling uses `inverseEaseInOut` so the endpoint is an
+  exact physical `5.2U`. Every `strike_*` begins at the new `7.2U` maximum.
+  `strike_bite` then uses the authored impact-closing bite clock.
+  Swipe and ordinary recovery close the jaw through return. Live and rebound gums
+  use restored full-width foreground rows directly over tooth bases. Pitched
+  rebound frames anchor the lower row at `jawY-.34U`, ending exactly on `jawY`;
+  it remains visible while physically attached to the articulated chin.
+  The pitched cavity begins on the exact upper-root edge.
+  Head and paw atlases rasterize on a crisp `6x` source grid, snap every source
+  endpoint, and composite with nearest-neighbour sampling rather than smoothing.
+  Each angle frame selects one opaque view instead of cross-fading two textures;
+  paw silhouettes and pads use solid stepped pixels rather than soft polygons.
+  Every newly authored live/cached mouth plane (cavity, tongue, gums, teeth and
+  muzzle shade) participates in Bear `hurtFlash`; normal frames retain the
+  approved palette and counter flicker frames select the white palette.
+  Combat clocks and contact timing are unchanged.
+- Hydra captures all three rendered endpoints before recoil. Ordinary bites move
+  the selected head straight back to its stable socket x and only moderately
+  upward; the centre head therefore never drifts sideways. Its local endpoint and
+  skull pitch now share a slower Hydra-specific rise instead of reaching the
+  socket while the root is still at contact depth. A lazy cached normal/white
+  fourteen-frame proportional serpent-head pitch grows upward from
+  the fixed neck socket, hides the eyes, and exposes a broad closed lower-jaw
+  underside with restrained ventral bands and a broad closed far mouth. The atlas
+  reuses the live dark-green neck/body palette, so the alternate perspective
+  reads clearly without becoming a separate pale model. Its larger working
+  canvas is quantized to broad two-atlas-pixel cells and only three large ventral
+  plates, matching the live Hydra's coarse, low-detail pixel language. Horizontal
+  block snapping rounds inward and the cache draws at `12U` wide, keeping its
+  outer edges aligned with the ordinary live head. Both side frills overlap the
+  skull by one coarse cell, so neither can detach during quantization. The
+  underside preserves the live head's broad upper-jaw / narrower lower-jaw
+  proportion, including a closed far-mouth band matching the ordinary `6U`
+  skull width, and postpones the sharp taper until the throat. All fourteen
+  equally spaced angle frames contain a complete attached skull, mouth, jaw,
+  frills and throat; no interpolated part is allowed to collapse between coarse
+  rows. The reaction clock owns the easing, so reverse playback during lowering
+  traverses those frames evenly instead of rushing through malformed middle
+  angles. During lowering a front-loaded cubic crossfade makes the ordinary
+  stepped upper/lower jaw readable on the very first descending atlas frame and
+  completes it before the head is halfway down. Eyes use the live model's exact `1.5U`
+  footprint in every visible cached frame, so they fade in without growing at
+  the atlas-to-live handoff. Front-angle jaw rows remain part of the cranium
+  (`headBottom` begins at atlas y `32`) rather than being misclassified as
+  throat, keeping the face-bearing skull at full live height through every
+  transition frame. The broad cranium separately ends at `bodyBottom`, which
+  reaches the live skull/jaw seam y `26`; lower pitched rows fade by
+  `1-faceMouth` instead of remaining full-width behind the incoming front jaw.
+  Explicit fourteen-entry top/body-bottom key arrays give neighbouring
+  cranium frames the monotonic logical-height sequence
+  `6,8,8,10,10,12,12,14,14,14,16,18,18,18`; independent rounding can no
+  longer re-shrink the frame beside a corrected pose.
+  The visible underside is a fixed `10`-atlas-pixel jaw plane:
+  during lowering it translates from y `8` toward y `22` without changing
+  height, carrying all three ventral plates, then hands off around the face
+  centre to the stepped live jaw and fades by the same ownership clock. It is
+  never repainted over an increasing
+  number of skull rows. The stepped jaw's combined `5.1`-pixel height is capped
+  at `headBottom`, preventing middle frames from extending a chin down the neck.
+  The short throat overlaps the final live neck joint by only one coarse row at
+  full pitch (`headBottom=22`, `socketBottom=24`). The live segmented neck owns
+  the remaining length, so no duplicate dark neck hangs below the turned skull.
+  Presentation lowers the cache by `pitch*1U`, aligning that short overlap to
+  the live socket without reopening a gap. Both side frills use compensated
+  source heights and retain the live `1.8U x 2U` screen footprint through all
+  fourteen frames, so they cannot shrink during lowering and enlarge at handoff.
+  Head lowering consumes only the first `.78` of limb-return progress
+  (`headLowerReturnSpan`), crossing middle atlas imperfections faster while the
+  body stumble and total reaction duration remain unchanged.
+  Nearest-neighbour drawing keeps every edge sharp. The explanatory block sketch
+  is treated as an anatomy guide, not literal final geometry.
+  The reaction returns to the current live idle sway endpoint, eliminating the
+  last-frame unswayed-to-swayed teleport. Three-head frame hits pitch all heads.
+  On twin/pair bites only the head nearest captured `contactLane` rebounds and
+  the partner settles to idle. Swipes reflect the selected head toward the side
+  it came from, while pincer heads separate outward and upward. During every
+  selected-head parry, including `parry_stagger`, the segmented neck removes its
+  authored sinusoidal attack bow and interpolates directly from fixed body socket
+  to skull; side heads therefore recoil on a straight chain instead of an S-curve.
+  During return, that idle bow is multiplied by the shared limb-return clock and
+  grows back continuously, preventing a straight-neck-to-idle curve snap.
+- Turtle bite heads rapidly retract through the complete rendered neck into the
+  shell through two explicit stages. Both profiles now complete this inward
+  motion in about `.29s`: a fast physical knockback removes the first
+  quarter of the extended neck while preserving skull size, then the remaining
+  neck retracts and the skull shrinks by a restrained 13% as it crosses the shell
+  mouth. It holds hidden during the stumble, then re-emerges through the exact
+  idle socket without replaying the attacked lane. In the fast counter profile,
+  re-emergence no longer waits for the shared limb-return clock or nests a cubic
+  ease that hides all early motion. `biteRevealStart:.50` begins the skull exit at
+  the midpoint of the total reaction and applies one `easeInOut` across the full
+  remaining `.48s`, reaching idle on the same unchanged final frame.
+  Tube-pair, boiler, traveling-flame and pincer hesitation rendering records the
+  last endpoint that was actually drawn for every indexed rope. Parry snapshots
+  those per-move endpoints before combo interruption can replace the move, then
+  rebounds each attached rope from contact to that exact hesitation pose before
+  retracting. Thus tube pairs recover their overhead tell, while traveling-flame
+  and pincer ropes recover their authored entry/tell direction; Steam, whose
+  ropes have no visible tell, uses the overhead fallback. Both left and right
+  two-lane variants use the same indexed path. The authored-time/pixel-snapping
+  experiment remains reverted: tube breathing and unsnapped control points stay
+  on the prior animation. Full wall-time heat wiggle remains active in
+  hesitation, strike and either parry reaction. Shell-wheel is explicitly exempt and
+  keeps its approved return animation.
+- Turtle posture break owns a separate editable `TURTLE_BREAK_POSE`. The skull
+  leaves the centre socket, drops while sliding toward the visible screen-right
+  foot, and rolls onto its side. Its neck collar remains the rope endpoint; eight
+  articulated neck segments morph from the direct chain into a loose L running
+  down from the socket and then across to the grounded skull, with a small sag
+  instead of a rigid diagonal. The same normalized pose is reversible by
+  `breakRecover`, so recovery reconnects through the authored path without a
+  detached or teleported head.
+- Boss/miniboss white flicker is reaction-profile-owned while the reaction is
+  active. `parry_stagger` owns the white/normal cadence; `parry_counter` forces
+  it off, so the ordinary continuous hurt tint cannot leak into the fast return.
+  Turtle's two small lower side-rim tabs are shell anatomy, not flesh; they remain
+  dark through `hurtFlash` so no detached white squares appear beside the shell.
+- `parrySparkCloud()` is an edge-on galaxy of small square sparks. The long thin
+  disc is perpendicular to the attack-to-knight vector, grows equally to both
+  sides of the contact centre, and has a restrained symmetric central bulge.
+  It reuses the bounded generic square-particle update/draw path.
+- Parry reaction recovery owns world travel as well as joint recovery. The exact
+  strike `x/z` is reconstructed from captured `strikeT`, then interpolated to the
+  actor's idle lane/depth during the selected profile clock. Never return only the
+  skeleton and leave the actor at contact depth; that causes an idle teleport.
+- While a combo is interrupted, `sequenceIndex` still advances to its terminal
+  step for state/budget completion, but presentation is pinned to
+  `parryReaction.move`. Swipe contacts rewind from captured strike progress and a
+  combo bite can never borrow the combo's final step pose or contact targets.
+- Bear stumble is a bounded whole-body lean plus damped local shake. Paw recoil
+  uses the configured shoulder-relative `limbBack/limbLift` target and
+  `elbowBack/elbowLift` target; bite-family arms use their own raised target. Avoid
+  stacking another screen-space limb translation on top of this joint motion.
+- Body return and limb hold use separate clocks. `returnStart` begins moving the
+  boss away from contact early, including a short depth kick, while
+  `limbHoldEnd` keeps the attacking anatomy at its reflected opposite-and-up
+  position. Never hold the complete boss at contact merely to hold the limb.
+- The impulse now has an extended balance-loss hold: it reaches peak quickly and
+  keeps the limb/head at the reflected position through most of the reaction.
+  `reboundDir` is captured from
+  `sign(sweep.from-sweep.to)` and also drives the boss root lean/kick, so the large
+  limb reflection visibly pulls the boss off balance instead of moving in isolation.
+- Hydra recoil is applied after contact aiming and sampled model-head overrides;
+  applying it earlier lets those authoritative targets erase the visible head
+  bounce. Its captured endpoint moves to the configured socket-relative target;
+  `headBack` is used only by directional swipes/pincers and `headLift` is shared.
+- Traveling-swipe impulse is explicitly diagonal. Its horizontal component uses
+  `sign(sweep.from-sweep.to)`, so the limb returns toward the side it came from;
+  its vertical component always lifts. Bear applies this to the complete
+  shoulder/elbow/paw chain and Hydra to the final endpoint of the complete
+  segmented neck. Keep these species distances independently tunable.
+- At the exact final reaction frame, Bear, Hydra and Turtle render a literal idle state
+  rather than the old strike name with zeroed coefficients. This removes the
+  last-frame rotated paw/contact-head mismatch that otherwise becomes a visible
+  teleport when `parryReaction` is cleared.
+- Boss Move Lab keeps its normal attack playlist and controls unchanged. A real
+  successful parry input during a live lab attack invokes `doMoveLabParry()` at
+  physical/frame contact: it plays the production reaction, interrupts the move
+  or full combo, and finishes through ordinary recovery without damage, rewards,
+  chain stacks, taming progress, fake playlist rows, or preview buttons.
+- Boss Move Lab never enables the legacy `debugParryInputFrozen` simulation stop,
+  even if the debug-run freeze toggle is on. The geometry/result snapshot remains
+  available, but freezing at input prevents the attack from reaching physical
+  parry contact and makes the boss appear permanently stuck before rebound.
+- Boss/Miniboss Move Lab pause controls include an `AUTO PARRY` toggle, disabled
+  by default and also bound to `A` while the lab is paused. It is an input
+  assistant, not a separate collision or animation path: model hits call the
+  existing live spatial evaluator and press only in `VIOLET`/`BURGUNDY` while
+  the knight volumes overlap the correct lane; frame hits require both their
+  symmetric purple timing window and a threatened current screen lane; legacy
+  traveling sweeps press at their first truthful physical contact. The press
+  goes through `playerAction('parry')`, so normal snapshots, interruption,
+  rebound and recovery remain authoritative. Each hazard owns a one-shot guard,
+  and changing/restarting moves preserves the lab-level toggle.
+
 Implemented checkpoint result:
 
 - Bear paw mauls, double-paw strikes, traveling low/high swipes, and pincers use swept circles derived from each rendered paw's complete palm-and-claw bound.
@@ -44,7 +363,7 @@ The immediate goal is responsive physical dodging, not a new parry button. A rea
 
 ## 2. Current combat baseline
 
-The game is a single HTML file: `knight rush fable finish.html`.
+The game is a single HTML file: `KnightRush.html`.
 
 Important current symbols:
 
@@ -283,7 +602,7 @@ The Bear prototype is complete only when all of these are true:
 After a memory wipe, the next AI should:
 
 1. Read this entire file.
-2. Read the maintainer handoff at the top of `knight rush fable finish.html`.
+2. Read the maintainer handoff at the top of `KnightRush.html`.
 3. Read `GAME_BALANCE_DIFFICULTY_REPORT.md`, especially “Why perfect dodge currently feels frame-based” and “Recommended model-driven collision system.”
 4. Inspect the symbols listed in section 2 instead of assuming the old architecture.
 5. Treat the definition of “upper attack” as settled: it means the stationary three-lane `jumpduck` group (`cave_quake` and `high_shove`), not traveling low/high swipes.

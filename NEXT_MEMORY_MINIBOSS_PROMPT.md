@@ -1,6 +1,6 @@
 # Prompt for the next memory
 
-Continue the Knight Rush miniboss update in `C:\Users\Altar\Desktop\knight rush\knight rush fable finish.html`.
+Continue the Knight Rush miniboss update in `C:\Users\Altar\Desktop\knight rush\KnightRush.html`.
 
 First read `MINIBOSS_FRAME_UPDATE_HANDOFF.md` completely. Read `REFACTOR_EFFICIENCY_HANDOFF.md` before changing caches, render ownership, encounter hierarchy, or hot loops. Before any rotation, profile, rear-view, roll, or perspective-changing art, read `CACHED_2_5D_RENDER_HANDOFF.md` completely; Turtle's shell-wheel is the approved production method. Before articulated live-3D boss work, also read `3DMODELRENDER_HANDOFF.md` completely; Bear is a lab-only reference, not the default production route. Then read the maintainer handoff at the top of the HTML and inspect only the systems relevant to the requested task. Do not rebuild or rename the finished fundamentals unless you find a concrete defect.
 
