@@ -62,9 +62,10 @@ The same mechanic may appear in neighbouring Form palettes. For example, `Chain 
 - Uses the Form contract's relationship focus axis.
 - Is authored once as a rarity-neutral mechanical blueprint. Common, Uncommon,
   Rare, and Legendary are four power expressions of that same blueprint.
-- Rarity cannot change the Twist's Delivery pattern, contact count, relationship,
-  Primary/Secondary ownership, or output/interaction mode. Those changes define a
-  different sibling Twist, not a stronger rank of the same Twist.
+- Rarity cannot change the Twist's Delivery pattern, relationship,
+  Primary/Secondary ownership, or output/interaction mode. It contributes persistent
+  Quality; the shared Delivery curve may therefore grow the selected pattern's parameter
+  without a rarity-authored contact table.
 
 A Twist is not a new mechanic. It is an authored answer to: "How do these two existing mechanics work together?"
 
@@ -149,7 +150,7 @@ Presentation:
 
 Every Mark-interacting move declares a data rule with:
 
-- mode: `CONSUME`, `READ`, or `CONVERT_CHAIN`;
+- mode: `CONSUME`, `READ`, `CONVERT_CHAIN`, or `READ_TEMP_CHAIN`;
 - timing: once for the action or independently per hit;
 - cap: a positive amount or `ALL`;
 - value curve;
@@ -203,8 +204,33 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
 - A skill id never owns a bespoke hardcoded Bow timeline. Bow presentation is resolved from a bounded reusable recipe.
 - Delivery owns actor, family, targeting, contact pattern and phase timing. The Bow recipe owns raise, draw, hold, release, recovery, projectile travel and impact presentation.
 - Damage resolves on the generated `CONTACT` event. Changing arrow speed or draw timing must keep animation, projectile and combat contact synchronized.
-- Form selects the initial Delivery. Specialization inherits it and may only select a presentation profile. Twist may select a compatible Delivery transformation and bounded recipe overrides. Apex refines the chosen result.
+- Form selects the initial Delivery. A compatible Primary/Secondary pair may silently select
+  a new Delivery at Specialization; otherwise it inherits Form. Twist may preserve or
+  transform that compatible Delivery. Apex refines the chosen result.
 - Attribute does not directly imply hit count or animation. Sequential, Single and Simultaneous Packet remain Delivery decisions.
+- Delivery magnitude is `floor(sqrt(total cumulative Quality))`, minimum `1`, with no
+  gameplay maximum. Sequential maps it to contact count, Simultaneous Packet to pellet
+  count, and Single to Weight. A one-contact Sequential or Packet is valid.
+- Weight does not multiply base damage universally. The authored Single relationship
+  declares which mechanic Weight intensifies. F1S2T2 multiplies the global base Chain bonus
+  while keeping one visible hit; Quality-bought extra Chain scaling is added once afterward
+  and is not recursively multiplied by Weight.
+- F1S2T2 is the explicit Sharpshoot conversion exception: consume half of starting Mark
+  rounded up, convert `1:1` to Chain before damage, calculate the weighted hit from the
+  post-conversion Chain, then apply normal Mark gain. Its future Apex may replace half with
+  all; direct Mark detonation remains the second weapon skill's identity.
+- F1S2T3 uses `IMPACT_ECHO`, not a packet. Exactly one physical arrow is released and
+  therefore the action produces exactly `+1` persistent Chain. Cumulative Quality controls
+  how many damage contacts echo from that one impact. Starting Mark is preserved and read
+  through the `SATURATED` curve as `0.5` temporary Chain per effective Mark; this temporary
+  Chain affects only the current action's damage and is never stored.
+- F1S2T4 uses a true `SIMULTANEOUS_PACKET`: cumulative Quality controls the number of
+  separate pellets released at the same time. The whole packet produces exactly `+1` Chain,
+  while its net Mark output has a floor of two Mark per pellet. It does not read or consume
+  existing Mark.
+- F1S2 and F1S2T1 sequential arrows use live Chain. Every visible arrow produces `+1`
+  Chain after its hit, and every later arrow benefits from the Chain produced by earlier
+  arrows in the same action. T1 must never lock all contacts to the action-start value.
 - Runtime resolves the recipe once at action start. Frame updates consume the prepared timeline and may not recompile Quality or scan card history.
 
 ## Current expression axes

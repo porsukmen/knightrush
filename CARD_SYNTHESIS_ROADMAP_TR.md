@@ -348,8 +348,10 @@ Twist rarity sözleşmesi:
   temas sayısını korur; yalnız izinli Quality eksenleri güçlenir.
 - Aynı rarity ve aynı parent geçmişinde altı sibling yaklaşık eşit güç bandında,
   fakat farklı taktik profillerinde kalır.
-- F1S2 pilotu `F1S2T1`: tek ok, net Mark üretimi, doğal bir Chain teması ve
-  başlangıç Chain'ini tüketmeden okuyan `DIRECT_CHAIN_READ` ilişkisidir.
+- F1S2 pilotu `F1S2T1`: önceki Mark/Chain sıralı saldırısının doğrudan devamıdır.
+  Ok sayısı sabit yazılmaz; bütün geçmişin toplam Quality değerinden üretilir. Her
+  temas 1 Chain üretir. İlk ok başlangıç Chain'ini, sonraki her ok ise önceki okların
+  aynı saldırı içinde ürettiği Chain dahil güncel değeri kullanır.
 
 ## Aşama 7 — Eski sistemi kapatma
 
@@ -492,7 +494,8 @@ Bugünkü genel sistem ve efficiency audit'i şu sonucu verdi:
 - Yeni rota düğümleri canlı draft'a sokulmadan Move Tree'de incelenebilir. `F1 · MARK`
   ile altı `F1S1–F1S6` Specialization artık kontrat önizlemesi değil, gerçek Quality
   sentezli saldırılardır. Move Tree'deki `EQUIP TEST` bunları Skill Lab savaşına takar.
-  Altısı da aynı Form Delivery'sini ve ayrı Bow sunum recipe'sini taşır.
+  Beş rota Form'un Single Delivery'sini korur; Mark/Chain rotası Specialization anında
+  Quality tabanlı Sequential Delivery'ye geçer. Altısının ayrı Bow sunum recipe'si vardır.
 - Sharpshoot'un skill-seviyesi kaynak rolü kilitlendi: bütün Stable soylar Mark'ı
   tüketmeden okuyabilir, koruyabilir ve ona göre hasar/çıktı üretebilir; fakat net en az
   `+1 Mark` üretimini korur. Stable tüketim yalnız açık bir istisnada, en fazla `1 Mark`
@@ -506,11 +509,12 @@ Bugünkü genel sistem ve efficiency audit'i şu sonucu verdi:
   `38.249/+7/2` (`damage/Mark/Resolve`) üretir. Bunlar elle yazılmış rarity tabloları
   değil; full-history Quality, depth leverage, discrete Mark reserve ve Resolve
   Pressure tarafından yeniden sentezlenir.
-- F1S2 tek okun doğal `+1 Chain` temasını değiştirmez ve Chain tüketmez. Secondary
-  wallet, prepared Chain senaryolarına göre fiyatlanan ek damage-per-Chain oranı satın
-  alır. Common Form sabitken rarity merdiveni `22.699/+2/1/+3.3%`,
-  `25.933/+3/1/+4.3%`, `30.245/+4/1/+5.2%`, `40.713/+5/2/+5.7%`
-  (`damage/Mark/Resolve/ek Chain oranı`) üretir.
+- F1S2 seçildiği anda Quality büyüklüğünde sıralı delivery'ye geçer; her görünen ok
+  doğal `+1 Chain` verir ve Chain tüketmez. Secondary wallet, prepared Chain
+  senaryolarına göre fiyatlanan ek damage-per-Chain oranı satın
+  alır. Eski tek-ok rarity rakamları artık sözleşme değildir; gerçek temas sayısı
+  `floor(sqrt(totalQuality))` ile sentezlenir ve Skill Lab'de rank geçmişiyle birlikte
+  gösterilir. Fazladan Chain gücü ayrı sayaçta izlenen ücretsiz delivery payoff'ıdır.
 - F1S3 aynı Form Delivery'sini korur ve Posture'u final hit sonrasında uygular. Posture
   rarity başına yazılmış bir tablo veya geçici curve kullanmaz. Compiler Secondary rol
   katsayısı `0.80` ile Light Ranged Posture Handling katsayısı `0.40`ı çarpar; uygun
@@ -573,8 +577,10 @@ Güvenli devam sırası:
 4. **Tamamlandı:** F1 ve altı Stable Specialization gerçek saldırı olarak sentezlendi. Her çalışan
    Specialization için 4 Form rarity × 4 Specialization rarity kombinasyonu otomatik
    guardrail denetimindedir.
-5. Altı Specialization'ı birlikte Skill Lab'de doğrula; ardından seçilen ilk rota için
-   Twist ilişki havuzuna geç.
+5. **Devam ediyor:** F1S2 Mark/Chain Specialization Quality tabanlı sıralı delivery'ye
+   geçirildi. T1 doğrudan sıralı devam, T2 Single/Weight Mark→Chain dönüştürücü,
+   T3 tek ok + hedef yankısı ve T4 gerçek shotgun paketi olarak materialize edildi.
+   Kalan iki Twist tek tek tasarlanacak.
 6. Bu slice doğrulanmadan canlı draftı, diğer skillleri, weapon swapı veya animation
    rewrite'ını topluca migrate etme.
 
@@ -586,12 +592,49 @@ Güvenli devam sırası:
 - History dört evolution katmanında küçüktür; Mastery ayrı cache kullanır.
 - Aynı seed + aynı history aynı üç aday ve aynı sonuçları üretir.
 
+## Quality tabanlı Delivery büyüklüğü
+
+- Delivery tipi ile temas sayısı birbirinden ayrıdır. `SEQUENTIAL` ve
+  `SIMULTANEOUS_PACKET` bir temasla başlayabilir; onları `SINGLE`dan ayıran şey
+  büyütülebilir delivery parametresidir.
+- Parametre tüm geçmişin ham toplam Quality değeriyle belirlenir:
+  `floor(sqrt(totalQuality))`. Sonuç en az `1`dir ve gameplay maksimumu yoktur.
+- `SEQUENTIAL` için sonuç ok/vuruş sayısı, `SIMULTANEOUS_PACKET` için pellet sayısı,
+  `SINGLE` için kartın açıkça seçtiği mekanik bonusu yoğunlaştıran `Weight` değeridir.
+- Mark/Chain Specialization seçildiği anda saldırı Quality büyüklüğündeki sıralı
+  delivery'ye geçer. Common Form + Common Specialization toplam Quality `6` olduğu
+  için iki ok; Common F1S2T1 toplam Quality `10` olduğu için üç ok üretir.
+- Sıralı saldırıda her görünen temas `+1 Chain` verir. Sonraki oklar daha önceki
+  okların aynı saldırı içinde ürettiği Chain'den de yararlanır. Fazladan Chain delivery'nin
+  Quality cüzdanından hasar çalmayan ücretsiz avantajıdır. Bu güç sentez hatasına
+  dahil edilmez fakat denge testi için ayrı sayaçta tutulur; fazla güçlü bulunursa
+  daha sonra cüzdandan fiyatlandırılabilir.
+- Çok yüksek Quality sayıları bilinçli olarak build'i kırabilir. İleride yalnız
+  sunum/performance batching yapılabilir; oyun matematiğine hard cap eklenmez.
+- F1S2T2 Single delivery'ye geçer. Başlangıç Marklarının yarısını yukarı yuvarlayıp
+  `1 Mark → 1 Chain` olarak vuruştan önce dönüştürür. Oluşan Chain ağır okun hesabına
+  girer; normal Mark üretimi finalde gerçekleşir. Weight base damage'i değil, toplam
+  global temel Chain bonusunu çarpar; Quality kaynaklı ek Chain oranı sonradan bir kere
+  eklenir. Common/Common/Common geçmişte Quality `10`, Weight `3` olur.
+  Gelecekteki T2 Apex yarım dönüşümü tam dönüşüme çıkarabilir.
+- F1S2T3 shotgun değildir. Tek fiziksel ok atılır; ok hedefe değdikten sonra Quality
+  büyüklüğü kadar hasar yankısı oluşur. Bu nedenle bütün hareket yalnız `+1` kalıcı
+  Chain üretir. Başlangıç Markı tüketilmez; `SATURATED` eğrisiyle hesaplanan her efektif
+  Mark bu saldırı için `+0.5` geçici Chain sayılır. Örneğin `5 Mark`, ilk dört tam ve
+  beşinci yarım değerle `4.5 efektif Mark → 2.25 geçici Chain` verir. Geçici Chain yalnız
+  bu hareketin hasarına girer, boss Chain sayacına yazılmaz. Normal Mark üretimi finalde gelir.
+- F1S2T4 gerçek `SIMULTANEOUS_PACKET` shotgun'dır. Quality büyüklüğü kadar ayrı pellet
+  aynı anda çıkar. Bütün paket toplam `+1 Chain` üretir; net Mark üretimi pellet başına
+  en az `+2` olacak şekilde büyür. Mevcut Markı okumaz veya tüketmez. Böylece T3 hazır
+  Markı koruyan payoff, T4 ise sonraki hareketler için hızlı Mark kuran builder olur.
+
 ## Bir sonraki somut iş
 
-`F1S6 · MARK/CHARGE` dikey dilimini Skill Lab'de `0/1/2/3 Charge` ile doğrula. Ardından
-F1 altındaki altı Specialization'ın güç ve kimlik kontrolünü birlikte kapatıp ilk Twist
-rotasını seç. Her Specialization Mark Source kimliğini, tek-ok Form Delivery'sini ve Stable
-net üretim kuralını korur. Twist onayından önce Delivery veya
-Primary/Secondary ilişki mekaniği değiştirilmez. Legacy canlı draft ancak yeni
-hiyerarşide yeterli route coverage oluşunca değişir. Weapon
-Chassis aşaması bu temel doğrulandıktan sonra başlar.
+Skill Lab'de F1S2 Common geçmişinin iki oka, F1S2T1 Common geçmişinin üç oka çıktığını;
+her temasın `+1 Chain` verdiğini ve sonraki okların önceki okların ürettiği Chain'den
+yararlandığını doğrula. T2'de `5 Mark → 3 Chain`, Single Weight `3`, dönüşüm sonrası Chain hasarı ve
+final Mark üretimini kontrol et. T3'te tek okun üç yankı temasına dönüştüğünü, `5 Mark`ın
+tüketilmeden `2.25` geçici Chain verdiğini ve kalıcı Chain'in yalnız `+1` arttığını kontrol
+et. T4'te üç okun aynı anda çıktığını, en az `+6 Mark` verdiğini ve bütün paketin yine
+yalnız `+1 Chain` ürettiğini doğrula. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
+ancak yeni hiyerarşide yeterli route coverage oluşunca değiştirilir.
