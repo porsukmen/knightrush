@@ -18588,14 +18588,18 @@ function skillTooltipContent(command){
     'Use during Break to multiply the complete result by '+damagePart(CFG.BREAK_DAMAGE_MULT)+'.'
   ]};
 }
-function drawWrappedTooltipText(text,x,y,maxWidth,lineHeight){
-  const words=text.split(' ');let line='';
+function wrappedTooltipTextLines(text,maxWidth){
+  const words=String(text||'').split(' '),lines=[];let line='';
   for(let i=0;i<words.length;i++){
     const test=line?line+' '+words[i]:words[i];
-    if(line&&g.measureText(test).width>maxWidth){g.fillText(line,x,y);line=words[i];y+=lineHeight;}
+    if(line&&g.measureText(test).width>maxWidth){lines.push(line);line=words[i];}
     else line=test;
   }
-  if(line){g.fillText(line,x,y);y+=lineHeight;}
+  if(line)lines.push(line);
+  return lines;
+}
+function drawWrappedTooltipText(text,x,y,maxWidth,lineHeight){
+  for(const line of wrappedTooltipTextLines(text,maxWidth)){g.fillText(line,x,y);y+=lineHeight;}
   return y;
 }
 function drawSkillTooltip(){
@@ -19690,6 +19694,8 @@ function moveTreeSkillId(){return BASE_TURN_SKILLS[moveTreeSkillIndex].id;}
 function moveTreeNodeById(id){return SKILL_MUTATION_BY_ID[id]||SHARPSHOOT_MARK_LAB_NODE_BY_ID[id]||null;}
 const MOVE_TREE_SYNTHESIS_RARITY_RECTS=Object.freeze(SKILL_RARITY_ORDER.map((rarity,index)=>
   Object.freeze({x:24+index*108,y:532,w:96,h:28,rarity})));
+const MOVE_TREE_TWIST_LAYOUT=Object.freeze({apexTop:366,apexBottom:498,
+  navigationHintY:510,synthesisHeaderY:522});
 const SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT=Object.freeze({x:40,y:588,w:400,h:104});
 const MOVE_TREE_EQUIP_TEST=Object.freeze({x:326,y:710,w:120,h:28});
 const F1_SYNTHESIS_ROUTE_PROMISES=Object.freeze({
@@ -19861,6 +19867,17 @@ function moveTreeGridRects(count,y,maxBottom=542){
     x:24+(index%2)*(w+gapX),y:y+((index/2)|0)*(h+gapY),w,h
   }));
 }
+const MOVE_TREE_TWIST_LAYOUT_AUDIT=(()=>{
+  const layout=MOVE_TREE_TWIST_LAYOUT,
+    rects=moveTreeGridRects(SKILL_EVOLUTION_DEPTHS[4].poolFamilies,layout.apexTop,layout.apexBottom),
+    lastApexBottom=Math.max(...rects.map(rect=>rect.y+rect.h)),
+    rarityTop=Math.min(...MOVE_TREE_SYNTHESIS_RARITY_RECTS.map(rect=>rect.y));
+  if(lastApexBottom+4>layout.navigationHintY-8||
+     layout.navigationHintY+4>layout.synthesisHeaderY-8||
+     layout.synthesisHeaderY+10>rarityTop)
+    throw new Error('Move Tree Twist layout overlaps its synthesis controls');
+  return Object.freeze({slots:rects.length,lastApexBottom,rarityTop});
+})();
 function drawMoveTreePlaceholder(rect,label,index){
   g.fillStyle='rgba(255,255,255,.018)';g.fillRect(rect.x,rect.y,rect.w,rect.h);
   g.save();g.strokeStyle='#2b2e38';g.lineWidth=1;g.setLineDash([5,4]);
@@ -19912,7 +19929,10 @@ function drawMoveTree(){
       moveTreeHitNodes.push({node:twist,rect:twistRect});
       drawMoveTreeNode(twist,twistRect,twist.id===moveTreeSelectedId,runPath.has(twist.id));
       visibleNodes=apexes;expected=SKILL_EVOLUTION_DEPTHS[4].poolFamilies;childLabel='APEX';
-      rects=moveTreeGridRects(expected,384);parentRect=twistRect;
+      /* Six Apex slots need three rows. Keep their grid entirely above the
+         synthesis controls instead of letting the final row share text space. */
+      rects=moveTreeGridRects(expected,MOVE_TREE_TWIST_LAYOUT.apexTop,
+        MOVE_TREE_TWIST_LAYOUT.apexBottom);parentRect=twistRect;
     }
   }
   const labelY=rects.length?rects[0].y-12:244;
@@ -19930,14 +19950,16 @@ function drawMoveTree(){
   const selectedRaw=moveTreeNodeById(moveTreeSelectedId)||form,
     selected=moveTreeSynthesisDisplayNode(selectedRaw),synthesisNode=moveTreeSynthesisSelectedNode();
   g.font='bold 8px monospace';g.fillStyle='#626570';
+  const navigationHintY=twist?MOVE_TREE_TWIST_LAYOUT.navigationHintY:synthesisNode?518:558;
   g.fillText(spec?'TAP THE PATH TO NAVIGATE · HOLD A MOVE FOR MECHANICS':
-    'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,synthesisNode?518:558);
+    'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,navigationHintY);
   if(synthesisNode){
     const depthName=synthesisNode.depth===1?'FORM':synthesisNode.depth===2?'SPECIALIZATION':'TWIST';
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#9ecbff';
     g.fillText('SYNTHESIS '+depthName+' · F '+moveTreeSynthesisRarityByDepth[1].slice(0,3)+
       ' · S '+moveTreeSynthesisRarityByDepth[2].slice(0,3)+
-      (synthesisNode.depth>=3?' · T '+moveTreeSynthesisRarityByDepth[3].slice(0,3):''),VW/2,529);
+      (synthesisNode.depth>=3?' · T '+moveTreeSynthesisRarityByDepth[3].slice(0,3):''),VW/2,
+      twist?MOVE_TREE_TWIST_LAYOUT.synthesisHeaderY:529);
     for(const rect of MOVE_TREE_SYNTHESIS_RARITY_RECTS)drawSkillLabButton(rect,rect.rarity.slice(0,3),
       SKILL_MUTATION_RARITY_COL[rect.rarity],true,
       moveTreeSynthesisRarityByDepth[synthesisNode.depth]===rect.rarity);
@@ -20244,6 +20266,50 @@ function skillSynthesisObservationLines(command){
   if(refund)lines.push('Rarity Resonance: regain '+refund+' Resolve after the attack.');
   return lines;
 }
+function skillLabSynthesisMarkRuleText(command){
+  const rule=command&&command.markRule;if(!rule)return '';
+  if(rule.mode==='CONVERT_CHAIN'&&rule.cap===MARK_ALL&&rule.fraction!==null)
+    return 'Mark rule: convert half of all starting Mark into equal Chain; no stack cap.';
+  if(rule.mode==='READ_TEMP_CHAIN'&&rule.cap===MARK_ALL)
+    return 'Mark rule: read all Mark as temporary Chain; consume none, no stack cap. Value diminishes after 4.';
+  if(rule.mode==='READ'&&rule.cap===MARK_ALL)
+    return 'Mark rule: read all starting Mark without consuming it; no stack cap.';
+  return commandMarkRuleCombatText(command,bossMark());
+}
+function skillLabCompactSynthesisMechanics(command){
+  const lines=[],hits=command.hits||1,delivery=commandDeliveryContract(command),
+    magnitude=command.deliveryMagnitude||1,
+    chain=Array.from({length:hits},(_,index)=>commandChainGain(command,index)),
+    chainTotal=chain.reduce((sum,value)=>sum+value,0),outputs=[];
+  lines.push('Delivery: '+delivery.pattern.replace(/_/g,' ')+' / '+(delivery.pattern==='SINGLE'?
+    'Weight '+(command.deliveryWeight||magnitude):magnitude+' contact'+(magnitude===1?'':'s'))+'.');
+  outputs.push(command.addsChain===false?'No Chain':'+'+chain.join(' / +')+' Chain ('+chainTotal+' total)');
+  if(command.markGain)outputs.push('+'+command.markGain+' Mark after final hit');
+  lines.push(outputs.join(' / ')+'.');
+  const markRuleText=skillLabSynthesisMarkRuleText(command);
+  if(markRuleText)lines.push(markRuleText);
+  if(command.posture||command.posturePerChain)lines.push('Posture: '+(command.posture||0)+
+    (command.posturePerChain?' + '+command.posturePerChain+' per starting Chain':'')+'.');
+  if(command.extraChainBonus)lines.push('Chain damage: +'+Math.round(command.extraChainBonus*100)+
+    '% per Chain'+((command.chainBonusWeight||1)>1?' / Weight x'+command.chainBonusWeight:'')+'.');
+  const chargeRate=commandDefenseTemperRate(command);
+  if(chargeRate)lines.push('Charge: spend up to '+DEFENSE_CHARGE.max+' for +'+damagePart(chargeRate)+
+    ' damage each.');
+  const bleed=commandBleedAmount(command);
+  if(bleed)lines.push('Bleed: '+damagePart(bleed)+' damage for the next 2 defense phases.');
+  const crit=commandCritProfile(command,'knight');
+  if(crit.chance>0||crit.precisionGain>0)lines.push('Critical: '+Math.round(crit.chance*100)+
+    '% chance / x'+damagePart(crit.multiplier)+' Health and Posture.');
+  const history=(command.evolutionHistory||[]).map(node=>{
+    const prefix=node.depth===1?'F':node.depth===2?'S':node.depth===3?'T':'A';
+    return prefix+' '+node.rarity.slice(0,3);
+  });
+  if(history.length)lines.push('Build: '+history.join(' -> ')+' / Quality '+
+    (command.synthesisQuality||0)+'.');
+  const refund=skillRarityResonanceRefund(command);
+  if(refund)lines.push('Rarity Resonance: regain '+refund+' Resolve.');
+  return lines;
+}
 function skillLabMutationMechanics(command){
   const lines=[],hits=command.hits||1;
   if(command.synthesisActive){
@@ -20259,7 +20325,9 @@ function skillLabMutationMechanics(command){
   if(command.addsChain===false)lines.push('Chain: none.');
   else lines.push('Chain: +'+chain.join(' / +')+' ('+chainTotal+' total).');
   if(command.markGain)lines.push('Mark: +'+command.markGain+' after the final hit.');
-  const markText=commandMarkRuleCombatText(command,8);if(markText)lines.push('At 8 Mark: '+markText);
+  const markText=command.synthesisActive?skillLabSynthesisMarkRuleText(command):
+    commandMarkRuleCombatText(command,8);
+  if(markText)lines.push(command.synthesisActive?markText:'At 8 Mark: '+markText);
   if(command.resolvePerHit)lines.push('Resolve: +'+command.resolvePerHit+' per hit.');
   if(command.resolveOnComplete)lines.push('Resolve: +'+command.resolveOnComplete+' after the final hit.');
   if(command.resolveRule)lines.push(commandResolveRuleText(command.resolveRule));
@@ -20438,7 +20506,9 @@ function drawSkillLabMutationTooltip(){
   if(!mutation||!command)return;
   const rarityCol=SKILL_MUTATION_RARITY_COL[mutation.rarity]||mutation.col,
     preview=skillLabMutationDamagePreview(command),
-    x=20,y=70,w=440,h=660;
+    x=20,y=70,w=440,h=660,
+    rankedSynthesis=moveTreeOpen&&!!command.synthesisCompilerVersion,
+    mechanicsBottom=rankedSynthesis?SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT.y-24:y+h-44;
   g.save();g.fillStyle='rgba(2,3,7,.86)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.fillStyle='rgba(8,11,18,.99)';g.fillRect(x,y,w,h);
   drawSkillMutationRarityFrame(mutation,{x,y,w,h});
@@ -20454,25 +20524,34 @@ function drawSkillLabMutationTooltip(){
   g.fillText('CLEAN DAMAGE: '+preview.values.map(value=>healthDamageText(value,true)).join(' / ')+
     ' · TOTAL '+healthDamageText(preview.total,true),x+28,y+136);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';g.fillText('WHAT IT DOES',x+20,y+180);
+  /* Rank comparison owns the lower panel. Clip the explanation above it so a
+     future mechanic can never paint across the selectable rarity cards. */
+  g.save();g.beginPath();g.rect(x+14,y+168,w-28,Math.max(0,mechanicsBottom-(y+168)));g.clip();
   let textY=y+204;g.font='11px monospace';
-  for(const line of skillLabMutationMechanics(command)){
+  for(const line of rankedSynthesis?skillLabCompactSynthesisMechanics(command):
+      skillLabMutationMechanics(command)){
     g.fillStyle=mutation.col;g.fillText('◆',x+22,textY);
     g.fillStyle='#d9dce6';textY=drawWrappedTooltipText(line,x+42,textY,w-72,17)+7;
   }
-  const dividerY=textY+2;g.strokeStyle='#ffffff24';g.lineWidth=1;g.beginPath();
-  g.moveTo(x+20,dividerY);g.lineTo(x+w-20,dividerY);g.stroke();
-  textY=dividerY+27;g.font='bold 12px monospace';g.fillStyle=mutation.col;
-  textY=drawWrappedTooltipText(mutation.summary,x+22,textY,w-44,18)+10;
+  const dividerY=textY+2,summaryY=dividerY+27;g.font='bold 12px monospace';
+  const summaryBottom=summaryY+wrappedTooltipTextLines(mutation.summary,w-44).length*18+10;
+  if(summaryBottom<=mechanicsBottom){
+    g.strokeStyle='#ffffff24';g.lineWidth=1;g.beginPath();
+    g.moveTo(x+20,dividerY);g.lineTo(x+w-20,dividerY);g.stroke();
+    textY=summaryY;g.fillStyle=mutation.col;
+    textY=drawWrappedTooltipText(mutation.summary,x+22,textY,w-44,18)+10;
+  }
   g.font='11px monospace';
   const details=command.synthesisCompilerVersion?[]:(mutation.details||[]);
   for(const detail of details){
     g.fillStyle=rarityCol;g.fillText('◆',x+22,textY);
     g.fillStyle='#d9dce6';textY=drawWrappedTooltipText(detail,x+42,textY,w-72,17)+7;
   }
-  if(moveTreeOpen&&command.synthesisCompilerVersion)
+  g.restore();
+  if(rankedSynthesis)
     drawMoveTreeSynthesisRarityLadder(sourceMutation,SKILL_LAB_TOOLTIP_SYNTHESIS_RARITY_RECT);
   g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#8f94a5';
-  g.fillText(moveTreeOpen&&command.synthesisCompilerVersion?
+  g.fillText(rankedSynthesis?
     'TAP OUTSIDE RANKS TO CLOSE':'TAP ANYWHERE TO CLOSE',VW/2,y+h-18);g.restore();
 }
 function drawSkillLab(){
