@@ -253,7 +253,7 @@ A shape label may never consume budget while doing nothing.
 
 ## Pool and rarity rules
 
-Every completed layer contains six rarity-neutral route recipes. Drafting first selects distinct eligible routes with equal family probability, then rolls rarity independently for each offered route. Rarity must never make a Form, Specialization, or Twist route intrinsically harder to access.
+The current authored breadth is six rarity-neutral Form recipes, six Specialization recipes per Form, four Twist recipes per Specialization, and four Apex recipes per Twist. These counts are content targets, not compiler assumptions. Drafting first selects distinct eligible routes with equal family probability, then rolls rarity independently for each offered route. Rarity must never make a Form, Specialization, Twist, or Apex route intrinsically harder to access.
 
 For Twist, the exact parent history is fixed before rarity comparison. All four
 rarities compile `parent history + the same relationship blueprint + the new rarity
@@ -343,7 +343,7 @@ Resonance and synthesis ledgers are recalculated only when a mutation is applied
 3. Define six rarity-neutral Specialization recipes per Form. Assign one `secondaryId`, preserve the parent, and calibrate their Common results.
 4. Author one normalized Quality allocation profile per route. The generic compiler distributes every history packet through the profile, derives Resolve cost from cumulative Pressure, preserves discrete reserve, and solves final damage from the shared targetPower.
 5. Generate each candidate from full history: parent result + route recipe + rarity contribution + aspect contribution.
-6. Generate Twist and Apex recipes from their immediate synthesized parents while preserving Secondary and relationship contracts.
+6. Generate the current four Twist and four Apex recipes from their immediate synthesized parents while preserving Secondary and relationship contracts.
 7. Verify every result is a net upgrade, retains inherited Quality/Pressure/aspects, introduces no unauthorized mechanic, and obeys refund caps.
 8. Boot the game and require every schema, lineage, economy, Resonance, sibling, branch, spectrum, and negative validator to pass.
 
@@ -369,16 +369,12 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - Specialization: **Marked Rhythm**
   - Secondary: `Mark:Generate`
   - Establishes 2 Mark while preserving multihit Chain generation
-- Six Twists form a gradual Chain-to-Mark spectrum:
-  - Iron Cadence
-  - Driving Signal
-  - Twin Inscription
-  - Crimson Relay
-  - Blooded Refrain
-  - Royal Convergence
-- Each Twist owns six Apex cards. Every Apex preserves its Twist relationship and maximizes it through impact or resource weight.
-
-The six Twist Mark values are `2, 2, 2, 2, 3, 3`: none undo Marked Rhythm's 2-Mark commitment. The first Twist is Chain-dominant through higher Chain density, the middle Twists balance Chain and Mark, and the final Twist is Mark-dominant while still generating Chain. Adjacent Twists stay recognizable as relatives; the two endpoints play substantially differently.
+- Four authored pilot Twists each create a distinct Mark/Chain combat loop. They are not a numeric spectrum.
+- Each Twist currently owns four Apex cards. Every Apex preserves its exact Twist relationship and Delivery family, then maximizes a different already-owned output.
+- `F1S2T1` is the direct sequential continuation. Every visible arrow generates one Chain and reads the live Chain value, including Chain created earlier in the same action.
+- Its four Apex refinements are: distribute more Mark across contacts, ramp the live Chain coefficient on later arrows, back-load clean damage into the final arrow, or increase uncapped contact cadence. None may consume/read Mark or replace sequential Delivery.
+- The Chain-ramp Apex must visibly scale its last-arrow coefficient with its own Apex Quality packet; higher rarity may not merely add damage while leaving this defining payoff flat. Its displayed skill coefficient is additive over the global `5% per Chain` combat rule.
+- For one fixed parent history and Apex rarity, sibling Apexes must remain in an approximately equal combined-power band; the tactical allocation, not raw superiority, is the choice.
 
 Current authored jackpot examples are executable test fixtures:
 

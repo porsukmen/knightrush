@@ -343,10 +343,11 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 
 ## 12. Sonraki sıra
 
-1. Marked Rhythm altında altı Twist recipe'sini Quality Compiler'a taşı; Twist, Primary ve
-   Secondary arasındaki değer ağırlığını açıkça oynatabilir ve gerekirse bounded
-   `tradeContract` kullanabilir.
-2. İlk Twist altında altı Apex recipe'sini taşı.
-3. Dört depth full-history `4^4 = 256` rarity geçmişini fuzz validator ile tara.
-4. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
-5. Yeterli route coverage sonrası live route-first draftı aç.
+1. **Tamamlandı:** Marked Rhythm altında dört pilot Twist recipe'si Quality Compiler'a taşındı.
+2. **Tamamlandı:** İlk Twist altında dört rarity-neutral Apex recipe'si taşındı; aynı parent ve
+   rarity için eşit güç bandı, Twist kimliği ve Delivery mirası boot-time denetimdedir.
+3. Kalan üç Twist'in dörder Apex recipe'sini sırayla tasarla.
+4. Her tamamlanan vertical slice için dört depth full-history `4^4 = 256` rarity geçmişini
+   fuzz validator ile tara.
+5. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
+6. Yeterli route coverage sonrası live route-first draftı aç.

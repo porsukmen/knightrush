@@ -335,8 +335,10 @@ Aspect de absolute kart seçmez; mevcut synthesized parent'a relative modifier u
 
 ## Aşama 6 — Twist ve Apex
 
-- Twist, seçilmiş Primary–Secondary ilişkisinin altı farklı yorumudur.
-- Apex, seçilmiş Twist'in altı maksimum ifadesidir.
+- Mevcut pilotta Twist, seçilmiş Primary–Secondary ilişkisinin dört farklı yorumudur.
+- Mevcut pilotta Apex, seçilmiş Twist'in dört maksimum ifadesidir.
+- `6 Form / Form başına 6 Specialization / Specialization başına 4 Twist / Twist başına 4 Apex`
+  şimdiki içerik hedefidir; compiler bu sayıları sabit varsaymaz ve ileride büyütülebilir.
 - Her katman rarity-neutral recipe olarak yazılır.
 - Rarity/aspect aynı materialization motorundan gelir.
 - Mastery dört katman dışındaki uzun-run gelişimi olarak ayrı kalır.
@@ -346,7 +348,7 @@ Twist rarity sözleşmesi:
 - Önce sibling Twist blueprint'i seçilir, rarity bundan bağımsız roll edilir.
 - Aynı Twist Common–Legendary arasında aynı ilişkiyi, Delivery pattern'ini ve
   temas sayısını korur; yalnız izinli Quality eksenleri güçlenir.
-- Aynı rarity ve aynı parent geçmişinde altı sibling yaklaşık eşit güç bandında,
+- Aynı rarity ve aynı parent geçmişinde sibling kartlar yaklaşık eşit güç bandında,
   fakat farklı taktik profillerinde kalır.
 - F1S2 pilotu `F1S2T1`: önceki Mark/Chain sıralı saldırısının doğrudan devamıdır.
   Ok sayısı sabit yazılmaz; bütün geçmişin toplam Quality değerinden üretilir. Her
@@ -577,10 +579,14 @@ Güvenli devam sırası:
 4. **Tamamlandı:** F1 ve altı Stable Specialization gerçek saldırı olarak sentezlendi. Her çalışan
    Specialization için 4 Form rarity × 4 Specialization rarity kombinasyonu otomatik
    guardrail denetimindedir.
-5. **Devam ediyor:** F1S2 Mark/Chain Specialization Quality tabanlı sıralı delivery'ye
+5. **Devam ediyor:** F1S2 Mark/Chain Specialization Quality tabanlı delivery sistemine
    geçirildi. T1 doğrudan sıralı devam, T2 Single/Weight Mark→Chain dönüştürücü,
    T3 tek ok + hedef yankısı ve T4 gerçek shotgun paketi olarak materialize edildi.
-   Kalan iki Twist tek tek tasarlanacak.
+   Dört pilot Twist tamamlandı. T1 altında dört Apex: temaslara dağıtılan Mark, sonraki
+   oklarda yükselen canlı Chain katsayısı, son oka taşınan hasar ve uncapped yoğun tempo
+   olarak materialize edildi. Diğer üç Twist'in Apexleri sırayla tasarlanacak.
+   A2'nin son-ok Chain katsayısı kendi Apex packet Quality'sinin kareköküyle büyür; bu
+   bonus global `%5 / Chain` tabanının üstüne eklenir ve rarity boyunca artmak zorundadır.
 6. Bu slice doğrulanmadan canlı draftı, diğer skillleri, weapon swapı veya animation
    rewrite'ını topluca migrate etme.
 

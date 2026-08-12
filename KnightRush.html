@@ -9380,6 +9380,7 @@ function createRunSkill(definition){
     synthesisQualityReceipts:[],
     synthesisScenarioScores:null,synthesisScenarioRatios:null,synthesisImpactFloor:null,
     synthesisFreeDeliveryPower:0,synthesisWeightDeliveryPower:0,synthesisShotgunMarkPower:0,
+    synthesisApexRefinementPower:0,synthesisCadenceQualityMultiplier:1,
     synthesisCompilerVersion:0,legendaryStampSlots:0,legendaryStamps:[],
     rarityResonanceLevel:0,rarityResonanceScore:0,rarityResonancePair:null,
     masteryIds:[],masteryGroups:[],masteryHistory:[],masteryRanks:Object.create(null),
@@ -9430,11 +9431,13 @@ function skillMastery(data){
 function transformSharpshoot(skill,patch){
   return Object.assign(skill,{
     damage:16,hitDamages:null,hits:1,hitInterval:0,duration:undefined,cost:1,markGain:0,
+    markGainPattern:null,
     impactDelay:0,projectileStyle:null,bowAnimationRecipeId:skill.bowAnimationRecipeId||'BOW_STANDARD',
     bowAnimationOverrides:null,
     markRule:null,
     posture:0,posturePerChain:0,affliction:null,resolvePerHit:0,resolveOnComplete:0,resolveRule:null,
-    resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,chainScalingTiming:'LIVE',
+    resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,chainScalingRampPerHit:0,
+    chainScalingTiming:'LIVE',apexRefinementId:null,
     addsChain:true,chainGainPerHit:1,chainGainPattern:null,deliveryMagnitude:1,deliveryWeight:1,
     chainBonusWeight:1,
     critChance:0,critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
@@ -9454,9 +9457,9 @@ const SKILL_EVOLUTION_DEPTHS=Object.freeze({
     designQuestion:'HOW DOES THIS SKILL PLAY?',minStructuralChanges:1,maxStructuralChanges:6}),
   2:Object.freeze({id:'SPECIALIZATION',name:'SPECIALIZATION',poolFamilies:6,designRole:'SECONDARY',
     designQuestion:'WHAT SUPPORTS THIS FORM PRIMARY?',minStructuralChanges:0,maxStructuralChanges:2}),
-  3:Object.freeze({id:'TWIST',name:'TWIST',poolFamilies:6,designRole:'RELATIONSHIP',
+  3:Object.freeze({id:'TWIST',name:'TWIST',poolFamilies:4,designRole:'RELATIONSHIP',
     designQuestion:'HOW DO PRIMARY AND SECONDARY INTERACT?',minStructuralChanges:0,maxStructuralChanges:3}),
-  4:Object.freeze({id:'APEX',name:'APEX',poolFamilies:6,designRole:'REFINEMENT',
+  4:Object.freeze({id:'APEX',name:'APEX',poolFamilies:4,designRole:'REFINEMENT',
     designQuestion:'HOW STRONG CAN THIS EXACT ROTATION BECOME?',minStructuralChanges:0,maxStructuralChanges:1}),
 });
 const SKILL_PROGRESSION_KINDS=Object.freeze(['EVOLUTION','MASTERY']);
@@ -10081,7 +10084,9 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_posture_spec:'BOW_POSTURE',mark_critical_spec:'BOW_CRITICAL',
   mark_affliction_spec:'BOW_AFFLICTION',mark_charge_spec:'BOW_CHARGE',
   mark_chain_direct_twist:'BOW_CHAIN',mark_chain_converter_twist:'BOW_WEIGHTED_CHAIN',
-  mark_chain_echo_twist:'BOW_MARK_ECHO',mark_chain_shotgun_twist:'BOW_SHOTGUN'
+  mark_chain_echo_twist:'BOW_MARK_ECHO',mark_chain_shotgun_twist:'BOW_SHOTGUN',
+  mark_chain_direct_mark_apex:'BOW_CHAIN',mark_chain_direct_ramp_apex:'BOW_CHAIN',
+  mark_chain_direct_finisher_apex:'BOW_CHAIN',mark_chain_direct_tempo_apex:'BOW_CHAIN'
 });
 function bowAnimationRecipeById(id){return BOW_ANIMATION_RECIPES.get(id||'BOW_STANDARD');}
 function resolveBowAnimationRecipe(command,charge=0){
@@ -10465,25 +10470,26 @@ const SHARPSHOOT_MARK_ECONOMY_CONTRACT=Object.freeze({
   fractionalConversionOwner:'F1S2T2',apexFullConversionAllowed:true
 });
 function skillAttributeRouteContract(data){
-  if(!data||typeof data.id!=='string'||!data.id||![1,2,3].includes(data.depth)||
+  if(!data||typeof data.id!=='string'||!data.id||![1,2,3,4].includes(data.depth)||
      typeof data.promise!=='string'||!data.promise||!(data.powerBudget>0))
-    throw new Error('Skill Attribute route needs id, Form/Spec/Twist depth, promise and power budget');
+    throw new Error('Skill Attribute route needs id, Form/Spec/Twist/Apex depth, promise and power budget');
   if(!Number.isInteger(data.formSlot)||data.formSlot<1||
      (data.depth>1&&(!Number.isInteger(data.slot)||data.slot<1))||
-     (data.depth===3&&(!Number.isInteger(data.specializationSlot)||data.specializationSlot<1)))
+     (data.depth>=3&&(!Number.isInteger(data.specializationSlot)||data.specializationSlot<1))||
+     (data.depth===4&&(!Number.isInteger(data.twistSlot)||data.twistSlot<1)))
     throw new Error(data.id+' needs a valid tree address');
   if(!COMBAT_ATTRIBUTES.has(data.primaryAttributeId))
     throw new Error(data.id+' needs a registered Primary Attribute');
   if(data.depth===1&&data.secondaryAttributeId!==null)
     throw new Error(data.id+' Form cannot own a Secondary Attribute');
   if(data.depth>1&&!COMBAT_ATTRIBUTES.has(data.secondaryAttributeId))
-    throw new Error(data.id+' Specialization/Twist needs a registered Secondary Attribute');
+    throw new Error(data.id+' Specialization/Twist/Apex needs a registered Secondary Attribute');
   const hasDelivery=!!(data.deliveryProfileId||data.deliveryPattern||data.deliveryTiming||data.contacts);
   if(hasDelivery&&(!data.deliveryProfileId||!data.deliveryPattern||!data.deliveryTiming||
      !Number.isInteger(data.contacts)||data.contacts<1))
     throw new Error(data.id+' needs one complete Delivery contract');
   if(data.depth!==2&&!hasDelivery)
-    throw new Error(data.id+' Form/Twist needs an explicit Delivery contract');
+    throw new Error(data.id+' Form/Twist/Apex needs an explicit Delivery contract');
   const delivery=hasDelivery?commandDeliveryContract({id:'route_'+data.id,hits:data.contacts,
      deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
      deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
@@ -10507,13 +10513,14 @@ function skillAttributeRouteContract(data){
      Math.abs(qualityTotal-1)>1e-6)
     throw new Error(data.id+' needs one normalized semantic Quality profile');
   const address='F'+data.formSlot+(data.depth===2?'S'+data.slot:
-      data.depth===3?'S'+data.specializationSlot+'T'+data.slot:''),
+      data.depth===3?'S'+data.specializationSlot+'T'+data.slot:
+      data.depth===4?'S'+data.specializationSlot+'T'+data.twistSlot+'A'+data.slot:''),
     semanticLabel=data.primaryAttributeId+(data.depth>1?'/'+data.secondaryAttributeId:''),
     name=address+' · '+semanticLabel,
     baselineAttack=data.baselineAttack?Object.freeze({...data.baselineAttack}):null,
     deliveryPolicy=data.depth===1?'LOCK_FORM_BASELINE':data.depth===2?
       (delivery?'SPECIALIZATION_SELECTS_COMPATIBLE_DELIVERY':'INHERIT_FORM_UNTIL_TWIST'):
-      'TWIST_SELECTS_COMPATIBLE_DELIVERY';
+      data.depth===3?'TWIST_SELECTS_COMPATIBLE_DELIVERY':'APEX_PRESERVES_TWIST_DELIVERY';
   if(data.runtimeReadiness==='MATERIALIZED'&&(!baselineAttack||!Number.isInteger(baselineAttack.hits)||
      baselineAttack.hits<1||!Number.isInteger(baselineAttack.markGain)||baselineAttack.markGain<1||
      !Number.isInteger(baselineAttack.resolveCost)||baselineAttack.resolveCost<0))
@@ -10608,6 +10615,46 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
       relationship:'SHOTGUN_MARK_SATURATION',markRule:'NET_OUTPUT_PER_PELLET',markPerPellet:2,
       chainRule:'READ_STARTING_CHAIN_PER_PACKET'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_direct_mark_apex',depth:4,
+    parentId:'mark_chain_direct_twist',formSlot:1,specializationSlot:2,twistSlot:1,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.60,CHAIN_SCALING:.20},
+    promise:'Maximize Mark setup while preserving the sequential live-Chain attack; earned Mark is distributed across its arrows.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
+      refinement:'MARK_DISTRIBUTION',markRule:'NET_OUTPUT_REQUIRED',markTiming:'DISTRIBUTE_PER_CONTACT',
+      chainRule:'READ_LIVE_CHAIN_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_direct_ramp_apex',depth:4,
+    parentId:'mark_chain_direct_twist',formSlot:1,specializationSlot:2,twistSlot:1,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.20,CHAIN_SCALING:.60},
+    promise:'Maximize live Chain scaling; every later arrow receives a larger Chain coefficient than the arrow before it.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
+      refinement:'CHAIN_RAMP',markRule:'NET_OUTPUT_REQUIRED',chainRule:'READ_LIVE_CHAIN_RAMP_PER_CONTACT',
+      chainRampFinalMultiplier:1.20},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_direct_finisher_apex',depth:4,
+    parentId:'mark_chain_direct_twist',formSlot:1,specializationSlot:2,twistSlot:1,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.45,MARK_GAIN:.25,CHAIN_SCALING:.30},
+    promise:'Preserve the full sequential setup but back-load its direct damage into one heavy final arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
+      refinement:'FINAL_ARROW',markRule:'NET_OUTPUT_REQUIRED',damageRule:'BACKLOAD_FINAL_CONTACT',
+      chainRule:'READ_LIVE_CHAIN_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_chain_direct_tempo_apex',depth:4,
+    parentId:'mark_chain_direct_twist',formSlot:1,specializationSlot:2,twistSlot:1,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.30,MARK_GAIN:.35,CHAIN_SCALING:.35},
+    promise:'Turn cumulative Quality into a denser uncapped arrow cadence while growing damage, Mark and Chain evenly.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
+      refinement:'TEMPO',markRule:'NET_OUTPUT_REQUIRED',chainRule:'READ_LIVE_CHAIN_PER_CONTACT',
+      cadenceQualityMultiplier:1.5},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'})
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
@@ -10616,6 +10663,7 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
   const form=SHARPSHOOT_MARK_ROUTE_CONTRACTS.find(route=>route.depth===1),
     specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2),
     twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3),
+    apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4),
     expectedSecondaries=new Set(COMBAT_ATTRIBUTE_IDS),actualSecondaries=new Set(specs.map(route=>route.secondaryAttributeId));
   if(!form||form.primaryAttributeId!=='MARK'||specs.length!==6||
      expectedSecondaries.size!==actualSecondaries.size||
@@ -10665,6 +10713,15 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
       throw new Error(route.id+' does not preserve its Specialization identity through a Twist relationship');
     validateAttributeDeliveryCompatibility(route.primaryAttributeId,route.secondaryAttributeId,route.delivery);
   }
+  for(const route of apexes){
+    const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
+    if(!parent||parent.depth!==3||route.primaryAttributeId!==parent.primaryAttributeId||
+       route.secondaryAttributeId!==parent.secondaryAttributeId||!route.mechanics.refinement||
+       route.deliveryPolicy!=='APEX_PRESERVES_TWIST_DELIVERY'||!route.delivery||
+       route.delivery.pattern!==parent.delivery.pattern||route.delivery.timing!==parent.delivery.timing)
+      throw new Error(route.id+' does not refine its exact Twist delivery and identity');
+    validateAttributeDeliveryCompatibility(route.primaryAttributeId,route.secondaryAttributeId,route.delivery);
+  }
   const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
   if(twists.length!==4||!directChain||directChain.parentId!=='mark_chain_spec'||
      directChain.delivery.pattern!=='SEQUENTIAL'||directChain.delivery.contactCount!==1||
@@ -10687,6 +10744,12 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
   if(!shotgun||shotgun.delivery.pattern!=='SIMULTANEOUS_PACKET'||
      shotgun.mechanics.markPerPellet!==2||shotgun.mechanics.chainRule!=='READ_STARTING_CHAIN_PER_PACKET')
     throw new Error('F1S2T4 Shotgun Twist contract is incomplete');
+  const directApexes=apexes.filter(route=>route.parentId==='mark_chain_direct_twist'),
+    apexRefinements=new Set(directApexes.map(route=>route.mechanics.refinement));
+  if(directApexes.length!==4||apexRefinements.size!==4||
+     !apexRefinements.has('MARK_DISTRIBUTION')||!apexRefinements.has('CHAIN_RAMP')||
+     !apexRefinements.has('FINAL_ARROW')||!apexRefinements.has('TEMPO'))
+    throw new Error('F1S2T1 needs four distinct Apex refinements');
   const focus=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_focus_spec;
   if(SHARPSHOOT_MARK_ECONOMY_CONTRACT.role!=='SOURCE'||
      SHARPSHOOT_MARK_ECONOMY_CONTRACT.stableMinimumNetGain<1||
@@ -10699,7 +10762,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     throw new Error('F1 and F1S1 need an inherited single-shot baseline with increased Mark output');
   return Object.freeze({passed:true,routes:SHARPSHOOT_MARK_ROUTE_CONTRACTS.length,
     specializations:specs.length,materialized:specs.filter(route=>route.runtimeReadiness==='MATERIALIZED').length,
-    twists:twists.length,baselinePending:specs.filter(route=>route.runtimeReadiness==='BASELINE_PENDING').length,
+    twists:twists.length,apexes:apexes.length,
+    baselinePending:specs.filter(route=>route.runtimeReadiness==='BASELINE_PENDING').length,
     equalPowerBudget:form.powerBudget,
     minPrimaryShare:Number(Math.min(...primaryShares).toFixed(3)),
     maxPrimaryShare:Number(Math.max(...primaryShares).toFixed(3))});
@@ -10732,20 +10796,36 @@ const SHARPSHOOT_MARK_TWIST_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRA
       'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
       'Relationship: '+route.mechanics.relationship.replace(/_/g,' ')+'.',
       'Delivery: '+route.delivery.pattern.replace(/_/g,' ')+' · '+route.delivery.timing.replace(/_/g,' ')+'.'
+     ]),prototypeContract:true})));
+const SHARPSHOOT_MARK_APEX_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  .filter(route=>route.depth===4).map(route=>Object.freeze({
+    id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:4,
+    type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',
+    name:route.name,col:COMBAT_ATTRIBUTE_UI_COLORS[route.secondaryAttributeId],
+    buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
+    focusAxis:'TWIST_REFINEMENT',summary:route.promise,
+    details:Object.freeze([
+      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Refinement: '+route.mechanics.refinement.replace(/_/g,' ')+'.',
+      'Delivery remains '+route.delivery.pattern.replace(/_/g,' ')+' · '+
+        route.delivery.timing.replace(/_/g,' ')+'.'
     ]),prototypeContract:true})));
 const SHARPSHOOT_MARK_ALL_LAB_NODES=Object.freeze([
-  ...SHARPSHOOT_MARK_LAB_NODES,...SHARPSHOOT_MARK_TWIST_LAB_NODES
+  ...SHARPSHOOT_MARK_LAB_NODES,...SHARPSHOOT_MARK_TWIST_LAB_NODES,
+  ...SHARPSHOOT_MARK_APEX_LAB_NODES
 ]);
 const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
 const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
   if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
      SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==4||
+     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==4||
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
   return Object.freeze({passed:true,nodes:SHARPSHOOT_MARK_LAB_NODES.length,
-    twists:SHARPSHOOT_MARK_TWIST_LAB_NODES.length,liveMutations:0});
+    twists:SHARPSHOOT_MARK_TWIST_LAB_NODES.length,
+    apexes:SHARPSHOOT_MARK_APEX_LAB_NODES.length,liveMutations:0});
 })();
 function sharpshootMarkRouteFromNode(node){
   if(node&&node.id==='blood_mark')return SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form;
@@ -10768,9 +10848,11 @@ const SKILL_MUTATION_TYPE_COL=Object.freeze({
 const SKILL_MUTATION_TYPES=Object.freeze(['STABLE','DISTORTED','CORRUPTED']);
 const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'name','col','damage','hitDamages','hits','hitInterval','impactDelay','duration','cost','markGain',
+  'markGainPattern',
   'markRule','posture','posturePerChain','affliction',
   'resolvePerHit','resolveOnComplete','resolveRule','resolveOverflowToChain','consumeChain',
-  'extraChainBonus','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
+  'extraChainBonus','chainScalingRampPerHit','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
+  'apexRefinementId',
   'critChance','critDamageMultiplier','critPrecisionGain',
   'defenseTemperDamagePerCharge','defenseTemperMaxCharge',
   'deliveryProfileId','deliveryPattern','deliveryTiming','targeting','animationProfile','projectileStyle',
@@ -10985,6 +11067,18 @@ function f1SynthesisIntegerVector(total,count,frontload=false){
   for(let i=0;i<remainder;i++)values[frontload?i:count-1-i]++;
   return values;
 }
+function f1SynthesisDistributedIntegerVector(total,count){
+  total=Math.max(0,Math.round(total));count=Math.max(1,Math.round(count));
+  return Array.from({length:count},(_,index)=>
+    Math.floor((index+1)*total/count)-Math.floor(index*total/count));
+}
+function sharpshootApexFinalDamageVector(total,hits){
+  total=Math.max(0,Number(total)||0);hits=Math.max(1,hits|0);if(hits===1)return [Number(total.toFixed(3))];
+  /* The final share approaches 45% as cadence grows. It never depends on rarity
+     labels and the complete authored damage total remains unchanged. */
+  const finalShare=.35+.10*(1-1/hits),earlyTotal=total*(1-finalShare),early=earlyTotal/(hits-1);
+  return Array.from({length:hits},(_,index)=>Number((index===hits-1?total*finalShare:early).toFixed(3)));
+}
 function f1SynthesisSetEvenDamage(command,total){
   command.damage=Number((Math.max(0,total)/(command.hits||1)).toFixed(3));command.hitDamages=null;return command;
 }
@@ -11191,7 +11285,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=14;
+const SHARPSHOOT_MARK_COMPILER_VERSION=15;
 function skillDeliveryMagnitude(totalQuality){
   return Math.max(1,Math.floor(Math.sqrt(Math.max(0,Number(totalQuality)||0))));
 }
@@ -11394,19 +11488,24 @@ function sharpshootMarkHistoryNode(route,rarity,receipt,index){
     legendaryStampId:null,synthesized:true});
 }
 function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
-  specializationRarity='COMMON',twistId=null,twistRarity='COMMON'){
+  specializationRarity='COMMON',twistId=null,twistRarity='COMMON',apexId=null,apexRarity='COMMON'){
   if(!SKILL_RARITY_SYNTHESIS_ECONOMY[formRarity]||
      (specializationId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[specializationRarity])||
-     (twistId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[twistRarity]))return null;
+     (twistId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[twistRarity])||
+     (apexId&&!SKILL_RARITY_SYNTHESIS_ECONOMY[apexRarity]))return null;
   const form=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form,
     specialization=specializationId&&SHARPSHOOT_MARK_ROUTE_BY_ID[specializationId],
-    twist=twistId&&SHARPSHOOT_MARK_ROUTE_BY_ID[twistId];
+    twist=twistId&&SHARPSHOOT_MARK_ROUTE_BY_ID[twistId],
+    apex=apexId&&SHARPSHOOT_MARK_ROUTE_BY_ID[apexId];
   if(specializationId&&(!specialization||specialization.parentId!==form.id||
      specialization.runtimeReadiness!=='MATERIALIZED'))return null;
   if(twistId&&(!specialization||!twist||twist.parentId!==specialization.id||
      twist.runtimeReadiness!=='MATERIALIZED'))return null;
-  const routes=twist?[form,specialization,twist]:specialization?[form,specialization]:[form],
-    rarities=[formRarity,specializationRarity,twistRarity],path=routes.map((route,index)=>Object.freeze({
+  if(apexId&&(!twist||!apex||apex.parentId!==twist.id||
+     apex.runtimeReadiness!=='MATERIALIZED'))return null;
+  const routes=apex?[form,specialization,twist,apex]:twist?[form,specialization,twist]:
+      specialization?[form,specialization]:[form],
+    rarities=[formRarity,specializationRarity,twistRarity,apexRarity],path=routes.map((route,index)=>Object.freeze({
       routeId:route.id,rarity:rarities[index],depth:route.depth})),
     ledger=compileSkillQualityLedger(path,SHARPSHOOT_MARK_ROUTE_BY_ID,{includeStructural:true}),
     compiledAllocation=compileSharpshootCumulativeIdentityAllocation(routes,ledger),
@@ -11414,7 +11513,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       compiledAllocation.receipts[index],index)),
     finalRoute=routes[routes.length-1],blueprint=finalRoute.baselineAttack,
     delivery=[...routes].reverse().find(route=>route.delivery)?.delivery||form.delivery,
-    deliveryMagnitude=skillDeliveryMagnitude(ledger.totalQuality),
+    cadenceQualityMultiplier=finalRoute.mechanics.cadenceQualityMultiplier||1,
+    deliveryMagnitude=skillDeliveryMagnitude(ledger.totalQuality*cadenceQualityMultiplier),
     hits=delivery.pattern==='SINGLE'?1:deliveryMagnitude,
     deliveryWeight=delivery.pattern==='SINGLE'?deliveryMagnitude:1,
     definition=BASE_TURN_SKILL_BY_ID.sharpshoot,command=createRunSkill(definition),
@@ -11440,6 +11540,15 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       finalRoute.mechanics.weightChannel==='CHAIN_SCALING',
     chainBonusWeight=weightAmplifiesChain?deliveryWeight:1,
     extraChainBonus=Number((rawExtraChainBonus+CFG.CHAIN_BONUS*(chainBonusWeight-1)).toFixed(6)),
+    chainRampQualityGrowth=finalRoute.mechanics.refinement==='CHAIN_RAMP'?
+      Math.sqrt(Math.max(1,compiledAllocation.receipts.at(-1).quality)):1,
+    chainScalingRampPerHit=hits>1&&finalRoute.mechanics.chainRampFinalMultiplier>1?
+      Number((extraChainBonus*(finalRoute.mechanics.chainRampFinalMultiplier-1)*chainRampQualityGrowth/
+        (hits-1)).toFixed(6)):0,
+    hitDamages=finalRoute.mechanics.damageRule==='BACKLOAD_FINAL_CONTACT'?
+      sharpshootApexFinalDamageVector(totalDirectDamage,hits):null,
+    markGainPattern=finalRoute.mechanics.markTiming==='DISTRIBUTE_PER_CONTACT'?
+      f1SynthesisDistributedIntegerVector(markGain,hits):null,
     weightDeliveryPower=Math.max(0,extraChainBonus-rawExtraChainBonus)*totalDirectDamage*
       SHARPSHOOT_CHAIN_SCALING_REFERENCE,
     posturePower=compiledAllocation.axisPowerCredits.POSTURE_DAMAGE||0,
@@ -11457,21 +11566,28 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),chargeRate=chargeProgress.output;
   const chainGainPattern=delivery.pattern==='SEQUENTIAL'||hits===1?null:
     Array.from({length:hits},(_,index)=>index===0?1:0);
-  transformSharpshoot(command,{name:finalRoute.name,damage,hits,hitDamages:null,markGain,cost:command.cost,
+  transformSharpshoot(command,{name:finalRoute.name,damage,hits,hitDamages,markGain,markGainPattern,cost:command.cost,
     markRule:sharpshootRouteRuntimeMarkRule(finalRoute),addsChain:true,chainGainPerHit:1,
-    chainGainPattern,consumeChain:false,extraChainBonus,posture,
+    chainGainPattern,consumeChain:false,extraChainBonus,chainScalingRampPerHit,posture,
     chainScalingTiming:String(finalRoute.mechanics.chainRule||'').indexOf('READ_STARTING_CHAIN')===0?
       'ACTION_START':'LIVE',
     critChance,critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
     affliction,defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
     impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
     bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||'BOW_STANDARD',
-    deliveryMagnitude,deliveryWeight,chainBonusWeight,deliveryProfileId:delivery.profileId,
+    deliveryMagnitude,deliveryWeight,chainBonusWeight,apexRefinementId:finalRoute.mechanics.refinement||null,
+    deliveryProfileId:delivery.profileId,
     deliveryPattern:delivery.pattern,
     deliveryTiming:delivery.timing});
   const basePower=sharpshootMarkBaselinePower(createRunSkill(definition)),
     targetPower=basePower+ledger.powerBudget,
     expressedChainPower=extraChainBonus*commandDirectDamageTotal(command)*SHARPSHOOT_CHAIN_SCALING_REFERENCE,
+    chainRampRefinementPower=chainScalingRampPerHit*Array.from({length:hits},(_,index)=>
+      commandHitBase(command,index)*index).reduce((sum,value)=>sum+value,0)*SHARPSHOOT_CHAIN_SCALING_REFERENCE,
+    evenHitDamage=totalDirectDamage/hits,
+    finalArrowRefinementPower=hitDamages?Math.max(0,hitDamages.reduce((sum,value,index)=>
+      sum+(value-evenHitDamage)*index*(CFG.CHAIN_BONUS+extraChainBonus),0)):0,
+    apexRefinementPower=chainRampRefinementPower+finalArrowRefinementPower,
     /* Delivery growth is intentionally a free build payoff. Track its comparison
        value, but keep it outside the Quality wallet/error equation. */
     accountedPower=sharpshootMarkBaselinePower(command)-deliveryChainPower-weightDeliveryPower-
@@ -11496,8 +11612,10 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.synthesisRawChainScalingRate=rawExtraChainBonus;
   command.synthesisWeightDeliveryPower=Number(weightDeliveryPower.toFixed(4));
   command.synthesisShotgunMarkPower=Number(shotgunMarkPower.toFixed(4));
+  command.synthesisApexRefinementPower=Number(apexRefinementPower.toFixed(4));
+  command.synthesisCadenceQualityMultiplier=cadenceQualityMultiplier;
   command.synthesisFreeDeliveryPower=Number((deliveryChainPower+weightDeliveryPower+
-    shotgunMarkPower).toFixed(4));
+    shotgunMarkPower+apexRefinementPower).toFixed(4));
   command.synthesisDeliveryMagnitude=deliveryMagnitude;
   command.synthesisIdentityAllocation=compiledAllocation.identity;
   command.synthesisReserveUnit='POWER';
@@ -11510,8 +11628,10 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.evolutionName=command.name;command.evolutionType='STABLE';
   command.legendaryStampSlots=history.filter(node=>node.legendaryStampSlot).length;
   command.legendaryStamps=[];refreshSkillRarityResonance(command);
-  const secondaryText=extraChainBonus?'Chain Secondary: +'+(extraChainBonus*100).toFixed(1)+
-      '% damage per '+(command.chainScalingTiming==='ACTION_START'?'starting ':'current ')+
+  const secondaryText=extraChainBonus?'Chain Secondary: '+(CFG.CHAIN_BONUS*100).toFixed(0)+
+      '% base + '+(extraChainBonus*100).toFixed(1)+'% skill = '+
+      ((CFG.CHAIN_BONUS+extraChainBonus)*100).toFixed(1)+'% damage per '+
+      (command.chainScalingTiming==='ACTION_START'?'starting ':'current ')+
       'Chain on every hit; Chain is preserved.':posture?
       'Posture Secondary: '+posture+' Posture after the final hit; linear Light Bow expression '+
       (SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.expressionRatio*100).toFixed(0)+'%.':critChance?
@@ -11522,11 +11642,20 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       'Charge Secondary: +'+chargeRate+' base damage per banked Charge; expected at ×'+
       DEFENSE_CHARGE.expectedSpend+', capped at ×'+DEFENSE_CHARGE.max+'.':
       'No Secondary output before Specialization.';
+  const apexText=command.apexRefinementId==='MARK_DISTRIBUTION'?
+      'Apex: Mark is distributed across every visible arrow.':
+    command.apexRefinementId==='CHAIN_RAMP'?
+      'Apex: every later arrow receives a larger live Chain coefficient.':
+    command.apexRefinementId==='FINAL_ARROW'?
+      'Apex: clean damage is back-loaded into the final arrow.':
+    command.apexRefinementId==='TEMPO'?
+      'Apex: denser uncapped contact cadence; every arrow still builds and reads Chain.':null;
   command.evolutionText=[
     'Mark Source Compiler v'+SHARPSHOOT_MARK_COMPILER_VERSION+': '+command.hits+' hit, '+
-      healthDamageText(command.damage,true)+' damage, +'+command.markGain+' Mark.',
+      healthDamageText(commandDirectDamageTotal(command),true)+' total clean damage, +'+command.markGain+' Mark.',
     'Stable inheritance floor: base stats never fall; unspent Mark power stays in Reserve.',
     secondaryText,
+    ...(apexText?[apexText]:[]),
     skillSynthesisEconomyText(command)
   ];
   return command;
@@ -11535,7 +11664,8 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
   const definition=BASE_TURN_SKILL_BY_ID.sharpshoot,
     formLadder=SKILL_RARITY_ORDER.map(rarity=>synthesizeSharpshootMarkPath(rarity)),matrix=[],chainMatrix=[],
     postureMatrix=[],criticalMatrix=[],afflictionMatrix=[],chargeMatrix=[],directTwistMatrix=[],
-    converterTwistMatrix=[],echoTwistMatrix=[],shotgunTwistMatrix=[];
+    converterTwistMatrix=[],echoTwistMatrix=[],shotgunTwistMatrix=[],directApexMatrix=[],
+    directApexRarityLadders=Object.create(null);
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
     const command=synthesizeSharpshootMarkPath(formRarity,'mark_focus_spec',specRarity),
       delivery=commandDeliveryContract(command);
@@ -11653,8 +11783,11 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
          shotgun.markGain<shotgunMagnitude||shotgun.chainScalingTiming!=='ACTION_START'||
          shotgun.bowAnimationRecipeId!=='BOW_SHOTGUN'||shotgun.synthesisPowerError>.01||
          !(shotgunScore>parentScore))
-        throw new Error('F1S2T4 failed Shotgun synthesis at '+formRarity+' / '+
-          specRarity+' / '+twistRarity);
+         throw new Error('F1S2T4 failed Shotgun synthesis at '+formRarity+' / '+
+           specRarity+' / '+twistRarity+' [hits '+shotgun.hits+'/'+shotgunMagnitude+
+           ', mark '+shotgun.markGain+', chain '+totalCommandChainGain(shotgun)+
+           ', rate '+shotgun.extraChainBonus+', error '+shotgun.synthesisPowerError+
+           ', score '+shotgunScore+'/'+parentScore+']');
       echoTwistMatrix.push(Object.freeze({formRarity,specRarity,twistRarity,
         hits:echo.hits,mark:echo.markGain,tempChainFromFive:echoPlan.temporaryChain,
         chainRate:echo.extraChainBonus,cost:echo.cost,score:Number(echoScore.toFixed(3))}));
@@ -11711,6 +11844,66 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
         mark:command.markGain,cost:command.cost,chainRate:command.extraChainBonus,
         score:Number(score.toFixed(3))}));
     }
+  }
+  const directApexIds=Object.freeze([
+    'mark_chain_direct_mark_apex','mark_chain_direct_ramp_apex',
+    'mark_chain_direct_finisher_apex','mark_chain_direct_tempo_apex'
+  ]);
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER)
+    for(const twistRarity of SKILL_RARITY_ORDER){
+      const parent=synthesizeSharpshootMarkPath(formRarity,'mark_chain_spec',specRarity,
+          'mark_chain_direct_twist',twistRarity),parentScore=stableEvolutionCombinedGuardrailValue(parent),
+        row=[];
+      for(const apexId of directApexIds){
+        const command=synthesizeSharpshootMarkPath(formRarity,'mark_chain_spec',specRarity,
+            'mark_chain_direct_twist',twistRarity,apexId,'COMMON'),
+          delivery=command&&commandDeliveryContract(command),score=command&&stableEvolutionCombinedGuardrailValue(command),
+          markPattern=command&&command.markGainPattern||[],firstChain=command&&commandHitExtraChainBonus(command,0),
+          lastChain=command&&commandHitExtraChainBonus(command,command.hits-1);
+        if(!command||command.evolutionHistory.length!==4||delivery.pattern!=='SEQUENTIAL'||
+           delivery.timing!=='IMMEDIATE'||delivery.contactCount!==command.hits||
+           commandMarkMode(command)!=='NONE'||command.consumeChain||command.chainScalingTiming!=='LIVE'||
+           command.synthesisPowerError>.01||command.markGain<parent.markGain||!(score>parentScore)||
+           Array.from({length:command.hits},(_,index)=>index).some(index=>commandChainGain(command,index)!==1))
+          throw new Error(apexId+' failed T1 Apex inheritance at '+formRarity+' / '+specRarity+' / '+twistRarity);
+        if(apexId==='mark_chain_direct_mark_apex'&&(
+           markPattern.length!==command.hits||markPattern.reduce((sum,value)=>sum+value,0)!==command.markGain))
+          throw new Error('T1A1 failed distributed Mark at '+formRarity+' / '+specRarity+' / '+twistRarity);
+        if(apexId==='mark_chain_direct_ramp_apex'&&command.hits>1&&!(lastChain>firstChain))
+          throw new Error('T1A2 failed rising live Chain at '+formRarity+' / '+specRarity+' / '+twistRarity);
+        if(apexId==='mark_chain_direct_finisher_apex'&&command.hits>1&&(
+           command.hitDamages.length!==command.hits||!(command.hitDamages.at(-1)>command.hitDamages[0])))
+          throw new Error('T1A3 failed final-arrow back-load at '+formRarity+' / '+specRarity+' / '+twistRarity);
+        if(apexId==='mark_chain_direct_tempo_apex'&&(
+           command.synthesisCadenceQualityMultiplier!==1.5||command.hits<parent.hits))
+          throw new Error('T1A4 failed uncapped Tempo cadence at '+formRarity+' / '+specRarity+' / '+twistRarity);
+        const entry=Object.freeze({formRarity,specRarity,twistRarity,apexId,apexRarity:'COMMON',
+          hits:command.hits,mark:command.markGain,chainRate:command.extraChainBonus,
+          score:Number(score.toFixed(3))});
+        directApexMatrix.push(entry);row.push(entry);
+      }
+      const scores=row.map(entry=>entry.score),spread=(Math.max(...scores)-Math.min(...scores))/
+        (scores.reduce((sum,value)=>sum+value,0)/scores.length);
+      if(spread>.18)throw new Error('T1 Apex roles exceed equal-power guardrail at '+formRarity+' / '+
+        specRarity+' / '+twistRarity+' ('+spread.toFixed(3)+')');
+    }
+  for(const apexId of directApexIds){
+    let previous=null;const ladder=[];
+    for(const apexRarity of SKILL_RARITY_ORDER){
+      const command=synthesizeSharpshootMarkPath('COMMON','mark_chain_spec','COMMON',
+          'mark_chain_direct_twist','COMMON',apexId,apexRarity),
+        score=stableEvolutionCombinedGuardrailValue(command),finalChainRate=
+          commandHitExtraChainBonus(command,Math.max(0,command.hits-1));
+      if(previous&&(!(score>previous.score)||command.markGain<previous.mark||command.hits<previous.hits))
+        throw new Error(apexId+' rarity ladder regresses at '+apexRarity);
+      if(apexId==='mark_chain_direct_ramp_apex'&&previous&&
+         !(finalChainRate>previous.finalChainRate))
+        throw new Error('T1A2 final-arrow Chain scaling must visibly grow at '+apexRarity);
+      const entry=Object.freeze({rarity:apexRarity,hits:command.hits,mark:command.markGain,
+        baseChainRate:command.extraChainBonus,finalChainRate,score:Number(score.toFixed(3))});
+      ladder.push(entry);previous=entry;
+    }
+    directApexRarityLadders[apexId]=Object.freeze(ladder);
   }
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
     const row=directTwistMatrix.filter(entry=>entry.formRarity===formRarity&&entry.specRarity===specRarity);
@@ -11815,9 +12008,13 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
   if(strongestCharge.chargeRate>SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.specializationRateGuardrail)
     throw new Error('Stable Secondary Charge temper exceeded its per-Charge guardrail');
   for(const routeId of Object.keys(SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID)){
-    const route=SHARPSHOOT_MARK_ROUTE_BY_ID[routeId],command=routeId==='mark_primary_form'?
-      synthesizeSharpshootMarkPath('COMMON'):route&&route.depth===3?
-      synthesizeSharpshootMarkPath('COMMON',route.parentId,'COMMON',routeId,'COMMON'):
+    const route=SHARPSHOOT_MARK_ROUTE_BY_ID[routeId],twist=route&&route.depth===4?
+        SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId]:null,
+      specialization=twist&&SHARPSHOOT_MARK_ROUTE_BY_ID[twist.parentId],command=
+      routeId==='mark_primary_form'?synthesizeSharpshootMarkPath('COMMON'):
+      route&&route.depth===4&&specialization?synthesizeSharpshootMarkPath('COMMON',specialization.id,
+        'COMMON',twist.id,'COMMON',route.id,'COMMON'):
+      route&&route.depth===3?synthesizeSharpshootMarkPath('COMMON',route.parentId,'COMMON',routeId,'COMMON'):
       synthesizeSharpshootMarkPath('COMMON',routeId,'COMMON');
     if(!command||command.bowAnimationRecipeId!==SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[routeId])
       throw new Error(routeId+' failed its inherited Bow presentation recipe');
@@ -11843,6 +12040,8 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
     afflictionCards:afflictionMatrix.length,chargeCards:chargeMatrix.length,
     directTwistCards:directTwistMatrix.length,converterTwistCards:converterTwistMatrix.length,
     echoTwistCards:echoTwistMatrix.length,shotgunTwistCards:shotgunTwistMatrix.length,
+    directApexCards:directApexMatrix.length,
+    directApexRarityLadders:Object.freeze(directApexRarityLadders),
     common:Object.freeze({damage:common.damage,mark:common.markGain,cost:common.cost}),
     chainCommon:Object.freeze({damage:chainCommon.damage,mark:chainCommon.markGain,cost:chainCommon.cost,
       chainRate:chainCommon.extraChainBonus}),
@@ -11988,6 +12187,8 @@ function validateStableCommandSchema(mutation,state,lineage){
     throw new Error(mutation.id+' Chain gain must be a non-negative integer');
   if(!Number.isFinite(state.extraChainBonus||0)||(state.extraChainBonus||0)<0)
     throw new Error(mutation.id+' extra Chain scaling must be finite and non-negative');
+  if(!Number.isFinite(state.chainScalingRampPerHit||0)||(state.chainScalingRampPerHit||0)<0)
+    throw new Error(mutation.id+' Chain scaling ramp must be finite and non-negative');
   if(!Number.isFinite(state.critChance||0)||(state.critChance||0)<0||(state.critChance||0)>1)
     throw new Error(mutation.id+' local Crit chance must be between 0 and 1');
   if(!Number.isFinite(state.critDamageMultiplier||CFG.CRIT_DAMAGE_MULT)||
@@ -12008,6 +12209,10 @@ function validateStableCommandSchema(mutation,state,lineage){
   if(!Number.isInteger(state.markGain||0)||(state.markGain||0)<0||
       (state.markGain||0)>MARK_GAIN_AUTHORING_LIMIT)
     throw new Error(mutation.id+' Mark gain must be an integer from 0 to '+MARK_GAIN_AUTHORING_LIMIT);
+  if(state.markGainPattern&&(state.markGainPattern.length!==state.hits||
+     state.markGainPattern.some(value=>!Number.isInteger(value)||value<0)||
+     state.markGainPattern.reduce((sum,value)=>sum+value,0)!==(state.markGain||0)))
+    throw new Error(mutation.id+' distributed Mark must preserve total Mark across every hit');
   for(const key of ['posture','posturePerChain','resolvePerHit','resolveOnComplete'])
     if(!Number.isInteger(state[key]||0)||(state[key]||0)<0)
       throw new Error(mutation.id+' '+key+' must be a non-negative integer');
@@ -12338,7 +12543,7 @@ function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
   let chain=chainAtActionStart,damage=0;
   for(let i=0;i<hits;i++){
     damage+=turnHitDamageBreakdown(commandHitBase(state,i),plan.markDamageByHit[i],
-      state.extraChainBonus||0,commandChainDamageStacks(state,chainAtActionStart,chain)+
+      commandHitExtraChainBonus(state,i),commandChainDamageStacks(state,chainAtActionStart,chain)+
         plan.temporaryChain,false).final;
     chain+=commandChainGain(state,i);
   }
@@ -12553,7 +12758,7 @@ function stableEvolutionScenarioDamage(state,markStacks,startingChain){
   let chain=chainAtActionStart,damage=0;
   for(let i=0;i<hits;i++){
     damage+=turnHitDamageBreakdown(commandHitBase(state,i),plan.markDamageByHit[i],
-      state.extraChainBonus||0,commandChainDamageStacks(state,chainAtActionStart,chain)+
+      commandHitExtraChainBonus(state,i),commandChainDamageStacks(state,chainAtActionStart,chain)+
         plan.temporaryChain,false).final;
     chain+=commandChainGain(state,i);
   }
@@ -12585,8 +12790,10 @@ function stableEvolutionMechanicSignature(state){
   const mark=state.markRule;
   return JSON.stringify({hits:state.hits||1,damage:state.hitDamages||state.damage,cost:state.cost||0,
     refundHit:state.resolvePerHit||0,refundEnd:state.resolveOnComplete||0,mark:state.markGain||0,
+    markPattern:state.markGainPattern||null,
     chain:state.chainGainPattern||state.chainGainPerHit||1,overflow:!!state.resolveOverflowToChain,
-    chainScale:state.extraChainBonus||0,addsChain:state.addsChain!==false,
+    chainScale:state.extraChainBonus||0,chainRamp:state.chainScalingRampPerHit||0,
+    apex:state.apexRefinementId||null,addsChain:state.addsChain!==false,
     markMode:commandMarkMode(state),markCap:mark&&mark.cap||0,markTiming:mark&&mark.timing||'NONE',
     markDamage:mark&&mark.damagePerMark||0,markCurve:mark&&mark.curve||'NONE',
     markConversion:mark&&mark.chainPerMark||0,posture:state.posture||0,resolveRule:state.resolveRule||null});
@@ -12602,9 +12809,11 @@ function stableEvolutionDecisionSignature(state){
     markFlow=commandMarkMode(state)!=='NONE'?commandMarkMode(state):state.markGain?'BUILD':'NONE',
     markResult=!state.markGain?'NONE':state.markGain>=4?'HIGH':state.markGain>1?'MULTI':'ONE',
     markScaling=!rule||!(rule.damagePerMark>0)?'NONE':rule.curve;
-  return JSON.stringify({hits:state.hits||1,cost:state.cost||0,
+  return JSON.stringify({hits:state.hits||1,cost:state.cost||0,apex:state.apexRefinementId||null,
     refundHit:state.resolvePerHit||0,refundEnd:state.resolveOnComplete||0,
-    markFlow,markResult,markScaling,chainMode,chainWeight:totalCommandChainGain(state),chainScale:state.extraChainBonus>0,
+    markFlow,markResult,markScaling,markPattern:!!state.markGainPattern,chainMode,
+    chainWeight:totalCommandChainGain(state),chainScale:state.extraChainBonus>0,
+    chainRamp:(state.chainScalingRampPerHit||0)>0,
     overflow:!!state.resolveOverflowToChain,resolveRule:state.resolveRule?state.resolveRule.trigger:'NONE',posture:state.posture>0,
     consumesChain:!!state.consumeChain});
 }
@@ -13590,6 +13799,15 @@ function commandChainGain(command,index=0){
     return Math.max(0,command.chainGainPattern[index]|0);
   return Math.max(1,command.chainGainPerHit||1);
 }
+function commandMarkGain(command,index=0){
+  if(command&&command.markGainPattern&&command.markGainPattern[index]!==undefined)
+    return Math.max(0,command.markGainPattern[index]|0);
+  return command&&index===(command.hits||1)-1?Math.max(0,command.markGain||0):0;
+}
+function commandHitExtraChainBonus(command,index=0){
+  return Math.max(0,(command&&command.extraChainBonus||0)+
+    Math.max(0,command&&command.chainScalingRampPerHit||0)*Math.max(0,index|0));
+}
 function commandChainDamageStacks(command,chainAtStart,currentChain){
   return command&&command.chainScalingTiming==='ACTION_START'?
     Math.max(0,chainAtStart||0):Math.max(0,currentChain||0);
@@ -13756,7 +13974,7 @@ function resolveTurnActionHit(action){
     markPayload=action.markPlan.markDamageByHit[index]||0,
     damageChain=commandChainDamageStacks(command,action.chainAtStart,chainStacks)+
       action.markPlan.temporaryChain,
-    damageResult=combatTurnHitDamageBreakdown(base,markPayload,command.extraChainBonus||0,
+    damageResult=combatTurnHitDamageBreakdown(base,markPayload,commandHitExtraChainBonus(command,index),
       damageChain,boss.playerTurnBreak===true,chainBonus(),critical,critMultiplier),damage=damageResult.final,
     p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
@@ -13793,11 +14011,12 @@ function resolveTurnActionHit(action){
     return true;
   }
   const chainGain=commandChainGain(command,index);if(chainGain)addChainStack(chainGain);
+  const markGain=commandMarkGain(command,index);
+  if(markGain){
+    addBossMark(markGain);
+    floater(x,y-55,'MARK +'+markGain+' · ×'+boss.mark,'#ff4d5f',16);
+  }
   if(action.hitIndex===action.hits){
-    if(command.markGain){
-      addBossMark(command.markGain);
-      floater(x,y-55,'MARK ×'+boss.mark,'#ff4d5f',16);
-    }
     const bleed=commandBleedAmount(command);
     if(bleed){
       const added=addBossBleed(bleed);
@@ -18483,7 +18702,7 @@ function turnCommandDamageBreakdown(command){
   for(let i=0;i<hits;i++){
     const authoredBase=commandHitBase(command,i),charge=i===0?chargeBonus:0,
       row=combatTurnHitDamageBreakdown(authoredBase+charge,markPlan.markDamageByHit[i],
-      command.extraChainBonus||0,commandChainDamageStacks(command,chainAtActionStart,hitChain)+
+      commandHitExtraChainBonus(command,i),commandChainDamageStacks(command,chainAtActionStart,hitChain)+
         markPlan.temporaryChain,
       boss.playerTurnBreak===true,chainBonus(),
       forcedCritical,critMultiplier);
@@ -19740,8 +19959,13 @@ function moveTreeSynthesisPreviewCommand(node){
     if(route.depth===2)return synthesizeSharpshootMarkPath(formRarity,route.id,
       moveTreeSynthesisRarityByDepth[2]);
     const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-    return parent&&synthesizeSharpshootMarkPath(formRarity,parent.id,
+    if(route.depth===3)return parent&&synthesizeSharpshootMarkPath(formRarity,parent.id,
       moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]);
+    const twist=route.depth===4&&parent,
+      specialization=twist&&SHARPSHOOT_MARK_ROUTE_BY_ID[twist.parentId];
+    return specialization&&synthesizeSharpshootMarkPath(formRarity,specialization.id,
+      moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
+      moveTreeSynthesisRarityByDepth[4]);
   }
   const recipe=moveTreeSynthesisRecipe(node);if(!recipe||recipe.depth>2)return null;
   return recipe.depth===1?synthesizeF1StablePath(formRarity):
@@ -19954,11 +20178,13 @@ function drawMoveTree(){
   g.fillText(spec?'TAP THE PATH TO NAVIGATE · HOLD A MOVE FOR MECHANICS':
     'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,navigationHintY);
   if(synthesisNode){
-    const depthName=synthesisNode.depth===1?'FORM':synthesisNode.depth===2?'SPECIALIZATION':'TWIST';
+    const depthName=synthesisNode.depth===1?'FORM':synthesisNode.depth===2?'SPECIALIZATION':
+      synthesisNode.depth===3?'TWIST':'APEX';
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#9ecbff';
     g.fillText('SYNTHESIS '+depthName+' · F '+moveTreeSynthesisRarityByDepth[1].slice(0,3)+
       ' · S '+moveTreeSynthesisRarityByDepth[2].slice(0,3)+
-      (synthesisNode.depth>=3?' · T '+moveTreeSynthesisRarityByDepth[3].slice(0,3):''),VW/2,
+      (synthesisNode.depth>=3?' · T '+moveTreeSynthesisRarityByDepth[3].slice(0,3):'')+
+      (synthesisNode.depth>=4?' · A '+moveTreeSynthesisRarityByDepth[4].slice(0,3):''),VW/2,
       twist?MOVE_TREE_TWIST_LAYOUT.synthesisHeaderY:529);
     for(const rect of MOVE_TREE_SYNTHESIS_RARITY_RECTS)drawSkillLabButton(rect,rect.rarity.slice(0,3),
       SKILL_MUTATION_RARITY_COL[rect.rarity],true,
@@ -20230,10 +20456,11 @@ function skillLabMutationPreviewCommand(mutation){
   return command;
 }
 function skillLabMutationDamagePreview(command){
-  const hits=command.hits||1,rate=chainBonus()+(command.extraChainBonus||0),values=[];
+  const hits=command.hits||1,values=[];
   const markPlan=commandMarkPlan(command,bossMark()),chainAtActionStart=chainStacks+markPlan.chainGain;
   let chain=chainAtActionStart;
   for(let i=0;i<hits;i++){
+    const rate=chainBonus()+commandHitExtraChainBonus(command,i);
     values.push(stableDamage(commandHitBase(command,i)*(1+rate*(
       commandChainDamageStacks(command,chainAtActionStart,chain)+markPlan.temporaryChain))+
       (markPlan.markDamageByHit[i]||0)));
@@ -20284,14 +20511,24 @@ function skillLabCompactSynthesisMechanics(command){
   lines.push('Delivery: '+delivery.pattern.replace(/_/g,' ')+' / '+(delivery.pattern==='SINGLE'?
     'Weight '+(command.deliveryWeight||magnitude):magnitude+' contact'+(magnitude===1?'':'s'))+'.');
   outputs.push(command.addsChain===false?'No Chain':'+'+chain.join(' / +')+' Chain ('+chainTotal+' total)');
-  if(command.markGain)outputs.push('+'+command.markGain+' Mark after final hit');
+  if(command.markGain)outputs.push(command.markGainPattern?
+    ('+'+command.markGain+' Mark distributed '+command.markGainPattern.join('/')):
+    ('+'+command.markGain+' Mark after final hit'));
   lines.push(outputs.join(' / ')+'.');
+  if(command.apexRefinementId==='CHAIN_RAMP')lines.push('Apex: Chain scaling rises by +'+
+    Math.round((command.chainScalingRampPerHit||0)*100)+'% per arrow in this attack.');
+  else if(command.apexRefinementId==='FINAL_ARROW')lines.push('Apex: direct damage is back-loaded into the final arrow.');
+  else if(command.apexRefinementId==='TEMPO')lines.push('Apex: Quality cadence x'+
+    damagePart(command.synthesisCadenceQualityMultiplier||1)+'; contact growth remains uncapped.');
+  else if(command.apexRefinementId==='MARK_DISTRIBUTION')lines.push('Apex: Mark is applied as each arrow lands.');
   const markRuleText=skillLabSynthesisMarkRuleText(command);
   if(markRuleText)lines.push(markRuleText);
   if(command.posture||command.posturePerChain)lines.push('Posture: '+(command.posture||0)+
     (command.posturePerChain?' + '+command.posturePerChain+' per starting Chain':'')+'.');
-  if(command.extraChainBonus)lines.push('Chain damage: +'+Math.round(command.extraChainBonus*100)+
-    '% per Chain'+((command.chainBonusWeight||1)>1?' / Weight x'+command.chainBonusWeight:'')+'.');
+  if(command.extraChainBonus)lines.push('Chain scaling: '+Math.round(CFG.CHAIN_BONUS*100)+
+    '% base + '+Math.round(command.extraChainBonus*100)+'% skill = '+
+    Math.round((CFG.CHAIN_BONUS+command.extraChainBonus)*100)+'% per Chain'+
+    ((command.chainBonusWeight||1)>1?' / skill bonus includes Weight x'+command.chainBonusWeight:'')+'.');
   const chargeRate=commandDefenseTemperRate(command);
   if(chargeRate)lines.push('Charge: spend up to '+DEFENSE_CHARGE.max+' for +'+damagePart(chargeRate)+
     ' damage each.');
@@ -20339,9 +20576,11 @@ function skillLabMutationMechanics(command){
     lines.push(posture+'.');
   }
   if(command.consumeChain)lines.push('Damage uses the starting Chain, then all Chain is consumed after the attack.');
-  if(command.extraChainBonus)lines.push('Chain scaling: +'+Math.round(command.extraChainBonus*100)+
-    '% damage per Chain'+((command.chainBonusWeight||1)>1?' after Weight x'+command.chainBonusWeight:
-      '')+(command.chainScalingTiming==='ACTION_START'?' using the attack-start value.':'.'));
+  if(command.extraChainBonus)lines.push('Chain scaling: '+Math.round(CFG.CHAIN_BONUS*100)+
+    '% base + '+Math.round(command.extraChainBonus*100)+'% skill = '+
+    Math.round((CFG.CHAIN_BONUS+command.extraChainBonus)*100)+'% damage per Chain'+
+    ((command.chainBonusWeight||1)>1?' / skill bonus includes Weight x'+command.chainBonusWeight:'')+
+    (command.chainScalingTiming==='ACTION_START'?' using the attack-start value.':'.'));
   const chargeRate=commandDefenseTemperRate(command);
   if(chargeRate)lines.push('Charge: consume up to '+DEFENSE_CHARGE.max+' banked defense Charge for +'+
     damagePart(chargeRate)+' base damage each. Expected Quality value is priced at ×'+
@@ -20363,6 +20602,8 @@ function moveTreeSynthesisRaritySnapshot(command){
       .reduce((sum,value)=>sum+value,0);
   return Object.freeze({damage:Number(damage.toFixed(1)),hits,chain,
     chainRate:Number(((command.extraChainBonus||0)*100).toFixed(1)),
+    finalChainRate:Number((commandHitExtraChainBonus(command,Math.max(0,hits-1))*100).toFixed(1)),
+    chainRamp:(command.chainScalingRampPerHit||0)>0,
     weight:command.deliveryWeight||1,
     posture:command.posture||0,critChance:Number(((command.critChance||0)*100).toFixed(1)),
     bleed:commandBleedAmount(command),chargeRate:commandDefenseTemperRate(command),
@@ -20372,12 +20613,16 @@ function moveTreeSynthesisRarityLadder(node){
   const route=sharpshootMarkRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
     const formRarity=moveTreeSynthesisRarityByDepth[1],
-      specRarity=moveTreeSynthesisRarityByDepth[2];
+      specRarity=moveTreeSynthesisRarityByDepth[2],
+      twistRarity=moveTreeSynthesisRarityByDepth[3];
     return SKILL_RARITY_ORDER.map(rarity=>{
-      const parent=route.depth===3&&SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId],command=
+      const parent=route.depth>=3&&SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId],
+        specialization=route.depth===4&&parent&&SHARPSHOOT_MARK_ROUTE_BY_ID[parent.parentId],command=
         route.depth===1?synthesizeSharpshootMarkPath(rarity):
         route.depth===2?synthesizeSharpshootMarkPath(formRarity,route.id,rarity):
-        parent&&synthesizeSharpshootMarkPath(formRarity,parent.id,specRarity,route.id,rarity);
+        route.depth===3&&parent?synthesizeSharpshootMarkPath(formRarity,parent.id,specRarity,route.id,rarity):
+        specialization&&synthesizeSharpshootMarkPath(formRarity,specialization.id,specRarity,
+          parent.id,twistRarity,route.id,rarity);
       return Object.freeze({rarity,command,stats:moveTreeSynthesisRaritySnapshot(command)});
     });
   }
@@ -20418,6 +20663,7 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         entry.stats.posture?(entry.stats.posture+' POST / '+entry.stats.hits+' HIT'):
         entry.stats.critChance?(entry.stats.critChance+'% LOCAL CRIT'):
         entry.stats.weight>1?('WEIGHT '+entry.stats.weight+' Â· CHN +'+entry.stats.chainRate+'%'):
+        entry.stats.chainRamp?('CHN +'+entry.stats.chainRate+' > '+entry.stats.finalChainRate+'%'):
         entry.stats.chainRate?('CHN +'+entry.stats.chainRate+'%/STACK'):
         (entry.stats.hits+' HIT · '+entry.stats.chain+' CHN'));
       lines.push(entry.stats.mark+' MRK · '+entry.stats.cost+' COST');
@@ -20427,6 +20673,8 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         ['HIT',entry.stats.hits-selected.stats.hits],
         ['CHN',entry.stats.chain-selected.stats.chain],
         ['CHN%',entry.stats.chainRate-selected.stats.chainRate],
+        ...((entry.stats.chainRamp||selected.stats.chainRamp)?[
+          ['END%',entry.stats.finalChainRate-selected.stats.finalChainRate]]:[]),
         ['WGT',entry.stats.weight-selected.stats.weight],
         ['POST',entry.stats.posture-selected.stats.posture],
         ['CRIT%',entry.stats.critChance-selected.stats.critChance],
@@ -21382,6 +21630,11 @@ cvs.dataset.f1s2t3RarityAudit=SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.echoTwistLad
 cvs.dataset.f1s2t4RarityAudit=SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.shotgunTwistLadder.map(entry=>
   entry.twistRarity+':'+entry.pellets+':M'+entry.mark+':C'+entry.chain+':'+
   (entry.chainRate*100).toFixed(2)+':'+entry.cost+':'+entry.score.toFixed(2)).join('|');
+cvs.dataset.f1s2t1ApexRarityAudit=Object.entries(
+  SHARPSHOOT_MARK_MATERIALIZATION_AUDIT.directApexRarityLadders).map(([id,ladder])=>
+    id+':'+ladder.map(entry=>entry.rarity.slice(0,3)+'-H'+entry.hits+'-M'+entry.mark+
+      '-C'+(entry.baseChainRate*100).toFixed(2)+'-'+(entry.finalChainRate*100).toFixed(2)).join(',')
+  ).join('|');
 cvs.dataset.rarityResonanceAudit=[1,2,3].map(rarityResonanceLevel=>
   skillRarityResonanceRefund({rarityResonanceLevel},4)).join('-');
 cvs.dataset.synthesisEconomyAudit=(()=>{const ledger=skillSynthesisEconomyLedger([
