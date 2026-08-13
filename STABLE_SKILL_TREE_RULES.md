@@ -231,11 +231,11 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   rounded up, convert `1:1` to Chain before damage, calculate the weighted hit from the
   post-conversion Chain, then apply normal Mark gain. Its future Apex may replace half with
   all; direct Mark detonation remains the second weapon skill's identity.
-- F1S2T3 uses `IMPACT_ECHO`, not a packet. Exactly one physical arrow is released and
-  therefore the action produces exactly `+1` persistent Chain. Cumulative Quality controls
-  how many damage contacts echo from that one impact. Starting Mark is preserved and read
-  through the `SATURATED` curve as `0.5` temporary Chain per effective Mark; this temporary
-  Chain affects only the current action's damage and is never stored.
+- F1S2T3 uses `IMPACT_ECHO`, not a packet. Exactly one physical arrow is released and,
+  before Apex refinement, the action produces exactly `+1` persistent Chain. Cumulative Quality controls
+  how many damage contacts echo from that one impact. Starting Mark is preserved and every
+  Mark is read linearly as `0.3` temporary Chain with no cap or diminishing return; this
+  temporary Chain affects only the current action's damage and is never stored.
 - F1S2T4 uses a true `SIMULTANEOUS_PACKET`: cumulative Quality controls the number of
   separate pellets released at the same time. The whole packet produces exactly `+1` Chain.
   Its paid Mark floor is one per pellet; because Packet gives up the extra natural Chain
@@ -392,12 +392,20 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - `F1S2T2` remains one `SINGLE` heavy arrow in all four Apexes. Every child retains Weight-based Chain scaling, converts before damage, generates one natural Chain on impact, and applies its normal Mark gain only after conversion.
 - Its four Apex refinements are: convert all starting Mark for maximum burst, preserve half conversion but grow uncapped Weight faster, preserve half conversion and emphasize direct impact, or preserve half conversion and rebuild more post-hit Mark. Only the full-conversion child may change the inherited 50% conversion fraction.
 - T2 sibling balance is evaluated across clean, Mark-ready, Chain-ready, and combined scenarios. A full-conversion jackpot may lead while primed, but the four-option combined-power spread may not exceed 25% for a fixed history and rarity.
+- `F1S2T3` keeps one physical arrow, `IMPACT_ECHO`, preserved Mark, and an uncapped linear Mark read in all four Apexes.
+- Its four Apex refinements are: grow uncapped echo count faster; grow temporary Chain granted per Mark; multiply only real stored Chain while leaving temporary Chain unchanged; or make every impact/echo generate one real Chain which later echoes use immediately.
+- The fourth refinement pays for its additional stored Chain by lowering clean impact allocation. Chain output itself has no authored cap. For Common Form + Common Specialization history, all four Apex rarity ladders must remain within an `18%` six-phase contribution band.
+- Across completed T1/T2/T3 Apex families, the same standard-history six-phase family means must remain within `20%`; this catches a whole Twist family becoming the automatic Apex choice while preserving mechanical jackpots.
 - Twist balance is also evaluated as a six-phase playthrough starting from zero Mark and using
   the defense-Chain pattern `0, 2, 4, 1, 6, 3`. Mark persists; attack-phase Chain does not leak
   into the next phase. Damage and net resource option value are summed across the run. Across
-  every Form/Specialization/Twist rarity history, the four Twist contributions may not differ
-  by more than `18%` of their row mean. Raw damage may differ more because setup output is
-  intentionally reserved for the other three skills, especially the future Mark consumer.
+  Common Form + Common Specialization histories must remain within `18%` of the row mean
+  across all Twist rarities. Extremely rare stacked-rarity histories are reported separately
+  and may break the target band; they are never flattened with caps or diminishing returns.
+  While a Twist/Apex family or the complementary Mark-consumer skill is still unauthored,
+  jackpot violations are reported rather than blocking the game boot.
+  Raw damage may differ more because setup output is intentionally reserved for the other
+  three skills, especially the future Mark consumer.
 
 Current authored jackpot examples are executable test fixtures:
 

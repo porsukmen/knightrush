@@ -585,7 +585,9 @@ Güvenli devam sırası:
    T3 tek ok + hedef yankısı ve T4 gerçek shotgun paketi olarak materialize edildi.
    Dört pilot Twist tamamlandı. T1 altında dört Apex: temaslara dağıtılan Mark, sonraki
    oklarda yükselen canlı Chain katsayısı, son oka taşınan hasar ve uncapped yoğun tempo
-   olarak materialize edildi. Diğer üç Twist'in Apexleri sırayla tasarlanacak.
+   olarak materialize edildi. T3 altında dört Apex de tamamlandı: daha yoğun yankı,
+   Mark başına daha güçlü geçici Chain, yalnız gerçek Chain'i güçlendiren okuma ve her
+   yankıda gerçek Chain üreten canlı büyüme. Artık yalnız T4 Apexleri tasarlanacak.
    A2'nin son-ok Chain katsayısı kendi Apex packet Quality'sinin kareköküyle büyür; bu
    bonus global `%5 / Chain` tabanının üstüne eklenir ve rarity boyunca artmak zorundadır.
    T2 altında dört Apex de tamamlandı: bütün başlangıç Mark'ını çeviren burst, yarım
@@ -644,10 +646,15 @@ Güvenli devam sırası:
   darbeye, T2A4 ise vuruş sonrası Mark yeniden kurulumuna yönlendirir.
 - F1S2T3 shotgun değildir. Tek fiziksel ok atılır; ok hedefe değdikten sonra Quality
   büyüklüğü kadar hasar yankısı oluşur. Bu nedenle bütün hareket yalnız `+1` kalıcı
-  Chain üretir. Başlangıç Markı tüketilmez; `SATURATED` eğrisiyle hesaplanan her efektif
-  Mark bu saldırı için `+0.5` geçici Chain sayılır. Örneğin `5 Mark`, ilk dört tam ve
-  beşinci yarım değerle `4.5 efektif Mark → 2.25 geçici Chain` verir. Geçici Chain yalnız
+  Chain üretir. Başlangıç Markı tüketilmez; her Mark doğrusal olarak bu saldırı için
+  `+0.3` geçici Chain sayılır. Örneğin `5 Mark → 1.5 geçici Chain`; cap veya azalan
+  verim yoktur. Geçici Chain yalnız
   bu hareketin hasarına girer, boss Chain sayacına yazılmaz. Normal Mark üretimi finalde gelir.
+  T3A1 toplam Quality ile yankı sayısını daha hızlı büyütür. T3A2 kendi Apex Quality'siyle
+  Mark başına geçici Chain oranını artırır. T3A3 yalnız gerçek başlangıç Chain'ini çarpar;
+  Mark'tan gelen geçici Chain aynı kalır. T3A4 ana temas ve her yankıda `+1` gerçek Chain
+  üretir; sonraki yankılar aynı saldırıda daha önce üretilen Chain'i okur. T3A4 bu kalıcı
+  kaynak değerini temiz darbe bütçesinden öder, fakat Chain veya yankı sayısına tavan koymaz.
 - F1S2T4 gerçek `SIMULTANEOUS_PACKET` shotgun'dır. Quality büyüklüğü kadar ayrı pellet
   aynı anda çıkar. Bütün paket toplam `+1 Chain` üretir. Bir pellet başına `1 Mark` tabanı
   kendi damage bütçesinden ödenir. Packet'in Sequential'a kıyasla kaybettiği doğal Chain
@@ -663,7 +670,7 @@ Skill Lab'de F1S2 Common geçmişinin iki oka, F1S2T1 Common geçmişinin üç o
 her temasın `+1 Chain` verdiğini ve sonraki okların önceki okların ürettiği Chain'den
 yararlandığını doğrula. T2'de `5 Mark → 3 Chain`, Single Weight `3`, dönüşüm sonrası Chain hasarı ve
 final Mark üretimini kontrol et. T3'te tek okun üç yankı temasına dönüştüğünü, `5 Mark`ın
-tüketilmeden `2.25` geçici Chain verdiğini ve kalıcı Chain'in yalnız `+1` arttığını kontrol
+tüketilmeden `1.5` geçici Chain verdiğini ve kalıcı Chain'in yalnız `+1` arttığını kontrol
 et. T4'te üç okun aynı anda çıktığını, Common örnekte `+4 Mark` verdiğini ve bütün paketin yine
 yalnız `+1 Chain` ürettiğini doğrula. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
 ancak yeni hiyerarşide yeterli route coverage oluşunca değiştirilir.

@@ -131,9 +131,12 @@ olmadan fakat bedeli artarak büyür.
 Tek-action senaryosu tek başına final denge ölçüsü değildir. Sharpshoot Twistleri ayrıca
 sıfır Mark ile başlayan altı player phase boyunca ölçülür. Mark phase'ler arasında taşınır,
 Chain yalnız savunmadan saldırıya gelir ve player phase sonunda sıfırlanır. Toplam damage ile
-net Mark/Chain option value birlikte değerlendirilir; bütün rarity geçmişlerinde kardeş
-Twist katkı spread'i en fazla `%18` olabilir. İkinci Mark-consumer skill materialize edildiğinde
-bu ölçüye gerçek iki-skill rotasyonu da eklenecektir.
+net Mark/Chain option value birlikte değerlendirilir. Common Form + Common Specialization
+geçmişlerinde bütün Twist rarity'leri için `%18` bant zorunludur. Çok nadir üst üste güçlü
+rarity geçmişleri ayrıca raporlanır ve bu bandı kırabilir; cap veya azalan verimle ezilmez.
+Twist/Apex ailesi ve ikinci Mark-consumer skill henüz tamamlanmadığı sürece jackpot sonucu
+oyunun açılışını durdurmak yerine raporlanır.
+İkinci skill materialize edildiğinde ölçüye gerçek iki-skill rotasyonu da eklenecektir.
 
 ## 5. Allocation profile
 
@@ -371,9 +374,9 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 ## 12. Sonraki sıra
 
 1. **Tamamlandı:** Marked Rhythm altında dört pilot Twist recipe'si Quality Compiler'a taşındı.
-2. **Tamamlandı:** İlk iki Twist altında dörder rarity-neutral Apex recipe'si taşındı; aynı
+2. **Tamamlandı:** İlk üç Twist altında dörder rarity-neutral Apex recipe'si taşındı; aynı
    parent ve rarity için eşit güç bandı, Twist kimliği ve Delivery mirası boot-time denetimdedir.
-3. Kalan iki Twist'in dörder Apex recipe'sini sırayla tasarla.
+3. Kalan T4 Twist'inin dört Apex recipe'sini sırayla tasarla.
 4. Her tamamlanan vertical slice için dört depth full-history `4^4 = 256` rarity geçmişini
    fuzz validator ile tara.
 5. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
