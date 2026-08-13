@@ -374,10 +374,11 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 ## 12. Sonraki sıra
 
 1. **Tamamlandı:** Marked Rhythm altında dört pilot Twist recipe'si Quality Compiler'a taşındı.
-2. **Tamamlandı:** İlk üç Twist altında dörder rarity-neutral Apex recipe'si taşındı; aynı
+2. **Tamamlandı:** Dört Twist altında dörder rarity-neutral Apex recipe'si taşındı; aynı
    parent ve rarity için eşit güç bandı, Twist kimliği ve Delivery mirası boot-time denetimdedir.
-3. Kalan T4 Twist'inin dört Apex recipe'sini sırayla tasarla.
-4. Her tamamlanan vertical slice için dört depth full-history `4^4 = 256` rarity geçmişini
-   fuzz validator ile tara.
+3. **Tamamlandı:** T4'ün dört Apex'i contact, Mark, Chain ve iki-dalga rolleriyle ayrıştırıldı.
+   Dört route × `4^4` rarity geçmişi = `1024` sentez boot sırasında Quality hatası, rarity
+   gerilemesi, minimum pellet okunabilirliği ve rol bulanıklığı için taranır.
+4. Aynı full-history fuzz validator kalıbını T1/T2/T3 için de tek ortak yardımcıya taşı.
 5. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
 6. Yeterli route coverage sonrası live route-first draftı aç.

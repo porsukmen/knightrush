@@ -395,7 +395,11 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - `F1S2T3` keeps one physical arrow, `IMPACT_ECHO`, preserved Mark, and an uncapped linear Mark read in all four Apexes.
 - Its four Apex refinements are: grow uncapped echo count faster; grow temporary Chain granted per Mark; multiply only real stored Chain while leaving temporary Chain unchanged; or make every impact/echo generate one real Chain which later echoes use immediately.
 - The fourth refinement pays for its additional stored Chain by lowering clean impact allocation. Chain output itself has no authored cap. For Common Form + Common Specialization history, all four Apex rarity ladders must remain within an `18%` six-phase contribution band.
-- Across completed T1/T2/T3 Apex families, the same standard-history six-phase family means must remain within `20%`; this catches a whole Twist family becoming the automatic Apex choice while preserving mechanical jackpots.
+- `F1S2T4` keeps a true `SIMULTANEOUS_PACKET`, never reads or consumes existing Mark, and remains a setup move in all four Apexes.
+- Its four Apex refinements are: grow uncapped pellet count faster; preserve normal pellet count but grow extra Mark from the Apex Quality packet; make every simultaneous pellet add one real Chain after damage without strengthening its siblings; or split the unchanged pellet budget into two balanced waves.
+- The two-wave child always has exactly two timing groups. Each wave creates one Chain, and the second wave reads the first wave's Chain. Pellets inside one wave stay simultaneous and cannot strengthen each other. Quality grows total pellets, never wave count.
+- T4 role checks are hard contracts: A1 is contact leader, A2 Mark leader, A3 Chain leader, and only A4 has two waves. Every synthesized pellet must keep at least `6` clean damage in the current prototype readability scale.
+- Across completed T1/T2/T3/T4 Apex families, the same standard-history six-phase family means must remain within `20%`; this catches a whole Twist family becoming the automatic Apex choice while preserving mechanical jackpots.
 - Twist balance is also evaluated as a six-phase playthrough starting from zero Mark and using
   the defense-Chain pattern `0, 2, 4, 1, 6, 3`. Mark persists; attack-phase Chain does not leak
   into the next phase. Damage and net resource option value are summed across the run. Across

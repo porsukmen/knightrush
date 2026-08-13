@@ -587,7 +587,9 @@ Güvenli devam sırası:
    oklarda yükselen canlı Chain katsayısı, son oka taşınan hasar ve uncapped yoğun tempo
    olarak materialize edildi. T3 altında dört Apex de tamamlandı: daha yoğun yankı,
    Mark başına daha güçlü geçici Chain, yalnız gerçek Chain'i güçlendiren okuma ve her
-   yankıda gerçek Chain üreten canlı büyüme. Artık yalnız T4 Apexleri tasarlanacak.
+   yankıda gerçek Chain üreten canlı büyüme. T4 altında dört Apex de tamamlandı: daha yoğun
+   pellet paketi, pellet başına büyüyen Mark, pellet başına gerçek Chain ve aynı toplam
+   pellet bütçesini iki dalgaya bölen staged saldırı.
    A2'nin son-ok Chain katsayısı kendi Apex packet Quality'sinin kareköküyle büyür; bu
    bonus global `%5 / Chain` tabanının üstüne eklenir ve rarity boyunca artmak zorundadır.
    T2 altında dört Apex de tamamlandı: bütün başlangıç Mark'ını çeviren burst, yarım
@@ -660,9 +662,19 @@ Güvenli devam sırası:
   kendi damage bütçesinden ödenir. Packet'in Sequential'a kıyasla kaybettiği doğal Chain
   contact gücü `ceil(lost Chain power / Mark power)` kadar ek Mark'a çevrilir; Quality'nin
   normal Mark wallet'ı bunların üstüne sınırsız büyüyebilir. Packet ayrıca Sequential'ın
-  aynı saldırıda önceki okların Chain'ini okuma avantajını kaybeder; bu kaybın yarısı packet
+  aynı saldırıda önceki okların Chain'ini okuma avantajını kaybeder; bu kaybın `%95`i packet
   impact hasarına geri döner. Mevcut Markı okumaz veya tüketmez. Böylece T3 hazır
   Markı koruyan payoff, T4 ise sonraki hareketler için hızlı Mark kuran builder olur.
+- T4A1 toplam Quality'yi `×1.5` okuyarak uncapped pellet lideri olur. T4A2 normal pellet
+  eğrisini korur; kendi Apex Quality'sinde her `6` puan için ek Mark üretir, güncel
+  okunabilirlik tabanı için en az `+2` Apex Mark taşır ve bunun yarısını temiz hasardan öder.
+  T4A3 her eşzamanlı pellet sonrası `+1` gerçek Chain üretir fakat aynı packet içindeki
+  pelletler birbirini güçlendirmez. T4A4 toplam pellet sayısını değiştirmeden iki dengeli
+  dalgaya böler; her dalga `+1 Chain` üretir ve yalnız ikinci dalga birincinin Chain'ini okur.
+  Quality wave sayısını değil toplam pelleti büyütür.
+- T4 için dört route × dört depth'teki bütün rarity kombinasyonları (`1024` sentez)
+  boot-time full-history kontrolden geçer. Quality çözüm hatası `≤0.01`, her pellet temiz
+  hasarı `≥6`, rarity kimlik çıktıları gerilemesiz ve dört Apex rolü birbirinden ayrıdır.
 
 ## Bir sonraki somut iş
 
@@ -672,5 +684,8 @@ yararlandığını doğrula. T2'de `5 Mark → 3 Chain`, Single Weight `3`, dön
 final Mark üretimini kontrol et. T3'te tek okun üç yankı temasına dönüştüğünü, `5 Mark`ın
 tüketilmeden `1.5` geçici Chain verdiğini ve kalıcı Chain'in yalnız `+1` arttığını kontrol
 et. T4'te üç okun aynı anda çıktığını, Common örnekte `+4 Mark` verdiğini ve bütün paketin yine
-yalnız `+1 Chain` ürettiğini doğrula. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
+yalnız `+1 Chain` ürettiğini doğrula. T4 Apexlerinde A1'in dört pelletlik tek paketini,
+A2'nin en yüksek Mark çıktısını, A3'ün üç pellet üzerinden `+3 Chain` üretirken pelletleri
+birbirine scale ettirmediğini ve A4'ün `2+1` iki dalgasında ikinci dalganın ilk `+1 Chain`i
+okuduğunu kontrol et. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
 ancak yeni hiyerarşide yeterli route coverage oluşunca değiştirilir.
