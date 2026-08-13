@@ -114,6 +114,27 @@ ve route dengesi bir sunum ölçeğine bağlı değildir.
 kart `+4` alır; net ekonomi `-4` olur. Bu, refundın 4 damage vurduğu anlamına gelmez.
 Katsayılar gerçek combat verisi geldikçe tek merkezden ayarlanır.
 
+Resource değerleri action sonunda **net değişim** olarak ölçülür. Örneğin başlangıçtaki
+`8 Mark`ın `4`ünü harcayıp `4 Chain` üreten bir hareket guardrail hesabında yalnız
+`+4 Chain` yazamaz; aynı anda `-4 Mark` opportunity cost taşır. Mark okumak fakat
+tüketmemek bu bedeli ödemez. Bu net-state muhasebesi builder ve consumer'ın iki ayrı
+kez bedava güç yazmasını engeller; hareketin gerçek damage/Weight payoff'u yaptığı
+takasın değerini karşılamak zorundadır.
+
+Weight gibi bir Delivery yoğunlaştırıcısı da ikinci bir bedava Quality cüzdanı değildir.
+F1S2T2 ödeme hesabında yalnız sabit bir Chain örneği kullanmaz: beklenen savunma Chain'ine,
+hareketin sürdürülebilir Mark üretiminin sonraki kullanımlarda çevireceği Chain de eklenir.
+Bu exposure'ın merkezî bir payı temiz darbeden ödenir; kalan pay başarılı hazırlık motorunun
+kimlik ödülüdür. Böylece Common rota ezilmez, yüksek Quality Mark + Weight birleşimi de cap
+olmadan fakat bedeli artarak büyür.
+
+Tek-action senaryosu tek başına final denge ölçüsü değildir. Sharpshoot Twistleri ayrıca
+sıfır Mark ile başlayan altı player phase boyunca ölçülür. Mark phase'ler arasında taşınır,
+Chain yalnız savunmadan saldırıya gelir ve player phase sonunda sıfırlanır. Toplam damage ile
+net Mark/Chain option value birlikte değerlendirilir; bütün rarity geçmişlerinde kardeş
+Twist katkı spread'i en fazla `%18` olabilir. İkinci Mark-consumer skill materialize edildiğinde
+bu ölçüye gerçek iki-skill rotasyonu da eklenecektir.
+
 ## 5. Allocation profile
 
 Her handcrafted route recipe şunları taşır:
@@ -295,6 +316,12 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
     `Quality wallet × rol katsayısı × Handling katsayısı` ile ifade edilebilir gücü bulur,
     ardından evrensel output değerine böler. Aynı history aynı sonucu üretir; ifade
     edilemeyen güç kaybolmaz ve route sözleşmesindeki Primary eksene geri dağıtılır.
+16. Resource guardrail action başı ve action sonu Mark/Chain farkını fiyatlamalıdır;
+    tüketilen Mark veya Chain maliyeti sessizce sıfır sayılamaz.
+17. Mark üretimi için gameplay/authoring maksimumu konulamaz. Discrete progress tekrarlanan
+    sabit fiyatlı eşiklerle sınırsız ilerler; yalnız safe-integer veri doğrulaması yapılır.
+18. Aynı Stable route rarity yükselttiğinde owned identity profile gerileyemez. Kontrol,
+    yalnız çıplak yüzdeye değil o katsayının gerçek hit/damage üstündeki payoff'una bakar.
 
 ## 11. Şu anki migration durumu
 

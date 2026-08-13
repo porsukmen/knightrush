@@ -88,9 +88,10 @@ combat çıktısını etkileyebilir:
   üretmez.
 - Knight Rush gibi özel hareketler açık override ile her gerçek contact için Chain
   üretebilir.
-- Contact sayısı bedava güç değildir. Compiler, Delivery'nin doğal Chain değerini toplam
-  güç bütçesine yazar; çok temaslı hareket bunun karşılığında başka outputlardan bütçe
-  harcar.
+- Görünen Sequential temasın doğal Chain'i, mevcut prototipte bilinçli bir Delivery
+  avantajıdır ve Quality cüzdanından damage çalmaz. Ancak ayrı bir karşılaştırma sayacına
+  ve kardeş-Twist senaryo testine girer; böylece güç görünmez sayılmaz. Packet yalnız bir
+  Chain verdiği için kaybettiği doğal temas değerini sınırlı bir Mark-parity ödemesiyle alır.
 - Chain dışındaki buildler de uyumlu Sequential Delivery alıp doğal Chain kazanabilir.
   Chain Primary/Secondary ise Delivery havuzunun ağırlığını ve Chain üzerindeki ek
   scaling/interaction hakkını sahiplenir.
@@ -621,11 +622,23 @@ Güvenli devam sırası:
   daha sonra cüzdandan fiyatlandırılabilir.
 - Çok yüksek Quality sayıları bilinçli olarak build'i kırabilir. İleride yalnız
   sunum/performance batching yapılabilir; oyun matematiğine hard cap eklenmez.
+- Aynı uncapped kural Mark output için de geçerlidir. Shotgun pellet veya başka bir
+  Delivery yüksek Quality ile `12+ Mark` üretebilir; denge per-action limit ile değil,
+  Quality allocation ve net resource opportunity-cost senaryolarıyla kurulur.
+- Boss savunmasında kazanılan Chain bir sonraki player phase'e taşınır; player phase
+  bittiğinde sıfırlanır. Attack içinde kurulan Chain sonraki boss cycle'a sızmaz.
+- Converter değerlendirmesi action sonu eksi action başı kaynak durumunu kullanır:
+  üretilen Chain artı, tüketilen Mark eksi yazılır. Mark'ı yalnız okuyan hareketlerde
+  tüketim bedeli yoktur.
 - F1S2T2 Single delivery'ye geçer. Başlangıç Marklarının yarısını yukarı yuvarlayıp
   `1 Mark → 1 Chain` olarak vuruştan önce dönüştürür. Oluşan Chain ağır okun hesabına
   girer; normal Mark üretimi finalde gerçekleşir. Weight base damage'i değil, toplam
   global temel Chain bonusunu çarpar; Quality kaynaklı ek Chain oranı sonradan bir kere
-  eklenir. Common/Common/Common geçmişte Quality `10`, Weight `3` olur.
+  eklenir. Weight uncapped olsa da ikinci bir bedava güç cüzdanı değildir. Compiler beklenen
+  defense Chain'ine, hareketin kendi sürdürülebilir Mark üretiminden sonraki kullanımlarda
+  çevireceği Chain'i ekler; bu exposure'ın merkezî payını temiz darbeden öder. Kalan bölüm
+  başarılı Mark hazırlığının ilişki ödülüdür. Common/Common/Common geçmişte Quality `10`,
+  Weight `3` olur.
   T2A1 yarım dönüşümü tam dönüşüme çıkarır. T2A2 yarım dönüşümü korur fakat
   `totalQuality × 1.5` üzerinden uncapped Weight üretir. T2A3 Apex packet'ini doğrudan
   darbeye, T2A4 ise vuruş sonrası Mark yeniden kurulumuna yönlendirir.
@@ -636,8 +649,12 @@ Güvenli devam sırası:
   beşinci yarım değerle `4.5 efektif Mark → 2.25 geçici Chain` verir. Geçici Chain yalnız
   bu hareketin hasarına girer, boss Chain sayacına yazılmaz. Normal Mark üretimi finalde gelir.
 - F1S2T4 gerçek `SIMULTANEOUS_PACKET` shotgun'dır. Quality büyüklüğü kadar ayrı pellet
-  aynı anda çıkar. Bütün paket toplam `+1 Chain` üretir; net Mark üretimi pellet başına
-  en az `+2` olacak şekilde büyür. Mevcut Markı okumaz veya tüketmez. Böylece T3 hazır
+  aynı anda çıkar. Bütün paket toplam `+1 Chain` üretir. Bir pellet başına `1 Mark` tabanı
+  kendi damage bütçesinden ödenir. Packet'in Sequential'a kıyasla kaybettiği doğal Chain
+  contact gücü `ceil(lost Chain power / Mark power)` kadar ek Mark'a çevrilir; Quality'nin
+  normal Mark wallet'ı bunların üstüne sınırsız büyüyebilir. Packet ayrıca Sequential'ın
+  aynı saldırıda önceki okların Chain'ini okuma avantajını kaybeder; bu kaybın yarısı packet
+  impact hasarına geri döner. Mevcut Markı okumaz veya tüketmez. Böylece T3 hazır
   Markı koruyan payoff, T4 ise sonraki hareketler için hızlı Mark kuran builder olur.
 
 ## Bir sonraki somut iş
@@ -647,6 +664,6 @@ her temasın `+1 Chain` verdiğini ve sonraki okların önceki okların üretti�
 yararlandığını doğrula. T2'de `5 Mark → 3 Chain`, Single Weight `3`, dönüşüm sonrası Chain hasarı ve
 final Mark üretimini kontrol et. T3'te tek okun üç yankı temasına dönüştüğünü, `5 Mark`ın
 tüketilmeden `2.25` geçici Chain verdiğini ve kalıcı Chain'in yalnız `+1` arttığını kontrol
-et. T4'te üç okun aynı anda çıktığını, en az `+6 Mark` verdiğini ve bütün paketin yine
+et. T4'te üç okun aynı anda çıktığını, Common örnekte `+4 Mark` verdiğini ve bütün paketin yine
 yalnız `+1 Chain` ürettiğini doğrula. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
 ancak yeni hiyerarşide yeterli route coverage oluşunca değiştirilir.

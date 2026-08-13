@@ -141,7 +141,7 @@ The Form Primary output or interaction must always remain present. Any channel t
 
 ## Mark resource contract
 
-Mark is an encounter resource with no visible gameplay stack cap. The implementation uses a technical ceiling of `999` only to protect arithmetic and save data. A single authored action may generate at most `12` Mark; this is an authoring guardrail, not the boss's capacity.
+Mark is an encounter resource with no gameplay stack or per-action generation cap. The implementation accepts non-negative safe integers only to protect arithmetic and save data; that technical check may never flatten a reachable build. Quality, weapon identity, resource opportunity cost, and scenario balance—not an arbitrary maximum—control Mark production. A sufficiently strong synthesized build may therefore produce more than `12` Mark in one action.
 
 Presentation:
 
@@ -170,6 +170,13 @@ Hard combat rules:
 - Current stronger authored curves are `RARE_DETONATION` and `LEGENDARY_DETONATION`. Full-value unlimited consumption is reserved for an explicit future exception such as a properly priced Corrupted effect.
 - Spending a large reserve slowly through capped attacks is more efficient; consuming it immediately is faster but less efficient.
 - A converter consumes only its declared amount. If it is a Form, its own Mark gain must prime the next use without a sibling Form.
+- Balance evaluates net resource state. Gaining Mark is positive option value; consuming existing Mark is the matching negative opportunity cost. A converter is not allowed to count the gained Chain while pretending the spent Mark was free.
+
+Phase ownership:
+
+- Chain built during boss defense carries into the immediately following player phase.
+- Ending that player phase clears Chain before the next defense phase begins. Chain created by attacks cannot leak across repeated boss cycles.
+- Mark remains an encounter resource and follows the move's explicit read/consume/generate rules rather than the Chain phase reset.
 
 The boot audit must test per-hit reserve preservation, capped Fight consumption, the `4 / 8 / 12 -> 4 / 6 / 7` Saturated values, non-consuming reads, self-priming conversion, and separation of Chain and Mark damage.
 
@@ -215,6 +222,11 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   declares which mechanic Weight intensifies. F1S2T2 multiplies the global base Chain bonus
   while keeping one visible hit; Quality-bought extra Chain scaling is added once afterward
   and is not recursively multiplied by Weight.
+- Weight has no gameplay maximum, but it is not a second free power wallet. A converter's
+  clean-impact payment uses expected defense Chain plus the Chain that its own sustainable
+  Mark production will convert on later uses. A centrally authored payment share preserves
+  a real reward for successfully priming the relationship while preventing high-Quality
+  Mark + Weight from scaling as an unpriced second engine.
 - F1S2T2 is the explicit Sharpshoot conversion exception: consume half of starting Mark
   rounded up, convert `1:1` to Chain before damage, calculate the weighted hit from the
   post-conversion Chain, then apply normal Mark gain. Its future Apex may replace half with
@@ -225,9 +237,11 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   through the `SATURATED` curve as `0.5` temporary Chain per effective Mark; this temporary
   Chain affects only the current action's damage and is never stored.
 - F1S2T4 uses a true `SIMULTANEOUS_PACKET`: cumulative Quality controls the number of
-  separate pellets released at the same time. The whole packet produces exactly `+1` Chain,
-  while its net Mark output has a floor of two Mark per pellet. It does not read or consume
-  existing Mark.
+  separate pellets released at the same time. The whole packet produces exactly `+1` Chain.
+  Its paid Mark floor is one per pellet; because Packet gives up the extra natural Chain
+  contacts of an equivalent Sequential delivery, `ceil(lost Chain power / Mark power)`
+  additional Mark compensates that delivery trade. Quality Mark output may grow beyond both
+  values without a cap. It does not read or consume existing Mark.
 - F1S2 and F1S2T1 sequential arrows use live Chain. Every visible arrow produces `+1`
   Chain after its hit, and every later arrow benefits from the Chain produced by earlier
   arrows in the same action. T1 must never lock all contacts to the action-start value.
@@ -372,12 +386,18 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - Four authored pilot Twists each create a distinct Mark/Chain combat loop. They are not a numeric spectrum.
 - Each Twist currently owns four Apex cards. Every Apex preserves its exact Twist relationship and Delivery family, then maximizes a different already-owned output.
 - `F1S2T1` is the direct sequential continuation. Every visible arrow generates one Chain and reads the live Chain value, including Chain created earlier in the same action.
-- Its four Apex refinements are: distribute more Mark across contacts, ramp the live Chain coefficient on later arrows, back-load clean damage into the final arrow, or increase uncapped contact cadence. None may consume/read Mark or replace sequential Delivery.
+- Its four Apex refinements are: produce and distribute distinctly more Mark across contacts, ramp the live Chain coefficient on later arrows, back-load clean damage into the final arrow, or increase uncapped contact cadence. The Mark refinement pays for its guaranteed extra Mark from its own damage allocation and must outproduce the Tempo refinement at the same history/rarity. None may consume/read Mark or replace sequential Delivery.
 - The Chain-ramp Apex must visibly scale its last-arrow coefficient with its own Apex Quality packet; higher rarity may not merely add damage while leaving this defining payoff flat. Its displayed skill coefficient is additive over the global `5% per Chain` combat rule.
 - For one fixed parent history and Apex rarity, sibling Apexes must remain in an approximately equal combined-power band; the tactical allocation, not raw superiority, is the choice.
 - `F1S2T2` remains one `SINGLE` heavy arrow in all four Apexes. Every child retains Weight-based Chain scaling, converts before damage, generates one natural Chain on impact, and applies its normal Mark gain only after conversion.
 - Its four Apex refinements are: convert all starting Mark for maximum burst, preserve half conversion but grow uncapped Weight faster, preserve half conversion and emphasize direct impact, or preserve half conversion and rebuild more post-hit Mark. Only the full-conversion child may change the inherited 50% conversion fraction.
 - T2 sibling balance is evaluated across clean, Mark-ready, Chain-ready, and combined scenarios. A full-conversion jackpot may lead while primed, but the four-option combined-power spread may not exceed 25% for a fixed history and rarity.
+- Twist balance is also evaluated as a six-phase playthrough starting from zero Mark and using
+  the defense-Chain pattern `0, 2, 4, 1, 6, 3`. Mark persists; attack-phase Chain does not leak
+  into the next phase. Damage and net resource option value are summed across the run. Across
+  every Form/Specialization/Twist rarity history, the four Twist contributions may not differ
+  by more than `18%` of their row mean. Raw damage may differ more because setup output is
+  intentionally reserved for the other three skills, especially the future Mark consumer.
 
 Current authored jackpot examples are executable test fixtures:
 
@@ -400,8 +420,10 @@ The boot-time validator must reject at least these cases:
 10. A Stable unlimited Mark reader/consumer uses the full-value curve.
 11. A per-hit rule attempts to consume all Mark on every hit.
 12. A Mark converter lacks a positive conversion output.
-13. One action exceeds the Mark-gain authoring limit.
+13. Mark output is negative, fractional, or outside safe integer arithmetic. High positive output is valid and must not be rejected merely for being high.
 14. A Mark-interacting Form relies on a mutually exclusive sibling to prime its resource.
+15. A rarity upgrade reduces an owned identity output or its real combat payoff. A displayed coefficient may move only when the stronger card's resulting payoff still grows; raw generic damage is not a substitute for lost identity.
+16. A resource converter's guardrail counts gained resources but omits the opportunity cost of resources it consumes.
 
 Rarity Resonance tests must prove that lower rarities do not erase high-rarity totals, one Legendary alone does not activate, two/three/four total Rare reach +1/half/full, Rare + Legendary reaches half, two Legendary reaches full, and refund never exceeds the action's actual spend.
 
