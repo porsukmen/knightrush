@@ -587,6 +587,10 @@ Güvenli devam sırası:
    olarak materialize edildi. Diğer üç Twist'in Apexleri sırayla tasarlanacak.
    A2'nin son-ok Chain katsayısı kendi Apex packet Quality'sinin kareköküyle büyür; bu
    bonus global `%5 / Chain` tabanının üstüne eklenir ve rarity boyunca artmak zorundadır.
+   T2 altında dört Apex de tamamlandı: bütün başlangıç Mark'ını çeviren burst, yarım
+   dönüşümü koruyup uncapped Weight'i daha hızlı büyüten sıkıştırma, doğrudan ağır darbe
+   ve vuruş sonrası daha fazla Mark kuran sürdürülebilir döngü. Dördü de tek ağır ok,
+   saldırı öncesi dönüşüm ve Weight tabanlı Chain scaling kimliğini korur.
 6. Bu slice doğrulanmadan canlı draftı, diğer skillleri, weapon swapı veya animation
    rewrite'ını topluca migrate etme.
 
@@ -622,7 +626,9 @@ Güvenli devam sırası:
   girer; normal Mark üretimi finalde gerçekleşir. Weight base damage'i değil, toplam
   global temel Chain bonusunu çarpar; Quality kaynaklı ek Chain oranı sonradan bir kere
   eklenir. Common/Common/Common geçmişte Quality `10`, Weight `3` olur.
-  Gelecekteki T2 Apex yarım dönüşümü tam dönüşüme çıkarabilir.
+  T2A1 yarım dönüşümü tam dönüşüme çıkarır. T2A2 yarım dönüşümü korur fakat
+  `totalQuality × 1.5` üzerinden uncapped Weight üretir. T2A3 Apex packet'ini doğrudan
+  darbeye, T2A4 ise vuruş sonrası Mark yeniden kurulumuna yönlendirir.
 - F1S2T3 shotgun değildir. Tek fiziksel ok atılır; ok hedefe değdikten sonra Quality
   büyüklüğü kadar hasar yankısı oluşur. Bu nedenle bütün hareket yalnız `+1` kalıcı
   Chain üretir. Başlangıç Markı tüketilmez; `SATURATED` eğrisiyle hesaplanan her efektif
