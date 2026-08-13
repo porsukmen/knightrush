@@ -2,9 +2,10 @@
 
 ## Tek kaynak
 
-- Oyunun düzenlenen ana dosyası `KnightRush.html` dosyasıdır.
-- GitHub Pages'in açtığı `index.html`, bunun birebir yayın kopyasıdır.
-- `index.html` elle düzenlenmez; aksi hâlde sonraki yayın değişikliği ezer.
+- Oyunun tek kalıcı kaynağı `KnightRush.html` dosyasıdır.
+- Repoda ikinci bir oyun kopyası veya takip edilen `index.html` yoktur.
+- GitHub Actions her yayında `KnightRush.html` dosyasını geçici Pages artifact'i içinde
+  `index.html` adıyla üretir. Bu dosya repoya geri yazılmaz.
 
 ## Yayın
 
@@ -18,10 +19,19 @@ Script sırasıyla:
 
 1. `KnightRush.html` içindeki inline JavaScript'i parse eder.
 2. `origin/main` geçmişinin yerel `main` tarafından içerildiğini doğrular.
-3. `KnightRush.html` dosyasını birebir `index.html` ile eşitler.
-4. Hash ve Git whitespace kontrolü yapar.
-5. Projedeki güncel değişikliklerin tamamını stage ve commit eder.
-6. Normal `git push origin main` çalıştırır.
+3. Git whitespace kontrolü yapar.
+4. Projedeki güncel değişikliklerin tamamını stage ve commit eder.
+5. Normal `git push origin main` çalıştırır.
+
+Push sonrasında `.github/workflows/deploy-pages.yml` otomatik olarak:
+
+1. `KnightRush.html` dosyasını yeniden parse eder.
+2. Temiz bir `_site` artifact'i oluşturur.
+3. Artifact içinde yalnız `KnightRush.html -> index.html` yayın kopyasını üretir.
+4. Artifact'i GitHub Pages'e deploy eder.
+
+Doğrudan `git push` kullanılsa bile aynı workflow çalışır; yayın kopyasını unutmak
+artık mümkün değildir.
 
 Script force push yapmaz. GitHub'da başka bir değişiklik varsa geçmişi ezmek yerine durur.
 

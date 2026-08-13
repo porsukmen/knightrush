@@ -9,7 +9,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sourcePath = Join-Path $repoRoot 'KnightRush.html'
-$publishPath = Join-Path $repoRoot 'index.html'
 $validatorPath = Join-Path $repoRoot 'tools\validate-html.cjs'
 
 if (!(Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
@@ -43,13 +42,6 @@ if ($LASTEXITCODE -ne 0) {
   throw 'origin/main is not an ancestor of local main. Pull/reconcile before publishing; force push is forbidden.'
 }
 
-Copy-Item -LiteralPath $sourcePath -Destination $publishPath -Force
-$sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-$publishHash = (Get-FileHash -LiteralPath $publishPath -Algorithm SHA256).Hash
-if ($sourceHash -ne $publishHash) {
-  throw 'index.html does not exactly match KnightRush.html after synchronization.'
-}
-
 git -C $repoRoot diff --check
 if ($LASTEXITCODE -ne 0) {
   throw 'Git whitespace validation failed.'
@@ -70,7 +62,7 @@ if ($stagedExit -eq 1) {
 } elseif ($stagedExit -ne 0) {
   throw 'Could not inspect the staged publish changes.'
 } else {
-  Write-Host 'KnightRush.html and index.html are already synchronized; checking unpublished commits.'
+  Write-Host 'The canonical source is already committed; checking unpublished commits.'
 }
 
 git -C $repoRoot push origin main
@@ -79,4 +71,5 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $published = (git -C $repoRoot log -1 --oneline).Trim()
-Write-Host "Published: $published"
+Write-Host "Pushed: $published"
+Write-Host 'GitHub Actions will validate KnightRush.html, generate index.html only inside the Pages artifact, and deploy it.'

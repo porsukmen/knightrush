@@ -16,3 +16,6 @@ knight-rush-*-profile/
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# GitHub Actions generates this publish entry from KnightRush.html.
+index.html
