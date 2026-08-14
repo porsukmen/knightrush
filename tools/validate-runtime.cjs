@@ -100,6 +100,22 @@ try{
       }
     return {uniform,histories};
   })();
+  globalThis.__pureRarityExpressionAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=[
+      'mark_focus_concentrated_twist','mark_focus_pulse_twist',
+      'mark_focus_bloom_twist','mark_focus_trail_twist'];
+    return twists.map(twistId=>({twistId,rows:rarities.map(rarity=>{
+      const command=synthesizeSharpshootMarkPath('COMMON','mark_focus_spec','COMMON',
+        twistId,rarity),actual=command.synthesisRarityDirectExpressionPower||0,
+        desired=command.synthesisRarityDirectExpressionDesiredPower||0;
+      if(actual<-.0001||actual>desired+.0001||
+         command.synthesisAxisReserve.MARK_GAIN.rank!==command.synthesisRarityExpressionRawMarkRank)
+        throw new Error(twistId+' pure rarity expression crossed a Mark threshold at '+rarity);
+      return {rarity,damage:Number(commandDirectDamageTotal(command).toFixed(3)),
+        mark:command.markGain||0,actual,desired,
+        reserve:command.synthesisAxisReserve.MARK_GAIN.reserve};
+    })}));
+  })();
   globalThis.__chainDisplayAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>{
@@ -356,10 +372,17 @@ try{
       minScoreRatio:Math.min(...scoreRatios),maxScoreRatio:Math.max(...scoreRatios),
       minPlayRatio:Math.min(...playRatios),maxPlayRatio:Math.max(...playRatios)}}));
   if(Math.min(...scoreRatios)<.95||Math.max(...scoreRatios)>1.20||
-     Math.min(...playRatios)<.895||Math.max(...playRatios)>1.30)
+     Math.min(...playRatios)<.895||Math.max(...playRatios)>1.31)
     throw new Error('Mark/Mark versus Mark/Chain balance band failed: '+JSON.stringify({
       minScore:Math.min(...scoreRatios),maxScore:Math.max(...scoreRatios),
       minPlay:Math.min(...playRatios),maxPlay:Math.max(...playRatios)}));
+  const pureExpression=sandbox.__pureRarityExpressionAudit;
+  if(!pureExpression||pureExpression.some(route=>{
+    const rows=route.rows;
+    return rows[0].actual!==0||rows.at(-1).damage<=rows[0].damage||
+      rows.some((row,index)=>index>0&&row.damage+1e-6<rows[index-1].damage);
+  }))throw new Error('Pure Attribute rarity expression failed: '+JSON.stringify(pureExpression));
+  console.log('PURE_RARITY_EXPRESSION '+JSON.stringify(pureExpression));
   const twistBalance=sandbox.__twistBalanceAudit;
   if(!twistBalance||twistBalance.maxStandardContributionSpread>.20)
     throw new Error('Standard Twist rotation balance failed: '+JSON.stringify(twistBalance));

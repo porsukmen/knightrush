@@ -351,6 +351,10 @@ Rarity contributes to two persistent ledgers:
 
 Quality is a synthesis budget allocated only through the selected route's authored axes. It is not a universal damage multiplier. Resolve Pressure controls cost independently:
 
+Pure-Attribute Stable routes reserve a small visible rarity expression without receiving free power. Form is untouched. From Specialization onward, the desired expression is `1.5%` of the current layer's rarity premium above Common, but it may be paid only from that layer's unspent discrete Primary reserve. The compiler transfers at most that reserve into direct damage. It may never lower a completed Mark/Posture threshold, so a higher rarity cannot lose visible Primary output merely to show a damage difference. Common contributes no rarity expression. Future pure attributes must register the same reserve-funded policy explicitly rather than copying a raw damage bonus.
+
+While the second, Mark-reading skill is not yet materialized, the Mark/Mark versus Mark/Chain solo playthrough ratio may reach `1.31`; its score ratio remains capped at `1.20`, its expected damage must remain lower, and its guaranteed Mark must remain higher. This extra one-percent observation band is provisional and must be recalibrated with the four-skill rotation simulator rather than expanded silently.
+
 The executable Quality Compiler contract is documented in `QUALITY_COMPILER_DESIGN_TR.md`. Rarity Quality remains the visible 1/4/8/14 RNG sum. Every completed layer also carries guaranteed Structural Quality: Form 2, Specialization 2, Twist 3, Apex 4. Effective Quality applies fixed depth leverage only to the packet that arrived at that layer: Form 1.20, Specialization 1.12, Twist 1.05, Apex and post-Apex 1.00. Earlier Quality never multiplies future packets.
 
 Discrete threshold curves belong to a registered skill-family policy, not a global table.
@@ -387,7 +391,9 @@ The effective-score ladder is not enough on its own. Within one fixed Stable rou
 
 Every synthesized history node records its Common route contribution and rarity premium separately. Later children must preserve earlier recorded contributions exactly. This makes a Legendary parent permanently relevant even when the following choice rolls Common.
 
-AP is outside the Quality ledger. Until an explicit AP revamp, Stable synthesis cannot change the standard one-AP skill cost, generate AP, or refund AP. Break remains a universal combat reward rather than a card-synthesis output.
+AP is outside the Quality ledger. Until an explicit AP revamp, Stable synthesis cannot change the standard one-AP skill cost, generate AP, or refund AP. Rarity and accumulated Quality never increase AP cost automatically. Any future AP change must belong to an explicit authored chassis such as Charge/Release or a Distorted/Corrupted rule.
+
+Resolve is an encounter-economy cost, not a generic rarity tax. The existing Resolve Pressure projection remains provisional and must not be expanded route-by-route before the economy revamp. The target rule is that Resolve changes only at an authored mechanical breakpoint where the move gains a materially new action-scale payoff; it should not rise on every rarity step, and its increase cannot erase that rarity's net reward. Final AP/Resolve curves are deferred until all four starting skills, Fight, companion actions, and the normal attack can be tested together in a full-turn rotation simulator. Until then the compiler leaves today's provisional combat costs unchanged and records the data needed for that pass.
 
 ### Rarity Resonance
 

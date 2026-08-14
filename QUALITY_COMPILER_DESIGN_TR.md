@@ -87,7 +87,7 @@ Resolve Pressure ayrı kalır ve nihai cost solve edilmeden önce uygulanır:
 
 `cost = baseCost + floor(totalPressure / 3)`
 
-Quality Compiler v5 parent statını geriye doğru çözmez. Current layer damage receipt'i
+Quality Compiler v6 parent statını geriye doğru çözmez. Current layer damage receipt'i
 parent'ın gerçekleşmiş damage sonucuna eklenir; Mark/Hit/Chain wallet'ları sabit fiyatlı
 ayrık eşikleri satın alır. Bir eşiğe
 yetmeyen miktar aynı axis'in Reserve'ünde full history boyunca kalır ve damage'e çevrilmez.
@@ -100,6 +100,21 @@ receipt'in en az `%25`i görünür damage olarak kalır. Weight de yalnız curre
 payını sıkıştırır; parent'ın önceden gerçekleşmiş damage'ini bölmez. Resource conversion'ın
 harcadığı Mark scenario muhasebesinde zaten eksi option value'dur; compiler bunu geçsin diye
 gizli conversion damage'i eklemez.
+
+Saf Attribute rotalarında rarity farkının görünmez Reserve'de tamamen kaybolmaması için
+yalnız current layer'a ait küçük bir ifade payı vardır. Form etkilenmez. Specialization ve
+sonrasında hedef pay, Common üstündeki rarity premiumunun `%1.5`idir; gerçek aktarım ise
+yalnız tamamlanmış bir ayrık eşiğin altında kalan Primary Reserve kadar olabilir. Bu güç
+Reserve'den `DIRECT_DAMAGE`e bire bir taşınır: Quality yaratılmaz, tamamlanmış Mark/Posture
+azalmaz ve Common bedava bonus almaz. Şu an materyalize edilmiş Mark/Mark soyu bu sözleşmeyi
+uygular; Posture/Posture kendi runtime çıktısı geldiğinde aynı rezerv modeliyle açılır.
+
+AP Quality wallet'ının dışında ve varsayılan olarak `1`dir; rarity/Quality onu otomatik
+ölçekleyemez. Mevcut Resolve Pressure cost projeksiyonu geçicidir ve ekonomi revampına
+kadar rota bazında genişletilmez. Hedef sistemde Resolve cost rarity vergisi değil, açıkça
+authored ve hissedilir bir mekanik kırılma noktasının bedelidir; maliyet artışı rarity
+ödülünü silemez. Nihai AP/Resolve eğrileri dört başlangıç skilli, Fight, normal saldırı ve
+companion aksiyonları aynı tam-tur simülatöründe ölçüldükten sonra kalibre edilir.
 
 Parent gücü de sonuçla birlikte taşınır. Aynı child route ve aynı offered rank sabitlenip
 geçmişteki tek bir rarity yükseltildiğinde dört-senaryo veya altı-faz sonucu geri gidemez.

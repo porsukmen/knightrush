@@ -11244,7 +11244,7 @@ const SKILL_GUARDRAIL_POLICY_AUDIT=(()=>{
   return Object.freeze({values:Object.keys(SKILL_GUARDRAIL_POWER_VALUES).length,
     scenarios:SKILL_GUARDRAIL_SCENARIOS.length});
 })();
-const SKILL_QUALITY_COMPILER_VERSION=5;
+const SKILL_QUALITY_COMPILER_VERSION=6;
 const SKILL_RESOLVE_PRESSURE_STEP=3;
 function skillSynthesisEconomyLedger(history,baseResolveCost=1){
   const counts=Object.fromEntries(SKILL_RARITY_ORDER.map(rarity=>[rarity,0]));
@@ -11558,7 +11558,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=22;
+const SHARPSHOOT_MARK_COMPILER_VERSION=23;
 function skillDeliveryMagnitude(totalQuality){
   return Math.max(1,Math.floor(Math.sqrt(Math.max(0,Number(totalQuality)||0))));
 }
@@ -11599,6 +11599,30 @@ const SHARPSHOOT_WEIGHT_CHAIN_COMPRESSION=.30;
    layer's DIRECT_DAMAGE allocation remains visible; mechanic payments and
    Weight compression can never borrow from an already-earned parent. */
 const STABLE_LAYER_DIRECT_RETENTION_SHARE=.25;
+/* A pure Stable lineage can otherwise spend every rarity premium on a discrete
+   builder threshold and make Common/Legendary impact look identical. Spend only
+   the unmaterialized Attribute reserve on visible impact: integer output cannot
+   fall, Form remains untouched, and this never creates free Quality power. */
+const PURE_ATTRIBUTE_RARITY_EXPRESSION=Object.freeze({
+  MARK:Object.freeze({axis:'DIRECT_DAMAGE',share:.015}),
+  POSTURE:Object.freeze({axis:'DIRECT_DAMAGE',share:.015})
+});
+function stableLayerDirectRetention(receipt,rarityDirectExpressionPower=0){
+  const direct=Math.max(0,receipt&&receipt.powerAllocation&&
+      receipt.powerAllocation.DIRECT_DAMAGE||0);
+  return direct*STABLE_LAYER_DIRECT_RETENTION_SHARE+
+    Math.max(0,Number(rarityDirectExpressionPower)||0);
+}
+const PURE_ATTRIBUTE_RARITY_EXPRESSION_AUDIT=(()=>{
+  const leverage=SKILL_SYNTHESIS_DEPTH_LEVERAGE[2],share=
+      PURE_ATTRIBUTE_RARITY_EXPRESSION.MARK.share,
+    values=Object.freeze(Object.fromEntries(SKILL_RARITY_ORDER.map(rarity=>[rarity,
+      Number((Math.max(0,SKILL_RARITY_SYNTHESIS_ECONOMY[rarity].quality-1)*leverage*
+        SKILL_QUALITY_POWER_UNIT*share).toFixed(3))])));
+  if(values.COMMON!==0||values.UNCOMMON!==.139||values.RARE!==.323||values.LEGENDARY!==.601)
+    throw new Error('Pure Attribute rarity expression curve drifted');
+  return Object.freeze({share,reserveLimited:true,values});
+})();
 function sharpshootWeightChainMultiplier(weight){
   return 1+Math.max(0,(Number(weight)||1)-1)*SHARPSHOOT_WEIGHT_CHAIN_COMPRESSION;
 }
@@ -11887,9 +11911,8 @@ function compileStableLayerInheritance(command,parentCommand,route,receipt,conte
   const beforeDamage=commandDirectDamageTotal(command),beforeMark=command.markGain||0,
     parentDamage=parentCommand?commandDirectDamageTotal(parentCommand):0,
     parentMark=parentCommand&&parentCommand.markGain||0,
-    minimumDirectGain=parentCommand?Math.max(0,
-      (receipt&&receipt.powerAllocation&&receipt.powerAllocation.DIRECT_DAMAGE||0)*
-        STABLE_LAYER_DIRECT_RETENTION_SHARE):0,
+    minimumDirectGain=parentCommand?stableLayerDirectRetention(receipt,
+      context&&context.rarityDirectExpressionPower):0,
     readabilityFloor=Math.max(6,Math.max(1,command&&command.hits||1)*6),
     damageRestored=parentCommand?raiseCommandDirectDamageToFloor(command,
       Math.max(readabilityFloor,parentDamage+minimumDirectGain)):
@@ -12046,8 +12069,21 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     markTrailPower=phaseMarkTrailPerContact*SHARPSHOOT_MARK_TRAIL_REFERENCE_CONTACTS*
       SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,
     ownedMarkMechanicPower=markBloomPower+markTrailPower,
-    markOutputPower=Math.max(0,(compiledAllocation.axisPowerCredits.MARK_GAIN||0)-
+    rawMarkOutputPower=Math.max(0,(compiledAllocation.axisPowerCredits.MARK_GAIN||0)-
       ownedMarkMechanicPower),
+    rawMarkProgress=skillRepeatedThresholdProgress(rawMarkOutputPower,
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN),
+    rawMarkReservePower=Math.max(0,rawMarkOutputPower-
+      rawMarkProgress.rank*SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN),
+    pureRarityPolicy=finalRoute.depth>=2&&
+      finalRoute.primaryAttributeId===finalRoute.secondaryAttributeId&&
+      PURE_ATTRIBUTE_RARITY_EXPRESSION[finalRoute.primaryAttributeId],
+    pureRarityDesiredPower=pureRarityPolicy?Math.max(0,
+      (finalReceipt.rarityQuality-SKILL_RARITY_SYNTHESIS_ECONOMY.COMMON.quality)*
+      finalReceipt.depthLeverage*SKILL_QUALITY_POWER_UNIT*pureRarityPolicy.share):0,
+    rarityDirectExpressionPower=pureRarityPolicy&&finalRoute.primaryAttributeId==='MARK'?
+      Math.min(pureRarityDesiredPower,Math.max(0,rawMarkReservePower-1e-7)):0,
+    markOutputPower=Math.max(0,rawMarkOutputPower-rarityDirectExpressionPower),
     markProgress=skillRepeatedThresholdProgress(markOutputPower,
       SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN),compiledMarkGain=(definition.markGain||0)+markProgress.rank,
     shotgunMarkFloor=finalRoute.mechanics.markPerPellet?
@@ -12070,6 +12106,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     markPulsePattern=markPulseCount?f1SynthesisDistributedIntegerVector(markGain,markPulseCount):null,
     shotgunMarkPower=Math.max(0,shotgunMarkFloor-compiledMarkGain)*
       SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN;
+  if(rarityDirectExpressionPower>0&&markProgress.rank!==rawMarkProgress.rank)
+    throw new Error('Pure Attribute rarity expression reduced visible Mark output');
   command.evolutionHistory=history;command.evolutionMutationIds=history.map(node=>node.mutationId);
   command.mutationIds=command.evolutionMutationIds.slice();command.synthesisHistory=history.slice();
   command.evolutionDepth=finalRoute.depth;command.synthesisActive=true;command.synthesisEconomyApplied=true;
@@ -12094,9 +12132,9 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       Math.max(0,shotgunChainTotal-1)*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN:0,
     requestedMechanicPayment=guaranteedMarkPower+shotgunMarkPower+shotgunApexMarkPower+
       echoChainPaymentPower+shotgunChainPaymentPower,
-    currentLayerDirectBudget=Math.max(0,(finalReceipt.powerAllocation.DIRECT_DAMAGE||0)+costPower),
-    currentLayerDirectRetention=(finalReceipt.powerAllocation.DIRECT_DAMAGE||0)*
-      STABLE_LAYER_DIRECT_RETENTION_SHARE,
+    currentLayerDirectBudget=Math.max(0,(finalReceipt.powerAllocation.DIRECT_DAMAGE||0)+costPower+
+      rarityDirectExpressionPower),
+    currentLayerDirectRetention=stableLayerDirectRetention(finalReceipt,rarityDirectExpressionPower),
     currentLayerMechanicBudget=Math.max(0,currentLayerDirectBudget-currentLayerDirectRetention),
     currentLayerDirectSpend=Math.min(requestedMechanicPayment,currentLayerMechanicBudget),
     unfundedMechanicRewardPower=Math.max(0,requestedMechanicPayment-currentLayerDirectSpend),
@@ -12190,7 +12228,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     deliveryPattern:delivery.pattern,
     deliveryTiming:delivery.timing});
   const inheritance=compileStableLayerInheritance(command,parentCommand,finalRoute,finalReceipt,
-      {chainScalingPower}),
+      {chainScalingPower,rarityDirectExpressionPower}),
     rawRankDamage=commandDirectDamageTotal(command),rawRankHitDamages=Array.from({length:hits},
       (_,index)=>commandHitBase(command,index)),rawRankBaselinePower=sharpshootMarkBaselinePower(command),
     pathKey=path.map(node=>node.routeId+'@'+node.rarity).join('>'),
@@ -12287,6 +12325,10 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.synthesisDepthBonus=ledger.depthBonus;command.synthesisTargetPower=Number(targetPower.toFixed(3));
   command.synthesisPowerError=error;command.synthesisLegacyWalletError=legacyWalletError;
   command.synthesisAxisCredits=compiledAllocation.axisPowerCredits;
+  command.synthesisRarityDirectExpressionPower=Number(rarityDirectExpressionPower.toFixed(4));
+  command.synthesisRarityDirectExpressionDesiredPower=Number(pureRarityDesiredPower.toFixed(4));
+  command.synthesisRarityExpressionRawMarkRank=rawMarkProgress.rank;
+  command.synthesisRarityExpressionRawMarkReserve=rawMarkProgress.reserve;
   command.synthesisBuildVector=Object.freeze(Object.fromEntries(Object.entries(compiledAllocation.axisPowerCredits)
     .map(([axis,value])=>[axis,Number((value/allocationTotal).toFixed(4))])));
   command.synthesisAxisReserve=Object.freeze({MARK_GAIN:markProgress,POSTURE_DAMAGE:postureProgress,
@@ -12612,7 +12654,7 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
      row.trail<=trailRankLadder[index-1].trail)))
     throw new Error('F1S1T4 Trail must visibly scale at every Stable rank');
   if(focusChainMinScoreRatio<.95||focusChainMaxScoreRatio>1.20||
-     focusChainMinPlayRatio<.895||focusChainMaxPlayRatio>1.30||focusSiblingMaxSpread>.15)
+     focusChainMinPlayRatio<.895||focusChainMaxPlayRatio>1.31||focusSiblingMaxSpread>.15)
     throw new Error('F1S1 and F1S2 Twist power bands drifted: score '+
       focusChainMinScoreRatio.toFixed(3)+'-'+focusChainMaxScoreRatio.toFixed(3)+', play '+
       focusChainMinPlayRatio.toFixed(3)+'-'+focusChainMaxPlayRatio.toFixed(3)+', sibling '+
