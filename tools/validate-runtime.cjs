@@ -179,8 +179,57 @@ try{
         check(route,[form,spec,twist]);
     }
     return {routes:routes.length,ladders,comparisons,regressions,stagnant};
+  })();
+  globalThis.__stableHierarchyAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
+      SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'&&
+        route.depth>1),twists=routes.filter(route=>route.depth===3),
+      apexes=routes.filter(route=>route.depth===4),failures=[];
+    let comparisons=0,maxDamageRestored=0,maxMarkRestored=0,maxLayerGain=0;
+    const pair=(route,history,rank)=>{
+      if(route.depth===2)return {parent:synthesizeSharpshootMarkPath(history[0]),
+        child:synthesizeSharpshootMarkPath(history[0],route.id,rank)};
+      if(route.depth===3)return {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,
+          history[1]),child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],
+          route.id,rank)};
+      const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
+      return {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
+          twist.id,history[2]),child:synthesizeSharpshootMarkPath(history[0],twist.parentId,
+          history[1],twist.id,history[2],route.id,rank)};
+    },check=(route,history,rank)=>{
+      const {parent,child}=pair(route,history,rank),report=child.synthesisLayerInheritance,
+        parentDamage=commandDirectDamageTotal(parent),childDamage=commandDirectDamageTotal(child),
+        parentScore=stableEvolutionCombinedGuardrailValue(parent),
+        childScore=stableEvolutionCombinedGuardrailValue(child),
+        parentPlay=stableEvolutionPlaythroughVector(parent).averageContribution,
+        childPlay=stableEvolutionPlaythroughVector(child).averageContribution,
+        weightOwned=!!(route.mechanics&&route.mechanics.weightChannel);
+      comparisons++;
+      if(!report||report.mode!=='PARENT_PLUS_DELTA'||childDamage+.001<parentDamage+
+          report.minimumDirectGain||(child.markGain||0)<(parent.markGain||0)||
+          childScore+.051<parentScore+report.minimumLayerGain||
+          childPlay+.051<parentPlay+report.minimumLayerGain||
+          (!weightOwned&&((child.deliveryWeight||1)!==1||(child.chainBonusWeight||1)!==1)))
+        failures.push({route:route.id,history:history.join('/'),rank,parentDamage,childDamage,
+          parentMark:parent.markGain,childMark:child.markGain,parentScore,childScore,parentPlay,
+          childPlay,report,deliveryWeight:child.deliveryWeight,chainBonusWeight:child.chainBonusWeight});
+      maxDamageRestored=Math.max(maxDamageRestored,report&&report.damageRestored||0);
+      maxMarkRestored=Math.max(maxMarkRestored,report&&report.markRestored||0);
+      maxLayerGain=Math.max(maxLayerGain,childPlay-parentPlay);
+    };
+    for(const route of routes){
+      if(route.depth===2)for(const form of rarities)for(const rank of rarities)
+        check(route,[form],rank);
+      else if(route.depth===3)for(const form of rarities)for(const spec of rarities)
+        for(const rank of rarities)check(route,[form,spec],rank);
+      else for(const form of rarities)for(const spec of rarities)for(const twist of rarities)
+        for(const rank of rarities)check(route,[form,spec,twist],rank);
+    }
+    return {routes:routes.length,twists:twists.length,apexes:apexes.length,comparisons,failures,
+      maxDamageRestored:Number(maxDamageRestored.toFixed(3)),maxMarkRestored,
+      maxLayerGain:Number(maxLayerGain.toFixed(3))};
   })();`;
-  vm.runInNewContext(source,sandbox,{filename:file,timeout:15000});
+  vm.runInNewContext(source,sandbox,{filename:file,timeout:30000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
   console.log(`RUNTIME_OK ${file}`);
   const audit=sandbox.__runtimeAudit;
@@ -220,6 +269,16 @@ try{
     comparisons:rankAudit.comparisons,regressions:rankAudit.regressions.length,
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
+  const hierarchyAudit=sandbox.__stableHierarchyAudit;
+  if(!hierarchyAudit||hierarchyAudit.twists!==8||hierarchyAudit.apexes!==16||
+     hierarchyAudit.comparisons!==4704||hierarchyAudit.failures.length)
+    throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
+      routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
+      comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
+  console.log('STABLE_HIERARCHY_AUDIT '+JSON.stringify({routes:hierarchyAudit.routes,
+    twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
+    comparisons:hierarchyAudit.comparisons,maxDamageRestored:hierarchyAudit.maxDamageRestored,
+    maxMarkRestored:hierarchyAudit.maxMarkRestored,maxLayerGain:hierarchyAudit.maxLayerGain}));
 }catch(error){
   console.error(error&&error.stack||error);
   process.exitCode=1;

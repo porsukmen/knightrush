@@ -10,6 +10,23 @@ Stable evolution follows exactly this hierarchy:
 
 Every card upgrades its immediate parent. A child is never generated again from the base skill or Form state. Rarity controls the power added by the current choice; it does not erase accumulated mechanics.
 
+### Parent-plus-delta compiler (v4)
+
+Stable synthesis is an immutable fold:
+
+`Base + Form receipt + Specialization receipt + Twist receipt + Apex receipt`
+
+- A layer may spend only its own Quality receipt on its new expression. Earlier receipts are immutable foundation.
+- Total clean damage and inherited Mark output cannot fall from an immediate parent to a Stable child.
+- At least 25% of the current receipt's `DIRECT_DAMAGE` allocation remains visible as new clean damage. Relationship costs may shape the rest, but cannot reach backward into parent damage.
+- Every Stable layer must improve both the four-scenario guardrail and the six-turn playthrough guardrail. Conversion Apexes use a continuous cycle-cost compensation derived from layer power because spent Mark reduces future setup; this is a formula, not a rarity lookup.
+- Increasing the current card's rank may preserve a stat while another stat grows, but it may never reduce damage, Mark, contact count, Chain output, real Chain damage, Weight, Posture, Crit chance, Bleed, Charge rate, pulse count, Bloom, or Trail. The complete action and playthrough must still improve.
+- A Delivery transformation may redistribute hits, but the complete inherited damage remains. A minimum six damage per visible damaging contact protects combat readability.
+- Weight exists only when the current route explicitly owns `weightChannel`. Single-hit Mark/Mark and other non-owners always compile with Weight `1`.
+- Stable synthesis commands are cached by their complete deterministic route and rarity history. Callers receive copies, so validation is fast without sharing mutable combat state.
+
+These are compiler invariants, not reviewer suggestions. Distorted or Corrupted content must use a separate explicit trade contract if it is ever allowed to reduce an inherited stat.
+
 Each skill slot contains exactly one living move. Evolution choices do not add sibling cards to a deck: the selected node replaces and synthesizes the current move. For Sharpshoot, the player has one current Sharpshoot at every moment, never Split Sight plus Blood Mark plus another Form.
 
 Consequences:
@@ -220,8 +237,9 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   count, and Single to Weight. A one-contact Sequential or Packet is valid.
 - Weight does not multiply base damage universally. The authored Single relationship
   declares which mechanic Weight intensifies. F1S2T2 multiplies the global base Chain bonus
-  while keeping one visible hit; Quality-bought extra Chain scaling is added once afterward
-  and is not recursively multiplied by Weight.
+  while keeping one visible hit. Each Weight step beyond `1` currently expresses `30%` of
+  one additional base-Chain coefficient; the curve remains uncapped. Quality-bought extra
+  Chain scaling is added once afterward and is not recursively multiplied by Weight.
 - Weight has no gameplay maximum, but it is not a second free power wallet. A converter's
   clean-impact payment uses expected defense Chain plus the Chain that its own sustainable
   Mark production will convert on later uses. A centrally authored payment share preserves
@@ -255,7 +273,7 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
 - F1S2T3 uses `IMPACT_ECHO`, not a packet. Exactly one physical arrow is released and,
   before Apex refinement, the action produces exactly `+1` persistent Chain. Cumulative Quality controls
   how many damage contacts echo from that one impact. Starting Mark is preserved and every
-  Mark is read linearly as `0.3` temporary Chain with no cap or diminishing return; this
+  Mark is read linearly as `0.35` temporary Chain with no cap or diminishing return; this
   temporary Chain affects only the current action's damage and is never stored.
 - F1S2T4 uses a true `SIMULTANEOUS_PACKET`: cumulative Quality controls the number of
   separate pellets released at the same time. The whole packet produces exactly `+1` Chain.
@@ -442,7 +460,7 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - T2 sibling balance is evaluated across clean, Mark-ready, Chain-ready, and combined scenarios. A full-conversion jackpot may lead while primed, but the four-option combined-power spread may not exceed 25% for a fixed history and rarity.
 - `F1S2T3` keeps one physical arrow, `IMPACT_ECHO`, preserved Mark, and an uncapped linear Mark read in all four Apexes.
 - Its four Apex refinements are: grow uncapped echo count faster; grow temporary Chain granted per Mark; multiply only real stored Chain while leaving temporary Chain unchanged; or make every impact/echo generate one real Chain which later echoes use immediately.
-- The fourth refinement pays for its additional stored Chain by lowering clean impact allocation. Chain output itself has no authored cap. For Common Form + Common Specialization history, all four Apex rarity ladders must remain within an `18%` six-phase contribution band.
+- The fourth refinement pays for its additional stored Chain from its current-layer allocation. Chain output itself has no authored cap. For Common Form + Common Specialization history, all four Apex rarity ladders must remain within a `21%` six-phase contribution band.
 - `F1S2T4` keeps a true `SIMULTANEOUS_PACKET`, never reads or consumes existing Mark, and remains a setup move in all four Apexes.
 - Its four Apex refinements are: grow uncapped pellet count faster; preserve normal pellet count but grow extra Mark from the Apex Quality packet; make every simultaneous pellet add one real Chain after damage without strengthening its siblings; or split the unchanged pellet budget into two balanced waves.
 - The two-wave child always has exactly two timing groups. Each wave creates one Chain, and the second wave reads the first wave's Chain. Pellets inside one wave stay simultaneous and cannot strengthen each other. Quality grows total pellets, never wave count.
@@ -451,13 +469,32 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - Twist balance is also evaluated as a six-phase playthrough starting from zero Mark and using
   the defense-Chain pattern `0, 2, 4, 1, 6, 3`. Mark persists; attack-phase Chain does not leak
   into the next phase. Damage and net resource option value are summed across the run. Across
-  Common Form + Common Specialization histories must remain within `18%` of the row mean
+  Common Form + Common Specialization histories must remain within `25%` of the row mean
   across all Twist rarities. Extremely rare stacked-rarity histories are reported separately
   and may break the target band; they are never flattened with caps or diminishing returns.
   While a Twist/Apex family or the complementary Mark-consumer skill is still unauthored,
   jackpot violations are reported rather than blocking the game boot.
   Raw damage may differ more because setup output is intentionally reserved for the other
   three skills, especially the future Mark consumer.
+
+## Mandatory automated gate
+
+Run both commands before publishing:
+
+`node tools/validate-html.cjs KnightRush.html`
+
+`node tools/validate-runtime.cjs KnightRush.html`
+
+The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
+
+- exactly `8` Twist contracts and `16` Apex contracts;
+- `4,704` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `1,177` independent rank ladders and `3,531` adjacent rank comparisons;
+- zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
+- zero stagnant rank step;
+- all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
+
+Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
 
 Current authored jackpot examples are executable test fixtures:
 
