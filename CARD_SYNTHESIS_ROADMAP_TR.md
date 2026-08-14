@@ -512,6 +512,17 @@ Bugünkü genel sistem ve efficiency audit'i şu sonucu verdi:
   `38.249/+7/2` (`damage/Mark/Resolve`) üretir. Bunlar elle yazılmış rarity tabloları
   değil; full-history Quality, depth leverage, discrete Mark reserve ve Resolve
   Pressure tarafından yeniden sentezlenir.
+- F1S1 altında dört Twist gerçek saldırı olarak tamamlandı. T1 tek temasta en yüksek
+  koşulsuz Mark paketini bırakır. T2 tek hasar temasından sonra Quality ile büyüyen ayrı
+  hasarsız Mark pulse eventleri çalıştırır. T3 başlangıç Mark'ını koruyup yalnız action-start
+  snapshotından yeni Mark büyütür. T4 kendi temasından sonra aynı player phase'deki sonraki
+  hasar temaslarına Mark Trail bağlar. Dördü de yalnız bir doğal Chain üretir; Chain scaling,
+  Chain okuma veya dönüşüm kullanmaz.
+- Mark/Mark ile Mark/Chain sınırı yorum değil executable sözleşmedir: aynı rarity geçmişinde
+  her Mark/Mark Twist daha çok garanti Mark üretir; Mark/Chain ise dört standart savaş
+  senaryosunda daha yüksek beklenen hasara sahiptir. `256` F1S1 kartı, `64` kardeş-history
+  karşılaştırması ve `192` bağımsız rarity merdiveni her boot'ta taranır. Mark/Mark toplam
+  Quality'den her `7` puanda tavansız ek Mark alır; Bloom ve Trail de tavansız büyür.
 - F1S2 seçildiği anda Quality büyüklüğünde sıralı delivery'ye geçer; her görünen ok
   doğal `+1 Chain` verir ve Chain tüketmez. Secondary wallet, prepared Chain
   senaryolarına göre fiyatlanan ek damage-per-Chain oranı satın
@@ -596,7 +607,10 @@ Güvenli devam sırası:
    dönüşümü koruyup uncapped Weight'i daha hızlı büyüten sıkıştırma, doğrudan ağır darbe
    ve vuruş sonrası daha fazla Mark kuran sürdürülebilir döngü. Dördü de tek ağır ok,
    saldırı öncesi dönüşüm ve Weight tabanlı Chain scaling kimliğini korur.
-6. Bu slice doğrulanmadan canlı draftı, diğer skillleri, weapon swapı veya animation
+6. **Tamamlandı:** F1S1 Mark/Mark için dört Twist; yoğun paket, Mark pulse, Mark Bloom ve
+   phase Mark Trail olarak materialize edildi. Runtime eventleri ve F1S1/F1S2 kimlik duvarı
+   otomatik testtedir. Apexleri henüz authored değildir.
+7. Bu slice doğrulanmadan canlı draftı, diğer skillleri, weapon swapı veya animation
    rewrite'ını topluca migrate etme.
 
 ## Performans sözleşmesi
@@ -678,6 +692,12 @@ Güvenli devam sırası:
 
 ## Bir sonraki somut iş
 
+Skill Lab'de önce F1S1'in dört Twist'ini kontrol et: T1 tek seferde en çok garanti Mark'ı,
+T2 tek gerçek vuruştan sonra üç ayrı hasarsız pulse'u, T3 mevcut `8 Mark` varken Common
+geçmişte tüketmeden `+1` Bloom'u, T4 ise kendi vuruşunu saymayıp sonraki her player temasında
+`+1 Mark` veren ve Finish Turn'de silinen Trail'i göstermeli. Dördü de yalnız `+1 Chain`
+üretmeli. Bu davranışlar onaylandıktan sonra F1S1T1 Apex tasarımına geç.
+
 Skill Lab'de F1S2 Common geçmişinin iki oka, F1S2T1 Common geçmişinin üç oka çıktığını;
 her temasın `+1 Chain` verdiğini ve sonraki okların önceki okların ürettiği Chain'den
 yararlandığını doğrula. T2'de `5 Mark → 3 Chain`, Single Weight `3`, dönüşüm sonrası Chain hasarı ve
@@ -687,5 +707,5 @@ et. T4'te üç okun aynı anda çıktığını, Common örnekte `+4 Mark` verdi�
 yalnız `+1 Chain` ürettiğini doğrula. T4 Apexlerinde A1'in dört pelletlik tek paketini,
 A2'nin en yüksek Mark çıktısını, A3'ün üç pellet üzerinden `+3 Chain` üretirken pelletleri
 birbirine scale ettirmediğini ve A4'ün `2+1` iki dalgasında ikinci dalganın ilk `+1 Chain`i
-okuduğunu kontrol et. Sonra T5 ilişki tasarımına geç. Legacy canlı draft
+okuduğunu kontrol et. Legacy canlı draft
 ancak yeni hiyerarşide yeterli route coverage oluşunca değiştirilir.

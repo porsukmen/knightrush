@@ -227,6 +227,27 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   Mark production will convert on later uses. A centrally authored payment share preserves
   a real reward for successfully priming the relationship while preventing high-Quality
   Mark + Weight from scaling as an unpriced second engine.
+- F1S1 Mark/Mark owns a strict identity wall against F1S2 Mark/Chain. At one fixed
+  Form/Specialization/Twist rarity history, the weakest Mark/Mark Twist must produce
+  more guaranteed Mark than the strongest Mark/Chain Twist. Damage identity is measured
+  over the shared clean/Mark-ready/Chain-ready/combined scenarios, so a weighted
+  Mark/Chain arrow is credited for the Chain multiplier it actually owns instead of being
+  misclassified by its deliberately reduced clean-impact payment.
+- Every F1S1 Twist has exactly one damaging contact and therefore exactly one natural
+  Chain. It cannot add Chain scaling, read Chain as a relationship mechanic, convert
+  Mark/Chain, or create extra damaging contacts. Global combat Chain still affects the
+  single hit by the universal rule; the card owns no additional Chain engine.
+- F1S1T1 applies the largest unconditional Mark package in one immediate event.
+  F1S1T2 lands one damaging arrow, then applies its complete Mark output through
+  separate non-damaging pulses. Pulses are real Mark application events for future
+  Artifact hooks, but never hits and never Chain contacts.
+- F1S1T3 preserves the action-start Mark and adds `ceil(starting Mark × Bloom rate)`
+  after impact. Only action-start stacks are read, so Mark created by the same action
+  cannot recurse. The rate and resulting output have no gameplay cap or diminishing curve.
+- F1S1T4 installs Mark Trail only after its own impact. Every later damaging player-side
+  contact in the same player phase adds the authored Mark amount; its own installing hit
+  cannot trigger the Trail. Trail does not change the later attack's damage or Chain and
+  is cleared whenever the player phase ends or a new one begins.
 - F1S2T2 is the explicit Sharpshoot conversion exception: consume half of starting Mark
   rounded up, convert `1:1` to Chain before damage, calculate the weighted hit from the
   post-conversion Chain, then apply normal Mark gain. Its future Apex may replace half with
@@ -383,6 +404,19 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - Specialization: **Marked Rhythm**
   - Secondary: `Mark:Generate`
   - Establishes 2 Mark while preserving multihit Chain generation
+- The parallel F1S1 Mark/Mark pilot now owns four materialized Twists:
+  concentrated immediate Mark, separate non-damage Mark pulses, action-start Mark Bloom,
+  and phase-long Mark Trail. All four stay one-hit/one-Chain builders and are mechanically
+  barred from entering the Mark/Chain tree.
+- The compiler scans `4 × 4 × 4 × 4 = 256` Mark/Mark Twist cards and compares the four
+  Mark/Mark siblings against all four Mark/Chain siblings across 64 equivalent rarity
+  histories. It also validates 192 independent Form/Spec/Twist rarity ladders. Boot fails
+  if total power stops rising, an owned mechanic regresses, the Mark/expected-damage
+  identity wall is crossed, or the two routes leave their shared power bands.
+- Mark/Mark converts cumulative Quality into an additional Mark every seven Quality,
+  including the first partial step. The conversion, Bloom rate, Trail per contact, pulse
+  payload, and delivery magnitude have no authored maximum. High-Quality audits explicitly
+  verify that larger synthetic inputs keep producing larger outputs.
 - Four authored pilot Twists each create a distinct Mark/Chain combat loop. They are not a numeric spectrum.
 - Each Twist currently owns four Apex cards. Every Apex preserves its exact Twist relationship and Delivery family, then maximizes a different already-owned output.
 - `F1S2T1` is the direct sequential continuation. Every visible arrow generates one Chain and reads the live Chain value, including Chain created earlier in the same action.

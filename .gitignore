@@ -5,6 +5,8 @@
 # Browser and automated-test profiles
 .edge-test-profile/
 .edge-*-profile/
+.edge-*-profile*/
+.chrome-*-profile*/
 knight-rush-*-profile/
 
 # Logs and temporary files

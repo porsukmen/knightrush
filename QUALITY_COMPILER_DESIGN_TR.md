@@ -330,7 +330,7 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 
 - F1 Mark Form; F1S1 Mark/Mark, F1S2 Mark/Chain, F1S3 Mark/Posture, F1S4 Mark/Critical,
   F1S5 Mark/Affliction ve F1S6 Mark/Charge Specialization Quality Compiler v3 wallet +
-  Mark semantic compiler v9
+  Mark semantic compiler v20
   ile preview edilir; Structural ve Rarity Quality
   ayrı receipt olarak görünür. F1S2 Chain'i tüketmeden prepared Chain başına bounded ek
   hasar üretir. F1S3 önce Secondary rol (`0.80`) ile Light Ranged Posture Handling (`0.40`)
@@ -361,6 +361,24 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   Attribute wallet'ı full-history toplamını okuyarak bütün kartı `70/30` kimlik hedefine
   yaklaştırır; eski Quality yeniden harcanmaz. Böylece güçlü Form geçmişi Common
   Secondary outputunu büyütürken parent Mark/Damage tabanı gerilemez.
+- F1S1 altında dört çalışan Mark/Mark Twist tamamlandı. Dördü de tek gerçek temas ve
+  tek doğal Chain üretir; ekstra Chain scaling/read/conversion alamaz. T1 bütün Mark'ı
+  tek pakette, T2 ayrı hasarsız Mark pulse eventleriyle verir. T3 yalnız action-start
+  Mark'ını tüketmeden okuyup doğrusal Bloom üretir; aynı action içindeki yeni Mark kendi
+  kendini tetikleyemez. T4 kendi vuruşundan sonra player phase Mark Trail kurar; sonraki
+  hasar temasları Mark ekler ve Trail faz sınırında silinir.
+- F1S1/F1S2 kimlik ayrımı executable'dır: 64 eşdeğer rarity geçmişinde dört F1S1 Twist'in
+  en düşük garanti Mark'ı dört F1S2 Twist'in en yüksek garanti Mark'ından büyüktür. Damage
+  karşılaştırması tooltip clean sayısı yerine clean/Mark-ready/Chain-ready/combined gerçek
+  senaryolarının ortalamasını kullanır; böylece Weight'in temiz hasar ödemesi yanlışlıkla
+  güçsüzlük sayılmaz. Güncel `256` F1S1 sentezinde en dar Mark farkı `+4`, en dar beklenen
+  hasar farkı Mark/Chain lehine `26.5`tir.
+- Mark/Mark rota ölçeği her `7` toplam Quality için tavansız `+1 Mark` verir. Dört rota
+  arasındaki tek-action güç farkı en fazla `%8`; Mark/Mark/Mark-Chain ortalama güç oranı
+  bütün `64` geçmişte `0.9652–1.0811`, altı fazlık test oranı `0.9624–1.2030` bandındadır.
+  `192` ayrı rarity merdiveni total power ve sahip olunan mekanik gerilemesine karşı boot'ta
+  doğrulanır. Bloom artık `ceil(start Mark × (0.02 + 0.0008 × effective Quality))` kullanır:
+  normal geçmişte kontrollü kalır, fakat rate veya sonuç için gameplay cap yoktur.
 - Eski Split Sight calibration preview'leri compatibility adapter olarak tutulur; yeni
   içerik parent-stat geriye çözümünü kullanamaz.
 - Guardrail değerleri merkezileştirildi; scenario vector ve impact floor auditleri aktiftir.
@@ -379,6 +397,9 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 3. **Tamamlandı:** T4'ün dört Apex'i contact, Mark, Chain ve iki-dalga rolleriyle ayrıştırıldı.
    Dört route × `4^4` rarity geçmişi = `1024` sentez boot sırasında Quality hatası, rarity
    gerilemesi, minimum pellet okunabilirliği ve rol bulanıklığı için taranır.
-4. Aynı full-history fuzz validator kalıbını T1/T2/T3 için de tek ortak yardımcıya taşı.
-5. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
-6. Yeterli route coverage sonrası live route-first draftı aç.
+4. **Tamamlandı:** F1S1'in dört Mark/Mark Twist'i ve F1S1↔F1S2 kimlik duvarı runtime
+   materialization + full-history denetimine taşındı.
+5. F1S1 için dört Twist'in Apex ailelerini aynı kimlik duvarını koruyarak tasarla.
+6. Aynı full-history fuzz validator kalıbını ortak yardımcıya taşı.
+7. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
+8. Yeterli route coverage sonrası live route-first draftı aç.
