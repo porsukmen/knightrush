@@ -101,6 +101,13 @@ payını sıkıştırır; parent'ın önceden gerçekleşmiş damage'ini bölmez
 harcadığı Mark scenario muhasebesinde zaten eksi option value'dur; compiler bunu geçsin diye
 gizli conversion damage'i eklemez.
 
+Parent gücü de sonuçla birlikte taşınır. Aynı child route ve aynı offered rank sabitlenip
+geçmişteki tek bir rarity yükseltildiğinde dört-senaryo veya altı-faz sonucu geri gidemez.
+Threshold'a yeni ulaşan zayıf history arayı kapatabilir fakat parent farkının en az `%10`unu
+ve en az `1` görünür power birimini korumak zorundadır. Runtime validator bütün materialized
+rotalarda `10.056` adjacent-parent karşılaştırması yapar; reversal veya fazla sıkışma deploy'u
+durdurur.
+
 `power`, combat sırasında verilen gizli damage değildir. Farklı kaynakları aynı terazide
 karşılaştıran yalnızca compiler/validator puanıdır. Quality Compiler v5 değerleri merkezi
 `SKILL_GUARDRAIL_POWER_VALUES` sözleşmesinde tutar:

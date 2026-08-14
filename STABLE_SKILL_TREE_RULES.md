@@ -18,6 +18,8 @@ Stable synthesis is an immutable fold:
 
 - A layer may spend only its own Quality receipt on its new expression. Earlier receipts are immutable foundation.
 - Total clean damage and inherited Mark output cannot fall from an immediate parent to a Stable child.
+- Fixing the child route and offered rank, raising any earlier rarity must never produce a weaker child in either four-scenario power or six-turn rotation power. Parent ordering is immutable.
+- Discrete thresholds may let a weaker history catch partway up, but they cannot erase the foundation gap: at least `10%` of every meaningful parent power gap and at least `1` visible design-power point must remain in the child result.
 - At least 25% of the current receipt's `DIRECT_DAMAGE` allocation remains visible as new clean damage. Relationship costs may shape the rest, but cannot reach backward into parent damage.
 - Every Stable layer must improve both the four-scenario guardrail and the six-turn playthrough guardrail. Resource conversion is evaluated by the real scenario, including the opportunity cost of consumed Mark; inheritance may not add synthetic conversion damage to make the result pass.
 - Increasing the current card's rank may preserve a stat while another stat grows, but it may never reduce damage, Mark, contact count, Chain output, real Chain damage, Weight, Posture, Crit chance, Bleed, Charge rate, pulse count, Bloom, or Trail. At least one owned output must improve; the rounded six-turn score may remain equal but may never fall.
@@ -492,13 +494,17 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
 - exactly `8` Twist contracts and `16` Apex contracts;
 - `4,704` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
 - `1,177` independent rank ladders and `3,531` adjacent rank comparisons;
+- `10,056` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
+- zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
 - inheritance repair must remain at or below `1.1` damage with a `0` 95th percentile; rank-floor damage repair must remain at or below `2` with a `0` 95th percentile. A larger repair means the recipe/compiler is erasing power and the guard is hiding it;
 - Common-parent Mark/Chain Twist rotations must stay within `20%`; equivalent Mark/Mark versus Mark/Chain histories must remain inside `0.95-1.20` scenario value and `0.895-1.30` six-turn value ratios;
 - all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
+
+The GitHub Pages workflow runs both HTML parsing and the complete runtime balance validator. A failed hierarchy, rank, sibling, rotation, repair, or parent-strength contract blocks deployment rather than publishing a silently broken build.
 
 Current authored jackpot examples are executable test fixtures:
 
