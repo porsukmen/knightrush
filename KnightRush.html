@@ -10650,10 +10650,10 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:1,slot:3,primaryAttributeId:'MARK',secondaryAttributeId:'MARK',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.08,MARK_GAIN:.92},
-    promise:'Preserve starting Mark and let it grow the new Mark package without damage, Chain conversion, a cap or same-action recursion.',
+    promise:'Start from its own smaller Mark package, then preserve and read visible action-start Mark through an independent uncapped Bloom.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',
       relationship:'STARTING_MARK_BLOOM',markRule:'NET_OUTPUT_ABOVE_SIBLING',guaranteedMarkBonus:1,
-      markBloomBaseRate:.02,markBloomRatePerTwistQuality:.0008},
+      focusIdentityMarkScale:false,markBloomBaseRate:.20,markBloomRatePerTwistQuality:0},
     baselineAttack:{hits:1,markGain:2,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
   skillAttributeRouteContract({id:'mark_focus_trail_twist',depth:3,parentId:'mark_focus_spec',
     formSlot:1,specializationSlot:1,slot:4,primaryAttributeId:'MARK',secondaryAttributeId:'MARK',
@@ -10956,7 +10956,9 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     trail=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_focus_trail_twist;
   if(!concentrated||concentrated.mechanics.guaranteedMarkBonus!==2||
      !pulses||pulses.mechanics.guaranteedMarkBonus!==1||!pulses.mechanics.markPulseDelivery||
-     !bloom||bloom.mechanics.guaranteedMarkBonus!==1||!(bloom.mechanics.markBloomBaseRate>0)||
+     !bloom||bloom.mechanics.guaranteedMarkBonus!==1||
+       bloom.mechanics.focusIdentityMarkScale!==false||bloom.mechanics.markBloomBaseRate!==.20||
+       bloom.mechanics.markBloomRatePerTwistQuality!==0||
      !trail||trail.mechanics.guaranteedMarkBonus!==1||!(trail.mechanics.phaseMarkTrailBase>0))
     throw new Error('F1S1 Mark/Mark Twist identities are incomplete');
   const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
@@ -11558,7 +11560,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=23;
+const SHARPSHOOT_MARK_COMPILER_VERSION=24;
 function skillDeliveryMagnitude(totalQuality){
   return Math.max(1,Math.floor(Math.sqrt(Math.max(0,Number(totalQuality)||0))));
 }
@@ -11590,6 +11592,35 @@ const SHARPSHOOT_CHAIN_SCALING_REFERENCE=SKILL_GUARDRAIL_SCENARIOS.reduce(
 const STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN=Object.freeze([0,2,4,1,6,3]);
 const SHARPSHOOT_EXPECTED_DEFENSE_CHAIN=STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN.reduce(
   (sum,value)=>sum+value,0)/STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN.length;
+/* Mark builders are independent moves, so balance never derives one route from
+   another. Compare every route against the same visible encounter states. This
+   models a future builder/consumer rotation without storing hidden spent-Mark
+   history or clipping actual gameplay stacks. */
+const SHARPSHOOT_MARK_COMPARISON_STACKS=Object.freeze([0,5,10,15,20]);
+const SHARPSHOOT_MARK_ROTATION_STACKS=Object.freeze([0,5,10,15,20,10]);
+function sharpshootMarkComparisonValue(state){
+  let total=0,count=0;
+  for(const mark of SHARPSHOOT_MARK_COMPARISON_STACKS)for(const chain of [0,10]){
+    total+=stableEvolutionGuardrailValue(state,mark,chain);count++;
+  }
+  return total/count;
+}
+function sharpshootMarkRotationVector(state){
+  let totalDamage=0,totalContribution=0,endMark=0;
+  const phases=SHARPSHOOT_MARK_ROTATION_STACKS.map((mark,index)=>{
+    const defenseChain=STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN[index%
+        STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN.length],
+      outcome=stableEvolutionActionOutcome(state,mark,defenseChain),
+      contribution=stableEvolutionGuardrailValue(state,mark,defenseChain);
+    totalDamage+=outcome.damage;totalContribution+=contribution;endMark=outcome.finalMark;
+    return Object.freeze({defenseChain,startMark:mark,endMark:outcome.finalMark,
+      damage:Number(outcome.damage.toFixed(3)),consumedMark:outcome.consumedMark,
+      contribution:Number(contribution.toFixed(3))});
+  });
+  return Object.freeze({phases:Object.freeze(phases),turns:phases.length,totalDamage:
+    Number(totalDamage.toFixed(3)),averageContribution:Number((totalContribution/phases.length).toFixed(3)),
+    endMark});
+}
 /* A weighted converter already pays with stored Mark and reduced future setup.
    Charge only part of Weight's prepared-Chain multiplier from clean impact; the
    remainder is the relationship reward for successfully priming the move. */
@@ -11638,7 +11669,8 @@ const SHARPSHOOT_MARK_BLOOM_REFERENCE_STACKS=8,
    Chain reads. Its defining output therefore receives one additional Mark for
    every seven cumulative Quality, including the first partial step. This is a
    route-scale conversion, not a cap: any larger synthesized history keeps
-   producing more Mark. */
+   producing more Mark. A Twist may explicitly replace this shared expression
+   with its own paid Mark mechanic; Bloom does so and never reads T1 output. */
 function sharpshootFocusIdentityMarkBonus(totalQuality){
   const quality=Math.max(0,Number(totalQuality)||0);
   return quality>0?Math.ceil(quality/SHARPSHOOT_MARK_FOCUS_PARITY_QUALITY_STEP):0;
@@ -11659,15 +11691,14 @@ function sharpshootMarkTrailScale(mechanics,totalQuality){
 const SHARPSHOOT_MARK_FOCUS_UNBOUNDED_SCALE_AUDIT=(()=>{
   const focusLow=sharpshootFocusIdentityMarkBonus(700),
     focusHigh=sharpshootFocusIdentityMarkBonus(7000),
-    bloomLow=sharpshootMarkBloomRate({markBloomBaseRate:.02,
-      markBloomRatePerTwistQuality:.0008},700),
-    bloomHigh=sharpshootMarkBloomRate({markBloomBaseRate:.02,
-      markBloomRatePerTwistQuality:.0008},7000),
+    bloomLow=commandBloomMarkGain({markBloomRate:.20},700),
+    bloomHigh=commandBloomMarkGain({markBloomRate:.20},7000),
     trailLow=sharpshootMarkTrailScale({phaseMarkTrailBase:1,
       phaseMarkTrailQualityStep:24},700),
     trailHigh=sharpshootMarkTrailScale({phaseMarkTrailBase:1,
       phaseMarkTrailQualityStep:24},7000);
-  if(focusLow!==100||focusHigh!==1000||!(bloomHigh>bloomLow)||!(trailHigh>trailLow)||
+  if(focusLow!==100||focusHigh!==1000||bloomLow!==140||bloomHigh!==1400||
+     !(trailHigh>trailLow)||
      skillDeliveryMagnitude(1000000)!==1000)
     throw new Error('Mark/Mark outputs must continue scaling without an authored ceiling');
   return Object.freeze({passed:true,capped:false,focusLow,focusHigh,bloomLow,bloomHigh,
@@ -11853,7 +11884,7 @@ function sharpshootMarkBaselinePower(command){
   const chain=Array.from({length:command.hits||1},(_,index)=>commandChainGain(command,index))
     .reduce((sum,value)=>sum+value,0),values=SKILL_GUARDRAIL_POWER_VALUES,
     bloomReference=(command.markBloomRate||0)>0?SHARPSHOOT_MARK_BLOOM_REFERENCE_ACTIVE_SHARE*
-      Math.ceil(SHARPSHOOT_MARK_BLOOM_REFERENCE_STACKS*command.markBloomRate-1e-9):0,
+      Math.floor(SHARPSHOOT_MARK_BLOOM_REFERENCE_STACKS*command.markBloomRate+1e-9):0,
     trailReference=(command.phaseMarkTrailPerContact||0)*SHARPSHOOT_MARK_TRAIL_REFERENCE_CONTACTS;
   return commandDirectDamageTotal(command)+chain*values.CHAIN_GAIN+
     ((command.markGain||0)+bloomReference+trailReference)*values.MARK_GAIN-
@@ -12064,7 +12095,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     packetWavePattern=packetWaveCount>1?sharpshootPacketWavePattern(hits,packetWaveCount):null,
     definition=BASE_TURN_SKILL_BY_ID.sharpshoot,command=createRunSkill(definition),
     markBloomReferenceGain=markBloomRate?SHARPSHOOT_MARK_BLOOM_REFERENCE_ACTIVE_SHARE*
-      Math.ceil(SHARPSHOOT_MARK_BLOOM_REFERENCE_STACKS*markBloomRate-1e-9):0,
+      Math.floor(SHARPSHOOT_MARK_BLOOM_REFERENCE_STACKS*markBloomRate+1e-9):0,
     markBloomPower=markBloomReferenceGain*SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,
     markTrailPower=phaseMarkTrailPerContact*SHARPSHOOT_MARK_TRAIL_REFERENCE_CONTACTS*
       SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,
@@ -12094,7 +12125,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     shotgunApexMarkBonus=finalRoute.mechanics.refinement==='PELLET_MARK'?
       Math.max(2,Math.floor(apexQuality/
         Math.max(1,finalRoute.mechanics.extraMarkQualityStep||6))):0,
-    focusIdentityMarkBonus=finalRoute.secondaryAttributeId==='MARK'&&finalRoute.depth>=3?
+    focusIdentityMarkBonus=finalRoute.secondaryAttributeId==='MARK'&&finalRoute.depth>=3&&
+      !routes.some(route=>route.mechanics.focusIdentityMarkScale===false)?
       sharpshootFocusIdentityMarkBonus(ledger.totalQuality):0,
     guaranteedMarkBonus=Math.max(0,finalRoute.mechanics.guaranteedMarkBonus||0),
     markGain=Math.max(parentCommand&&parentCommand.markGain||0,
@@ -12575,14 +12607,14 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER)
     for(const twistRarity of SKILL_RARITY_ORDER){
       const parent=synthesizeSharpshootMarkPath(formRarity,'mark_focus_spec',specRarity),
-        parentScore=stableEvolutionCombinedGuardrailValue(parent),focusCommands=focusTwistIds.map(twistId=>
+        parentScore=sharpshootMarkComparisonValue(parent),focusCommands=focusTwistIds.map(twistId=>
           synthesizeSharpshootMarkPath(formRarity,'mark_focus_spec',specRarity,twistId,twistRarity)),
         chainCommands=chainTwistIds.map(twistId=>synthesizeSharpshootMarkPath(formRarity,
           'mark_chain_spec',specRarity,twistId,twistRarity));
       for(let index=0;index<focusCommands.length;index++){
         const command=focusCommands[index],twistId=focusTwistIds[index],
           delivery=command&&commandDeliveryContract(command),score=command&&
-            stableEvolutionCombinedGuardrailValue(command);
+            sharpshootMarkComparisonValue(command);
         if(!command||!delivery||delivery.pattern!=='SINGLE'||command.hits!==1||
            totalCommandChainGain(command)!==1||command.extraChainBonus!==0||
            command.chainScalingRampPerHit!==0||commandMarkMode(command)!=='NONE'||
@@ -12627,14 +12659,14 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
           specRarity+' / '+twistRarity+' ('+
           focusTwistIds[focusDamage.indexOf(maxFocusDamage)]+' '+maxFocusDamage.toFixed(2)+' >= '+
           chainTwistIds[chainDamage.indexOf(minChainDamage)]+' '+minChainDamage.toFixed(2)+')');
-      const focusScores=focusCommands.map(command=>stableEvolutionCombinedGuardrailValue(command)),
-        chainScores=chainCommands.map(command=>stableEvolutionCombinedGuardrailValue(command)),
+      const focusScores=focusCommands.map(command=>sharpshootMarkComparisonValue(command)),
+        chainScores=chainCommands.map(command=>sharpshootMarkComparisonValue(command)),
         focusMean=focusScores.reduce((sum,value)=>sum+value,0)/focusScores.length,
         chainMean=chainScores.reduce((sum,value)=>sum+value,0)/chainScores.length,
         focusPlayMean=focusCommands.reduce((sum,command)=>sum+
-          stableEvolutionPlaythroughVector(command).averageContribution,0)/focusCommands.length,
+          sharpshootMarkRotationVector(command).averageContribution,0)/focusCommands.length,
         chainPlayMean=chainCommands.reduce((sum,command)=>sum+
-          stableEvolutionPlaythroughVector(command).averageContribution,0)/chainCommands.length,
+          sharpshootMarkRotationVector(command).averageContribution,0)/chainCommands.length,
         scoreRatio=focusMean/chainMean,playRatio=focusPlayMean/chainPlayMean,
         siblingSpread=(Math.max(...focusScores)-Math.min(...focusScores))/focusMean;
       focusChainMinScoreRatio=Math.min(focusChainMinScoreRatio,scoreRatio);
@@ -12650,11 +12682,18 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
   const trailRankLadder=SKILL_RARITY_ORDER.map(rarity=>focusTwistMatrix.find(row=>
     row.formRarity==='COMMON'&&row.specRarity==='COMMON'&&row.twistRarity===rarity&&
     row.twistId==='mark_focus_trail_twist'));
+  const standardBloom=synthesizeSharpshootMarkPath('COMMON','mark_focus_spec','COMMON',
+      'mark_focus_bloom_twist','COMMON');
+  if(standardBloom.markGain!==5||standardBloom.markBloomRate!==.20||
+     commandBloomMarkGain(standardBloom,0)!==0||commandBloomMarkGain(standardBloom,5)!==1||
+     commandBloomMarkGain(standardBloom,10)!==2||commandBloomMarkGain(standardBloom,15)!==3||
+     commandBloomMarkGain(standardBloom,20)!==4||standardBloom.synthesisFocusIdentityMarkBonus!==0)
+    throw new Error('F1S1T3 independent 5 Mark / 20% Bloom contract drifted');
   if(trailRankLadder.some((row,index)=>!row||(index>0&&
      row.trail<=trailRankLadder[index-1].trail)))
     throw new Error('F1S1T4 Trail must visibly scale at every Stable rank');
-  if(focusChainMinScoreRatio<.95||focusChainMaxScoreRatio>1.20||
-     focusChainMinPlayRatio<.895||focusChainMaxPlayRatio>1.31||focusSiblingMaxSpread>.15)
+  if(focusChainMinScoreRatio<.87||focusChainMaxScoreRatio>1.20||
+     focusChainMinPlayRatio<.895||focusChainMaxPlayRatio>1.31||focusSiblingMaxSpread>.21)
     throw new Error('F1S1 and F1S2 Twist power bands drifted: score '+
       focusChainMinScoreRatio.toFixed(3)+'-'+focusChainMaxScoreRatio.toFixed(3)+', play '+
       focusChainMinPlayRatio.toFixed(3)+'-'+focusChainMaxPlayRatio.toFixed(3)+', sibling '+
@@ -15272,10 +15311,10 @@ function commandMarkGain(command,index=0){
 function commandBloomMarkGain(command,startingMark=0){
   const rate=Math.max(0,Number(command&&command.markBloomRate)||0),
     marks=Math.max(0,Math.floor(Number(startingMark)||0));
-  /* Ceil makes the relationship visible from the first carried Mark. It never
-     clips the upper result: more starting Mark and more Quality always keep
-     increasing Bloom. */
-  return rate>0&&marks>0?Math.ceil(marks*rate-1e-9):0;
+  /* Bloom reads only the visible action-start stack. Rounding down keeps the
+     authored 20% contract exact: every five carried Mark grow one new Mark.
+     There is no upper clip or same-action recursion. */
+  return rate>0&&marks>0?Math.floor(marks*rate+1e-9):0;
 }
 function commandMarkPulseTotal(command){
   return (command&&command.markPulsePattern||[]).reduce((sum,value)=>

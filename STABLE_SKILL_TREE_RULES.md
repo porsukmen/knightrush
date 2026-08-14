@@ -263,9 +263,11 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   F1S1T2 lands one damaging arrow, then applies its complete Mark output through
   separate non-damaging pulses. Pulses are real Mark application events for future
   Artifact hooks, but never hits and never Chain contacts.
-- F1S1T3 preserves the action-start Mark and adds `ceil(starting Mark × Bloom rate)`
-  after impact. Only action-start stacks are read, so Mark created by the same action
-  cannot recurse. The rate and resulting output have no gameplay cap or diminishing curve.
+- F1S1T3 is independent and never reads T1's output or scaling. At the standard Common
+  history it produces exactly `5` unconditional Mark, preserves visible action-start Mark,
+  then adds `floor(starting Mark × 0.20)` after impact. Thus `5 / 10 / 15 / 20` starting
+  Mark yield `+1 / +2 / +3 / +4` Bloom. Only action-start stacks are read, so Mark created
+  by the same action cannot recurse. The rate and output have no gameplay cap or diminishing curve.
 - F1S1T4 installs Mark Trail only after its own impact. Every later damaging player-side
   contact in the same player phase adds the authored Mark amount; its own installing hit
   cannot trigger the Trail. Trail does not change the later attack's damage or Chain and
@@ -455,10 +457,11 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
   histories. It also validates 192 independent Form/Spec/Twist rarity ladders. Boot fails
   if total power stops rising, an owned mechanic regresses, the Mark/expected-damage
   identity wall is crossed, or the two routes leave their shared power bands.
-- Mark/Mark converts cumulative Quality into an additional Mark every seven Quality,
-  including the first partial step. The conversion, Bloom rate, Trail per contact, pulse
-  payload, and delivery magnitude have no authored maximum. High-Quality audits explicitly
-  verify that larger synthetic inputs keep producing larger outputs.
+- T1, T2 and T4 convert cumulative Quality into an additional Mark every seven Quality,
+  including the first partial step. T3 opts out: its flat package scales from its own Mark
+  wallet and its independent fixed `20%` Bloom reads the visible stack. The conversion,
+  Bloom result, Trail per contact, pulse payload, and delivery magnitude have no authored
+  maximum. High-Quality audits verify that larger synthetic inputs keep producing output.
 - Four authored pilot Twists each create a distinct Mark/Chain combat loop. They are not a numeric spectrum.
 - Each Twist currently owns four Apex cards. Every Apex preserves its exact Twist relationship and Delivery family, then maximizes a different already-owned output.
 - `F1S2T1` is the direct sequential continuation. Every visible arrow generates one Chain and reads the live Chain value, including Chain created earlier in the same action.
@@ -505,7 +508,10 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
 - inheritance repair must remain at or below `1.1` damage with a `0` 95th percentile; rank-floor damage repair must remain at or below `2` with a `0` 95th percentile. A larger repair means the recipe/compiler is erasing power and the guard is hiding it;
-- Common-parent Mark/Chain Twist rotations must stay within `20%`; equivalent Mark/Mark versus Mark/Chain histories must remain inside `0.95-1.20` scenario value and `0.895-1.30` six-turn value ratios;
+- Common-parent Mark/Chain Twist rotations must stay within `20%`; while the Mark-consuming
+  skill is not materialized, equivalent Mark/Mark versus Mark/Chain histories use shared
+  visible `0/5/10/15/20` Mark states and must remain inside `0.87-1.20` scenario value and
+  `0.895-1.31` provisional rotation value ratios;
 - all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.

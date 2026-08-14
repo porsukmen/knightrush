@@ -392,8 +392,9 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   Secondary outputunu büyütürken parent Mark/Damage tabanı gerilemez.
 - F1S1 altında dört çalışan Mark/Mark Twist tamamlandı. Dördü de tek gerçek temas ve
   tek doğal Chain üretir; ekstra Chain scaling/read/conversion alamaz. T1 bütün Mark'ı
-  tek pakette, T2 ayrı hasarsız Mark pulse eventleriyle verir. T3 yalnız action-start
-  Mark'ını tüketmeden okuyup doğrusal Bloom üretir; aynı action içindeki yeni Mark kendi
+  tek pakette, T2 ayrı hasarsız Mark pulse eventleriyle verir. T3 T1'den değer okumayan
+  bağımsız bir harekettir: Common geçmişte `5` düz Mark verir ve action-start Mark'ının
+  `floor(%20)`sini tüketmeden Bloom olarak ekler; aynı action içindeki yeni Mark kendi
   kendini tetikleyemez. T4 kendi vuruşundan sonra player phase Mark Trail kurar; sonraki
   hasar temasları Mark ekler ve Trail faz sınırında silinir.
 - F1S1/F1S2 kimlik ayrımı executable'dır: 64 eşdeğer rarity geçmişinde dört F1S1 Twist'in
@@ -402,13 +403,15 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   senaryolarının ortalamasını kullanır; böylece Weight'in temiz hasar ödemesi yanlışlıkla
   güçsüzlük sayılmaz. Güncel `256` F1S1 sentezinde en dar Mark farkı `+1`, en dar beklenen
   hasar farkı Mark/Chain lehine `12.5`tir.
-- Mark/Mark rota ölçeği her `7` toplam Quality için tavansız `+1 Mark` verir. Dört rota
-  arasındaki tek-action güç farkı `%15` sibling guardrail'indedir; Mark/Mark/Mark-Chain
-  ortalama güç oranı bütün `64` geçmişte `0.9701–1.1883`, altı fazlık test oranı
-  `0.8970–1.2993` bandındadır.
+- T1/T2/T4 Mark/Mark rota ölçeği her `7` toplam Quality için tavansız `+1 Mark` verir.
+  T3 bu ortak bonusu almaz; kendi Quality wallet'ı düz Markını standart eş-rarity
+  geçmişlerinde `5/8/13/20` olarak büyütürken Bloom oranı Stable'da `%20` kalır.
+  Bütün rotalar aynı görünür `0/5/10/15/20` Mark durumlarında ölçülür; Mark/Mark/Mark-Chain
+  ortalama güç oranı bütün `64` geçmişte `0.8792–1.1431`, provisional rotasyon oranı
+  `0.9604–1.2470` bandındadır.
   `192` ayrı rarity merdiveni total power ve sahip olunan mekanik gerilemesine karşı boot'ta
-  doğrulanır. Bloom artık `ceil(start Mark × (0.02 + 0.0008 × effective Quality))` kullanır:
-  normal geçmişte kontrollü kalır, fakat rate veya sonuç için gameplay cap yoktur.
+  doğrulanır. Bloom `floor(start Mark × 0.20)` kullanır: oran T3'e aittir, T1 scalingine
+  bağlı değildir ve sonuç için gameplay cap yoktur.
 - Eski Split Sight calibration preview'leri compatibility adapter olarak tutulur; yeni
   içerik parent-stat geriye çözümünü kullanamaz.
 - Guardrail değerleri merkezileştirildi; scenario vector ve impact floor auditleri aktiftir.

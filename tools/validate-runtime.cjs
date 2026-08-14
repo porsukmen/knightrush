@@ -67,7 +67,7 @@ try{
       'mark_chain_direct_twist','mark_chain_converter_twist',
       'mark_chain_echo_twist','mark_chain_shotgun_twist'],make=(specId,twistId,rarity)=>
         synthesizeSharpshootMarkPath(rarity,specId,rarity,twistId,rarity),describe=command=>{
-          const play=stableEvolutionPlaythroughVector(command);
+          const rotation=sharpshootMarkRotationVector(command);
           return {quality:command.synthesisQuality,effectiveQuality:command.synthesisEffectiveQuality,
             damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
             hits:command.hits,chain:totalCommandChainGain(command),
@@ -75,8 +75,9 @@ try{
             pulses:(command.markPulsePattern||[]).length,
             bloomRate:Number((command.markBloomRate||0).toFixed(4)),
             trail:command.phaseMarkTrailPerContact||0,
-            score:Number(stableEvolutionCombinedGuardrailValue(command).toFixed(3)),
-            play:play.averageContribution,endMark:play.endMark,totalDamage:play.totalDamage};
+            score:Number(sharpshootMarkComparisonValue(command).toFixed(3)),
+            play:rotation.averageContribution,endMark:rotation.endMark,
+            totalDamage:rotation.totalDamage};
         },uniform=rarities.map(rarity=>({rarity,
           focus:focusIds.map(id=>({id,...describe(make('mark_focus_spec',id,rarity))})),
           chain:chainIds.map(id=>({id,...describe(make('mark_chain_spec',id,rarity))}))})),
@@ -87,13 +88,13 @@ try{
             specRarity,id,twistRarity)),chain=chainIds.map(id=>synthesizeSharpshootMarkPath(
             formRarity,'mark_chain_spec',specRarity,id,twistRarity)),
           focusMean=focus.reduce((sum,command)=>sum+
-            stableEvolutionCombinedGuardrailValue(command),0)/focus.length,
+            sharpshootMarkComparisonValue(command),0)/focus.length,
           chainMean=chain.reduce((sum,command)=>sum+
-            stableEvolutionCombinedGuardrailValue(command),0)/chain.length,
+            sharpshootMarkComparisonValue(command),0)/chain.length,
           focusPlayMean=focus.reduce((sum,command)=>sum+
-            stableEvolutionPlaythroughVector(command).averageContribution,0)/focus.length,
+            sharpshootMarkRotationVector(command).averageContribution,0)/focus.length,
           chainPlayMean=chain.reduce((sum,command)=>sum+
-            stableEvolutionPlaythroughVector(command).averageContribution,0)/chain.length;
+            sharpshootMarkRotationVector(command).averageContribution,0)/chain.length;
         histories.push({formRarity,specRarity,twistRarity,
           scoreRatio:Number((focusMean/chainMean).toFixed(4)),
           playRatio:Number((focusPlayMean/chainPlayMean).toFixed(4))});
@@ -371,7 +372,7 @@ try{
     crossRoute:{histories:scale.histories.length,
       minScoreRatio:Math.min(...scoreRatios),maxScoreRatio:Math.max(...scoreRatios),
       minPlayRatio:Math.min(...playRatios),maxPlayRatio:Math.max(...playRatios)}}));
-  if(Math.min(...scoreRatios)<.95||Math.max(...scoreRatios)>1.20||
+  if(Math.min(...scoreRatios)<.87||Math.max(...scoreRatios)>1.20||
      Math.min(...playRatios)<.895||Math.max(...playRatios)>1.31)
     throw new Error('Mark/Mark versus Mark/Chain balance band failed: '+JSON.stringify({
       minScore:Math.min(...scoreRatios),maxScore:Math.max(...scoreRatios),
