@@ -266,6 +266,20 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
 - F1S2 and F1S2T1 sequential arrows use live Chain. Every visible arrow produces `+1`
   Chain after its hit, and every later arrow benefits from the Chain produced by earlier
   arrows in the same action. T1 must never lock all contacts to the action-start value.
+- Chain scaling rank comparisons use the absolute marginal Health damage added by one
+  real stored Chain across the whole action. The internal percentage coefficient may fall
+  when a rank buys more base damage or contacts; the absolute per-Chain payoff and the
+  move's owned identity outputs may never regress with Stable rarity.
+- Stable rarity is a strict upgrade, never a sidegrade. With route and ancestry fixed,
+  `Common -> Uncommon -> Rare -> Legendary` may not reduce direct damage or any existing
+  combat output, and every step must improve at least one visible output. A deterministic
+  prefix floor preserves the strongest earlier-rank damage and carries that correction as
+  foundation power into later depths; it has no authored maximum.
+- A Twist-owned Mark mechanic spends the Mark wallet rather than silently taking damage.
+  Bloom/Trail power is reserved first and the remaining Mark wallet becomes immediate Mark.
+  F1S1T4 reads its own Twist receipt (not arbitrary total-history thresholds), producing a
+  visible `1 / 2 / 3 / 5` Trail ladder for Common/Uncommon/Rare/Legendary at the standard
+  ancestry. Future discrete mechanics must declare and test an equivalent rank ladder.
 - Runtime resolves the recipe once at action start. Frame updates consume the prepared timeline and may not recompile Quality or scan card history.
 
 ## Current expression axes
