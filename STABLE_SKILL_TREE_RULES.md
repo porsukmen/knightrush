@@ -10,7 +10,7 @@ Stable evolution follows exactly this hierarchy:
 
 Every card upgrades its immediate parent. A child is never generated again from the base skill or Form state. Rarity controls the power added by the current choice; it does not erase accumulated mechanics.
 
-### Parent-plus-delta compiler (v4)
+### Parent-plus-delta compiler (v5)
 
 Stable synthesis is an immutable fold:
 
@@ -19,10 +19,11 @@ Stable synthesis is an immutable fold:
 - A layer may spend only its own Quality receipt on its new expression. Earlier receipts are immutable foundation.
 - Total clean damage and inherited Mark output cannot fall from an immediate parent to a Stable child.
 - At least 25% of the current receipt's `DIRECT_DAMAGE` allocation remains visible as new clean damage. Relationship costs may shape the rest, but cannot reach backward into parent damage.
-- Every Stable layer must improve both the four-scenario guardrail and the six-turn playthrough guardrail. Conversion Apexes use a continuous cycle-cost compensation derived from layer power because spent Mark reduces future setup; this is a formula, not a rarity lookup.
-- Increasing the current card's rank may preserve a stat while another stat grows, but it may never reduce damage, Mark, contact count, Chain output, real Chain damage, Weight, Posture, Crit chance, Bleed, Charge rate, pulse count, Bloom, or Trail. The complete action and playthrough must still improve.
+- Every Stable layer must improve both the four-scenario guardrail and the six-turn playthrough guardrail. Resource conversion is evaluated by the real scenario, including the opportunity cost of consumed Mark; inheritance may not add synthetic conversion damage to make the result pass.
+- Increasing the current card's rank may preserve a stat while another stat grows, but it may never reduce damage, Mark, contact count, Chain output, real Chain damage, Weight, Posture, Crit chance, Bleed, Charge rate, pulse count, Bloom, or Trail. At least one owned output must improve; the rounded six-turn score may remain equal but may never fall.
 - A Delivery transformation may redistribute hits, but the complete inherited damage remains. A minimum six damage per visible damaging contact protects combat readability.
 - Weight exists only when the current route explicitly owns `weightChannel`. Single-hit Mark/Mark and other non-owners always compile with Weight `1`.
+- Weight and authored mechanic payments apply only to the current layer's direct-damage remainder. They never divide or spend the parent's realized damage.
 - Stable synthesis commands are cached by their complete deterministic route and rarity history. Callers receive copies, so validation is fast without sharing mutable combat state.
 
 These are compiler invariants, not reviewer suggestions. Distorted or Corrupted content must use a separate explicit trade contract if it is ever allowed to reduce an inherited stat.
@@ -182,9 +183,10 @@ Hard combat rules:
 - An action-level Mark payload is delivered once and may be assigned to the first hit, last hit, or distributed evenly. It is never duplicated implicitly.
 - Standard Mark payload is added after Chain scaling, so Chain does not multiply Mark damage. Break may still multiply the complete hit.
 - A capped consumer uses every consumed Mark at full value.
-- A Stable move that reads or consumes all Mark must use a named diminishing curve.
+- A Stable move that consumes all Mark for damage must use a named, priced curve unless an explicit exception says otherwise.
+- A non-consuming reader may remain linear and uncapped when that is its declared identity. It must still pay through its Quality allocation and pass clean, Mark-ready, Chain-ready, combined, and multi-turn scenario audits. F1S2T3 deliberately follows this rule: every preserved Mark grants the same temporary Chain value.
 - The default `SATURATED` curve values the first four stacks at `100%`, stacks five through eight at `50%`, and later stacks at `25%`.
-- Current stronger authored curves are `RARE_DETONATION` and `LEGENDARY_DETONATION`. Full-value unlimited consumption is reserved for an explicit future exception such as a properly priced Corrupted effect.
+- Current stronger authored curves are `RARE_DETONATION` and `LEGENDARY_DETONATION`. Full-value unlimited damage consumption is reserved for an explicit future exception such as a properly priced Corrupted effect. Mark-to-Chain conversion is instead priced by subtracting the consumed Mark's option value.
 - Spending a large reserve slowly through capped attacks is more efficient; consuming it immediately is faster but less efficient.
 - A converter consumes only its declared amount. If it is a Form, its own Mark gain must prime the next use without a sibling Form.
 - Balance evaluates net resource state. Gaining Mark is positive option value; consuming existing Mark is the matching negative opportunity cost. A converter is not allowed to count the gained Chain while pretending the spent Mark was free.
@@ -465,7 +467,7 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 - Its four Apex refinements are: grow uncapped pellet count faster; preserve normal pellet count but grow extra Mark from the Apex Quality packet; make every simultaneous pellet add one real Chain after damage without strengthening its siblings; or split the unchanged pellet budget into two balanced waves.
 - The two-wave child always has exactly two timing groups. Each wave creates one Chain, and the second wave reads the first wave's Chain. Pellets inside one wave stay simultaneous and cannot strengthen each other. Quality grows total pellets, never wave count.
 - T4 role checks are hard contracts: A1 is contact leader, A2 Mark leader, A3 Chain leader, and only A4 has two waves. Every synthesized pellet must keep at least `6` clean damage in the current prototype readability scale.
-- Across completed T1/T2/T3/T4 Apex families, the same standard-history six-phase family means must remain within `20%`; this catches a whole Twist family becoming the automatic Apex choice while preserving mechanical jackpots.
+- Across completed T1/T2/T3/T4 Apex families, the same standard-history six-phase family means must remain within `21%`; this catches a whole Twist family becoming the automatic Apex choice while allowing the conversion family to pay its real Mark opportunity cost instead of receiving fake compiler damage.
 - Twist balance is also evaluated as a six-phase playthrough starting from zero Mark and using
   the defense-Chain pattern `0, 2, 4, 1, 6, 3`. Mark persists; attack-phase Chain does not leak
   into the next phase. Damage and net resource option value are summed across the run. Across
@@ -492,6 +494,8 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
 - `1,177` independent rank ladders and `3,531` adjacent rank comparisons;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero stagnant rank step;
+- inheritance repair must remain at or below `1.1` damage with a `0` 95th percentile; rank-floor damage repair must remain at or below `2` with a `0` 95th percentile. A larger repair means the recipe/compiler is erasing power and the guard is hiding it;
+- Common-parent Mark/Chain Twist rotations must stay within `20%`; equivalent Mark/Mark versus Mark/Chain histories must remain inside `0.95-1.20` scenario value and `0.895-1.30` six-turn value ratios;
 - all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
@@ -514,7 +518,7 @@ The boot-time validator must reject at least these cases:
 7. A child regresses a protected Primary or Secondary quantity without a valid, explicitly authored Twist `tradeContract` (the current executable slice has no such exception).
 8. A Stable child is not a net upgrade over its immediate parent.
 9. An Apex violates its Twist's named Resolve cost curve.
-10. A Stable unlimited Mark reader/consumer uses the full-value curve.
+10. A Stable unlimited Mark damage consumer uses full value without an explicit paid exception, or a linear non-consuming reader bypasses scenario and multi-turn pricing.
 11. A per-hit rule attempts to consume all Mark on every hit.
 12. A Mark converter lacks a positive conversion output.
 13. Mark output is negative, fractional, or outside safe integer arithmetic. High positive output is valid and must not be rejected merely for being high.

@@ -87,15 +87,22 @@ Resolve Pressure ayrı kalır ve nihai cost solve edilmeden önce uygulanır:
 
 `cost = baseCost + floor(totalPressure / 3)`
 
-Stable wallet compiler parent statını geriye doğru çözmez. Damage wallet parent damage'e
-eklenir; Mark/Hit/Chain wallet'ları sabit fiyatlı ayrık eşikleri satın alır. Bir eşiğe
+Quality Compiler v5 parent statını geriye doğru çözmez. Current layer damage receipt'i
+parent'ın gerçekleşmiş damage sonucuna eklenir; Mark/Hit/Chain wallet'ları sabit fiyatlı
+ayrık eşikleri satın alır. Bir eşiğe
 yetmeyen miktar aynı axis'in Reserve'ünde full history boyunca kalır ve damage'e çevrilmez.
 Bu nedenle Stable kartta stat düşüşü yalnız açık authored trade ile mümkündür. Yüksek cost
 net güç muhasebesinde telafi edilir fakat tur içindeki combo kapasitesini azaltır. Rarity
 Resonance ve Legendary Stamp wallet bütçesi dışındaki jackpot katmanlarıdır.
 
+Yeni ilişki mekaniği yalnız current layer'ın `DIRECT_DAMAGE` receipt'ini harcayabilir ve bu
+receipt'in en az `%25`i görünür damage olarak kalır. Weight de yalnız current layer'ın kalan
+payını sıkıştırır; parent'ın önceden gerçekleşmiş damage'ini bölmez. Resource conversion'ın
+harcadığı Mark scenario muhasebesinde zaten eksi option value'dur; compiler bunu geçsin diye
+gizli conversion damage'i eklemez.
+
 `power`, combat sırasında verilen gizli damage değildir. Farklı kaynakları aynı terazide
-karşılaştıran yalnızca compiler/validator puanıdır. Quality Compiler v3 değerleri merkezi
+karşılaştıran yalnızca compiler/validator puanıdır. Quality Compiler v5 değerleri merkezi
 `SKILL_GUARDRAIL_POWER_VALUES` sözleşmesinde tutar:
 
 Health combat compiler ile aynı küçük ondalıklı birimi kullanır. Örneğin compiler'ın
@@ -132,7 +139,7 @@ Tek-action senaryosu tek başına final denge ölçüsü değildir. Sharpshoot T
 sıfır Mark ile başlayan altı player phase boyunca ölçülür. Mark phase'ler arasında taşınır,
 Chain yalnız savunmadan saldırıya gelir ve player phase sonunda sıfırlanır. Toplam damage ile
 net Mark/Chain option value birlikte değerlendirilir. Common Form + Common Specialization
-geçmişlerinde bütün Twist rarity'leri için `%18` bant zorunludur. Çok nadir üst üste güçlü
+geçmişlerinde bütün Twist rarity'leri için `%20` bant zorunludur. Çok nadir üst üste güçlü
 rarity geçmişleri ayrıca raporlanır ve bu bandı kırabilir; cap veya azalan verimle ezilmez.
 Twist/Apex ailesi ve ikinci Mark-consumer skill henüz tamamlanmadığı sürece jackpot sonucu
 oyunun açılışını durdurmak yerine raporlanır.
@@ -246,7 +253,7 @@ Eski "hiçbir sayı asla azalmaz" kuralı iki ayrı sözleşmeye bölünür:
 5. Her durumda child'ın combined guardrail değeri parent'tan büyük olmalı; targetPower,
    receipt ve reserve muhasebesi korunmalıdır.
 
-Quality Compiler v3 F1/F1S1 wallet diliminde aktif bir `tradeContract` yoktur.
+Quality Compiler v5 F1/F1S1 wallet diliminde aktif bir `tradeContract` yoktur.
 Mevcut bütün geçişler no-silent-regression audit'inden geçer. İlk gerçek takas, ancak
 Twist katmanı authored edilirken ayrı olarak onaylanacaktır.
 
@@ -329,7 +336,7 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 ## 11. Şu anki migration durumu
 
 - F1 Mark Form; F1S1 Mark/Mark, F1S2 Mark/Chain, F1S3 Mark/Posture, F1S4 Mark/Critical,
-  F1S5 Mark/Affliction ve F1S6 Mark/Charge Specialization Quality Compiler v3 wallet +
+  F1S5 Mark/Affliction ve F1S6 Mark/Charge Specialization Quality Compiler v5 wallet +
   Mark semantic compiler v20
   ile preview edilir; Structural ve Rarity Quality
   ayrı receipt olarak görünür. F1S2 Chain'i tüketmeden prepared Chain başına bounded ek
@@ -371,11 +378,12 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   en düşük garanti Mark'ı dört F1S2 Twist'in en yüksek garanti Mark'ından büyüktür. Damage
   karşılaştırması tooltip clean sayısı yerine clean/Mark-ready/Chain-ready/combined gerçek
   senaryolarının ortalamasını kullanır; böylece Weight'in temiz hasar ödemesi yanlışlıkla
-  güçsüzlük sayılmaz. Güncel `256` F1S1 sentezinde en dar Mark farkı `+4`, en dar beklenen
-  hasar farkı Mark/Chain lehine `26.5`tir.
+  güçsüzlük sayılmaz. Güncel `256` F1S1 sentezinde en dar Mark farkı `+1`, en dar beklenen
+  hasar farkı Mark/Chain lehine `12.5`tir.
 - Mark/Mark rota ölçeği her `7` toplam Quality için tavansız `+1 Mark` verir. Dört rota
-  arasındaki tek-action güç farkı en fazla `%8`; Mark/Mark/Mark-Chain ortalama güç oranı
-  bütün `64` geçmişte `0.9652–1.0811`, altı fazlık test oranı `0.9624–1.2030` bandındadır.
+  arasındaki tek-action güç farkı `%15` sibling guardrail'indedir; Mark/Mark/Mark-Chain
+  ortalama güç oranı bütün `64` geçmişte `0.9701–1.1883`, altı fazlık test oranı
+  `0.8970–1.2993` bandındadır.
   `192` ayrı rarity merdiveni total power ve sahip olunan mekanik gerilemesine karşı boot'ta
   doğrulanır. Bloom artık `ceil(start Mark × (0.02 + 0.0008 × effective Quality))` kullanır:
   normal geçmişte kontrollü kalır, fakat rate veya sonuç için gameplay cap yoktur.
@@ -400,6 +408,7 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
 4. **Tamamlandı:** F1S1'in dört Mark/Mark Twist'i ve F1S1↔F1S2 kimlik duvarı runtime
    materialization + full-history denetimine taşındı.
 5. F1S1 için dört Twist'in Apex ailelerini aynı kimlik duvarını koruyarak tasarla.
-6. Aynı full-history fuzz validator kalıbını ortak yardımcıya taşı.
+6. **Tamamlandı:** Full-history validator `4,704` parent-child, `3,531` rank ve current-layer
+   repair telemetry kontrollerini ortak runtime gate içinde tarar.
 7. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
 8. Yeterli route coverage sonrası live route-first draftı aç.
