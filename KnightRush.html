@@ -11900,6 +11900,86 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
 })();
 const COMBAT_ATTRIBUTE_UI_COLORS=Object.freeze({MARK:'#ff596d',CHAIN:'#ffe37a',POSTURE:'#9ecbff',
   CRITICAL:'#c995ff',AFFLICTION:'#d9788b',CHARGE:'#7fc9ff'});
+/* Player-facing names remain address-based while the tree is under construction.
+   These concise Turkish notes are a debug translation of each route's actual
+   combat loop, kept outside the compiler so localization never enters synthesis. */
+const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
+  mark_primary_form:'Tek okla Mark üretir; sonraki evrimler bu Mark kaynağının nasıl çalışacağını belirler.',
+
+  mark_focus_spec:'Hasardan biraz vazgeçip daha çok Mark biriktiren saf Mark kurulumuna girer.',
+  mark_focus_concentrated_twist:'Tek vuruşta en büyük garanti Mark paketini bırakır; güvenli ve doğrudan kurulumdur.',
+  mark_focus_pulse_twist:'Tek ok vurur, ardından hasarsız darbeler halinde Mark bırakır; event sinerjileri içindir.',
+  mark_focus_bloom_twist:'Mevcut Markları tüketmeden okur ve biriktirdiğin Mark kadar yeni Mark büyütür.',
+  mark_focus_trail_twist:'İlk oktan sonra aynı turdaki diğer hasarlı vuruşların da Mark bırakmasını sağlar.',
+  mark_focus_concentrated_mark_apex:'Tek pakette mümkün olan en fazla Markı bırakır; saf kurulum seçeneğidir.',
+  mark_focus_concentrated_impact_apex:'Büyük tek Mark paketini korur ama daha fazla gerçek ok hasarı verir.',
+  mark_focus_pulse_density_apex:'Aynı sistemi daha fazla ayrı Mark eventine böler; tetikleme odaklıdır.',
+  mark_focus_pulse_payload_apex:'Pulse sayısını korur, pulselara dağıtılan toplam Markı büyütür.',
+  mark_focus_pulse_impact_apex:'Hasarsız Mark pulselarını korurken gerçek okun hasarını yükseltir.',
+  mark_focus_bloom_rate_apex:'Başlangıç Marklarını daha yüksek oranda okuyup daha fazla ek Mark üretir.',
+  mark_focus_bloom_mark_apex:'Bloom oranını korur, saldırının garanti bıraktığı düz Markı artırır.',
+  mark_focus_bloom_impact_apex:'Bloom sistemini korur, asıl okun doğrudan hasarını büyütür.',
+  mark_focus_trail_strength_apex:'Bu turdaki sonraki her hasarlı vuruşun bıraktığı Trail Markını artırır.',
+  mark_focus_trail_mark_apex:'Trail aynı kalır, açılış okunun garanti Mark paketi büyür.',
+  mark_focus_trail_impact_apex:'Trail aynı kalır, açılış okunun gerçek hasarı büyür.',
+
+  mark_chain_spec:'Art arda oklarla Chain kurar; sonraki oklar önceki Chain sayesinde daha sert vurur.',
+  mark_chain_direct_twist:'Art arda ok atar; her ok Chain ekler ve sonraki ok yeni Chaini hemen kullanır.',
+  mark_chain_converter_twist:'Başlangıç Marklarının yarısını Chain yapar ve bütün Chain gücünü tek ağır oka sıkıştırır.',
+  mark_chain_echo_twist:'Markları tüketmeden geçici Chain gibi okur; ana ok ve yankılar bu bonusu kullanır.',
+  mark_chain_shotgun_twist:'Okları aynı anda shotgun paketi olarak atar; çok Mark bırakır ama toplam 1 Chain üretir.',
+  mark_chain_direct_mark_apex:'Art arda ok sistemini korur, toplam Markı okların üzerine dağıtarak artırır.',
+  mark_chain_direct_ramp_apex:'Her sonraki okun Chain çarpanı öncekinden güçlü olur; uzun volley ödüllenir.',
+  mark_chain_direct_finisher_apex:'Volley kurulumunu korur ama hasarın büyük kısmını son ağır oka yükler.',
+  mark_chain_direct_tempo_apex:'Quality ile daha fazla ok atar; Mark, Chain ve hasar temas sayısıyla birlikte büyür.',
+  mark_chain_converter_full_apex:'Bütün başlangıç Marklarını Chain yapıp tek ağır okta kullanır; yüksek riskli patlamadır.',
+  mark_chain_converter_weight_apex:'Markların yarısını dönüştürür, tek okun Chain çarpanını Weight ile daha çok büyütür.',
+  mark_chain_converter_impact_apex:'Yarım dönüşüm ve Weight kalır; ekstra güç doğrudan ağır okun hasarına gider.',
+  mark_chain_converter_rebuild_apex:'Markların yarısını Chain yapar, vurduktan sonra sonraki kullanım için daha çok Mark kurar.',
+  mark_chain_echo_density_apex:'Mark okumasını korur ve Quality ile daha fazla yankı vuruşu üretir.',
+  mark_chain_echo_mark_apex:'Her korunmuş Markın verdiği geçici Chain miktarını artırır; yankı sayısı aynı kalır.',
+  mark_chain_echo_chain_apex:'Marktan gelen geçici Chain aynı kalır, önceden biriken gerçek Chain daha güçlü okunur.',
+  mark_chain_echo_generation_apex:'Ana ok ve her yankı gerçek Chain ekler; sonraki yankılar yeni Chaini hemen kullanır.',
+  mark_chain_shotgun_density_apex:'Tek shotgun paketinde daha fazla pellet üretir; temas yoğunluğu odaklıdır.',
+  mark_chain_shotgun_mark_apex:'Pellet sayısını korur, daha fazla pelletin ekstra Mark bırakmasını sağlar.',
+  mark_chain_shotgun_chain_apex:'Her pellet vurduktan sonra gerçek Chain ekler; aynı pakette birbirlerini güçlendirmezler.',
+  mark_chain_shotgun_wave_apex:'Pelletleri iki dalgaya böler; ikinci dalga ilk dalganın ürettiği Chaini okur.',
+
+  mark_critical_spec:'Mark üretmeye devam ederken her atışa yalnız bu harekete ait Crit ihtimali ekler.',
+  mark_critical_volley_twist:'Art arda ok atar; her ok Chain üretir ve Crit için birbirinden bağımsız zar atar.',
+  mark_critical_weight_twist:'Başlangıç Marklarını tüketmeden okur ve her Markı tek ağır okun Crit ihtimaline çevirir.',
+  mark_critical_reward_twist:'Tek ok atar; Crit gerçekleşirse vuruştan sonra hasarsız bonus Mark üretir.',
+  mark_critical_packet_twist:'Pelletleri aynı anda atar; bütün paket tek bir ya hep ya hiç Crit sonucunu paylaşır.',
+  mark_critical_volley_contacts_apex:'Bağımsız Crit atan daha fazla ardışık ok üretir; her ok doğal Chain verir.',
+  mark_critical_volley_chance_apex:'Ok sayısını korur, volleydeki her okun bağımsız Crit ihtimalini artırır.',
+  mark_critical_volley_mark_apex:'Bağımsız Crit volleyini korur, garanti Mark paketini okların üzerine dağıtır.',
+  mark_critical_volley_damage_apex:'Bağımsız Crit volleyini korur, toplam doğrudan ok hasarını yükseltir.',
+  mark_critical_weight_read_apex:'Tüketmeden okunan her başlangıç Markının verdiği Crit ihtimalini en çok büyütür.',
+  mark_critical_weight_chance_apex:'Mark okuma sistemi kalır, boss Marklanmamışken bile temel Crit ihtimali yükselir.',
+  mark_critical_weight_mark_apex:'Ağır Mark okuması kalır, vuruştan sonra en büyük garanti Mark rezervini bırakır.',
+  mark_critical_weight_damage_apex:'Mark okuma sistemi kalır, Crit çarpanına girecek tek ağır okun hasarı büyür.',
+  mark_critical_reward_bonus_apex:'Crit gerçekleştiğinde gelen hasarsız bonus Mark miktarını en çok büyütür.',
+  mark_critical_reward_chance_apex:'Crit sonrası Mark ödülünü korur, ödülün tetiklenme ihtimalini artırır.',
+  mark_critical_reward_mark_apex:'Koşullu Crit ödülü kalır, Critten bağımsız garanti Mark üretimi büyür.',
+  mark_critical_reward_damage_apex:'Crit sonrası Mark ödülü kalır, gerçek okun doğrudan hasarı büyür.',
+  mark_critical_packet_contacts_apex:'Tek ortak Crit sonucunu paylaşan daha fazla pellet üretir; paket hâlâ 1 Chain verir.',
+  mark_critical_packet_chance_apex:'Pellet sayısını korur, bütün paketin paylaştığı tek Crit ihtimalini artırır.',
+  mark_critical_packet_mark_apex:'Ortak Crit paketini korur, garanti Markı pelletlerin üzerine dağıtarak artırır.',
+  mark_critical_packet_damage_apex:'Ortak Crit paketini korur, ya hep ya hiç çalışan toplam hasar patlamasını büyütür.'
+});
+const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
+  const families=new Set(['MARK','CHAIN','CRITICAL']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
+    .filter(route=>route.depth===1||families.has(route.secondaryAttributeId)),
+    expected=new Set(routes.map(route=>route.id)),authored=Object.keys(SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR),
+    missing=routes.filter(route=>!SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]).map(route=>route.id),
+    extra=authored.filter(id=>!expected.has(id)),invalid=authored.filter(id=>
+      typeof SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[id]!=='string'||
+      SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[id].trim().length<24);
+  if(missing.length||extra.length||invalid.length)
+    throw new Error('Sharpshoot Turkish debug summaries are incomplete '+
+      JSON.stringify({missing,extra,invalid}));
+  return Object.freeze({routes:routes.length,authored:authored.length});
+})();
 function sharpshootRouteDeliveryIntent(route){
   let current=route;
   while(current){
@@ -23220,6 +23300,7 @@ function moveTreeSynthesisDisplayNode(node){
   if(route){
     const materialized=route.runtimeReadiness==='MATERIALIZED';
     return {...node,name:route.name,summary:route.promise,rarity:moveTreeSynthesisRarityByDepth[route.depth],
+      debugSummaryTr:SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]||null,
       type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
       contractPreview:!materialized,synthesisPreview:materialized};
   }
@@ -23482,6 +23563,12 @@ function drawMoveTree(){
     g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
     g.fillText('FORM ASPECT · '+mutationIdentityLabel(selected),32,631);
     g.font='9px monospace';g.fillStyle='#cfd3df';drawWrappedTooltipText(selected.summary,32,652,416,14);
+    if(selected.debugSummaryTr){
+      g.font='bold 8px monospace';g.fillStyle='#ffe37a';g.fillText('TR OYNANIŞ',32,686);
+      g.font='8px monospace';g.fillStyle='#f4f1e8';
+      drawWrappedTooltipText(selected.debugSummaryTr,32,700,
+        synthesisNode&&skillLabSession&&mode==='skilllab'?278:416,12);
+    }
     if(synthesisNode&&skillLabSession&&mode==='skilllab')
       drawSkillLabButton(MOVE_TREE_EQUIP_TEST,'EQUIP TEST','#c0f79a',true);
   }else{g.textAlign='center';g.font='11px monospace';g.fillStyle='#626570';g.fillText('Select a move with authored descendants.',VW/2,660);}
