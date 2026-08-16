@@ -404,8 +404,10 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   güçsüzlük sayılmaz. Güncel `256` F1S1 sentezinde en dar Mark farkı `+1`, en dar beklenen
   hasar farkı Mark/Chain lehine `12.5`tir.
 - T1/T2/T4 Mark/Mark rota ölçeği her `7` toplam Quality için tavansız `+1 Mark` verir.
-  T3 bu ortak bonusu almaz; kendi Quality wallet'ı düz Markını standart eş-rarity
-  geçmişlerinde `5/8/13/20` olarak büyütürken Bloom oranı Stable'da `%20` kalır.
+  T3 bu ortak bonusu birebir almaz. Sabit `%20` Bloom yanında geçmiş gücünü lineer
+  `max(0, ceil(total Quality / 7) - 2)` düz-Mark temeline çevirir; standart eş-rarity
+  geçmişlerinde düz paket `5/6/9/13` olur. Böylece iyi Form/Spec/Twist geçmişi Apex'te
+  önemini korur ama Bloom oranı geçmişten katlanarak büyümez.
   Bütün rotalar aynı görünür `0/5/10/15/20` Mark durumlarında ölçülür; Mark/Mark/Mark-Chain
   ortalama güç oranı bütün `64` geçmişte `0.8792–1.1431`, provisional rotasyon oranı
   `0.9604–1.2470` bandındadır.
@@ -432,8 +434,19 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
    gerilemesi, minimum pellet okunabilirliği ve rol bulanıklığı için taranır.
 4. **Tamamlandı:** F1S1'in dört Mark/Mark Twist'i ve F1S1↔F1S2 kimlik duvarı runtime
    materialization + full-history denetimine taşındı.
-5. F1S1 için dört Twist'in Apex ailelerini aynı kimlik duvarını koruyarak tasarla.
-6. **Tamamlandı:** Full-history validator `4,704` parent-child, `3,531` rank ve current-layer
-   repair telemetry kontrollerini ortak runtime gate içinde tarar.
+5. **Devam ediyor:** F1S1T1 iki dürüst Apex ile tamamlandı: saf Mark ve dengeli darbe.
+   F1S1T2 üç Apex ile tamamlandı: pulse event yoğunluğu, toplam Mark payload ve gerçek ok darbesi.
+   İlave pulse eventleri `2 power` ödeyen ayrı bir Mark alt-ekseni olarak fiyatlanır; Reserve ve
+   parent mirası korunur. Apex sayısı sabit kota değil, parent Twist'in bağımsız eksen sayısıdır.
+   F1S1T3 de üç Apex ile tamamlandı: Bloom oranı, düz Mark ve darbe. Oran Apex'i `70/15/15`
+   dağılım kullanır; her `1.5 power` yalnız bu receipt üzerinde `+5` puan Bloom satın alır.
+   Düz Mark Apex'i `5/95`, darbe Apex'i `80/20` kullanır. F1S1T4 de üç Apex ile tamamlandı:
+   Trail gücü, ilk Mark paketi ve darbe. Trail Apex'i `30/25/45` dağılım kullanır; ayrı
+   `MARK_TRAIL_STRENGTH` ekseninde her `6 power`, sonraki her hasarlı temas için tavansız `+1 Mark`
+   satın alır. Diğer iki Apex parent Trail'i aynen korur ve sırasıyla `5/95` ile `80/20` kullanır.
+6. **Tamamlandı:** Full-history validator `7,520` parent-child, `5,643` rank ve `16,392`
+   stronger-parent karşılaştırmasını ortak runtime gate içinde tarar. Kalıcı giriş komutu
+   `node tools/validate-skill-implementation.cjs KnightRush.html` olup Structure, Design,
+   Bug, Rarity ve Power sonuçlarını ayrı ayrı yayınlar.
 7. Legendary Stamp semantic hook ve power cap sözleşmesini tam vertical slice üstünde aç.
 8. Yeterli route coverage sonrası live route-first draftı aç.

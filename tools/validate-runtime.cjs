@@ -245,7 +245,10 @@ try{
         legacyError:child.synthesisLegacyWalletError||0,
         rankFloor:child.synthesisRankFloorPower||0,
         rankStatDamage:child.synthesisRankStatFloorDamage||0,
-        rankStatRestorations:child.synthesisRankStatFloorRestorations||0});
+        rankStatRestorations:child.synthesisRankStatFloorRestorations||0,
+        rankStatKeys:child.synthesisRankStatFloorKeys||[],
+        parentMark:parent.markGain,childMark:child.markGain,parentBloom:parent.markBloomRate,
+        childBloom:child.markBloomRate,childDamage});
       layerRows.push({route:route.id,history:history.join('/'),rank,
         gain:childPlay-parentPlay,parentPlay,childPlay});
     };
@@ -261,6 +264,8 @@ try{
       const values=rows.map(row=>row[key]).sort((a,b)=>a-b);
       return values[Math.min(values.length-1,Math.floor((values.length-1)*p))]||0;
     },worstRepairs=repairRows.slice().sort((a,b)=>b.restored-a.restored).slice(0,8),
+      worstRankRepairs=repairRows.slice().sort((a,b)=>
+        (b.rankFloor+b.rankStatDamage)-(a.rankFloor+a.rankStatDamage)).slice(0,8),
       worstLayerGains=layerRows.slice().sort((a,b)=>b.gain-a.gain).slice(0,8);
     return {routes:routes.length,twists:twists.length,apexes:apexes.length,comparisons,failures,
       maxDamageRestored:Number(maxDamageRestored.toFixed(3)),maxMarkRestored,
@@ -274,7 +279,7 @@ try{
       rankFloorP95:Number(percentile(repairRows,'rankFloor',.95).toFixed(3)),
       maxRankStatFloorDamage:Number(maxRankStatFloorDamage.toFixed(3)),
       rankStatDamageP95:Number(percentile(repairRows,'rankStatDamage',.95).toFixed(3)),
-      worstRepairs,worstLayerGains};
+      worstRepairs,worstRankRepairs,worstLayerGains};
   })();
   globalThis.__parentStrengthAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
@@ -358,6 +363,40 @@ try{
     console.log('MARK_MARK_AUDIT '+JSON.stringify({cards:audit.focusTwistCards,
       histories:audit.focusTwistBoundaryMatrix.length,minMarkMargin,
       minDamageGap:Number(minDamageGap.toFixed(3)),standard}));
+    const focusApex=audit.focusConcentratedApexAudit,
+      standardApex=audit.focusConcentratedApexMatrix.filter(row=>row.formRarity==='COMMON'&&
+        row.specRarity==='COMMON'&&row.twistRarity==='COMMON');
+    if(!focusApex||focusApex.cards!==512||focusApex.distinctRoleRows<1||
+       standardApex.length!==8)
+      throw new Error('F1S1T1 Apex coverage failed: '+JSON.stringify({focusApex,standardApex}));
+    console.log('MARK_MARK_T1_APEX '+JSON.stringify({audit:focusApex,standard:standardApex}));
+    const pulseApex=audit.focusPulseApexAudit,
+      standardPulseApex=audit.focusPulseApexMatrix.filter(row=>row.formRarity==='COMMON'&&
+        row.specRarity==='COMMON'&&row.twistRarity==='COMMON');
+    if(!pulseApex||pulseApex.cards!==768||pulseApex.densityRoleRows<1||
+       pulseApex.payloadRoleRows<1||pulseApex.impactRoleRows<1||standardPulseApex.length!==12)
+      throw new Error('F1S1T2 Apex coverage failed: '+JSON.stringify({pulseApex,standardPulseApex}));
+    console.log('MARK_MARK_T2_APEX '+JSON.stringify({audit:pulseApex,standard:standardPulseApex}));
+    const bloomApex=audit.focusBloomApexAudit,
+      standardBloomApex=audit.focusBloomApexMatrix.filter(row=>row.formRarity==='COMMON'&&
+        row.specRarity==='COMMON'&&row.twistRarity==='COMMON');
+    if(!bloomApex||bloomApex.cards!==768||bloomApex.rateRoleRows<1||
+       bloomApex.markRoleRows<1||bloomApex.impactRoleRows<1||standardBloomApex.length!==12)
+      throw new Error('F1S1T3 Apex coverage failed: '+JSON.stringify({bloomApex,standardBloomApex}));
+    console.log('MARK_MARK_T3_APEX '+JSON.stringify({audit:bloomApex,standard:standardBloomApex}));
+    const trailApex=audit.focusTrailApexAudit,
+      standardTrailApex=audit.focusTrailApexMatrix.filter(row=>row.formRarity==='COMMON'&&
+        row.specRarity==='COMMON'&&row.twistRarity==='COMMON');
+    if(!trailApex||trailApex.cards!==768||trailApex.strengthRoleRows<1||
+       trailApex.markRoleRows<1||trailApex.impactRoleRows<1||standardTrailApex.length!==12)
+      throw new Error('F1S1T4 Apex coverage failed: '+JSON.stringify({trailApex,standardTrailApex}));
+    console.log('MARK_MARK_T4_APEX '+JSON.stringify({audit:trailApex,standard:standardTrailApex}));
+    const focusFamily=audit.focusApexFamilyBalanceAudit;
+    if(!focusFamily||focusFamily.rows!==256||focusFamily.maxFamilyScoreSpread>.12||
+       focusFamily.maxFamilyPlaySpread>.12||focusFamily.maxCardScoreSpread>.20||
+       focusFamily.maxCardPlaySpread>.20)
+      throw new Error('F1S1 adjacent Apex balance failed: '+JSON.stringify(focusFamily));
+    console.log('MARK_MARK_ADJACENT_APEX '+JSON.stringify(focusFamily));
   }
   const mechanics=sandbox.__focusMechanicAudit;
   if(!mechanics||mechanics.pulseMark!==7||mechanics.pulseEvents!==3||
@@ -410,8 +449,8 @@ try{
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
   const hierarchyAudit=sandbox.__stableHierarchyAudit;
-  if(!hierarchyAudit||hierarchyAudit.twists!==8||hierarchyAudit.apexes!==16||
-     hierarchyAudit.comparisons!==4704||hierarchyAudit.failures.length)
+  if(!hierarchyAudit||hierarchyAudit.twists!==8||hierarchyAudit.apexes!==27||
+     hierarchyAudit.comparisons!==7520||hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
@@ -426,6 +465,7 @@ try{
     rankFloorP95:hierarchyAudit.rankFloorP95,
     maxRankStatFloorDamage:hierarchyAudit.maxRankStatFloorDamage,
     rankStatDamageP95:hierarchyAudit.rankStatDamageP95,
+    worstRankRepairs:hierarchyAudit.worstRankRepairs,
     worstLayerGains:hierarchyAudit.worstLayerGains}));
   if(hierarchyAudit.maxDamageRestored>1.1||hierarchyAudit.repairP95>.001)
     throw new Error('Stable compiler relies on excessive hidden inheritance repair: '+
@@ -448,14 +488,14 @@ try{
     worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
     worstChildPlayGap:parentStrength.worstChildPlayGap}));
   const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  if(!parentStrength||parentStrength.routes!==30||parentStrength.comparisons!==10056||
+  if(!parentStrength||parentStrength.routes!==41||parentStrength.comparisons!==16392||
      parentStrength.reversals.length||
      parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
      parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
     throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-      expectedRoutes:30,expectedComparisons:10056,
+      expectedRoutes:41,expectedComparisons:16392,
       reversals:parentStrength&&parentStrength.reversals.slice(0,3),
       minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
       minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
@@ -463,6 +503,22 @@ try{
       minChildPlayGap:parentStrength&&parentStrength.minChildPlayGap,
       worstScore:parentStrength&&parentStrength.worstScore,
       worstPlay:parentStrength&&parentStrength.worstPlay}));
+  console.log('IMPLEMENTATION_GATE '+JSON.stringify({
+    structure:{passed:true,routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,
+      apexes:hierarchyAudit.apexes,comparisons:hierarchyAudit.comparisons},
+    design:{passed:true,t3Cards:audit.focusBloomApexAudit.cards,
+      t3RoleRows:[audit.focusBloomApexAudit.rateRoleRows,audit.focusBloomApexAudit.markRoleRows,
+        audit.focusBloomApexAudit.impactRoleRows],t4Cards:audit.focusTrailApexAudit.cards,
+      t4RoleRows:[audit.focusTrailApexAudit.strengthRoleRows,audit.focusTrailApexAudit.markRoleRows,
+        audit.focusTrailApexAudit.impactRoleRows]},
+    bug:{passed:true,runtime:true,mechanicAudit:true},
+    rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
+      parentComparisons:parentStrength.comparisons},
+    power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,
+      maxFamilyPlaySpread:audit.focusApexFamilyBalanceAudit.maxFamilyPlaySpread,
+      maxCardScoreSpread:audit.focusApexFamilyBalanceAudit.maxCardScoreSpread,
+      maxCardPlaySpread:audit.focusApexFamilyBalanceAudit.maxCardPlaySpread}
+  }));
 }catch(error){
   console.error(error&&error.stack||error);
   process.exitCode=1;

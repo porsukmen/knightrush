@@ -458,12 +458,56 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
   if total power stops rising, an owned mechanic regresses, the Mark/expected-damage
   identity wall is crossed, or the two routes leave their shared power bands.
 - T1, T2 and T4 convert cumulative Quality into an additional Mark every seven Quality,
-  including the first partial step. T3 opts out: its flat package scales from its own Mark
-  wallet and its independent fixed `20%` Bloom reads the visible stack. The conversion,
+  including the first partial step. T3 opts out of that exact reward: it keeps a fixed `20%`
+  Bloom and receives the linear historical foundation `max(0, ceil(total Quality / 7) - 2)`
+  as flat Mark. This preserves strong ancestry without making Bloom recursively accelerate.
+  The conversion,
   Bloom result, Trail per contact, pulse payload, and delivery magnitude have no authored
   maximum. High-Quality audits verify that larger synthetic inputs keep producing output.
 - Four authored pilot Twists each create a distinct Mark/Chain combat loop. They are not a numeric spectrum.
-- Each Twist currently owns four Apex cards. Every Apex preserves its exact Twist relationship and Delivery family, then maximizes a different already-owned output.
+- Apex breadth follows the number of honest, independently playable outputs already owned by its
+  immediate Twist. Four is a content target, not a quota. A narrow Twist may stop at two or three
+  Apexes when additional children would only duplicate numbers, steal a sibling Twist, or introduce
+  a third mechanic. Every Apex preserves its exact Twist relationship and Delivery family, then
+  maximizes a different already-owned output.
+- The repeatable Apex craft method is: list inherited outputs and forbidden sibling identities;
+  count only independent tactical allocation axes; author one refinement per honest axis; allocate
+  only the current Apex receipt; then exhaustively audit parent/rank non-regression, sibling role
+  ordering, equal-power bands, Delivery inheritance, and cross-route identity walls. The generator
+  must reduce breadth instead of fabricating filler when these gates cannot be satisfied.
+- `F1S1T1` therefore owns exactly two Apexes. Both remain one immediate damaging contact, one natural
+  Chain, and one unconditional Mark application event. A1 is the guaranteed Mark-volume leader with
+  a `10/90` direct-damage/Mark Apex receipt. A2 is the impact leader with a `40/60` receipt. Neither
+  may pulse, Bloom, install Trail, read/consume Mark or Chain, gain Chain scaling, or add contacts.
+  At equal history/rank A1 Mark may never fall below A2, A2 damage may never fall below A1, and both
+  inherited Mark and damage remain non-decreasing from their Twist parent.
+- `F1S1T2` owns exactly three Apexes because separate non-damaging Mark application events are a
+  third honest axis in addition to total Mark and impact damage. A1 spends `20%` of only its Apex
+  receipt on `MARK_APPLICATION_EVENTS`, with each additional pulse priced at `2 power`; unspent
+  fractional power remains Reserve. A2 uses a `5/95` direct-damage/Mark receipt and is the total-Mark
+  leader. A3 uses `40/60` and is the real-arrow impact leader. All three retain one damaging contact,
+  one natural Chain, positive pulse payloads, and all inherited output. They may not add hit contacts,
+  read/consume resources, Bloom, Trail, Chain scaling, or a new combat mechanic. Pulse count has no
+  authored maximum; it is bounded only by the requirement that every real pulse carry positive Mark.
+- `F1S1T3` owns exactly three Apexes. All preserve one immediate hit, one natural Chain, starting-Mark
+  preservation, the inherited `20%` Bloom foundation and no same-action Bloom recursion. A1 is the
+  Bloom-rate leader: its Apex receipt is `70/15/15` direct damage/Mark/Bloom-rate, every `1.5 power`
+  buys `+5` percentage points, and Reserve carries fractional power without a cap. A2 is the flat-Mark
+  leader with `5/95`. A3 is the impact leader with `80/20`. Only A1 may change Bloom rate; no child may
+  pulse, Trail, consume/read Mark for damage, add contacts, or gain Chain scaling. The T3 foundation
+  bonus scales linearly from full history while A1 rate scaling uses only its own Apex receipt.
+- `F1S1T4` owns exactly three Apexes. All preserve one immediate hit, one natural Chain, the full
+  inherited direct Mark package, and the phase-bound Trail installed only after their own impact.
+  A1 is the Trail-strength leader with a `30/25/45` direct damage/Mark/Trail receipt. Trail strength
+  is a separately priced uncapped axis: every `6 power` buys `+1 Mark` on every later damaging player
+  contact that phase, with fractional power retained as Reserve. A2 is the upfront-Mark leader with
+  `5/95`; A3 is the impact leader with `80/20`. Only A1 may change Trail strength. None may trigger
+  Trail on its own hit, change its phase duration, add contacts, pulse/Bloom, read/consume resources,
+  or gain Chain scaling.
+- Adjacent completed F1S1 Apex families are compared across all `4^4` equivalent rarity histories.
+  Their family-mean score and six-phase playthrough spreads may not exceed `12%`; the most extreme
+  individual sibling cards across those families may not exceed `20%`. This gate is cumulative: every
+  newly authored F1S1 Apex family must enter the same comparison instead of being balanced in isolation.
 - `F1S2T1` is the direct sequential continuation. Every visible arrow generates one Chain and reads the live Chain value, including Chain created earlier in the same action.
 - Its four Apex refinements are: produce and distribute distinctly more Mark across contacts, ramp the live Chain coefficient on later arrows, back-load clean damage into the final arrow, or increase uncapped contact cadence. The Mark refinement pays for its guaranteed extra Mark from its own damage allocation and must outproduce the Tempo refinement at the same history/rarity. None may consume/read Mark or replace sequential Delivery.
 - The Chain-ramp Apex must visibly scale its last-arrow coefficient with its own Apex Quality packet; higher rarity may not merely add damage while leaving this defining payoff flat. Its displayed skill coefficient is additive over the global `5% per Chain` combat rule.
@@ -492,7 +536,11 @@ Opening Signal and Driving Pair are intentional mirrors. Ranger's Rhythm and Cro
 
 ## Mandatory automated gate
 
-Run both commands before publishing:
+Run the single post-implementation template before publishing:
+
+`node tools/validate-skill-implementation.cjs KnightRush.html`
+
+It runs both lower-level commands and reports separate Structure, Design, Bug, Rarity and Power gates:
 
 `node tools/validate-html.cjs KnightRush.html`
 
@@ -500,10 +548,10 @@ Run both commands before publishing:
 
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `8` Twist contracts and `16` Apex contracts;
-- `4,704` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `1,177` independent rank ladders and `3,531` adjacent rank comparisons;
-- `10,056` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `8` Twist contracts and `24` Apex contracts;
+- `6,752` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `1,689` independent rank ladders and `5,067` adjacent rank comparisons;
+- `14,664` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
