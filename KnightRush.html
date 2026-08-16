@@ -11904,68 +11904,68 @@ const COMBAT_ATTRIBUTE_UI_COLORS=Object.freeze({MARK:'#ff596d',CHAIN:'#ffe37a',P
    These concise Turkish notes are a debug translation of each route's actual
    combat loop, kept outside the compiler so localization never enters synthesis. */
 const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
-  mark_primary_form:'Tek okla Mark üretir; sonraki evrimler bu Mark kaynağının nasıl çalışacağını belirler.',
+  mark_primary_form:'Tek bir okla hasar verir ve hedefe Mark bırakır. Bu ilk seçim Sharpshoot saldırısının Mark üreten temelini kurar; sonraki katmanlar bu kaynağın kullanım biçimini değiştirir.',
 
-  mark_focus_spec:'Hasardan biraz vazgeçip daha çok Mark biriktiren saf Mark kurulumuna girer.',
-  mark_focus_concentrated_twist:'Tek vuruşta en büyük garanti Mark paketini bırakır; güvenli ve doğrudan kurulumdur.',
-  mark_focus_pulse_twist:'Tek ok vurur, ardından hasarsız darbeler halinde Mark bırakır; event sinerjileri içindir.',
-  mark_focus_bloom_twist:'Mevcut Markları tüketmeden okur ve biriktirdiğin Mark kadar yeni Mark büyütür.',
-  mark_focus_trail_twist:'İlk oktan sonra aynı turdaki diğer hasarlı vuruşların da Mark bırakmasını sağlar.',
-  mark_focus_concentrated_mark_apex:'Tek pakette mümkün olan en fazla Markı bırakır; saf kurulum seçeneğidir.',
-  mark_focus_concentrated_impact_apex:'Büyük tek Mark paketini korur ama daha fazla gerçek ok hasarı verir.',
-  mark_focus_pulse_density_apex:'Aynı sistemi daha fazla ayrı Mark eventine böler; tetikleme odaklıdır.',
-  mark_focus_pulse_payload_apex:'Pulse sayısını korur, pulselara dağıtılan toplam Markı büyütür.',
-  mark_focus_pulse_impact_apex:'Hasarsız Mark pulselarını korurken gerçek okun hasarını yükseltir.',
-  mark_focus_bloom_rate_apex:'Başlangıç Marklarını daha yüksek oranda okuyup daha fazla ek Mark üretir.',
-  mark_focus_bloom_mark_apex:'Bloom oranını korur, saldırının garanti bıraktığı düz Markı artırır.',
-  mark_focus_bloom_impact_apex:'Bloom sistemini korur, asıl okun doğrudan hasarını büyütür.',
-  mark_focus_trail_strength_apex:'Bu turdaki sonraki her hasarlı vuruşun bıraktığı Trail Markını artırır.',
-  mark_focus_trail_mark_apex:'Trail aynı kalır, açılış okunun garanti Mark paketi büyür.',
-  mark_focus_trail_impact_apex:'Trail aynı kalır, açılış okunun gerçek hasarı büyür.',
+  mark_focus_spec:'Doğrudan hasarın bir bölümünü Mark üretimine aktarır ve saf Mark biriktirme rotasını açar. Amacı tek başına bitirmek değil, diğer saldırılar için mümkün olduğunca büyük bir Mark rezervi kurmaktır.',
+  mark_focus_concentrated_twist:'Bütün üretimi tek vuruşta bırakılan büyük ve garanti bir Mark paketinde toplar. Ek koşul istemeyen, en güvenilir saf Mark kurulumudur; tetiklenme sayısından çok paket büyüklüğünü önemser.',
+  mark_focus_pulse_twist:'Önce gerçek ok hasarını verir, ardından hasar vermeyen birkaç ayrı Mark darbesi yollar. Toplam Mark kadar ayrı tetiklenme sayısını da önemseyen artifact ve pasiflerle çalışmak için tasarlanmıştır.',
+  mark_focus_bloom_twist:'Boss üzerindeki mevcut Markları tüketmeden başlangıç değeri olarak okur ve bu birikime oranlı yeni Mark üretir. Önceden kurulmuş büyük rezervi kendi kendine büyüten kartopu rotasıdır.',
+  mark_focus_trail_twist:'Açılış oku normal Markını bırakır; ardından aynı oyuncu turundaki diğer hasarlı vuruşlara geçici Mark izi ekler. Tek büyük atış yerine bütün takım turunu Mark üreticisine çevirir.',
+  mark_focus_concentrated_mark_apex:'Concentrated yapısını değiştirmeden tek vuruşta bırakılan garanti Mark paketini en yüksek seviyeye çıkarır. Sonraki saldırıyı beslemek isteyen saf kurulum seçeneğidir.',
+  mark_focus_concentrated_impact_apex:'Büyük ve tek parça Mark paketini korurken Quality gücünün daha fazlasını okun gerçek hasarına ayırır. Mark kurulumundan tamamen vazgeçmeden kendi başına daha sert vurur.',
+  mark_focus_pulse_density_apex:'Toplam üretimi daha fazla ayrı, hasarsız Mark darbesine böler. Her Mark olayıyla çalışan artifact ve tetikleyicileri daha sık çalıştırır; gücü tek pakette toplamaz.',
+  mark_focus_pulse_payload_apex:'Pulse sayısını temel rotaya yakın tutar fakat darbeler arasında dağıtılan toplam Mark miktarını büyütür. Daha az tetiklenme çeşitliliği karşılığında daha büyük rezerv kurar.',
+  mark_focus_pulse_impact_apex:'Hasarsız Mark pulselarını ve çoklu tetiklenme kimliğini korur, kalan gücü ilk gerçek okun hasarına taşır. Kurulum yaparken belirgin doğrudan hasar da isteyen varyanttır.',
+  mark_focus_bloom_rate_apex:'Başlangıçtaki Mark rezervinin daha büyük bölümünü Bloom hesabına katar ve tüketmeden daha fazla ek Mark üretir. Yüksek mevcut Mark ile en hızlı büyüyen, kartopu odaklı apex budur.',
+  mark_focus_bloom_mark_apex:'Bloom oranını değiştirmez; saldırının her durumda bıraktığı garanti düz Mark miktarını artırır. Boss üzerinde az Mark varken daha güvenilir başlar, büyüme başladıktan sonra Bloom ile devam eder.',
+  mark_focus_bloom_impact_apex:'Mevcut Markı tüketmeden okuyan Bloom mekanizmasını korur fakat ek gücü okun doğrudan hasarına aktarır. Rezerv büyütürken hasardan tamamen vazgeçmek istemeyen varyanttır.',
+  mark_focus_trail_strength_apex:'Bu oyuncu turundaki sonraki her hasarlı vuruşun bırakacağı Trail Mark miktarını artırır. Çok vuruşlu diğer skill ve parti üyeleriyle en güçlü ölçeklenen takım kurulumudur.',
+  mark_focus_trail_mark_apex:'Trail davranışını aynı tutar, açılış okunun garanti bıraktığı Mark paketini büyütür. Sonraki vuruş sayısı düşük olsa bile güvenilir rezerv üretmeye devam eder.',
+  mark_focus_trail_impact_apex:'Trail ile sonraki vuruşları Mark üreticisine dönüştürmeye devam eder, ek gücü açılış okunun hasarına verir. Takım sinerjisini koruyan en saldırgan Trail varyantıdır.',
 
-  mark_chain_spec:'Art arda oklarla Chain kurar; sonraki oklar önceki Chain sayesinde daha sert vurur.',
-  mark_chain_direct_twist:'Art arda ok atar; her ok Chain ekler ve sonraki ok yeni Chaini hemen kullanır.',
-  mark_chain_converter_twist:'Başlangıç Marklarının yarısını Chain yapar ve bütün Chain gücünü tek ağır oka sıkıştırır.',
-  mark_chain_echo_twist:'Markları tüketmeden geçici Chain gibi okur; ana ok ve yankılar bu bonusu kullanır.',
-  mark_chain_shotgun_twist:'Okları aynı anda shotgun paketi olarak atar; çok Mark bırakır ama toplam 1 Chain üretir.',
-  mark_chain_direct_mark_apex:'Art arda ok sistemini korur, toplam Markı okların üzerine dağıtarak artırır.',
-  mark_chain_direct_ramp_apex:'Her sonraki okun Chain çarpanı öncekinden güçlü olur; uzun volley ödüllenir.',
-  mark_chain_direct_finisher_apex:'Volley kurulumunu korur ama hasarın büyük kısmını son ağır oka yükler.',
-  mark_chain_direct_tempo_apex:'Quality ile daha fazla ok atar; Mark, Chain ve hasar temas sayısıyla birlikte büyür.',
-  mark_chain_converter_full_apex:'Bütün başlangıç Marklarını Chain yapıp tek ağır okta kullanır; yüksek riskli patlamadır.',
-  mark_chain_converter_weight_apex:'Markların yarısını dönüştürür, tek okun Chain çarpanını Weight ile daha çok büyütür.',
-  mark_chain_converter_impact_apex:'Yarım dönüşüm ve Weight kalır; ekstra güç doğrudan ağır okun hasarına gider.',
-  mark_chain_converter_rebuild_apex:'Markların yarısını Chain yapar, vurduktan sonra sonraki kullanım için daha çok Mark kurar.',
-  mark_chain_echo_density_apex:'Mark okumasını korur ve Quality ile daha fazla yankı vuruşu üretir.',
-  mark_chain_echo_mark_apex:'Her korunmuş Markın verdiği geçici Chain miktarını artırır; yankı sayısı aynı kalır.',
-  mark_chain_echo_chain_apex:'Marktan gelen geçici Chain aynı kalır, önceden biriken gerçek Chain daha güçlü okunur.',
-  mark_chain_echo_generation_apex:'Ana ok ve her yankı gerçek Chain ekler; sonraki yankılar yeni Chaini hemen kullanır.',
-  mark_chain_shotgun_density_apex:'Tek shotgun paketinde daha fazla pellet üretir; temas yoğunluğu odaklıdır.',
-  mark_chain_shotgun_mark_apex:'Pellet sayısını korur, daha fazla pelletin ekstra Mark bırakmasını sağlar.',
-  mark_chain_shotgun_chain_apex:'Her pellet vurduktan sonra gerçek Chain ekler; aynı pakette birbirlerini güçlendirmezler.',
-  mark_chain_shotgun_wave_apex:'Pelletleri iki dalgaya böler; ikinci dalga ilk dalganın ürettiği Chaini okur.',
+  mark_chain_spec:'Mark üretimini ana kimlik olarak korur, yanına art arda oklar ve Chain ölçeklenmesi ekler. Her ok Chain bıraktığı için sonraki oklar saldırı devam ederken giderek daha sert vurur.',
+  mark_chain_direct_twist:'Okları sırayla ateşler; her temas gerçek Chain üretir ve kendisinden sonraki ok yeni Chaini anında kullanır. Mark/Chain ilişkisinin en doğrudan, büyüyen volley biçimidir.',
+  mark_chain_converter_twist:'Saldırı başındaki Markların yarısını tüketip aynı miktarda Chain oluşturur, ardından bütün Chain bonusunu tek ağır okta Weight ile sıkıştırır. Kurulmuş Markı anlık patlama hasarına çevirir.',
+  mark_chain_echo_twist:'Başlangıç Marklarını tüketmeden geçici Chain gibi okur; ana ok ve ardından gelen yankılar bu geçici değerden yararlanır. Rezervi koruyarak Mark birikimini hasara çeviren orta yoldur.',
+  mark_chain_shotgun_twist:'Birden fazla pelleti aynı anda tek paket halinde vurur ve yüksek Mark üretir. Pelletler birbirinin Chaininden yararlanmaz; tüm paket doğal olarak yalnızca 1 gerçek Chain bırakır.',
+  mark_chain_direct_mark_apex:'Art arda ok ve saldırı içi Chain büyümesini aynen korur, toplam garanti Markı volleydeki okların üzerine dağıtır. Bir sonraki hareket için daha iyi rezerv hazırlayan direct varyanttır.',
+  mark_chain_direct_ramp_apex:'Her sonraki okun Chain çarpanını bir öncekinden daha yüksek yapar. İlk oklar kurulumu taşırken son oklar giderek büyüyen hasarı teslim eder; uzun volley en fazla ödülü alır.',
+  mark_chain_direct_finisher_apex:'Volley boyunca Chain kurmaya devam eder fakat toplam hasarın büyük bölümünü son ağır oka yükler. Son temas öncesinde yüksek Chain hazırlayabilen buildlerde patlayıcı sonuç verir.',
+  mark_chain_direct_tempo_apex:'Quality yükseldikçe volleydeki gerçek ok sayısını artırır. Daha fazla temas aynı saldırıda daha fazla Chain, daha çok Mark olayı ve daha yüksek toplam hasar oluşturur.',
+  mark_chain_converter_full_apex:'Saldırı başındaki bütün Markları tüketip birebir Chain yapar ve sonucu tek ağır okta kullanır. Rezervin tamamını kaybetme karşılığında Converter ailesinin en yüksek anlık patlamasını verir.',
+  mark_chain_converter_weight_apex:'Markların yalnızca yarısını Chaine dönüştürmeye devam eder, fakat tek okun Chain bonusunu Weight ile daha kuvvetli çarpar. Rezervin yarısını saklayan ağır vuruş seçeneğidir.',
+  mark_chain_converter_impact_apex:'Yarım Mark dönüşümünü ve ağır tek ok yapısını korur; ek Quality gücünü dönüşüm yerine doğrudan taban hasara aktarır. Düşük Chain durumunda bile daha güvenilir vurur.',
+  mark_chain_converter_rebuild_apex:'Başlangıç Marklarının yarısını Chain yaparak ağır oku güçlendirir, vuruştan sonra yeniden büyük bir Mark paketi bırakır. Harcadığı kaynağın bir bölümünü sonraki tur için geri kurar.',
+  mark_chain_echo_density_apex:'Markları tüketmeden geçici Chain gibi okuma kuralını korur ve Quality ile daha fazla yankı vuruşu üretir. Aynı geçici bonusu daha çok temasa yayarak çoklu vuruş sinerjisi kurar.',
+  mark_chain_echo_mark_apex:'Yankı sayısını değiştirmez; saldırı başında korunan her Markın sağladığı geçici Chain değerini artırır. Büyük Mark rezervlerini daha güçlü hasar çarpanına dönüştürür.',
+  mark_chain_echo_chain_apex:'Marktan gelen geçici Chain hesabını korur, saldırıdan önce var olan gerçek Chainin hasar katkısını ayrıca büyütür. Hem Mark hem gerçek Chain hazırlayan buildleri ödüllendirir.',
+  mark_chain_echo_generation_apex:'Ana ok ve her yankı temas ettikten sonra gerçek Chain üretir; sonraki yankılar yeni Chaini aynı saldırı içinde kullanır. Echo rotasını giderek büyüyen bir kombo kurucusuna dönüştürür.',
+  mark_chain_shotgun_density_apex:'Tek ve eşzamanlı shotgun paketindeki pellet sayısını Quality ile artırır. Daha çok temas üretir fakat pelletler aynı anda vurduğu için birbirlerinin yeni Chaininden yararlanmaz.',
+  mark_chain_shotgun_mark_apex:'Shotgunın pellet sayısını korur, daha fazla pelletin ek Mark bırakmasını sağlar. Chain patlamasından çok tek harekette büyük Mark rezervi kuran paket varyantıdır.',
+  mark_chain_shotgun_chain_apex:'Her pellet temasından sonra gerçek Chain ekler, böylece saldırı sonrasında büyük Chain rezervi bırakır. Pelletler eşzamanlı olduğu için bu Chain kendi paketinin hasarını büyütmez.',
+  mark_chain_shotgun_wave_apex:'Pelletleri iki ayrı zamanlı dalgaya böler. İlk dalga gerçek Chain kurar; ikinci dalga bu yeni Chaini okuyarak daha sert vurur ve shotgunı saldırı içi kombo sistemine çevirir.',
 
-  mark_critical_spec:'Mark üretmeye devam ederken her atışa yalnız bu harekete ait Crit ihtimali ekler.',
-  mark_critical_volley_twist:'Art arda ok atar; her ok Chain üretir ve Crit için birbirinden bağımsız zar atar.',
-  mark_critical_weight_twist:'Başlangıç Marklarını tüketmeden okur ve her Markı tek ağır okun Crit ihtimaline çevirir.',
-  mark_critical_reward_twist:'Tek ok atar; Crit gerçekleşirse vuruştan sonra hasarsız bonus Mark üretir.',
-  mark_critical_packet_twist:'Pelletleri aynı anda atar; bütün paket tek bir ya hep ya hiç Crit sonucunu paylaşır.',
-  mark_critical_volley_contacts_apex:'Bağımsız Crit atan daha fazla ardışık ok üretir; her ok doğal Chain verir.',
-  mark_critical_volley_chance_apex:'Ok sayısını korur, volleydeki her okun bağımsız Crit ihtimalini artırır.',
-  mark_critical_volley_mark_apex:'Bağımsız Crit volleyini korur, garanti Mark paketini okların üzerine dağıtır.',
-  mark_critical_volley_damage_apex:'Bağımsız Crit volleyini korur, toplam doğrudan ok hasarını yükseltir.',
-  mark_critical_weight_read_apex:'Tüketmeden okunan her başlangıç Markının verdiği Crit ihtimalini en çok büyütür.',
-  mark_critical_weight_chance_apex:'Mark okuma sistemi kalır, boss Marklanmamışken bile temel Crit ihtimali yükselir.',
-  mark_critical_weight_mark_apex:'Ağır Mark okuması kalır, vuruştan sonra en büyük garanti Mark rezervini bırakır.',
-  mark_critical_weight_damage_apex:'Mark okuma sistemi kalır, Crit çarpanına girecek tek ağır okun hasarı büyür.',
-  mark_critical_reward_bonus_apex:'Crit gerçekleştiğinde gelen hasarsız bonus Mark miktarını en çok büyütür.',
-  mark_critical_reward_chance_apex:'Crit sonrası Mark ödülünü korur, ödülün tetiklenme ihtimalini artırır.',
-  mark_critical_reward_mark_apex:'Koşullu Crit ödülü kalır, Critten bağımsız garanti Mark üretimi büyür.',
-  mark_critical_reward_damage_apex:'Crit sonrası Mark ödülü kalır, gerçek okun doğrudan hasarı büyür.',
-  mark_critical_packet_contacts_apex:'Tek ortak Crit sonucunu paylaşan daha fazla pellet üretir; paket hâlâ 1 Chain verir.',
-  mark_critical_packet_chance_apex:'Pellet sayısını korur, bütün paketin paylaştığı tek Crit ihtimalini artırır.',
-  mark_critical_packet_mark_apex:'Ortak Crit paketini korur, garanti Markı pelletlerin üzerine dağıtarak artırır.',
-  mark_critical_packet_damage_apex:'Ortak Crit paketini korur, ya hep ya hiç çalışan toplam hasar patlamasını büyütür.'
+  mark_critical_spec:'Sharpshootun Mark üretimini korur ve yalnızca bu harekete ait yerel Crit ihtimali ekler. Global Crit şansını değiştirmez; her kullanım kendi Crit zarını atarak ekstra hasar arar.',
+  mark_critical_volley_twist:'Art arda birkaç gerçek ok atar; her ok doğal Chain üretir ve Crit için ayrı zar atar. Tek bir başarısız zar bütün saldırıyı bozmaz, çoklu temas güvenilir Crit fırsatı sağlar.',
+  mark_critical_weight_twist:'Saldırı başındaki Markları tüketmeden okur ve her Markı tek ağır okun yerel Crit ihtimaline ekler. Büyük Mark rezervini Weight destekli tek bir yüksek hasar fırsatına dönüştürür.',
+  mark_critical_reward_twist:'Tek ok normal Markını bırakır; bu ok Crit olursa hasar vermeyen ek bir Mark ödülü üretir. Criti yalnızca hasar artışı değil, sonraki saldırı için kaynak kurma aracına çevirir.',
+  mark_critical_packet_twist:'Birden fazla pelleti eşzamanlı tek paket olarak atar ve bütün paket tek Crit zarını paylaşır. Sonuç ya tüm pelletler için Crit olur ya hiçbiri için olmaz; paket toplam 1 Chain üretir.',
+  mark_critical_volley_contacts_apex:'Bağımsız Crit atan ardışık ok sayısını Quality ile artırır ve her yeni ok doğal Chain bırakır. Daha fazla temas, daha çok Crit fırsatı ve daha uzun saldırı içi Chain büyümesi sağlar.',
+  mark_critical_volley_chance_apex:'Volleydeki ok sayısını korur fakat her okun ayrı ayrı attığı yerel Crit ihtimalini yükseltir. Çoklu vuruş yapısını büyütmeden daha güvenilir Crit sonucu isteyen varyanttır.',
+  mark_critical_volley_mark_apex:'Bağımsız Crit zarlarına sahip volley yapısını korur, garanti Mark üretimini okların üzerine dağıtarak artırır. Hasar şansı ararken sonraki skill için daha büyük rezerv kurar.',
+  mark_critical_volley_damage_apex:'Ok sayısını ve bağımsız Crit zarlarını korur, Quality gücünü doğrudan toplam ok hasarına ayırır. Crit gerçekleşmediğinde bile en yüksek güvenilir volley hasarını verir.',
+  mark_critical_weight_read_apex:'Başlangıç Marklarını tüketmeden okumaya devam eder ve her Markın tek ağır oka eklediği Crit ihtimalini en yüksek seviyeye çıkarır. Büyük rezervle en hızlı Crit garantisine yaklaşan varyanttır.',
+  mark_critical_weight_chance_apex:'Mark başına Crit katkısını korur, bunun yanına daha yüksek düz yerel Crit ihtimali ekler. Boss üzerinde hiç Mark yokken bile çalışır; Mark biriktikçe güvenilirliği daha da artar.',
+  mark_critical_weight_mark_apex:'Mark okuyan ağır tek atış sistemini korur ve vuruştan sonra büyük bir garanti Mark paketi bırakır. Mevcut rezervi tüketmeden kullanır, sonraki kullanımın Crit ihtimalini de hazırlar.',
+  mark_critical_weight_damage_apex:'Markları tüketmeden Crit ihtimaline çeviren ağır ok yapısını korur, ek gücü Crit çarpanına girecek taban hasara verir. Başarılı Critte en büyük tek vuruş sonucunu hedefler.',
+  mark_critical_reward_bonus_apex:'Tek ok Crit olduğunda saldırı sonrasında gelen hasarsız bonus Mark miktarını en fazla artırır. Başarılı Criti büyük bir sonraki-tur rezervine dönüştüren yüksek ödül varyantıdır.',
+  mark_critical_reward_chance_apex:'Crit sonrası bonus Mark ödülünü korur ve bu ödülün tetiklenmesi için okun yerel Crit ihtimalini yükseltir. Ödül miktarından çok düzenli çalışmasına yatırım yapar.',
+  mark_critical_reward_mark_apex:'Crit gerçekleştiğinde gelen koşullu ödülü korur, ayrıca Critten bağımsız garanti Mark üretimini artırır. Kötü zar durumunda bile Mark kurulumunu sürdüren güvenli varyanttır.',
+  mark_critical_reward_damage_apex:'Crit sonrası Mark ödülünü korur ve ek Quality gücünü gerçek okun taban hasarına verir. Ödül tetiklendiğinde kaynak, tetiklenmediğinde daha yüksek doğrudan hasar sağlar.',
+  mark_critical_packet_contacts_apex:'Aynı ortak Crit sonucunu paylaşan shotgun pelletlerinin sayısını Quality ile artırır. Tek başarılı zar daha çok teması birden Crit yapar; paket yine toplam yalnızca 1 Chain bırakır.',
+  mark_critical_packet_chance_apex:'Pellet sayısını sabit tutar, bütün paketin paylaştığı tek yerel Crit ihtimalini yükseltir. Ya hep ya hiç kimliğini korurken saldırının tamamen Crit olmasını daha güvenilir yapar.',
+  mark_critical_packet_mark_apex:'Ortak Crit zarına sahip shotgun paketini korur ve garanti Mark üretimini pelletlerin üzerine dağıtarak artırır. Crit patlaması ararken daha büyük bir Mark rezervi de hazırlar.',
+  mark_critical_packet_damage_apex:'Ortak Crit zarını ve pellet sayısını korur, Quality gücünü paketin toplam taban hasarına aktarır. Zar başarılı olduğunda bütün paketin büyütülmüş hasarı birden Crit olur.'
 });
 const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
   const families=new Set(['MARK','CHAIN','CRITICAL']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
@@ -11974,7 +11974,7 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
     missing=routes.filter(route=>!SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]).map(route=>route.id),
     extra=authored.filter(id=>!expected.has(id)),invalid=authored.filter(id=>
       typeof SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[id]!=='string'||
-      SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[id].trim().length<24);
+      SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[id].trim().length<100);
   if(missing.length||extra.length||invalid.length)
     throw new Error('Sharpshoot Turkish debug summaries are incomplete '+
       JSON.stringify({missing,extra,invalid}));
@@ -23562,12 +23562,10 @@ function drawMoveTree(){
     g.fillText(selected.rarity+' · '+selected.type+' · '+skillProgressionLabel(selected),32,616);
     g.font='bold 8px monospace';g.fillStyle=SKILL_MUTATION_TYPE_COL[selected.type]||'#cfd3df';
     g.fillText('FORM ASPECT · '+mutationIdentityLabel(selected),32,631);
-    g.font='9px monospace';g.fillStyle='#cfd3df';drawWrappedTooltipText(selected.summary,32,652,416,14);
     if(selected.debugSummaryTr){
-      g.font='bold 8px monospace';g.fillStyle='#ffe37a';g.fillText('TR OYNANIŞ',32,686);
-      g.font='8px monospace';g.fillStyle='#f4f1e8';
-      drawWrappedTooltipText(selected.debugSummaryTr,32,700,
-        synthesisNode&&skillLabSession&&mode==='skilllab'?278:416,12);
+      g.font='9px monospace';g.fillStyle='#f4f1e8';
+      drawWrappedTooltipText(selected.debugSummaryTr,32,652,
+        synthesisNode&&skillLabSession&&mode==='skilllab'?278:416,13);
     }
     if(synthesisNode&&skillLabSession&&mode==='skilllab')
       drawSkillLabButton(MOVE_TREE_EQUIP_TEST,'EQUIP TEST','#c0f79a',true);
