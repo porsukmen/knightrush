@@ -557,10 +557,10 @@ It runs both lower-level commands and reports separate Structure, Design, Bug, R
 
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `12` Twist contracts and `27` Apex contracts;
-- `7,776` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `1,945` independent rank ladders and `5,835` adjacent rank comparisons;
-- `16,776` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `12` Twist contracts and `31` Apex contracts;
+- `8,800` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `2,201` independent rank ladders and `6,603` adjacent rank comparisons;
+- `19,080` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
@@ -586,6 +586,15 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   a heavy Posture impact at the bow, T2 converges visible Mark aim around the target, T3 inscribes a
   Posture-primer sigil, and T4 changes from a restrained finisher cue to a gold break-ready cue when
   its action-start threshold is met. These are reusable recipe/cue ids, not four bespoke update loops.
+- T1 has four Stable Apex refinements. A1 maximizes raw flat Posture, A2 maximizes immediate Mark,
+  and A3 maximizes clean Health damage. A4 keeps one damaging arrow and one natural Chain but splits
+  its total Posture `60/40` between impact and one delayed fracture event. The fracture produces no
+  damage, Mark or Chain. `POSTURE_APPLICATION_EVENTS` pays for the extra trigger opportunity from the
+  same light-ranged `0.32` expression wallet, so it is neither a free delivery reward nor a second
+  Posture withdrawal.
+- A1 must remain the raw-Posture leader, A2 the Mark leader and A3 the direct-damage leader for every
+  one of the `256` prior-rarity + offered-rank histories. A4 must always retain exactly two normalized
+  Posture shares and a paid event receipt. The four siblings must stay within a `15%` combined-power band.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
 

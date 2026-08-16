@@ -381,6 +381,13 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   Secondary Handling ifadesi sonraki Twist receipt'lerinin Posture eksenlerine de uygulanır;
   ifade edilemeyen wallet Primary Mark'a geri döner. `256` Form/Spec/Twist rarity kartı kimlik,
   parent mirası, rarity, primer lifecycle ve tavansız Mark→Posture okuması için test edilir.
+- F1S3T1 altında dört Apex materialize edilmiştir: ham Posture, anlık Mark, temiz hasar ve
+  Double Fracture. İlk üçü aynı güvenilir tek-vuruş relationship'inin farklı eksenlerini büyütür.
+  Double Fracture tek gerçek oku ve tek Chain'i korur; toplam Posture'u `%60/%40` olarak impact ve
+  gecikmeli ikinci Posture olayına böler. İkinci olay damage, Mark veya Chain üretmez.
+  `POSTURE_APPLICATION_EVENTS` ekseni bu ekstra tetikleyici fırsatını aynı `0.32` light-bow
+  expression ile öder. Dört Apex × `4^4` geçmiş = `1024` kart parent mirası, rarity scale,
+  rol liderliği, normalize wave ve `%15` sibling güç bandı için otomatik test edilir.
 - F1S4 Crit wallet'ı Secondary rol `0.80 × Stable Support 0.50 = 0.40` ile ifade edilir.
   Local Crit yüzdesi `ifade edilen Crit power / (base damage × (Crit multiplier - 1))`
   formülünden çıkar; dolayısıyla güçlü okun aynı Crit yüzdesini satın alması daha pahalıdır.
@@ -450,6 +457,7 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
    materialization + full-history denetimine taşındı.
 5. **Tamamlandı:** F1S3 Mark/Posture Specialization hafif-yay expression modeliyle yenilendi ve
    dört Twist (impact, Mark read, next-source primer, half-bar finisher) materialize edildi.
+   F1S3T1'in dört Apex'i (Posture, Mark, clean damage, paid Double Fracture) tamamlandı.
 6. **Devam ediyor:** F1S1T1 iki dürüst Apex ile tamamlandı: saf Mark ve dengeli darbe.
    F1S1T2 üç Apex ile tamamlandı: pulse event yoğunluğu, toplam Mark payload ve gerçek ok darbesi.
    İlave pulse eventleri `2 power` ödeyen ayrı bir Mark alt-ekseni olarak fiyatlanır; Reserve ve
