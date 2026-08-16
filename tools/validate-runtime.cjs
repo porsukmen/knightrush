@@ -42,6 +42,41 @@ try{
     SHARPSHOOT_MARK_MATERIALIZATION_AUDIT;
   globalThis.__twistBalanceAudit=typeof SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT==='undefined'?null:
     SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT;
+  const auditStableApexFamily=config=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],ids=config.ids,rows=[],groupsByKey=new Map();
+    if(!config||!config.familyId||!config.specId||!config.twistId||
+       !Array.isArray(ids)||ids.length!==4||new Set(ids).size!==4)
+      throw new Error('Stable Apex family audit needs one id and four unique sibling routes');
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities)for(const apexRarity of rarities)for(const id of ids){
+        const history={formRarity,specRarity,twistRarity,apexRarity,id},
+          parent=synthesizeSharpshootMarkPath(formRarity,config.specId,specRarity,
+            config.twistId,twistRarity),
+          command=synthesizeSharpshootMarkPath(formRarity,config.specId,specRarity,
+            config.twistId,twistRarity,id,apexRarity);
+        if(!command||!parent||commandDirectDamageTotal(command)+1e-6<
+           commandDirectDamageTotal(parent)||command.markGain<parent.markGain)
+          throw new Error(config.familyId+' erased protected parent output at '+
+            Object.values(history).join('/'));
+        const row=config.inspect({command,parent,history,rarities});
+        if(!row||row.id!==id)throw new Error(config.familyId+' returned an invalid audit row');
+        const frozen=Object.freeze({...history,...row}),key=
+          formRarity+'|'+specRarity+'|'+twistRarity+'|'+apexRarity;
+        rows.push(frozen);
+        let group=groupsByKey.get(key);
+        if(!group){group=[];groupsByKey.set(key,group);}
+        group.push(frozen);
+      }
+    let groups=0;
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities)for(const apexRarity of rarities){
+        const group=groupsByKey.get(formRarity+'|'+specRarity+'|'+twistRarity+'|'+apexRarity)||[];
+        if(group.length!==ids.length)throw new Error(config.familyId+' lost an Apex sibling');
+        config.inspectGroup(group,{formRarity,specRarity,twistRarity,apexRarity,ids});
+        groups++;
+      }
+    return Object.freeze({familyId:config.familyId,cards:rows.length,groups,rows});
+  };
   globalThis.__focusMechanicAudit=(()=>{
     const pulse=synthesizeSharpshootMarkPath('COMMON','mark_focus_spec','COMMON',
         'mark_focus_pulse_twist','COMMON'),
@@ -224,6 +259,218 @@ try{
       postureLeaderRows,markLeaderRows,markAllocationLeaderRows,damageLeaderRows,fractureRows,
       waveRuntime:{pattern:fractureTimeline.pattern,times:fractureTimeline.times}};
   })();
+  globalThis.__postureReadApexAudit=(()=>{
+    const ids=[
+      'mark_posture_read_volume_apex','mark_posture_read_mark_apex',
+      'mark_posture_read_damage_apex','mark_posture_read_escalation_apex'];
+    let maxReferenceSpread=0,maxPlaySpread=0,volumeLeaderRows=0,markLeaderRows=0,
+      markAllocationLeaderRows=0,damageLeaderRows=0,escalationRows=0,highMarkLeaderRows=0;
+    const matrix=auditStableApexFamily({familyId:'F1S3T2',specId:'mark_posture_spec',
+      twistId:'mark_posture_mark_read_twist',ids,inspect:({command,parent,history})=>{
+        const plan=commandMarkPlan(command,32),escalation=command.postureMarkEscalation||0,
+          id=history.id;
+        if(command.hits!==1||command.deliveryPattern!=='SINGLE'||command.markGain<parent.markGain||
+           commandDirectDamageTotal(command)+1e-6<commandDirectDamageTotal(parent)||
+           command.posture+1e-6<parent.posture||command.posturePerMark+1e-6<parent.posturePerMark||
+           plan.consumedTotal!==0||plan.remaining!==32||command.posturePrimer||
+           command.postureThresholdBonus||command.postureWavePattern)
+          throw new Error(id+' breaks its preserving Mark-read parent');
+        if((id===ids[3])!==(escalation>0))
+          throw new Error(id+' blurred the unique escalating Mark-read refinement');
+        const postureByMark=Object.freeze(Object.fromEntries([0,4,8,16,32].map(mark=>
+          [mark,Number(commandPostureDamage(command,0,mark,0,100).toFixed(4))])));
+        return {id,
+          damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          markAllocation:Number((command.synthesisBuildVector?.MARK_GAIN||0).toFixed(4)),
+          perMark:command.posturePerMark,escalation:Number(escalation.toFixed(6)),postureByMark,
+          reference:Number(stableEvolutionGuardrailValue(command,8,0).toFixed(3)),
+          play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+      },inspectGroup:group=>{
+        const reference=group.map(row=>row.reference),play=group.map(row=>row.play),
+          referenceMean=reference.reduce((sum,value)=>sum+value,0)/reference.length,
+          playMean=play.reduce((sum,value)=>sum+value,0)/play.length,
+          volume=group.find(row=>row.id===ids[0]),mark=group.find(row=>row.id===ids[1]),
+          damage=group.find(row=>row.id===ids[2]),escalation=group.find(row=>row.id===ids[3]);
+        maxReferenceSpread=Math.max(maxReferenceSpread,
+          (Math.max(...reference)-Math.min(...reference))/referenceMean);
+        maxPlaySpread=Math.max(maxPlaySpread,(Math.max(...play)-Math.min(...play))/playMean);
+        if(volume.perMark>=Math.max(...group.map(row=>row.perMark)))volumeLeaderRows++;
+        if(mark.mark>=Math.max(...group.map(row=>row.mark)))markLeaderRows++;
+        if(mark.markAllocation>Math.max(...group.filter(row=>row.id!==ids[1]).map(row=>row.markAllocation)))
+          markAllocationLeaderRows++;
+        if(damage.damage>=Math.max(...group.map(row=>row.damage)))damageLeaderRows++;
+        if(escalation.escalation>0)escalationRows++;
+        if(escalation.postureByMark[32]>=Math.max(...group.map(row=>row.postureByMark[32])))
+          highMarkLeaderRows++;
+      }}),rows=matrix.rows;
+    const standard=ids.map(id=>{
+      const command=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+        'mark_posture_mark_read_twist','COMMON',id,'COMMON');
+      return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+        flat:command.posture,perMark:command.posturePerMark,
+        escalation:Number((command.postureMarkEscalation||0).toFixed(6)),
+        postureByMark:Object.fromEntries([0,4,8,16,32].map(mark=>
+          [mark,Number(commandPostureDamage(command,0,mark,0,100).toFixed(3))])),
+        play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+    }),escalating=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+      'mark_posture_mark_read_twist','COMMON',ids[3],'COMMON'),
+      low=commandPostureDamage(escalating,0,1000,0,100),
+      high=commandPostureDamage(escalating,0,1000000,0,100),
+      extreme=commandPostureDamage(escalating,0,Number.MAX_SAFE_INTEGER,0,100);
+    if(!Number.isFinite(low)||!Number.isFinite(high)||!Number.isFinite(extreme)||
+       !(high>low)||!(extreme>high))
+      throw new Error('Escalating Mark read was capped or became non-finite');
+    return {cards:matrix.cards,groups:matrix.groups,rows,standard,
+      maxReferenceSpread:Number(maxReferenceSpread.toFixed(4)),
+      maxPlaySpread:Number(maxPlaySpread.toFixed(4)),volumeLeaderRows,markLeaderRows,
+      markAllocationLeaderRows,damageLeaderRows,escalationRows,highMarkLeaderRows,
+      uncapped:{low,high,extreme}};
+  })();
+  globalThis.__posturePrimerApexAudit=(()=>{
+    const ids=['mark_posture_primer_volume_apex','mark_posture_primer_mark_apex',
+      'mark_posture_primer_damage_apex','mark_posture_primer_amplification_apex'];
+    let maxReferenceSpread=0,maxPlaySpread=0,primerLeaderRows=0,markLeaderRows=0,
+      markAllocationLeaderRows=0,damageLeaderRows=0,amplificationRows=0,highSourceLeaderRows=0;
+    const matrix=auditStableApexFamily({familyId:'F1S3T3',specId:'mark_posture_spec',
+      twistId:'mark_posture_primer_twist',ids,inspect:({command,parent,history})=>{
+        const id=history.id,amplification=command.posturePrimerAmplification||0;
+        if(command.hits!==1||command.deliveryPattern!=='SINGLE'||
+           command.posture+1e-6<parent.posture||command.posturePrimer+1e-6<parent.posturePrimer||
+           command.posturePerMark||command.postureMarkEscalation||command.postureThresholdBonus||
+           command.postureWavePattern)
+          throw new Error(id+' breaks its general next-source Primer parent');
+        if((id===ids[3])!==(amplification>0))
+          throw new Error(id+' blurred the unique source-amplification refinement');
+        const bonusBySource=Object.freeze(Object.fromEntries([1,10,20,50,100].map(source=>
+          [source,Number((command.posturePrimer+source*amplification).toFixed(4))])));
+        return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          markAllocation:Number((command.synthesisBuildVector?.MARK_GAIN||0).toFixed(4)),
+          primer:command.posturePrimer,amplification:Number(amplification.toFixed(6)),bonusBySource,
+          reference:Number(stableEvolutionGuardrailValue(command,8,0).toFixed(3)),
+          play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+      },inspectGroup:group=>{
+        const reference=group.map(row=>row.reference),play=group.map(row=>row.play),
+          referenceMean=reference.reduce((sum,value)=>sum+value,0)/reference.length,
+          playMean=play.reduce((sum,value)=>sum+value,0)/play.length,
+          primer=group.find(row=>row.id===ids[0]),mark=group.find(row=>row.id===ids[1]),
+          damage=group.find(row=>row.id===ids[2]),amplifier=group.find(row=>row.id===ids[3]);
+        maxReferenceSpread=Math.max(maxReferenceSpread,
+          (Math.max(...reference)-Math.min(...reference))/referenceMean);
+        maxPlaySpread=Math.max(maxPlaySpread,(Math.max(...play)-Math.min(...play))/playMean);
+        if(primer.primer>=Math.max(...group.map(row=>row.primer)))primerLeaderRows++;
+        if(mark.mark>Math.max(...group.filter(row=>row.id!==ids[1]).map(row=>row.mark)))markLeaderRows++;
+        if(mark.markAllocation>Math.max(...group.filter(row=>row.id!==ids[1]).map(row=>row.markAllocation)))
+          markAllocationLeaderRows++;
+        if(damage.damage>=Math.max(...group.map(row=>row.damage)))damageLeaderRows++;
+        if(amplifier.amplification>0)amplificationRows++;
+        if(amplifier.bonusBySource[100]>=Math.max(...group.map(row=>row.bonusBySource[100])))
+          highSourceLeaderRows++;
+      }}),rows=matrix.rows,
+      standard=ids.map(id=>{
+        const command=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+          'mark_posture_primer_twist','COMMON',id,'COMMON');
+        return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          posture:command.posture,primer:command.posturePrimer,
+          amplification:Number((command.posturePrimerAmplification||0).toFixed(6)),
+          bonusAt20:Number((command.posturePrimer+20*(command.posturePrimerAmplification||0)).toFixed(3)),
+          bonusAt100:Number((command.posturePrimer+100*(command.posturePrimerAmplification||0)).toFixed(3)),
+          play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+      }),amplifier=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+        'mark_posture_primer_twist','COMMON',ids[3],'COMMON'),savedBoss=boss;
+    boss={turnCombat:true,phase:'playerResolve',playerTurnBreak:false,state:'idle',posture:0,
+      postureMax:1000,posturePrimer:0,posturePrimerAmplification:0,pendingBreak:null};
+    installBossPosturePrimer(5,.25);const installed={flat:boss.posturePrimer,
+      amplification:boss.posturePrimerAmplification,bonus:bossPosturePrimerBonus(20)};
+    applyTurnSkillPosture(20);const applied=boss.posture,cleared={flat:boss.posturePrimer,
+      amplification:boss.posturePrimerAmplification};boss=savedBoss;
+    const low=amplifier.posturePrimer+1000*amplifier.posturePrimerAmplification,
+      high=amplifier.posturePrimer+1000000*amplifier.posturePrimerAmplification,
+      extreme=amplifier.posturePrimer+Number.MAX_SAFE_INTEGER*amplifier.posturePrimerAmplification;
+    if(installed.flat!==5||installed.amplification!==.25||installed.bonus!==10||applied!==30||
+       cleared.flat!==0||cleared.amplification!==0||!Number.isFinite(extreme)||
+       !(high>low)||!(extreme>high))
+      throw new Error('General Primer amplification lifecycle or uncapped scale regressed');
+    return {cards:matrix.cards,groups:matrix.groups,rows,standard,
+      maxReferenceSpread:Number(maxReferenceSpread.toFixed(4)),
+      maxPlaySpread:Number(maxPlaySpread.toFixed(4)),primerLeaderRows,markLeaderRows,
+      markAllocationLeaderRows,damageLeaderRows,amplificationRows,highSourceLeaderRows,
+      runtime:{installed,applied,cleared},uncapped:{low,high,extreme}};
+  })();
+  globalThis.__postureFinisherApexAudit=(()=>{
+    const ids=['mark_posture_finisher_volume_apex','mark_posture_finisher_mark_apex',
+      'mark_posture_finisher_damage_apex','mark_posture_finisher_crescendo_apex'],starts=[0,49,50,60,75,90,99];
+    let maxReferenceSpread=0,maxPlaySpread=0,thresholdLeaderRows=0,markLeaderRows=0,
+      markAllocationLeaderRows=0,damageLeaderRows=0,crescendoRows=0,highBarLeaderRows=0;
+    const matrix=auditStableApexFamily({familyId:'F1S3T4',specId:'mark_posture_spec',
+      twistId:'mark_posture_finisher_twist',ids,inspect:({command,parent,history})=>{
+        const id=history.id,crescendo=command.postureThresholdCrescendo||0;
+        if(command.hits!==1||command.deliveryPattern!=='SINGLE'||
+           command.posture+1e-6<parent.posture||
+           command.postureThresholdBonus+1e-6<parent.postureThresholdBonus||
+           command.postureThresholdRatio!==.5||command.posturePerMark||
+           command.postureMarkEscalation||command.posturePrimer||
+           command.posturePrimerAmplification||command.postureWavePattern)
+          throw new Error(id+' breaks its half-bar Finisher parent');
+        if((id===ids[3])!==(crescendo>0))
+          throw new Error(id+' blurred the unique Crescendo refinement');
+        const postureByStart=Object.freeze(Object.fromEntries(starts.map(posture=>
+          [posture,Number(commandPostureDamage(command,0,0,posture,100).toFixed(4))])));
+        return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          markAllocation:Number((command.synthesisBuildVector?.MARK_GAIN||0).toFixed(4)),
+          flat:command.posture,threshold:command.postureThresholdBonus,
+          crescendo:Number(crescendo.toFixed(6)),postureByStart,
+          reference:Number(stableEvolutionGuardrailValue(command,8,0).toFixed(3)),
+          play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+      },inspectGroup:group=>{
+        const reference=group.map(row=>row.reference),play=group.map(row=>row.play),
+          referenceMean=reference.reduce((sum,value)=>sum+value,0)/reference.length,
+          playMean=play.reduce((sum,value)=>sum+value,0)/play.length,
+          threshold=group.find(row=>row.id===ids[0]),mark=group.find(row=>row.id===ids[1]),
+          damage=group.find(row=>row.id===ids[2]),crescendo=group.find(row=>row.id===ids[3]);
+        maxReferenceSpread=Math.max(maxReferenceSpread,
+          (Math.max(...reference)-Math.min(...reference))/referenceMean);
+        maxPlaySpread=Math.max(maxPlaySpread,(Math.max(...play)-Math.min(...play))/playMean);
+        if(threshold.threshold>=Math.max(...group.map(row=>row.threshold))&&
+           threshold.postureByStart[50]>=Math.max(...group.map(row=>row.postureByStart[50])))
+          thresholdLeaderRows++;
+        if(mark.mark>Math.max(...group.filter(row=>row.id!==ids[1]).map(row=>row.mark)))markLeaderRows++;
+        if(mark.markAllocation>Math.max(...group.filter(row=>row.id!==ids[1]).map(row=>row.markAllocation)))
+          markAllocationLeaderRows++;
+        if(damage.damage>=Math.max(...group.map(row=>row.damage)))damageLeaderRows++;
+        if(crescendo.crescendo>0)crescendoRows++;
+        if(crescendo.postureByStart[90]>=Math.max(...group.map(row=>row.postureByStart[90])))
+          highBarLeaderRows++;
+      }}),rows=matrix.rows,
+      standard=ids.map(id=>{
+        const command=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+          'mark_posture_finisher_twist','COMMON',id,'COMMON');
+        return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          flat:command.posture,threshold:command.postureThresholdBonus,
+          crescendo:Number((command.postureThresholdCrescendo||0).toFixed(6)),
+          postureByStart:Object.fromEntries(starts.map(posture=>
+            [posture,Number(commandPostureDamage(command,0,0,posture,100).toFixed(3))])),
+          play:Number(stableEvolutionPlaythroughVector(command).averageContribution.toFixed(3))};
+      }),crescendoCommand=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',
+        'mark_posture_finisher_twist','COMMON',ids[3],'COMMON'),
+      below=commandPostureDamage(crescendoCommand,0,0,49,100),
+      atHalf=commandPostureDamage(crescendoCommand,0,0,50,100),
+      atThreeQuarters=commandPostureDamage(crescendoCommand,0,0,75,100),
+      atDoubleHalf=commandPostureDamage(crescendoCommand,0,0,100,200),
+      atDoubleThreeQuarters=commandPostureDamage(crescendoCommand,0,0,150,200),
+      deltaOne=atThreeQuarters-atHalf,deltaTwo=atDoubleThreeQuarters-atDoubleHalf,
+      high=commandPostureDamage(crescendoCommand,0,0,900000,1000000),
+      extremeMax=Number.MAX_SAFE_INTEGER,
+      extreme=commandPostureDamage(crescendoCommand,0,0,extremeMax*.9,extremeMax);
+    if(!(atHalf>below)||!(atThreeQuarters>atHalf)||Math.abs(deltaTwo-deltaOne*2)>.01||
+       !Number.isFinite(high)||!Number.isFinite(extreme)||!(extreme>high))
+      throw new Error('Finisher Crescendo threshold snapshot, proportional bar scale or finite output regressed');
+    return {cards:matrix.cards,groups:matrix.groups,rows,standard,
+      maxReferenceSpread:Number(maxReferenceSpread.toFixed(4)),
+      maxPlaySpread:Number(maxPlaySpread.toFixed(4)),thresholdLeaderRows,markLeaderRows,
+      markAllocationLeaderRows,damageLeaderRows,crescendoRows,highBarLeaderRows,
+      runtime:{below,atHalf,atThreeQuarters,atDoubleHalf,atDoubleThreeQuarters,deltaOne,deltaTwo},
+      finite:{high,extreme}};
+  })();
   globalThis.__pureRarityExpressionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=[
       'mark_focus_concentrated_twist','mark_focus_pulse_twist',
@@ -295,6 +542,10 @@ try{
       damage:commandDirectDamageTotal(command),mark:command.markGain||0,
       hits:command.hits||1,chain:totalCommandChainGain(command),
       weight:command.deliveryWeight||1,posture:command.posture||0,
+      postureRead:command.posturePerMark||0,postureEscalation:command.postureMarkEscalation||0,
+      primer:command.posturePrimer||0,primerAmplification:command.posturePrimerAmplification||0,
+      finisher:command.postureThresholdBonus||0,
+      finisherCrescendo:command.postureThresholdCrescendo||0,
       crit:command.critChance||0,bleed:commandBleedAmount(command),
       charge:commandDefenseTemperRate(command),pulses:(command.markPulsePattern||[]).length,
       bloom:command.markBloomRate||0,trail:command.phaseMarkTrailPerContact||0,
@@ -472,7 +723,10 @@ try{
       minChildPlayGap:Number(minChildPlayGap.toFixed(4)),worstScore,worstPlay,
       worstChildScoreGap,worstChildPlayGap};
   })();`;
-  vm.runInNewContext(source,sandbox,{filename:file,timeout:60000});
+  /* Full-history coverage grows deliberately with every materialized family.
+     Keep a finite guard, but allow the exhaustive 57-route matrix to finish on
+     slower CI/mobile-development machines. This timeout never touches gameplay. */
+  vm.runInNewContext(source,sandbox,{filename:file,timeout:120000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
   console.log(`RUNTIME_OK ${file}`);
   const audit=sandbox.__runtimeAudit;
@@ -561,6 +815,70 @@ try{
     markAllocationLeaderRows:postureImpactApex.markAllocationLeaderRows,
     damageLeaderRows:postureImpactApex.damageLeaderRows,
     fractureRows:postureImpactApex.fractureRows,waveRuntime:postureImpactApex.waveRuntime}));
+  const postureReadApex=sandbox.__postureReadApexAudit;
+  if(!postureReadApex||postureReadApex.cards!==1024||postureReadApex.groups!==256||
+     postureReadApex.maxReferenceSpread>.20||
+     postureReadApex.maxPlaySpread>.35||postureReadApex.volumeLeaderRows!==256||
+     postureReadApex.markLeaderRows!==256||postureReadApex.markAllocationLeaderRows!==256||
+     postureReadApex.damageLeaderRows!==256||postureReadApex.escalationRows!==256||
+     postureReadApex.highMarkLeaderRows!==256)
+    throw new Error('F1S3T2 Apex coverage or role balance failed: '+JSON.stringify(postureReadApex));
+  console.log('MARK_POSTURE_T2_APEX '+JSON.stringify({cards:postureReadApex.cards,
+    groups:postureReadApex.groups,
+    standard:postureReadApex.standard,maxReferenceSpread:postureReadApex.maxReferenceSpread,
+    maxPlaySpread:postureReadApex.maxPlaySpread,volumeLeaderRows:postureReadApex.volumeLeaderRows,
+    markLeaderRows:postureReadApex.markLeaderRows,
+    markAllocationLeaderRows:postureReadApex.markAllocationLeaderRows,
+    damageLeaderRows:postureReadApex.damageLeaderRows,
+    escalationRows:postureReadApex.escalationRows,
+    highMarkLeaderRows:postureReadApex.highMarkLeaderRows,uncapped:postureReadApex.uncapped}));
+  console.log('MOVE_FAMILY_ACCEPTANCE_OK '+JSON.stringify({familyId:'F1S3T2',
+    cards:postureReadApex.cards,groups:postureReadApex.groups,
+    parentInheritance:true,siblingRoles:true,rarityCoverage:true,
+    scenarioBalance:true,runtimeOrdering:true,uncappedScale:true}));
+  const posturePrimerApex=sandbox.__posturePrimerApexAudit;
+  if(!posturePrimerApex||posturePrimerApex.cards!==1024||posturePrimerApex.groups!==256||
+     posturePrimerApex.maxReferenceSpread>.20||posturePrimerApex.maxPlaySpread>.35||
+     posturePrimerApex.primerLeaderRows!==256||posturePrimerApex.markLeaderRows!==256||
+     posturePrimerApex.markAllocationLeaderRows!==256||posturePrimerApex.damageLeaderRows!==256||
+     posturePrimerApex.amplificationRows!==256||posturePrimerApex.highSourceLeaderRows!==256)
+    throw new Error('F1S3T3 Apex coverage or role balance failed: '+JSON.stringify(posturePrimerApex));
+  console.log('MARK_POSTURE_T3_APEX '+JSON.stringify({cards:posturePrimerApex.cards,
+    groups:posturePrimerApex.groups,standard:posturePrimerApex.standard,
+    maxReferenceSpread:posturePrimerApex.maxReferenceSpread,
+    maxPlaySpread:posturePrimerApex.maxPlaySpread,primerLeaderRows:posturePrimerApex.primerLeaderRows,
+    markLeaderRows:posturePrimerApex.markLeaderRows,
+    markAllocationLeaderRows:posturePrimerApex.markAllocationLeaderRows,
+    damageLeaderRows:posturePrimerApex.damageLeaderRows,
+    amplificationRows:posturePrimerApex.amplificationRows,
+    highSourceLeaderRows:posturePrimerApex.highSourceLeaderRows,
+    runtime:posturePrimerApex.runtime,uncapped:posturePrimerApex.uncapped}));
+  console.log('MOVE_FAMILY_ACCEPTANCE_OK '+JSON.stringify({familyId:'F1S3T3',
+    cards:posturePrimerApex.cards,groups:posturePrimerApex.groups,
+    parentInheritance:true,siblingRoles:true,rarityCoverage:true,
+    scenarioBalance:true,runtimeOrdering:true,uncappedScale:true}));
+  const postureFinisherApex=sandbox.__postureFinisherApexAudit;
+  if(!postureFinisherApex||postureFinisherApex.cards!==1024||postureFinisherApex.groups!==256||
+     postureFinisherApex.maxReferenceSpread>.20||postureFinisherApex.maxPlaySpread>.35||
+     postureFinisherApex.thresholdLeaderRows!==256||postureFinisherApex.markLeaderRows!==256||
+     postureFinisherApex.markAllocationLeaderRows!==256||postureFinisherApex.damageLeaderRows!==256||
+     postureFinisherApex.crescendoRows!==256||postureFinisherApex.highBarLeaderRows!==256)
+    throw new Error('F1S3T4 Apex coverage or role balance failed: '+JSON.stringify(postureFinisherApex));
+  console.log('MARK_POSTURE_T4_APEX '+JSON.stringify({cards:postureFinisherApex.cards,
+    groups:postureFinisherApex.groups,standard:postureFinisherApex.standard,
+    maxReferenceSpread:postureFinisherApex.maxReferenceSpread,
+    maxPlaySpread:postureFinisherApex.maxPlaySpread,
+    thresholdLeaderRows:postureFinisherApex.thresholdLeaderRows,
+    markLeaderRows:postureFinisherApex.markLeaderRows,
+    markAllocationLeaderRows:postureFinisherApex.markAllocationLeaderRows,
+    damageLeaderRows:postureFinisherApex.damageLeaderRows,
+    crescendoRows:postureFinisherApex.crescendoRows,
+    highBarLeaderRows:postureFinisherApex.highBarLeaderRows,
+    runtime:postureFinisherApex.runtime,finite:postureFinisherApex.finite}));
+  console.log('MOVE_FAMILY_ACCEPTANCE_OK '+JSON.stringify({familyId:'F1S3T4',
+    cards:postureFinisherApex.cards,groups:postureFinisherApex.groups,
+    parentInheritance:true,siblingRoles:true,rarityCoverage:true,
+    scenarioBalance:true,runtimeOrdering:true,naturalBarScale:true}));
   const pureExpression=sandbox.__pureRarityExpressionAudit;
   if(!pureExpression||pureExpression.some(route=>{
     const rows=route.rows;
@@ -594,8 +912,8 @@ try{
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
   const hierarchyAudit=sandbox.__stableHierarchyAudit;
-  if(!hierarchyAudit||hierarchyAudit.twists!==12||hierarchyAudit.apexes!==31||
-     hierarchyAudit.comparisons!==8800||hierarchyAudit.failures.length)
+  if(!hierarchyAudit||hierarchyAudit.twists!==12||hierarchyAudit.apexes!==43||
+     hierarchyAudit.comparisons!==11872||hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
@@ -633,14 +951,14 @@ try{
     worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
     worstChildPlayGap:parentStrength.worstChildPlayGap}));
   const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  if(!parentStrength||parentStrength.routes!==49||parentStrength.comparisons!==19080||
+  if(!parentStrength||parentStrength.routes!==61||parentStrength.comparisons!==25992||
      parentStrength.reversals.length||
      parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
      parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
     throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-      expectedRoutes:49,expectedComparisons:19080,
+       expectedRoutes:61,expectedComparisons:25992,
       reversals:parentStrength&&parentStrength.reversals.slice(0,3),
       minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
       minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
@@ -657,10 +975,25 @@ try{
       t4RoleRows:[audit.focusTrailApexAudit.strengthRoleRows,audit.focusTrailApexAudit.markRoleRows,
         audit.focusTrailApexAudit.impactRoleRows],f1s3Cards:postureTwists.cards,
       f1s3Relationships:postureTwists.standard.length,
-      f1s3t1ApexCards:postureImpactApex.cards,
-      f1s3t1ApexMaxSpread:postureImpactApex.maxScoreSpread},
+       f1s3t1ApexCards:postureImpactApex.cards,
+       f1s3t1ApexMaxSpread:postureImpactApex.maxScoreSpread,
+       f1s3t2ApexCards:postureReadApex.cards,
+       f1s3t2ApexGroups:postureReadApex.groups,
+       f1s3t2ReferenceSpread:postureReadApex.maxReferenceSpread,
+       f1s3t2PlaySpread:postureReadApex.maxPlaySpread,
+       f1s3t3ApexCards:posturePrimerApex.cards,
+       f1s3t3ApexGroups:posturePrimerApex.groups,
+       f1s3t3ReferenceSpread:posturePrimerApex.maxReferenceSpread,
+       f1s3t3PlaySpread:posturePrimerApex.maxPlaySpread,
+       f1s3t4ApexCards:postureFinisherApex.cards,
+       f1s3t4ApexGroups:postureFinisherApex.groups,
+       f1s3t4ReferenceSpread:postureFinisherApex.maxReferenceSpread,
+       f1s3t4PlaySpread:postureFinisherApex.maxPlaySpread},
     bug:{passed:true,runtime:true,mechanicAudit:true,posturePrimer:true,
-      uncappedPostureRead:true,doubleFracture:true},
+       uncappedPostureRead:true,uncappedEscalatingRead:true,
+       safeIntegerEscalatingRead:true,generalPrimerAmplification:true,
+       safeIntegerPrimerAmplification:true,finisherCrescendoSnapshot:true,
+       proportionalFinisherBarScale:true,safeIntegerFinisherCrescendo:true,doubleFracture:true},
     rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
       parentComparisons:parentStrength.comparisons},
     power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,

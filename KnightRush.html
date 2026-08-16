@@ -9402,7 +9402,7 @@ function createRunSkill(definition){
     synthesisScenarioScores:null,synthesisScenarioRatios:null,synthesisImpactFloor:null,
     synthesisFreeDeliveryPower:0,synthesisWeightDeliveryPower:0,synthesisShotgunMarkPower:0,
     synthesisOwnedMarkMechanicPower:0,synthesisPulseEventPower:0,
-    synthesisPostureApplicationEventPower:0,
+    synthesisPostureApplicationEventPower:0,synthesisMarkPostureEscalationPower:0,
     synthesisPulseEventReservePower:0,synthesisPulseExtraEvents:0,synthesisRankFloorPower:0,
     synthesisBloomRatePower:0,synthesisBloomRateReservePower:0,synthesisBloomRateSteps:0,
     synthesisTrailStrengthPower:0,synthesisTrailStrengthReservePower:0,synthesisTrailStrengthSteps:0,
@@ -9469,8 +9469,10 @@ function transformSharpshoot(skill,patch){
     impactDelay:0,projectileStyle:null,bowAnimationRecipeId:skill.bowAnimationRecipeId||'BOW_STANDARD',
     bowAnimationOverrides:null,
     markRule:null,
-    posture:0,posturePerChain:0,posturePerMark:0,posturePrimer:0,
-    postureThresholdBonus:0,postureThresholdRatio:0,postureWavePattern:null,
+    posture:0,posturePerChain:0,posturePerMark:0,postureMarkEscalation:0,posturePrimer:0,
+    posturePrimerAmplification:0,
+    postureThresholdBonus:0,postureThresholdRatio:0,postureThresholdCrescendo:0,
+    postureWavePattern:null,
     postureWaveInterval:0,postureApplicationEventPower:0,affliction:null,
     resolvePerHit:0,resolveOnComplete:0,resolveRule:null,
     resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,chainScalingRampPerHit:0,
@@ -9752,7 +9754,7 @@ const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(
 const COMBAT_ATTRIBUTE_IDS=Object.freeze(['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE']);
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH','CHAIN_SCALING','CHAIN_MANAGEMENT',
-  'POSTURE_DAMAGE','MARK_POSTURE_READ','POSTURE_PRIMER','POSTURE_THRESHOLD','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION',
+  'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION',
   'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION',
   'CHARGE_RELEASE','DEFENSE_TEMPER'
 ]);
@@ -9829,11 +9831,11 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
     summary:'Convert appropriate weapon impact into Break pressure.',
     contactPolicy:'DIRECT_CONTACTS_ONLY',primaryOnlyCapabilities:['BREAK_PRESSURE'],
     primary:{promise:'Posture damage and access to Break are the move\'s main payoff within its weapon weight ceiling.',
-      capabilities:['POSTURE_GENERATE','BREAK_PRESSURE'],scalingAxes:['POSTURE_DAMAGE','MARK_POSTURE_READ','POSTURE_PRIMER','POSTURE_THRESHOLD','POSTURE_APPLICATION_EVENTS','BREAK_RELATION'],
+      capabilities:['POSTURE_GENERATE','BREAK_PRESSURE'],scalingAxes:['POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
     secondary:{promise:'Add moderate Posture pressure without turning a light weapon into a heavy chassis.',
-      capabilities:['POSTURE_GENERATE','POSTURE_SUPPORT'],scalingAxes:['POSTURE_DAMAGE','MARK_POSTURE_READ','POSTURE_PRIMER','POSTURE_THRESHOLD','POSTURE_APPLICATION_EVENTS'],
+      capabilities:['POSTURE_GENERATE','POSTURE_SUPPORT'],scalingAxes:['POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
   combatAttributeDefinition({id:'CRITICAL',name:'CRITICAL',
@@ -10172,6 +10174,18 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_posture_impact_mark_apex:'BOW_POSTURE_CONVERGENCE',
   mark_posture_impact_damage_apex:'BOW_POSTURE_IMPACT',
   mark_posture_impact_fracture_apex:'BOW_POSTURE_IMPACT',
+  mark_posture_read_volume_apex:'BOW_POSTURE_CONVERGENCE',
+  mark_posture_read_mark_apex:'BOW_POSTURE_CONVERGENCE',
+  mark_posture_read_damage_apex:'BOW_POSTURE_CONVERGENCE',
+  mark_posture_read_escalation_apex:'BOW_POSTURE_CONVERGENCE',
+  mark_posture_primer_volume_apex:'BOW_POSTURE_PRIMER',
+  mark_posture_primer_mark_apex:'BOW_POSTURE_PRIMER',
+  mark_posture_primer_damage_apex:'BOW_POSTURE_PRIMER',
+  mark_posture_primer_amplification_apex:'BOW_POSTURE_PRIMER',
+  mark_posture_finisher_volume_apex:'BOW_POSTURE_FINISHER',
+  mark_posture_finisher_mark_apex:'BOW_POSTURE_FINISHER',
+  mark_posture_finisher_damage_apex:'BOW_POSTURE_FINISHER',
+  mark_posture_finisher_crescendo_apex:'BOW_POSTURE_FINISHER',
   mark_focus_concentrated_mark_apex:'BOW_MARK_FOCUS',
   mark_focus_concentrated_impact_apex:'BOW_MARK_FOCUS',
   mark_focus_pulse_density_apex:'BOW_MARK_FOCUS',
@@ -10884,6 +10898,134 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
       markRule:'NET_OUTPUT_REQUIRED',postureRule:'FLAT_POSTURE_ON_FINAL_CONTACT',
       postureAftershockShare:.40,postureWaveInterval:.38},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_read_volume_apex',depth:4,
+    parentId:'mark_posture_mark_read_twist',formSlot:1,specializationSlot:3,twistSlot:2,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.20,MARK_POSTURE_READ:.50},
+    promise:'Maximize the uncapped linear Posture returned by every preserved action-start Mark.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'MARK_READS_AS_POSTURE',refinement:'POSTURE_READ_VOLUME',
+      markRule:'READ_MARK_PRESERVE',postureRule:'UNCAPPED_POSTURE_PER_STARTING_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_read_mark_apex',depth:4,
+    parentId:'mark_posture_mark_read_twist',formSlot:1,specializationSlot:3,twistSlot:2,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,POSTURE_DAMAGE:.15,MARK_POSTURE_READ:.15},
+    promise:'Preserve the current Mark read and leave the largest post-impact Mark reserve for future reads.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'MARK_READS_AS_POSTURE',refinement:'POSTURE_READ_MARK',
+      markRule:'READ_MARK_PRESERVE',postureRule:'UNCAPPED_POSTURE_PER_STARTING_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_read_damage_apex',depth:4,
+    parentId:'mark_posture_mark_read_twist',formSlot:1,specializationSlot:3,twistSlot:2,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,POSTURE_DAMAGE:.15,MARK_POSTURE_READ:.15},
+    promise:'Preserve the uncapped Mark read while concentrating the Apex packet into clean Health damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'MARK_READS_AS_POSTURE',refinement:'POSTURE_READ_DAMAGE',
+      markRule:'READ_MARK_PRESERVE',postureRule:'UNCAPPED_POSTURE_PER_STARTING_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_read_escalation_apex',depth:4,
+    parentId:'mark_posture_mark_read_twist',formSlot:1,specializationSlot:3,twistSlot:2,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.15,MARK_POSTURE_READ:.25,
+      MARK_POSTURE_ESCALATION:.30},
+    promise:'Preserve every Mark, then let each additional action-start Mark deepen the uncapped Posture read.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'MARK_READS_AS_POSTURE',refinement:'POSTURE_READ_ESCALATION',
+      markRule:'READ_MARK_PRESERVE',postureRule:'UNCAPPED_ESCALATING_POSTURE_PER_STARTING_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_primer_volume_apex',depth:4,
+    parentId:'mark_posture_primer_twist',formSlot:1,specializationSlot:3,twistSlot:3,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_PRIMER:.55},
+    promise:'Preserve the general next-source Primer and maximize its immediate flat Posture bonus.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_SUPPORT',
+      relationship:'PRIME_NEXT_POSTURE_SOURCE',refinement:'POSTURE_PRIMER_VOLUME',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'GENERAL_NEXT_SOURCE_PRIMER'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_primer_mark_apex',depth:4,
+    parentId:'mark_posture_primer_twist',formSlot:1,specializationSlot:3,twistSlot:3,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,POSTURE_DAMAGE:.15,POSTURE_PRIMER:.15},
+    promise:'Preserve the general Primer while leaving the largest immediate Mark reserve.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_SUPPORT',
+      relationship:'PRIME_NEXT_POSTURE_SOURCE',refinement:'POSTURE_PRIMER_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'GENERAL_NEXT_SOURCE_PRIMER',
+      guaranteedMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_primer_damage_apex',depth:4,
+    parentId:'mark_posture_primer_twist',formSlot:1,specializationSlot:3,twistSlot:3,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_PRIMER:.15},
+    promise:'Preserve the general Primer while concentrating the Apex packet into clean Health damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_SUPPORT',
+      relationship:'PRIME_NEXT_POSTURE_SOURCE',refinement:'POSTURE_PRIMER_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'GENERAL_NEXT_SOURCE_PRIMER'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_primer_amplification_apex',depth:4,
+    parentId:'mark_posture_primer_twist',formSlot:1,specializationSlot:3,twistSlot:3,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_PRIMER:.25,
+      POSTURE_PRIMER_AMPLIFICATION:.30},
+    promise:'Preserve a flat Primer, then amplify the next source from its own uncapped base Posture.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_SUPPORT',
+      relationship:'PRIME_NEXT_POSTURE_SOURCE',refinement:'POSTURE_PRIMER_AMPLIFICATION',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'UNCAPPED_NEXT_SOURCE_PRIMER_AMPLIFICATION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_finisher_volume_apex',depth:4,
+    parentId:'mark_posture_finisher_twist',formSlot:1,specializationSlot:3,twistSlot:4,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_THRESHOLD:.55},
+    promise:'Maximize the fixed Finisher bonus as soon as the action begins at half Posture.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BREAK_PRESSURE',
+      relationship:'HIGH_POSTURE_FINISHER',refinement:'POSTURE_FINISHER_VOLUME',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'ACTION_START_HALF_BAR_BONUS',
+      postureThresholdRatio:.5},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_finisher_mark_apex',depth:4,
+    parentId:'mark_posture_finisher_twist',formSlot:1,specializationSlot:3,twistSlot:4,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,POSTURE_DAMAGE:.15,POSTURE_THRESHOLD:.15},
+    promise:'Preserve the half-bar Finisher while leaving the largest immediate Mark reserve.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BREAK_PRESSURE',
+      relationship:'HIGH_POSTURE_FINISHER',refinement:'POSTURE_FINISHER_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'ACTION_START_HALF_BAR_BONUS',
+      postureThresholdRatio:.5,guaranteedMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_finisher_damage_apex',depth:4,
+    parentId:'mark_posture_finisher_twist',formSlot:1,specializationSlot:3,twistSlot:4,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_THRESHOLD:.15},
+    promise:'Preserve the half-bar Finisher while concentrating the Apex packet into Health damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BREAK_PRESSURE',
+      relationship:'HIGH_POSTURE_FINISHER',refinement:'POSTURE_FINISHER_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'ACTION_START_HALF_BAR_BONUS',
+      postureThresholdRatio:.5},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_posture_finisher_crescendo_apex',depth:4,
+    parentId:'mark_posture_finisher_twist',formSlot:1,specializationSlot:3,twistSlot:4,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,POSTURE_DAMAGE:.15,POSTURE_THRESHOLD:.25,
+      POSTURE_THRESHOLD_CRESCENDO:.30},
+    promise:'Keep the half-bar condition, then grow the Finisher from action-start Posture above it.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BREAK_PRESSURE',
+      relationship:'HIGH_POSTURE_FINISHER',refinement:'POSTURE_FINISHER_CRESCENDO',
+      markRule:'NET_OUTPUT_REQUIRED',postureRule:'ACTION_START_UNCAPPED_THRESHOLD_CRESCENDO',
+      postureThresholdRatio:.5},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
   skillAttributeRouteContract({id:'mark_focus_concentrated_mark_apex',depth:4,
     parentId:'mark_focus_concentrated_twist',formSlot:1,specializationSlot:1,twistSlot:1,slot:1,
     primaryAttributeId:'MARK',secondaryAttributeId:'MARK',powerBudget:1,
@@ -11347,7 +11489,52 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
        route.mechanics.postureRule!=='FLAT_POSTURE_ON_FINAL_CONTACT')||
      !postureFracture||postureFracture.mechanics.postureAftershockShare!==.4||
        postureFracture.mechanics.postureWaveInterval!==.38)
-    throw new Error('F1S3T1 needs four exact reliable-impact Apex refinements');
+     throw new Error('F1S3T1 needs four exact reliable-impact Apex refinements');
+  const postureReadApexes=apexes.filter(route=>route.parentId==='mark_posture_mark_read_twist'),
+    postureReadRefinements=new Set(postureReadApexes.map(route=>route.mechanics.refinement)),
+    postureEscalation=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_read_escalation_apex;
+  if(postureReadApexes.length!==4||postureReadRefinements.size!==4||
+     !postureReadRefinements.has('POSTURE_READ_VOLUME')||
+     !postureReadRefinements.has('POSTURE_READ_MARK')||
+     !postureReadRefinements.has('POSTURE_READ_DAMAGE')||
+     !postureReadRefinements.has('POSTURE_READ_ESCALATION')||
+     postureReadApexes.some(route=>route.delivery.pattern!=='SINGLE'||
+       route.delivery.contactCount!==1||route.mechanics.relationship!=='MARK_READS_AS_POSTURE'||
+       route.mechanics.markRule!=='READ_MARK_PRESERVE'||
+       !String(route.mechanics.postureRule).startsWith('UNCAPPED_'))||
+     !postureEscalation||!(postureEscalation.qualityProfile.MARK_POSTURE_ESCALATION>0))
+    throw new Error('F1S3T2 needs four exact uncapped Mark-read Apex refinements');
+  const posturePrimerApexes=apexes.filter(route=>route.parentId==='mark_posture_primer_twist'),
+    posturePrimerRefinements=new Set(posturePrimerApexes.map(route=>route.mechanics.refinement)),
+    posturePrimerAmplifier=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_primer_amplification_apex;
+  if(posturePrimerApexes.length!==4||posturePrimerRefinements.size!==4||
+     !posturePrimerRefinements.has('POSTURE_PRIMER_VOLUME')||
+     !posturePrimerRefinements.has('POSTURE_PRIMER_MARK')||
+     !posturePrimerRefinements.has('POSTURE_PRIMER_DAMAGE')||
+     !posturePrimerRefinements.has('POSTURE_PRIMER_AMPLIFICATION')||
+     posturePrimerApexes.some(route=>route.delivery.pattern!=='SINGLE'||
+       route.delivery.contactCount!==1||route.mechanics.relationship!=='PRIME_NEXT_POSTURE_SOURCE'||
+       route.mechanics.markRule!=='NET_OUTPUT_REQUIRED'||
+       !String(route.mechanics.postureRule).includes('PRIMER'))||
+     !posturePrimerAmplifier||
+       !(posturePrimerAmplifier.qualityProfile.POSTURE_PRIMER_AMPLIFICATION>0)||
+     SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_primer_mark_apex.mechanics.guaranteedMarkBonus!==1)
+    throw new Error('F1S3T3 needs four exact general-Primer Apex refinements');
+  const postureFinisherApexes=apexes.filter(route=>route.parentId==='mark_posture_finisher_twist'),
+    postureFinisherRefinements=new Set(postureFinisherApexes.map(route=>route.mechanics.refinement)),
+    postureCrescendo=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_finisher_crescendo_apex;
+  if(postureFinisherApexes.length!==4||postureFinisherRefinements.size!==4||
+     !postureFinisherRefinements.has('POSTURE_FINISHER_VOLUME')||
+     !postureFinisherRefinements.has('POSTURE_FINISHER_MARK')||
+     !postureFinisherRefinements.has('POSTURE_FINISHER_DAMAGE')||
+     !postureFinisherRefinements.has('POSTURE_FINISHER_CRESCENDO')||
+     postureFinisherApexes.some(route=>route.delivery.pattern!=='SINGLE'||
+       route.delivery.contactCount!==1||route.mechanics.relationship!=='HIGH_POSTURE_FINISHER'||
+       route.mechanics.markRule!=='NET_OUTPUT_REQUIRED'||route.mechanics.postureThresholdRatio!==.5||
+       !String(route.mechanics.postureRule).startsWith('ACTION_START_'))||
+     !postureCrescendo||!(postureCrescendo.qualityProfile.POSTURE_THRESHOLD_CRESCENDO>0)||
+     SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_finisher_mark_apex.mechanics.guaranteedMarkBonus!==1)
+    throw new Error('F1S3T4 needs four exact half-bar Finisher Apex refinements');
   const directApexes=apexes.filter(route=>route.parentId==='mark_chain_direct_twist'),
     apexRefinements=new Set(directApexes.map(route=>route.mechanics.refinement));
   if(directApexes.length!==4||apexRefinements.size!==4||
@@ -11450,7 +11637,7 @@ const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
 const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
   if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
      SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==12||
-     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==31||
+     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==43||
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
@@ -11480,8 +11667,10 @@ const SKILL_MUTATION_TYPES=Object.freeze(['STABLE','DISTORTED','CORRUPTED']);
 const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'name','col','damage','hitDamages','hits','hitInterval','impactDelay','duration','cost','markGain',
   'markGainPattern','markPulsePattern','markPulseInterval','markBloomRate','phaseMarkTrailPerContact',
-  'markRule','posture','posturePerChain','posturePerMark','posturePrimer',
-  'postureThresholdBonus','postureThresholdRatio','postureWavePattern','postureWaveInterval',
+  'markRule','posture','posturePerChain','posturePerMark','postureMarkEscalation','posturePrimer',
+  'posturePrimerAmplification',
+  'postureThresholdBonus','postureThresholdRatio','postureThresholdCrescendo',
+  'postureWavePattern','postureWaveInterval',
   'postureApplicationEventPower','affliction',
   'resolvePerHit','resolveOnComplete','resolveRule','resolveOverflowToChain','consumeChain',
   'extraChainBonus','chainScalingRampPerHit','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
@@ -11926,7 +12115,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=28;
+const SHARPSHOOT_MARK_COMPILER_VERSION=31;
 const SHARPSHOOT_MARK_PULSE_EVENT_POWER=2,
   SHARPSHOOT_MARK_BLOOM_RATE_POWER=1.5,
   SHARPSHOOT_MARK_BLOOM_RATE_STEP=.05,
@@ -12109,7 +12298,8 @@ const SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',weightClass:'LIGHT_RANGED',role:'SECONDARY',referencePostureMax:100,
   expressionRatio:skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED'),
   twoLayerReferenceShare:.20,powerPerPosture:SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE,
-  markReadReference:8,thresholdRatio:.5,thresholdActiveShare:.5
+  markReadReference:8,markEscalationReference:16,primerSourceReference:20,
+  thresholdRatio:.5,thresholdActiveShare:.5,thresholdExcessReferenceShare:.25
 });
 const SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionProfileId:'STABLE_SUPPORT',
@@ -12266,13 +12456,26 @@ function commandExpectedAfflictionPower(command){
 function commandExpectedDefenseTemperPower(command){
   return commandDefenseTemperRate(command)*DEFENSE_CHARGE.expectedSpend;
 }
+function postureMarkPairCount(markStacks){
+  const count=Math.max(0,Number(markStacks)||0);
+  return count*Math.max(0,count-1)/2;
+}
 function commandExpectedPosturePower(command,markStacks=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference){
   const values=SKILL_GUARDRAIL_POWER_VALUES,flat=Math.max(0,Number(command&&command.posture)||0),
     markRead=Math.max(0,Number(command&&command.posturePerMark)||0)*Math.max(0,markStacks),
+    markEscalation=Math.max(0,Number(command&&command.postureMarkEscalation)||0)*
+      postureMarkPairCount(markStacks),
     primer=Math.max(0,Number(command&&command.posturePrimer)||0),
+    primerAmplification=Math.max(0,Number(command&&command.posturePrimerAmplification)||0)*
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference,
     threshold=Math.max(0,Number(command&&command.postureThresholdBonus)||0)*
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdActiveShare,
+    thresholdCrescendo=Math.max(0,Number(command&&command.postureThresholdCrescendo)||0)*
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdExcessReferenceShare*
       SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdActiveShare;
-  return (flat+markRead+primer+threshold)*values.POSTURE_DAMAGE;
+  return (flat+markRead+markEscalation+primer+primerAmplification+threshold+
+    thresholdCrescendo)*values.POSTURE_DAMAGE;
 }
 function commandExpectedPostureEventPower(command){
   return Math.max(0,Number(command&&command.postureApplicationEventPower)||0);
@@ -12411,7 +12614,8 @@ function applyStableRankStatFloor(command,lowerCommand){
   const floor=(key)=>{const before=Math.max(0,Number(command[key])||0),
     lower=Math.max(0,Number(lowerCommand[key])||0);
     if(before+1e-9<lower){command[key]=lower;restored++;statsRestored++;restoredKeys.push(key);}};
-  for(const key of ['markGain','posture','posturePerMark','posturePrimer','postureThresholdBonus',
+  for(const key of ['markGain','posture','posturePerMark','postureMarkEscalation','posturePrimer',
+    'posturePrimerAmplification','postureThresholdBonus','postureThresholdCrescendo',
     'critChance','defenseTemperDamagePerCharge',
     'markBloomRate','phaseMarkTrailPerContact','realChainScalingMultiplier'])floor(key);
   const lowerBleed=commandBleedAmount(lowerCommand),currentBleed=commandBleedAmount(command);
@@ -12674,10 +12878,20 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference*
         SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture,4),
     posturePerMark=markPostureReadProgress.output,
+    markPostureEscalationPower=compiledAllocation.axisPowerCredits.MARK_POSTURE_ESCALATION||0,
+    markPostureEscalationProgress=skillLinearOutputProgress(markPostureEscalationPower,
+      postureMarkPairCount(SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markEscalationReference)*
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture,6),
+    postureMarkEscalation=markPostureEscalationProgress.output,
     posturePrimerPower=compiledAllocation.axisPowerCredits.POSTURE_PRIMER||0,
     posturePrimerProgress=skillLinearOutputProgress(posturePrimerPower,
       SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture,1),
     posturePrimer=posturePrimerProgress.output,
+    posturePrimerAmplificationPower=compiledAllocation.axisPowerCredits.POSTURE_PRIMER_AMPLIFICATION||0,
+    posturePrimerAmplificationProgress=skillLinearOutputProgress(posturePrimerAmplificationPower,
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference*
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture,4),
+    posturePrimerAmplification=posturePrimerAmplificationProgress.output,
     postureThresholdPower=compiledAllocation.axisPowerCredits.POSTURE_THRESHOLD||0,
     postureThresholdProgress=skillLinearOutputProgress(postureThresholdPower,
       SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture*
@@ -12685,6 +12899,13 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     postureThresholdBonus=postureThresholdProgress.output,
     postureThresholdRatio=postureThresholdBonus?
       (finalRoute.mechanics.postureThresholdRatio||SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdRatio):0,
+    postureThresholdCrescendoPower=compiledAllocation.axisPowerCredits.POSTURE_THRESHOLD_CRESCENDO||0,
+    postureThresholdCrescendoProgress=skillLinearOutputProgress(postureThresholdCrescendoPower,
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdExcessReferenceShare*
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.thresholdActiveShare*
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.powerPerPosture,4),
+    postureThresholdCrescendo=postureThresholdCrescendoProgress.output,
     postureApplicationEventPower=compiledAllocation.axisPowerCredits.POSTURE_APPLICATION_EVENTS||0,
     postureApplicationEventProgress=skillLinearOutputProgress(postureApplicationEventPower,1,4),
     postureAftershockShare=finalRoute.mechanics.refinement==='POSTURE_DOUBLE_FRACTURE'?
@@ -12716,7 +12937,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     markBloomRate,phaseMarkTrailPerContact,
     markRule:sharpshootRouteRuntimeMarkRule(finalRoute,temporaryChainPerMark),addsChain:true,chainGainPerHit:1,
     chainGainPattern,consumeChain:false,extraChainBonus,chainScalingRampPerHit,realChainScalingMultiplier,
-    posture,posturePerMark,posturePrimer,postureThresholdBonus,postureThresholdRatio,
+    posture,posturePerMark,postureMarkEscalation,posturePrimer,posturePrimerAmplification,
+    postureThresholdBonus,postureThresholdRatio,postureThresholdCrescendo,
     postureWavePattern,postureWaveInterval,postureApplicationEventPower,
     chainScalingTiming:finalRoute.mechanics.chainRule==='READ_PACKET_WAVE_START_CHAIN'?
       'PACKET_WAVE_START':String(finalRoute.mechanics.chainRule||'').indexOf('READ_STARTING_CHAIN')===0?
@@ -12812,8 +13034,10 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       shotgunPacketBonusPower-shotgunLiveReadParityPower-shotgunApexMarkRewardPower+
       packetWaveBalance.deliveryPower+
       markProgress.reserve+pulseEventReservePower+bloomRateReservePower+trailStrengthReservePower+
-      postureProgress.reserve+markPostureReadProgress.reserve+posturePrimerProgress.reserve+
-      postureThresholdProgress.reserve+postureApplicationEventProgress.reserve+
+      postureProgress.reserve+markPostureReadProgress.reserve+markPostureEscalationProgress.reserve+
+      posturePrimerProgress.reserve+posturePrimerAmplificationProgress.reserve+
+      postureThresholdProgress.reserve+postureThresholdCrescendoProgress.reserve+
+      postureApplicationEventProgress.reserve+
       critProgress.reserve+afflictionProgress.reserve+chargeProgress.reserve+expressedChainPower,
     legacyWalletError=Number(Math.abs(accountedPower-targetPower).toFixed(4)),
     /* Compiler v5 validates immutable receipts and scenario bands directly.
@@ -12845,8 +13069,11 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       reserve:Number(bloomRateReservePower.toFixed(4))}),
     MARK_TRAIL_STRENGTH:Object.freeze({...trailStrengthProgress,spent:trailStrengthSpentPower,
       reserve:Number(trailStrengthReservePower.toFixed(4))}),POSTURE_DAMAGE:postureProgress,
-    MARK_POSTURE_READ:markPostureReadProgress,POSTURE_PRIMER:posturePrimerProgress,
+    MARK_POSTURE_READ:markPostureReadProgress,
+    MARK_POSTURE_ESCALATION:markPostureEscalationProgress,POSTURE_PRIMER:posturePrimerProgress,
+    POSTURE_PRIMER_AMPLIFICATION:posturePrimerAmplificationProgress,
     POSTURE_THRESHOLD:postureThresholdProgress,
+    POSTURE_THRESHOLD_CRESCENDO:postureThresholdCrescendoProgress,
     POSTURE_APPLICATION_EVENTS:postureApplicationEventProgress,
     CRIT_CHANCE:critProgress,AFFLICTION_APPLICATION:afflictionProgress,DEFENSE_TEMPER:chargeProgress});
   command.synthesisSecondaryPower=Object.freeze({CHAIN_SCALING:Number(chainScalingPower.toFixed(4)),
@@ -12855,8 +13082,11 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     MARK_TRAIL_STRENGTH:Number(trailStrengthSpentPower.toFixed(4)),
     POSTURE_DAMAGE:Number(posturePower.toFixed(4)),
     MARK_POSTURE_READ:Number(markPostureReadPower.toFixed(4)),
+    MARK_POSTURE_ESCALATION:Number(markPostureEscalationPower.toFixed(4)),
     POSTURE_PRIMER:Number(posturePrimerPower.toFixed(4)),
+    POSTURE_PRIMER_AMPLIFICATION:Number(posturePrimerAmplificationPower.toFixed(4)),
     POSTURE_THRESHOLD:Number(postureThresholdPower.toFixed(4)),
+    POSTURE_THRESHOLD_CRESCENDO:Number(postureThresholdCrescendoPower.toFixed(4)),
     POSTURE_APPLICATION_EVENTS:Number(postureApplicationEventPower.toFixed(4)),
     CRIT_CHANCE:Number(critPower.toFixed(4)),
     AFFLICTION_APPLICATION:Number(afflictionPower.toFixed(4)),DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
@@ -12892,6 +13122,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.synthesisPulseExtraEvents=pulseExtraEvents;
   command.synthesisPostureApplicationEventPower=
     Number(postureApplicationEventPower.toFixed(4));
+  command.synthesisMarkPostureEscalationPower=Number(markPostureEscalationPower.toFixed(4));
   command.synthesisBloomRatePower=Number(bloomRateSpentPower.toFixed(4));
   command.synthesisBloomRateReservePower=Number(bloomRateReservePower.toFixed(4));
   command.synthesisBloomRateSteps=bloomRateSteps;
@@ -12954,10 +13185,14 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
         ' Posture without consuming any Mark.':
     finalRoute.mechanics.relationship==='PRIME_NEXT_POSTURE_SOURCE'?
       'Twist: after its own impact, store +'+damagePart(posturePrimer)+
-        ' for the next positive Posture source; any source can trigger it.':
+        ' for the next positive Posture source'+(posturePrimerAmplification>0?
+          ' and amplify that source by '+damagePart(posturePrimerAmplification*100)+'%':'')+
+        '; any source can trigger it.':
     finalRoute.mechanics.relationship==='HIGH_POSTURE_FINISHER'?
       'Twist: if the action begins at or above '+Math.round(postureThresholdRatio*100)+
-        '% Posture, add +'+damagePart(postureThresholdBonus)+' Posture.':markPulsePattern?
+        '% Posture, add +'+damagePart(postureThresholdBonus)+' Posture'+
+        (postureThresholdCrescendo>0?' plus '+damagePart(postureThresholdCrescendo*100)+
+          '% of the bar above that threshold':'')+'.':markPulsePattern?
       'Twist: one damaging arrow, then '+markPulsePattern.length+' separate non-damaging Mark pulses ('+
         markPulsePattern.join('/')+'); pulses create no Chain.':markBloomRate?
       'Twist: starting Mark is preserved; each stack grows the final Mark package at '+
@@ -13012,6 +13247,32 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     command.apexRefinementId==='POSTURE_DOUBLE_FRACTURE'?
       'Apex: split total Posture '+Math.round(postureWavePattern[0]*100)+'/'+
         Math.round(postureWavePattern[1]*100)+' between impact and one delayed non-damaging fracture.':
+    command.apexRefinementId==='POSTURE_READ_VOLUME'?
+      'Apex: maximize the uncapped linear Posture returned by every preserved starting Mark.':
+    command.apexRefinementId==='POSTURE_READ_MARK'?
+      'Apex: preserve the current read and produce the largest Mark reserve after impact.':
+    command.apexRefinementId==='POSTURE_READ_DAMAGE'?
+      'Apex: preserve the current read and maximize clean Health damage.':
+    command.apexRefinementId==='POSTURE_READ_ESCALATION'?
+      'Apex: each additional preserved starting Mark adds an uncapped escalating Posture bonus.':
+    command.apexRefinementId==='POSTURE_PRIMER_VOLUME'?
+      'Apex: maximize the immediate flat bonus stored for the next positive Posture source.':
+    command.apexRefinementId==='POSTURE_PRIMER_MARK'?
+      'Apex: preserve the general Primer and maximize immediate Mark generation.':
+    command.apexRefinementId==='POSTURE_PRIMER_DAMAGE'?
+      'Apex: preserve the general Primer and maximize clean Health damage.':
+    command.apexRefinementId==='POSTURE_PRIMER_AMPLIFICATION'?
+      'Apex: the next source gains its flat Primer plus '+
+        damagePart(posturePrimerAmplification*100)+'% of that source\'s own base Posture.':
+    command.apexRefinementId==='POSTURE_FINISHER_VOLUME'?
+      'Apex: maximize the fixed Posture bonus available exactly when the half-bar condition opens.':
+    command.apexRefinementId==='POSTURE_FINISHER_MARK'?
+      'Apex: preserve the half-bar Finisher and produce the largest immediate Mark reserve.':
+    command.apexRefinementId==='POSTURE_FINISHER_DAMAGE'?
+      'Apex: preserve the half-bar Finisher and maximize clean Health damage.':
+    command.apexRefinementId==='POSTURE_FINISHER_CRESCENDO'?
+      'Apex: action-start Posture above half adds '+damagePart(postureThresholdCrescendo*100)+
+        '% of that excess as extra Posture; this shot cannot grow itself.':
     command.apexRefinementId==='TRAIL_STRENGTH'?
       'Apex: every later damaging player contact this phase applies more Mark; the opening arrow never triggers its own Trail.':
     command.apexRefinementId==='TRAIL_MARK_PAYLOAD'?
@@ -16181,9 +16442,17 @@ function commandPostureDamage(command,chain=chainStacks,mark=bossMark(),postureA
     postureMax=boss&&boss.postureMax||CFG.BOSS_POSTURE_MAX){
   const threshold=Math.max(0,Number(command&&command.postureThresholdBonus)||0),
     thresholdRatio=Math.max(0,Number(command&&command.postureThresholdRatio)||0),
-    thresholdActive=threshold>0&&thresholdRatio>0&&postureAtStart>=postureMax*thresholdRatio;
+    thresholdCrescendo=Math.max(0,Number(command&&command.postureThresholdCrescendo)||0),
+    thresholdPoint=Math.max(0,postureMax)*thresholdRatio,
+    thresholdActive=(threshold>0||thresholdCrescendo>0)&&thresholdRatio>0&&
+      postureAtStart>=thresholdPoint,
+    crescendo=thresholdActive?Math.max(0,postureAtStart-thresholdPoint)*thresholdCrescendo:0,
+    markStacks=Math.max(0,Number(mark)||0),
+    markEscalation=Math.max(0,Number(command&&command.postureMarkEscalation)||0)*
+      postureMarkPairCount(markStacks);
   return Math.max(0,(command.posture||0)+(command.posturePerChain||0)*Math.max(0,chain||0)+
-    (command.posturePerMark||0)*Math.max(0,mark||0)+(thresholdActive?threshold:0));
+    (command.posturePerMark||0)*markStacks+markEscalation+
+    (thresholdActive?threshold+crescendo:0));
 }
 function commandHitBase(command,index){
   return command.hitDamages&&command.hitDamages[index]!==undefined?command.hitDamages[index]:command.damage;
@@ -16345,11 +16614,21 @@ function finishPlayerAction(){
   boss.playerMenu=boss.playerActionReturnMenu||'skills';
   floater(VW/2,286,'AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
 }
+function bossPosturePrimerBonus(sourceAmount){
+  if(!boss)return 0;
+  const flat=Math.max(0,Number(boss.posturePrimer)||0),
+    rate=Math.max(0,Number(boss.posturePrimerAmplification)||0);
+  return flat+Math.max(0,Number(sourceAmount)||0)*rate;
+}
+function consumeBossPosturePrimerBonus(sourceAmount){
+  const bonus=bossPosturePrimerBonus(sourceAmount);
+  if(boss){boss.posturePrimer=0;boss.posturePrimerAmplification=0;}
+  return bonus;
+}
 function applyTurnSkillPosture(amount){
   if(!boss||!isTurnCombat()||boss.phase!=='playerResolve'||boss.playerTurnBreak||amount<=0)return 0;
-  const primer=Math.max(0,Number(boss.posturePrimer)||0),total=amount+primer,
+  const primer=consumeBossPosturePrimerBonus(amount),total=amount+primer,
     before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
-  boss.posturePrimer=0;
   boss.posture=Math.min(max,before+total);
   if(primer)floater(VW/2,236,'POSTURE PRIMER +'+damagePart(primer),'#9ecbff',14);
   if(boss.posture>=max){
@@ -16358,10 +16637,13 @@ function applyTurnSkillPosture(amount){
   }
   return boss.posture-before;
 }
-function installBossPosturePrimer(amount){
-  if(!boss||boss.playerTurnBreak||boss.state==='break'||boss.state==='breakRecover'||amount<=0)return 0;
+function installBossPosturePrimer(amount,amplification=0){
+  amount=Math.max(0,Number(amount)||0);amplification=Math.max(0,Number(amplification)||0);
+  if(!boss||boss.playerTurnBreak||boss.state==='break'||boss.state==='breakRecover'||
+     (!(amount>0)&&!(amplification>0)))return 0;
   boss.posturePrimer=Math.max(0,Number(boss.posturePrimer)||0)+amount;
-  return amount;
+  boss.posturePrimerAmplification=Math.max(0,Number(boss.posturePrimerAmplification)||0)+amplification;
+  return amount+amplification*SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference;
 }
 
 const BOW_ACTION_GEOMETRY_SCRATCH={from:{x:0,y:0},to:{x:0,y:0},distance:1};
@@ -16529,14 +16811,17 @@ function resolveTurnActionHit(action){
       posture=postureTotal*(action.postureWaveTimeline?action.postureWaveTimeline.pattern[0]:1),
       postureBefore=boss.posture||0,
       postureMax=boss.postureMax||CFG.BOSS_POSTURE_MAX,
-      pendingPrimer=Math.max(0,Number(boss.posturePrimer)||0),
+      pendingPrimer=bossPosturePrimerBonus(posture),
       causedBreak=posture>0&&!boss.playerTurnBreak&&postureBefore<postureMax&&
         postureBefore+posture+pendingPrimer>=postureMax;
     action.postureWaveTotal=postureTotal;
     if(posture)applyTurnSkillPosture(posture);
-    if(command.posturePrimer>0&&!causedBreak&&!boss.playerTurnBreak){
-      installBossPosturePrimer(command.posturePrimer);
-      floater(x,y-110,'NEXT POSTURE +'+damagePart(command.posturePrimer),'#9ecbff',14);
+    if((command.posturePrimer>0||command.posturePrimerAmplification>0)&&
+       !causedBreak&&!boss.playerTurnBreak){
+      installBossPosturePrimer(command.posturePrimer,command.posturePrimerAmplification);
+      floater(x,y-110,'NEXT POSTURE +'+damagePart(command.posturePrimer)+
+        (command.posturePrimerAmplification>0?' +'+
+          damagePart(command.posturePrimerAmplification*100)+'%':''),'#9ecbff',14);
     }
     if(command.consumeChain){
       chainStacks=0;floater(x,y-86,'CHAIN CASHED','#c995ff',15);
@@ -16681,9 +16966,8 @@ function applyBossPosture(amount,source,reaction=null){
   if(!boss||boss._moveLab||boss.phase!=='dodge'||boss.state==='dying'||
      boss.state==='finisher'||boss.state==='break'||boss.state==='breakRecover'||
      boss.pendingBreak||amount<=0) return 0;
-  const primer=Math.max(0,Number(boss.posturePrimer)||0),total=amount+primer,
+  const primer=consumeBossPosturePrimerBonus(amount),total=amount+primer,
     before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
-  boss.posturePrimer=0;
   boss.posture=Math.min(max,before+total);
   if(primer)floater(VW/2,236,'POSTURE PRIMER +'+damagePart(primer),'#9ecbff',14);
   boss.lastPostureSource=source;
@@ -16699,7 +16983,8 @@ function applyBossPosture(amount,source,reaction=null){
 function beginBossBreak(actor,entryPresentation=null){
   if(!actor||actor!==boss||!actor.pendingBreak) return false;
   const pending=actor.pendingBreak;
-  actor.pendingBreak=null;actor.parryReaction=null;actor.knightRushRecovery=null;actor.posturePrimer=0;
+  actor.pendingBreak=null;actor.parryReaction=null;actor.knightRushRecovery=null;
+  actor.posturePrimer=0;actor.posturePrimerAmplification=0;
   actor.breakSource=pending.source;actor.breakCount=(actor.breakCount||0)+1;
   actor.breakEntryZ=entryPresentation?entryPresentation.z:actor.z;
   actor.state='break';actor.stateT=0;actor.hurtT=0;
@@ -17869,6 +18154,7 @@ function startBoss(definitionId=null){
     poisonT:0, burnT:0, dotAcc:0, rise:def.rises?0:1,
     definitionId:def.id,
     posture:0,postureMax:def.postureMax||CFG.BOSS_POSTURE_MAX,posturePrimer:0,
+    posturePrimerAmplification:0,
     pendingBreak:null,breakCount:0,breakSource:null,
     /* Every stage boss alternates half-sized enemy phases with AP-limited player turns. */
     phase:'dodge', attacksLeft:enemyTurnBudget,
@@ -20751,7 +21037,8 @@ function startSkillLabCombat(){
   boss.apMax=CFG.TURN_AP_BASE;boss.resolveMax=CFG.TURN_RESOLVE_MAX;
   boss.state='idle';boss.stateT=0;boss.attack=null;boss.pendingBreak=null;
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
-  boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.posturePrimer=0;boss.mark=0;
+  boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.posturePrimer=0;
+  boss.posturePrimerAmplification=0;boss.mark=0;
   boss.bleed=0;boss.bleedLater=0;boss.charge=0;boss.defenseChargeProgress=0;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
@@ -20777,7 +21064,8 @@ function applySkillLabPreset(id,audible=true){
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
   boss.charge=0;boss.defenseChargeProgress=0;
   chainStacks=values.chain;
-  boss.posture=values.posture;boss.posturePrimer=0;boss.playerTurnBreak=values.broken;
+  boss.posture=values.posture;boss.posturePrimer=0;boss.posturePrimerAmplification=0;
+  boss.playerTurnBreak=values.broken;
   boss.state=values.broken?'break':'idle';boss.stateT=values.broken?CFG.BREAK_POSE_IN:0;
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
   boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
@@ -21639,12 +21927,14 @@ function drawBossPostureBar(actor){
     g.textAlign='right';
     g.fillText(actor.playerTurnBreak?'+'+Math.round((CFG.BREAK_DAMAGE_MULT-1)*100)+'% DMG':
       Math.max(0,CFG.BREAK_DURATION-actor.stateT).toFixed(1)+'s',bx+bw,by+18);
-  }else if(actor.posturePrimer>0){
+  }else if(actor.posturePrimer>0||actor.posturePrimerAmplification>0){
     const gx=bx+bw-72,gy=by+14,r=3.5+Math.sin(perfNow*7)*.6;
     g.save();g.strokeStyle='#9ecbff';g.lineWidth=1.4;g.beginPath();
     g.moveTo(gx,gy-r);g.lineTo(gx+r,gy);g.lineTo(gx,gy+r);g.lineTo(gx-r,gy);g.closePath();g.stroke();g.restore();
     g.textAlign='right';g.fillStyle='#9ecbff';
-    g.fillText('PRIMED +'+damagePart(actor.posturePrimer),bx+bw,by+18);
+    g.fillText('PRIMED +'+damagePart(actor.posturePrimer)+
+      (actor.posturePrimerAmplification>0?' +'+
+        damagePart(actor.posturePrimerAmplification*100)+'%':''),bx+bw,by+18);
   }
 }
 /* Combat telegraphs: lane hit hue plus one small action arrow in each lane. */
@@ -23165,10 +23455,23 @@ function skillLabCompactSynthesisMechanics(command){
   else if(command.apexRefinementId==='POSTURE_DOUBLE_FRACTURE')
     lines.push('Apex: split total Posture '+command.postureWavePattern.map(value=>
       Math.round(value*100)+'%').join(' / ')+'; wave two adds no damage, Mark or Chain.');
+  else if(command.apexRefinementId==='POSTURE_READ_VOLUME')
+    lines.push('Apex: highest linear Posture per preserved starting Mark.');
+  else if(command.apexRefinementId==='POSTURE_READ_MARK')
+    lines.push('Apex: current Mark read remains; this route produces the most post-impact Mark.');
+  else if(command.apexRefinementId==='POSTURE_READ_DAMAGE')
+    lines.push('Apex: current Mark read remains; this route emphasizes clean Health damage.');
+  else if(command.apexRefinementId==='POSTURE_READ_ESCALATION')
+    lines.push('Apex: uncapped escalation adds '+damagePart(command.postureMarkEscalation||0)+
+      ' Posture per pair of preserved starting Marks.');
   const markRuleText=skillLabSynthesisMarkRuleText(command);
   if(markRuleText)lines.push(markRuleText);
-  if(command.posture||command.posturePerChain)lines.push('Posture: '+(command.posture||0)+
-    (command.posturePerChain?' + '+command.posturePerChain+' per starting Chain':'')+'.');
+  if(command.posture||command.posturePerChain||command.posturePerMark||command.postureMarkEscalation)
+    lines.push('Posture: '+(command.posture||0)+
+      (command.posturePerChain?' + '+command.posturePerChain+' per starting Chain':'')+
+      (command.posturePerMark?' + '+damagePart(command.posturePerMark)+' per starting Mark':'')+
+      (command.postureMarkEscalation?' + '+damagePart(command.postureMarkEscalation)+
+        ' per starting-Mark pair':'')+'.');
   if(command.extraChainBonus)lines.push(skillLabChainScalingText(command,true));
   const chargeRate=commandDefenseTemperRate(command);
   if(chargeRate)lines.push('Charge: spend up to '+DEFENSE_CHARGE.max+' for +'+damagePart(chargeRate)+

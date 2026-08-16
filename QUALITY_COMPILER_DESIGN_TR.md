@@ -388,6 +388,28 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   `POSTURE_APPLICATION_EVENTS` ekseni bu ekstra tetikleyici fırsatını aynı `0.32` light-bow
   expression ile öder. Dört Apex × `4^4` geçmiş = `1024` kart parent mirası, rarity scale,
   rol liderliği, normalize wave ve `%15` sibling güç bandı için otomatik test edilir.
+- F1S3T2 altında dört Apex materialize edilmiştir: doğrusal Mark okuma, sonraki tur için Mark
+  yatırımı, temiz hasar ve derinleşen okuma. Dördü de tek oku, tek doğal Chain'i, action-start
+  Mark korumasını ve parent'ın doğrusal Posture okumasını taşır. Hiçbiri Mark tüketmez.
+  Derinleşen okuma ayrı `MARK_POSTURE_ESCALATION` receipt'inden
+  `rate × Mark × (Mark - 1) / 2` ek Posture üretir. Katsayı `16 Mark` referansında fiyatlanır;
+  runtime çıktısında cap veya diminishing return yoktur. `1024` sentez `0/4/8/16/32` Mark,
+  altı turluk kalıcı-Mark rotasyonu, rol liderliği, parent mirası ve finite uncapped ölçek için taranır.
+- F1S3T3 altında dört Apex materialize edilmiştir: düz Primer hacmi, anlık Mark, temiz hasar ve
+  kaynak amplifikasyonu. İlk üç route aynı genel sonraki-kaynak Primer'ını farklı eksenlerde büyütür.
+  Dördüncü route düz Primer'ı korur ve sonraki pozitif Posture kaynağının kendi taban değerinin
+  Quality ile üretilen bir yüzdesini ekler. Yüzde flat Primer'ı veya kendisini tekrar çarpmaz.
+  `20 Posture` yalnız Quality fiyat referansıdır; runtime cap değildir. İlk pozitif kaynak iki Primer
+  değerini birlikte tüketir, Break ikisini de temizler. `1024` sentez parent mirası, rarity scale,
+  dört rol liderliği, gerçek runtime sırası ve safe-integer seviyesinde doğrusal ölçek için taranır.
+  Mark Apex'i integer eşiğinde kardeşleriyle eşit görünmesin diye direkt hasar bütçesinden ödenen
+  `+1` görünür Mark ayrımı taşır; validator bunu bütün `256` aynı-geçmiş grubunda kesin lider ister.
+- F1S3T4 altında dört Apex materialize edilmiştir: sabit yarım-bar Finisher, anlık Mark, temiz hasar
+  ve Crescendo. Crescendo `%50` eşiğini değiştirmez; action başlangıcında eşiğin üzerindeki gerçek
+  Posture miktarını ayrı `POSTURE_THRESHOLD_CRESCENDO` receipt'iyle doğrusal okur. `%75` dolu bar
+  yalnız Quality fiyat referansıdır. Runtime kendi saldırısının Posture'unu tekrar okuyamaz, mevcut
+  Posture'u tüketmez ve farklı maksimum barlarda oransal olarak ölçeklenir. `1024` sentez yedi bar
+  durumu, dört kesin rol, parent mirası, rarity scale ve safe-integer finite çıktı için taranır.
 - F1S4 Crit wallet'ı Secondary rol `0.80 × Stable Support 0.50 = 0.40` ile ifade edilir.
   Local Crit yüzdesi `ifade edilen Crit power / (base damage × (Crit multiplier - 1))`
   formülünden çıkar; dolayısıyla güçlü okun aynı Crit yüzdesini satın alması daha pahalıdır.
@@ -457,7 +479,8 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
    materialization + full-history denetimine taşındı.
 5. **Tamamlandı:** F1S3 Mark/Posture Specialization hafif-yay expression modeliyle yenilendi ve
    dört Twist (impact, Mark read, next-source primer, half-bar finisher) materialize edildi.
-   F1S3T1'in dört Apex'i (Posture, Mark, clean damage, paid Double Fracture) tamamlandı.
+   F1S3T1'in dört Apex'i (Posture, Mark, clean damage, paid Double Fracture) ve F1S3T2'nin
+   dört Apex'i (linear read, Mark investment, clean damage, uncapped escalation) tamamlandı.
 6. **Devam ediyor:** F1S1T1 iki dürüst Apex ile tamamlandı: saf Mark ve dengeli darbe.
    F1S1T2 üç Apex ile tamamlandı: pulse event yoğunluğu, toplam Mark payload ve gerçek ok darbesi.
    İlave pulse eventleri `2 power` ödeyen ayrı bir Mark alt-ekseni olarak fiyatlanır; Reserve ve

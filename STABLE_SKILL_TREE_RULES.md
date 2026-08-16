@@ -555,12 +555,18 @@ It runs both lower-level commands and reports separate Structure, Design, Bug, R
 
 `node tools/validate-runtime.cjs KnightRush.html`
 
+The authoring order and manual/runtime acceptance questions are fixed in
+`MOVE_FAMILY_ACCEPTANCE_TEMPLATE_TR.md`. Every new family must use that sequence; a passing total
+score alone cannot replace parent identity, sibling-role, event-order, uncapped-scale or UI checks.
+The shared runtime helper `auditStableApexFamily` is the required matrix runner for new four-Apex
+families, so all `4^4` rarity histories are exercised before family-specific assertions are applied.
+
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `12` Twist contracts and `31` Apex contracts;
-- `8,800` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `2,201` independent rank ladders and `6,603` adjacent rank comparisons;
-- `19,080` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `12` Twist contracts and `43` Apex contracts;
+- `11,872` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `2,969` independent rank ladders and `8,907` adjacent rank comparisons;
+- `25,992` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
@@ -595,6 +601,41 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
 - A1 must remain the raw-Posture leader, A2 the Mark leader and A3 the direct-damage leader for every
   one of the `256` prior-rarity + offered-rank histories. A4 must always retain exactly two normalized
   Posture shares and a paid event receipt. The four siblings must stay within a `15%` combined-power band.
+- T2 also has four Stable Apex refinements. A1 maximizes the uncapped linear Posture coefficient per
+  preserved starting Mark. A2 keeps the inherited read and allocates the largest share to post-impact
+  Mark generation. A3 keeps the read and maximizes clean Health damage. A4 preserves the inherited
+  linear read, then adds `rate × Mark × (Mark - 1) / 2` Posture from a separately paid
+  `MARK_POSTURE_ESCALATION` axis.
+- T2 never consumes Mark and never changes its one-arrow Delivery. Escalation is calibrated against a
+  `16`-Mark balance reference but has no gameplay cap, soft cap or diminishing return. This reference
+  prices the Quality packet; it does not clip runtime output. At equal histories A1 must lead linear
+  read, A2 Mark allocation/output, A3 direct damage and A4 high-reserve Posture.
+- All `1,024` T2 Apex cards are checked at `0/4/8/16/32` starting Mark plus the standard six-phase
+  persistent-Mark simulation. Reference-state sibling spread may not exceed `20%`, six-phase spread
+  may not exceed `35%`, and a million-Mark input must remain finite and strictly exceed a thousand-Mark
+  input. These are observation points, never authored limits.
+- T3 has four Stable Apex refinements. A1 maximizes the flat Primer consumed by the next positive
+  Posture source, A2 buys a paid `+1` visible Mark distinction and maximizes immediate Mark, and A3
+  maximizes clean Health damage. A4 preserves
+  a flat Primer and adds an uncapped percentage of the triggering source's own base Posture.
+- Primer amplification never multiplies the flat Primer or its own result. Its Quality price uses a
+  `20`-Posture reference source, but runtime reads the complete positive source without a cap, soft cap
+  or diminishing return. Multiple installed Primer rates add; the first positive source consumes the
+  complete flat and proportional state. Break clears both values.
+- All `1,024` T3 Apex cards are checked in `256` same-history groups. A1 must lead flat Primer, A2
+  Mark allocation/output, A3 direct damage, and A4 the `100`-Posture source bonus. The validator also
+  proves exact `20 + 5 + 25% = 30` runtime ordering and finite monotonic output through the safe-integer
+  source probe.
+- T4 has four Stable Apex refinements. A1 maximizes the fixed half-bar Finisher bonus, A2 buys a
+  paid `+1` visible Mark distinction, and A3 maximizes clean Health damage. A4 preserves the exact
+  `%50` condition and adds `rate × max(0, action-start Posture - half-bar threshold)` Posture.
+- Crescendo snapshots before the attack. This action's own Posture cannot grow its result, it never
+  consumes existing Posture, and it does not lower or remove the half-bar condition. Its Quality
+  price uses a `%75`-full reference state; runtime reads the real boss bar without an authored cap.
+- All `1,024` T4 Apex cards are checked in `256` same-history groups at `0/49/50/60/75/90/99`
+  Posture. A1 must lead exactly when the condition opens, A2 Mark, A3 direct damage, and A4 at high
+  bar. A `200`-Posture bar must produce exactly twice the Crescendo delta of a `100`-Posture bar at
+  equal fill percentages, and safe-integer-sized bars must remain finite.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
 
