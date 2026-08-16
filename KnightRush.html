@@ -9213,22 +9213,31 @@ function commandCritProfile(command,actorId='knight'){
     precisionGain:Math.max(0,Number(command&&command.critPrecisionGain)||0)
   };
 }
+function commandLocalCritChanceAtMark(command,markStacks=0,actorId='knight'){
+  const profile=commandCritProfile(command,actorId),perMark=Math.max(0,
+    Number(command&&command.critChancePerStartingMark)||0);
+  return clamp(profile.chance+Math.max(0,Number(markStacks)||0)*perMark,0,1);
+}
 function commandCritKey(command,actorId){
   return command&&command.critPrecisionGain>0
     ?actorId+':'+(command.baseId||command.id||command.name):null;
 }
 function createCommandCritPlan(command,actorId='knight',rng=Math.random,chanceOverride=null){
   const profile=commandCritProfile(command,actorId),key=commandCritKey(command,actorId),
-    contacts=[],hits=Math.max(1,command&&command.hits||1);
+    contacts=[],hits=Math.max(1,command&&command.hits||1),
+    rollMode=command&&command.critRollMode==='SHARED_ACTION'?'SHARED_ACTION':'PER_CONTACT';
   let precision=key?(skillCritPrecision.get(key)||0):0;
+  const sharedChance=chanceOverride===null?clamp(profile.chance+precision,0,1):clamp(chanceOverride,0,1),
+    sharedCritical=rollMode==='SHARED_ACTION'&&sharedChance>0&&rng()<sharedChance;
   for(let index=0;index<hits;index++){
     const chance=chanceOverride===null?clamp(profile.chance+precision,0,1):clamp(chanceOverride,0,1),
-      critical=chance>0&&rng()<chance,
+      critical=rollMode==='SHARED_ACTION'?sharedCritical:chance>0&&rng()<chance,
       after=critical?0:clamp(precision+profile.precisionGain,0,1);
     contacts.push(Object.freeze({chance,critical,precisionBefore:precision,precisionAfter:after}));
     precision=after;
   }
-  return Object.freeze({key,multiplier:profile.multiplier,contacts:Object.freeze(contacts)});
+  return Object.freeze({key,multiplier:profile.multiplier,rollMode,
+    contacts:Object.freeze(contacts)});
 }
 function commitCommandCritContact(plan,index){
   const contact=plan&&plan.contacts[index];
@@ -9479,7 +9488,8 @@ function transformSharpshoot(skill,patch){
     chainScalingTiming:'LIVE',realChainScalingMultiplier:1,apexRefinementId:null,
     addsChain:true,chainGainPerHit:1,chainGainPattern:null,deliveryMagnitude:1,deliveryWeight:1,
     chainBonusWeight:1,packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
-    critChance:0,critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
+    critChance:0,critChancePerStartingMark:0,critMarkBonus:0,critRollMode:'PER_CONTACT',
+    critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
     defenseTemperDamagePerCharge:0,defenseTemperMaxCharge:DEFENSE_CHARGE.max,col:'#c0f79a'
   },patch);
 }
@@ -9754,7 +9764,7 @@ const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(
 const COMBAT_ATTRIBUTE_IDS=Object.freeze(['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE']);
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH','CHAIN_SCALING','CHAIN_MANAGEMENT',
-  'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION',
+  'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD',
   'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION',
   'CHARGE_RELEASE','DEFENSE_TEMPER'
 ]);
@@ -9846,7 +9856,7 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
     secondary:{promise:'Add a small flat local Critical chance without granting a Precision engine.',
-      capabilities:['CRIT_LOCAL','CRIT_SUPPORT'],scalingAxes:['CRIT_CHANCE'],
+      capabilities:['CRIT_LOCAL','CRIT_SUPPORT'],scalingAxes:['CRIT_CHANCE','MARK_CRIT_READ','CRIT_MARK_REWARD'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
   combatAttributeDefinition({id:'AFFLICTION',name:'AFFLICTION',
@@ -10147,6 +10157,26 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseTime:.04,recoveryTime:.22,arrowSpeed:2050,arrowArc:3,arrowScale:.82,drawStrength:.86,
     releaseRecoil:.18,trailStrength:.68,impactScale:.92,impactShake:2.1,hitStop:.045,
     shotInterval:.29,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CRIT_VOLLEY',visualStyle:'CRITICAL',raiseTime:.07,drawTime:.20,holdTime:.03,
+    releaseTime:.04,recoveryTime:.19,arrowSpeed:1900,arrowArc:5,arrowScale:.78,drawStrength:.68,
+    releaseRecoil:.14,trailStrength:.72,impactScale:.82,impactShake:1.5,hitStop:.026,
+    shotInterval:.30,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#c995ff',glowColor:'#f2ddff',impactColor:'#ffcc4d'}),
+  bowAnimationRecipe({id:'BOW_CRIT_WEIGHT',visualStyle:'CRITICAL',raiseTime:.18,drawTime:.50,holdTime:.22,
+    releaseTime:.12,recoveryTime:.48,arrowSpeed:1160,arrowArc:18,arrowScale:1.48,drawStrength:1,
+    releaseRecoil:.72,trailStrength:.92,impactScale:1.55,impactShake:5.8,hitStop:.085,
+    shotInterval:.62,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#c995ff',glowColor:'#ffffff',impactColor:'#ffcc4d'}),
+  bowAnimationRecipe({id:'BOW_CRIT_REWARD',visualStyle:'CRITICAL',raiseTime:.12,drawTime:.34,holdTime:.12,
+    releaseTime:.07,recoveryTime:.34,arrowSpeed:1540,arrowArc:9,arrowScale:1.04,drawStrength:.84,
+    releaseRecoil:.28,trailStrength:.82,impactScale:1.10,impactShake:2.5,hitStop:.052,
+    shotInterval:.42,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff596d',glowColor:'#f2ddff',impactColor:'#c995ff'}),
+  bowAnimationRecipe({id:'BOW_CRIT_PACKET',visualStyle:'CRITICAL',raiseTime:.10,drawTime:.36,holdTime:.10,
+    releaseTime:.08,recoveryTime:.39,arrowSpeed:1360,arrowArc:8,arrowScale:.80,drawStrength:.92,
+    releaseRecoil:.60,trailStrength:.76,impactScale:.80,impactShake:3.4,hitStop:.032,
+    shotInterval:.22,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#c995ff',glowColor:'#ffffff',impactColor:'#ffcc4d'}),
   bowAnimationRecipe({id:'BOW_AFFLICTION',visualStyle:'AFFLICTION',raiseTime:.12,drawTime:.32,holdTime:.08,
     releaseTime:.08,recoveryTime:.31,arrowSpeed:1080,arrowArc:19,arrowScale:1.05,drawStrength:.76,
     releaseRecoil:.27,trailStrength:.82,impactScale:1.08,impactShake:1.8,hitStop:.03,
@@ -10186,6 +10216,26 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_posture_finisher_mark_apex:'BOW_POSTURE_FINISHER',
   mark_posture_finisher_damage_apex:'BOW_POSTURE_FINISHER',
   mark_posture_finisher_crescendo_apex:'BOW_POSTURE_FINISHER',
+  mark_critical_volley_twist:'BOW_CRIT_VOLLEY',
+  mark_critical_volley_contacts_apex:'BOW_CRIT_VOLLEY',
+  mark_critical_volley_chance_apex:'BOW_CRIT_VOLLEY',
+  mark_critical_volley_mark_apex:'BOW_CRIT_VOLLEY',
+  mark_critical_volley_damage_apex:'BOW_CRIT_VOLLEY',
+  mark_critical_weight_twist:'BOW_CRIT_WEIGHT',
+  mark_critical_weight_read_apex:'BOW_CRIT_WEIGHT',
+  mark_critical_weight_chance_apex:'BOW_CRIT_WEIGHT',
+  mark_critical_weight_mark_apex:'BOW_CRIT_WEIGHT',
+  mark_critical_weight_damage_apex:'BOW_CRIT_WEIGHT',
+  mark_critical_reward_twist:'BOW_CRIT_REWARD',
+  mark_critical_reward_bonus_apex:'BOW_CRIT_REWARD',
+  mark_critical_reward_chance_apex:'BOW_CRIT_REWARD',
+  mark_critical_reward_mark_apex:'BOW_CRIT_REWARD',
+  mark_critical_reward_damage_apex:'BOW_CRIT_REWARD',
+  mark_critical_packet_twist:'BOW_CRIT_PACKET',
+  mark_critical_packet_contacts_apex:'BOW_CRIT_PACKET',
+  mark_critical_packet_chance_apex:'BOW_CRIT_PACKET',
+  mark_critical_packet_mark_apex:'BOW_CRIT_PACKET',
+  mark_critical_packet_damage_apex:'BOW_CRIT_PACKET',
   mark_focus_concentrated_mark_apex:'BOW_MARK_FOCUS',
   mark_focus_concentrated_impact_apex:'BOW_MARK_FOCUS',
   mark_focus_pulse_density_apex:'BOW_MARK_FOCUS',
@@ -10281,7 +10331,7 @@ const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
       Object.freeze({...delivery,pattern:'SIMULTANEOUS_PACKET'}),0,600),
     bounded=resolveBowAnimationRecipe({bowAnimationRecipeId:'BOW_STANDARD',bowAnimationOverrides:{
       arrowSpeed:99999,holdTime:-5}},0);
-  if(BOW_ANIMATION_RECIPES.list.length!==15||!(standard.contacts[0]>standard.releases[0])||
+  if(BOW_ANIMATION_RECIPES.list.length!==19||!(standard.contacts[0]>standard.releases[0])||
      !(heavy.contacts[0]>standard.contacts[0])||!(charged.recipe.arrowScale>
        bowAnimationRecipeById('BOW_CHARGE').arrowScale)||echo.releases.length!==1||
      echo.contacts.length!==3||!(echo.contacts[2]>echo.contacts[0])||shotgun.releases.length!==3||
@@ -10299,7 +10349,8 @@ const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
     throw new Error('Bow Animation Recipe audit failed timing, variation or safe bounds');
   return Object.freeze({profiles:BOW_ANIMATION_RECIPES.list.length,
     standardContact:standard.contacts[0],heavyContact:heavy.contacts[0],
-    postureProfiles:4,motionScale:BOW_MOTION_TIME_SCALE,chargedScale:charged.recipe.arrowScale});
+    postureProfiles:4,criticalProfiles:5,motionScale:BOW_MOTION_TIME_SCALE,
+    chargedScale:charged.recipe.arrowScale});
 })();
 
 function combatDeliveryProfileById(id){return COMBAT_DELIVERY_PROFILES.get(id);}
@@ -11306,6 +11357,223 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
       refinement:'TWO_WAVE',markRule:'NET_OUTPUT_PER_PELLET',markPerPellet:1,
       markPacketBonusMode:'LOST_CHAIN_PARITY',chainRule:'READ_PACKET_WAVE_START_CHAIN',packetWaves:2},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_volley_twist',depth:3,parentId:'mark_critical_spec',
+    formSlot:1,specializationSlot:4,slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',
+    apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CRIT_CHANCE:.35},
+    promise:'Split one Mark/Critical attack across Quality-grown sequential arrows; every contact rolls local Crit independently.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'INDEPENDENT_CRIT_VOLLEY',markRule:'NET_OUTPUT_REQUIRED',
+      criticalRule:'PER_CONTACT_LOCAL_ROLL',paysNaturalChain:true,
+      deliveryIntent:'MULTIPLE_INDEPENDENT_CRIT_ROLLS_WITH_VISIBLE_CONTACT_CHAIN'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_weight_twist',depth:3,parentId:'mark_critical_spec',
+    formSlot:1,specializationSlot:4,slot:2,primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',
+    apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.15,MARK_CRIT_READ:.25},
+    promise:'Preserve starting Mark and let an uncapped heavy-arrow coefficient turn each visible stack into local Crit chance.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'STARTING_MARK_CRIT_READ',markRule:'READ_MARK_PRESERVE',
+      criticalRule:'ACTION_START_MARK_TO_LOCAL_CHANCE',weightChannel:'MARK_CRIT_READ',
+      deliveryIntent:'ONE_WEIGHTED_CONTACT_COMPRESSES_MARK_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_reward_twist',depth:3,parentId:'mark_critical_spec',
+    formSlot:1,specializationSlot:4,slot:3,primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',
+    apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.20,CRIT_MARK_REWARD:.20},
+    promise:'Land one arrow and, only on Critical, apply a separately priced non-damaging Mark burst after impact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
+      relationship:'CRIT_TRIGGERS_MARK_REWARD',markRule:'NET_OUTPUT_REQUIRED',
+      criticalRule:'CRIT_ADDS_NON_DAMAGE_MARK',guaranteedCritMarkBonus:1,
+      deliveryIntent:'ONE_REAL_CONTACT_THEN_NON_DAMAGE_MARK_REWARD'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_packet_twist',depth:3,parentId:'mark_critical_spec',
+    formSlot:1,specializationSlot:4,slot:4,primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',
+    apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.50,CRIT_CHANCE:.30},
+    promise:'Release a Quality-grown simultaneous packet whose pellets share one all-or-nothing local Critical roll.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'SHARED_CRIT_PACKET',markRule:'NET_OUTPUT_REQUIRED',
+      criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',critRollMode:'SHARED_ACTION',
+      deliveryIntent:'SIMULTANEOUS_CONTACTS_SHARE_ONE_CRIT_ROLL_AND_ONE_CHAIN'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_critical_volley_contacts_apex',depth:4,
+    parentId:'mark_critical_volley_twist',formSlot:1,specializationSlot:4,twistSlot:1,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.40},
+    promise:'Grow the independently rolled arrow count faster while paying every additional natural Chain contact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'INDEPENDENT_CRIT_VOLLEY',refinement:'CRIT_VOLLEY_CONTACTS',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'PER_CONTACT_LOCAL_ROLL',
+      paysNaturalChain:true,deliveryQualityMultiplier:1.25},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_volley_chance_apex',depth:4,
+    parentId:'mark_critical_volley_twist',formSlot:1,specializationSlot:4,twistSlot:1,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.20,CRIT_CHANCE:.65},
+    promise:'Keep the inherited volley and maximize the independent local Crit chance of every arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'INDEPENDENT_CRIT_VOLLEY',refinement:'CRIT_VOLLEY_CHANCE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'PER_CONTACT_LOCAL_ROLL',paysNaturalChain:true},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_volley_mark_apex',depth:4,
+    parentId:'mark_critical_volley_twist',formSlot:1,specializationSlot:4,twistSlot:1,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.65,CRIT_CHANCE:.20},
+    promise:'Keep independent Crit rolls and distribute the largest guaranteed Mark package across the volley.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'INDEPENDENT_CRIT_VOLLEY',refinement:'CRIT_VOLLEY_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'PER_CONTACT_LOCAL_ROLL',paysNaturalChain:true},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_volley_damage_apex',depth:4,
+    parentId:'mark_critical_volley_twist',formSlot:1,specializationSlot:4,twistSlot:1,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.65,MARK_GAIN:.20,CRIT_CHANCE:.15},
+    promise:'Keep the inherited independent rolls and maximize total direct volley damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'INDEPENDENT_CRIT_VOLLEY',refinement:'CRIT_VOLLEY_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'PER_CONTACT_LOCAL_ROLL',paysNaturalChain:true},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_critical_weight_read_apex',depth:4,
+    parentId:'mark_critical_weight_twist',formSlot:1,specializationSlot:4,twistSlot:2,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.15,CRIT_CHANCE:.15,MARK_CRIT_READ:.50},
+    promise:'Maximize the uncapped Weight-amplified local Crit chance returned by each preserved starting Mark.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'STARTING_MARK_CRIT_READ',refinement:'CRIT_WEIGHT_MARK_READ',
+      markRule:'READ_MARK_PRESERVE',criticalRule:'ACTION_START_MARK_TO_LOCAL_CHANCE',
+      weightChannel:'MARK_CRIT_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_weight_chance_apex',depth:4,
+    parentId:'mark_critical_weight_twist',formSlot:1,specializationSlot:4,twistSlot:2,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,CRIT_CHANCE:.55,MARK_CRIT_READ:.15},
+    promise:'Preserve the starting-Mark read while maximizing local Crit chance before any Mark is present.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'STARTING_MARK_CRIT_READ',refinement:'CRIT_WEIGHT_BASE_CHANCE',
+      markRule:'READ_MARK_PRESERVE',criticalRule:'ACTION_START_MARK_TO_LOCAL_CHANCE',
+      weightChannel:'MARK_CRIT_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_weight_mark_apex',depth:4,
+    parentId:'mark_critical_weight_twist',formSlot:1,specializationSlot:4,twistSlot:2,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,CRIT_CHANCE:.15,MARK_CRIT_READ:.15},
+    promise:'Preserve the heavy Mark read and leave the largest guaranteed Mark reserve after impact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'STARTING_MARK_CRIT_READ',refinement:'CRIT_WEIGHT_MARK',
+      markRule:'READ_MARK_PRESERVE',criticalRule:'ACTION_START_MARK_TO_LOCAL_CHANCE',
+      weightChannel:'MARK_CRIT_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_weight_damage_apex',depth:4,
+    parentId:'mark_critical_weight_twist',formSlot:1,specializationSlot:4,twistSlot:2,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,CRIT_CHANCE:.15,MARK_CRIT_READ:.15},
+    promise:'Preserve the heavy Mark read and maximize the single arrow impact that a Critical multiplies.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'STARTING_MARK_CRIT_READ',refinement:'CRIT_WEIGHT_DAMAGE',
+      markRule:'READ_MARK_PRESERVE',criticalRule:'ACTION_START_MARK_TO_LOCAL_CHANCE',
+      weightChannel:'MARK_CRIT_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_critical_reward_bonus_apex',depth:4,
+    parentId:'mark_critical_reward_twist',formSlot:1,specializationSlot:4,twistSlot:3,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,CRIT_CHANCE:.15,CRIT_MARK_REWARD:.55},
+    promise:'Maximize the separately priced non-damaging Mark reward when the arrow Crits.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
+      relationship:'CRIT_TRIGGERS_MARK_REWARD',refinement:'CRIT_REWARD_BONUS',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'CRIT_ADDS_NON_DAMAGE_MARK',guaranteedCritMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_reward_chance_apex',depth:4,
+    parentId:'mark_critical_reward_twist',formSlot:1,specializationSlot:4,twistSlot:3,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,CRIT_CHANCE:.55,CRIT_MARK_REWARD:.15},
+    promise:'Preserve the Crit Mark reward and maximize how often its single local roll activates.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
+      relationship:'CRIT_TRIGGERS_MARK_REWARD',refinement:'CRIT_REWARD_CHANCE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'CRIT_ADDS_NON_DAMAGE_MARK',guaranteedCritMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_reward_mark_apex',depth:4,
+    parentId:'mark_critical_reward_twist',formSlot:1,specializationSlot:4,twistSlot:3,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,CRIT_CHANCE:.15,CRIT_MARK_REWARD:.15},
+    promise:'Keep the conditional reward and maximize the Mark that is guaranteed before the Crit result.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
+      relationship:'CRIT_TRIGGERS_MARK_REWARD',refinement:'CRIT_REWARD_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'CRIT_ADDS_NON_DAMAGE_MARK',guaranteedCritMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_reward_damage_apex',depth:4,
+    parentId:'mark_critical_reward_twist',formSlot:1,specializationSlot:4,twistSlot:3,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,CRIT_CHANCE:.15,CRIT_MARK_REWARD:.15},
+    promise:'Preserve the Crit Mark reward and maximize the real arrow impact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
+      relationship:'CRIT_TRIGGERS_MARK_REWARD',refinement:'CRIT_REWARD_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'CRIT_ADDS_NON_DAMAGE_MARK',guaranteedCritMarkBonus:1},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_critical_packet_contacts_apex',depth:4,
+    parentId:'mark_critical_packet_twist',formSlot:1,specializationSlot:4,twistSlot:4,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.40},
+    promise:'Grow simultaneous pellet count faster while keeping one shared Crit roll and one packet Chain.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'SHARED_CRIT_PACKET',refinement:'CRIT_PACKET_CONTACTS',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',
+      critRollMode:'SHARED_ACTION',deliveryQualityMultiplier:1.5},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_packet_chance_apex',depth:4,
+    parentId:'mark_critical_packet_twist',formSlot:1,specializationSlot:4,twistSlot:4,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.20,CRIT_CHANCE:.65},
+    promise:'Preserve packet size and maximize the one local roll shared by every pellet.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'SHARED_CRIT_PACKET',refinement:'CRIT_PACKET_CHANCE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',
+      critRollMode:'SHARED_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_packet_mark_apex',depth:4,
+    parentId:'mark_critical_packet_twist',formSlot:1,specializationSlot:4,twistSlot:4,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.65,CRIT_CHANCE:.20},
+    promise:'Keep the shared jackpot roll and distribute the largest guaranteed Mark package across the packet.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'SHARED_CRIT_PACKET',refinement:'CRIT_PACKET_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',
+      critRollMode:'SHARED_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_critical_packet_damage_apex',depth:4,
+    parentId:'mark_critical_packet_twist',formSlot:1,specializationSlot:4,twistSlot:4,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.65,MARK_GAIN:.20,CRIT_CHANCE:.15},
+    promise:'Preserve the shared packet roll and maximize its all-or-nothing direct damage jackpot.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
+      relationship:'SHARED_CRIT_PACKET',refinement:'CRIT_PACKET_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',
+      critRollMode:'SHARED_ACTION'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'})
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
@@ -11438,7 +11706,7 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      trailApexes.filter(route=>route.mechanics.markTrailStrengthAxis).length!==1)
     throw new Error('F1S1T4 needs exactly three priced Trail Apex refinements');
   const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
-  if(twists.length!==12||!directChain||directChain.parentId!=='mark_chain_spec'||
+  if(twists.length!==16||!directChain||directChain.parentId!=='mark_chain_spec'||
      directChain.delivery.pattern!=='SEQUENTIAL'||directChain.delivery.contactCount!==1||
      directChain.mechanics.chainRule!=='READ_LIVE_CHAIN_PER_CONTACT')
     throw new Error('F1S2T1 pilot Twist contract is incomplete');
@@ -11535,6 +11803,50 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      !postureCrescendo||!(postureCrescendo.qualityProfile.POSTURE_THRESHOLD_CRESCENDO>0)||
      SHARPSHOOT_MARK_ROUTE_BY_ID.mark_posture_finisher_mark_apex.mechanics.guaranteedMarkBonus!==1)
     throw new Error('F1S3T4 needs four exact half-bar Finisher Apex refinements');
+  const criticalTwists=twists.filter(route=>route.parentId==='mark_critical_spec'),
+    criticalRelationships=new Set(criticalTwists.map(route=>route.mechanics.relationship)),
+    critVolley=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_critical_volley_twist,
+    critWeight=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_critical_weight_twist,
+    critReward=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_critical_reward_twist,
+    critPacket=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_critical_packet_twist;
+  if(criticalTwists.length!==4||criticalRelationships.size!==4||
+     criticalTwists.some(route=>route.primaryAttributeId!=='MARK'||
+       route.secondaryAttributeId!=='CRITICAL'||route.apexTarget!==4)||
+     !critVolley||critVolley.delivery.pattern!=='SEQUENTIAL'||
+       !critVolley.mechanics.paysNaturalChain||
+     !critWeight||critWeight.delivery.pattern!=='SINGLE'||
+       critWeight.mechanics.weightChannel!=='MARK_CRIT_READ'||
+       critWeight.mechanics.markRule!=='READ_MARK_PRESERVE'||
+     !critReward||critReward.delivery.pattern!=='SINGLE'||
+       critReward.mechanics.criticalRule!=='CRIT_ADDS_NON_DAMAGE_MARK'||
+     !critPacket||critPacket.delivery.pattern!=='SIMULTANEOUS_PACKET'||
+       critPacket.mechanics.critRollMode!=='SHARED_ACTION')
+    throw new Error('F1S4 needs four exact Mark/Critical Twist and Delivery contracts');
+  const criticalApexContract=(parentId,refinements,pattern)=>{
+    const family=apexes.filter(route=>route.parentId===parentId),actual=
+      new Set(family.map(route=>route.mechanics.refinement));
+    if(family.length!==4||actual.size!==4||refinements.some(id=>!actual.has(id))||
+       family.some(route=>route.delivery.pattern!==pattern||
+         route.secondaryAttributeId!=='CRITICAL'||route.mechanics.relationship!==
+           SHARPSHOOT_MARK_ROUTE_BY_ID[parentId].mechanics.relationship))
+      throw new Error(parentId+' needs four exact Critical Apex refinements');
+    return family;
+  };
+  const critVolleyApexes=criticalApexContract('mark_critical_volley_twist',
+      ['CRIT_VOLLEY_CONTACTS','CRIT_VOLLEY_CHANCE','CRIT_VOLLEY_MARK','CRIT_VOLLEY_DAMAGE'],'SEQUENTIAL'),
+    critWeightApexes=criticalApexContract('mark_critical_weight_twist',
+      ['CRIT_WEIGHT_MARK_READ','CRIT_WEIGHT_BASE_CHANCE','CRIT_WEIGHT_MARK','CRIT_WEIGHT_DAMAGE'],'SINGLE'),
+    critRewardApexes=criticalApexContract('mark_critical_reward_twist',
+      ['CRIT_REWARD_BONUS','CRIT_REWARD_CHANCE','CRIT_REWARD_MARK','CRIT_REWARD_DAMAGE'],'SINGLE'),
+    critPacketApexes=criticalApexContract('mark_critical_packet_twist',
+      ['CRIT_PACKET_CONTACTS','CRIT_PACKET_CHANCE','CRIT_PACKET_MARK','CRIT_PACKET_DAMAGE'],
+      'SIMULTANEOUS_PACKET');
+  if(critVolleyApexes.some(route=>!route.mechanics.paysNaturalChain)||
+     critWeightApexes.some(route=>route.mechanics.weightChannel!=='MARK_CRIT_READ'||
+       route.mechanics.markRule!=='READ_MARK_PRESERVE')||
+     critRewardApexes.some(route=>route.mechanics.criticalRule!=='CRIT_ADDS_NON_DAMAGE_MARK')||
+     critPacketApexes.some(route=>route.mechanics.critRollMode!=='SHARED_ACTION'))
+    throw new Error('F1S4 Apex families leaked or lost their exact Twist mechanic');
   const directApexes=apexes.filter(route=>route.parentId==='mark_chain_direct_twist'),
     apexRefinements=new Set(directApexes.map(route=>route.mechanics.refinement));
   if(directApexes.length!==4||apexRefinements.size!==4||
@@ -11588,6 +11900,15 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
 })();
 const COMBAT_ATTRIBUTE_UI_COLORS=Object.freeze({MARK:'#ff596d',CHAIN:'#ffe37a',POSTURE:'#9ecbff',
   CRITICAL:'#c995ff',AFFLICTION:'#d9788b',CHARGE:'#7fc9ff'});
+function sharpshootRouteDeliveryIntent(route){
+  let current=route;
+  while(current){
+    if(current.mechanics&&current.mechanics.deliveryIntent)
+      return current.mechanics.deliveryIntent.replace(/_/g,' ');
+    current=current.parentId&&SHARPSHOOT_MARK_ROUTE_BY_ID[current.parentId];
+  }
+  return 'PRESERVE THE AUTHORED ATTRIBUTE RELATIONSHIP';
+}
 const SHARPSHOOT_MARK_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
   .filter(route=>route.depth===2).map(route=>Object.freeze({
     id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:2,
@@ -11636,8 +11957,8 @@ const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
 const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
   if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
-     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==12||
-     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==43||
+     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==16||
+     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==59||
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
@@ -11676,7 +11997,8 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'extraChainBonus','chainScalingRampPerHit','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
   'realChainScalingMultiplier','apexRefinementId','packetWaveCount','packetWavePattern',
   'chainReadOffsetPattern',
-  'critChance','critDamageMultiplier','critPrecisionGain',
+  'critChance','critChancePerStartingMark','critMarkBonus','critRollMode',
+  'critDamageMultiplier','critPrecisionGain',
   'defenseTemperDamagePerCharge','defenseTemperMaxCharge',
   'deliveryProfileId','deliveryPattern','deliveryTiming','targeting','animationProfile','projectileStyle',
   'bowAnimationRecipeId','bowAnimationOverrides','payloadApplication'
@@ -12115,7 +12437,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=31;
+const SHARPSHOOT_MARK_COMPILER_VERSION=32;
 const SHARPSHOOT_MARK_PULSE_EVENT_POWER=2,
   SHARPSHOOT_MARK_BLOOM_RATE_POWER=1.5,
   SHARPSHOOT_MARK_BLOOM_RATE_STEP=.05,
@@ -12304,8 +12626,15 @@ const SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE=Object.freeze({
 const SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionProfileId:'STABLE_SUPPORT',
   expressionRatio:skillAttributeExpressionRatio('CRITICAL','SECONDARY','STABLE_SUPPORT'),
-  specializationChanceGuardrail:.35,multiplier:CFG.CRIT_DAMAGE_MULT
+  specializationChanceGuardrail:.35,multiplier:CFG.CRIT_DAMAGE_MULT,
+  markReadReference:8,markReadScenarioShare:.5,markRewardReferenceChance:.25,
+  weightReadGainPerStep:.20,
+  offIdentityNaturalChainPaymentShare:.15
 });
+function sharpshootCritReadWeightMultiplier(weight){
+  return 1+Math.max(0,(Number(weight)||1)-1)*
+    SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.weightReadGainPerStep;
+}
 const SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
   powerPerBleed:BLEED_STATUS.totalDamageFactor,specializationApplicationGuardrail:11
@@ -12445,10 +12774,22 @@ function commandDirectDamageTotal(command){
   return Array.from({length:Math.max(1,command&&command.hits||1)},(_,index)=>
     Math.max(0,Number(commandHitBase(command,index))||0)).reduce((sum,value)=>sum+value,0);
 }
-function commandExpectedLocalCritPower(command){
-  const chance=clamp(Math.max(0,Number(command&&command.critChance)||0),0,1),
+function commandExpectedLocalCritChance(command,markStacks=0){
+  return clamp(Math.max(0,Number(command&&command.critChance)||0)+
+    Math.max(0,Number(command&&command.critChancePerStartingMark)||0)*
+      Math.max(0,Number(markStacks)||0),0,1);
+}
+function commandExpectedLocalCritPower(command,markStacks=0){
+  const chance=commandExpectedLocalCritChance(command,markStacks),
     multiplier=Math.max(1,Number(command&&command.critDamageMultiplier)||CFG.CRIT_DAMAGE_MULT);
   return commandDirectDamageTotal(command)*(multiplier-1)*chance;
+}
+function commandExpectedCritMarkGain(command,markStacks=0){
+  const bonus=Math.max(0,Number(command&&command.critMarkBonus)||0);
+  if(!(bonus>0))return 0;
+  const chance=commandExpectedLocalCritChance(command,markStacks),hits=Math.max(1,command&&command.hits||1),
+    procChance=command&&command.critRollMode==='SHARED_ACTION'?chance:1-Math.pow(1-chance,hits);
+  return bonus*procChance;
 }
 function commandExpectedAfflictionPower(command){
   return commandBleedAmount(command)*BLEED_STATUS.totalDamageFactor;
@@ -12616,7 +12957,7 @@ function applyStableRankStatFloor(command,lowerCommand){
     if(before+1e-9<lower){command[key]=lower;restored++;statsRestored++;restoredKeys.push(key);}};
   for(const key of ['markGain','posture','posturePerMark','postureMarkEscalation','posturePrimer',
     'posturePrimerAmplification','postureThresholdBonus','postureThresholdCrescendo',
-    'critChance','defenseTemperDamagePerCharge',
+    'critChance','critChancePerStartingMark','critMarkBonus','defenseTemperDamagePerCharge',
     'markBloomRate','phaseMarkTrailPerContact','realChainScalingMultiplier'])floor(key);
   const lowerBleed=commandBleedAmount(lowerCommand),currentBleed=commandBleedAmount(command);
   if(currentBleed<lowerBleed){command.affliction=Object.freeze({id:BLEED_STATUS.id,amount:lowerBleed});
@@ -12715,6 +13056,23 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     packetWaveCount=delivery.pattern==='SIMULTANEOUS_PACKET'?
       Math.min(hits,Math.max(1,finalRoute.mechanics.packetWaves||1)):1,
     packetWavePattern=packetWaveCount>1?sharpshootPacketWavePattern(hits,packetWaveCount):null,
+    critMarkReadPower=Math.max(0,compiledAllocation.axisPowerCredits.MARK_CRIT_READ||0),
+    critReadWeightMultiplier=finalRoute.mechanics.weightChannel==='MARK_CRIT_READ'?
+      sharpshootCritReadWeightMultiplier(deliveryWeight):1,
+    critReadWeightRewardPower=critMarkReadPower*Math.max(0,critReadWeightMultiplier-1)*
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.markReadScenarioShare,
+    inheritedCritReadWeightRewardPower=Math.max(0,
+      Number(parentCommand&&parentCommand.synthesisCritReadWeightRewardPower)||0),
+    critReadWeightPaymentPower=Math.max(0,
+      critReadWeightRewardPower-inheritedCritReadWeightRewardPower),
+    guaranteedCritMarkBonus=Math.max(0,
+      Math.floor(Number(finalRoute.mechanics.guaranteedCritMarkBonus)||0)),
+    inheritedGuaranteedCritMarkBonus=Math.max(0,
+      Math.floor(Number(parentCommand&&parentCommand.synthesisGuaranteedCritMarkBonus)||0)),
+    guaranteedCritMarkPaymentPower=Math.max(0,
+      guaranteedCritMarkBonus-inheritedGuaranteedCritMarkBonus)*
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN*
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.markRewardReferenceChance,
     definition=BASE_TURN_SKILL_BY_ID.sharpshoot,command=createRunSkill(definition),
     /* Only the authored 20% foundation is paid by MARK_GAIN. Historical
        foundation growth replaces Mark/Mark's generic identity scaler and is
@@ -12810,8 +13168,13 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       finalRoute.mechanics.refinement==='TWO_WAVE'?packetWaveCount:1,
     shotgunChainPaymentPower=delivery.pattern==='SIMULTANEOUS_PACKET'?
       Math.max(0,shotgunChainTotal-1)*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN:0,
+    paidNaturalChainPower=finalRoute.mechanics.paysNaturalChain?
+      Math.max(0,hits-Math.max(1,parentCommand&&parentCommand.hits||1))*
+        SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN*
+        SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.offIdentityNaturalChainPaymentShare:0,
     requestedMechanicPayment=guaranteedMarkPower+shotgunMarkPower+shotgunApexMarkPower+
-      echoChainPaymentPower+shotgunChainPaymentPower,
+      echoChainPaymentPower+shotgunChainPaymentPower+paidNaturalChainPower+
+      critReadWeightPaymentPower+guaranteedCritMarkPaymentPower,
     currentLayerDirectBudget=Math.max(0,(finalReceipt.powerAllocation.DIRECT_DAMAGE||0)+costPower+
       rarityDirectExpressionPower),
     currentLayerDirectRetention=stableLayerDirectRetention(finalReceipt,rarityDirectExpressionPower),
@@ -12824,6 +13187,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     unweightedDirectDamage=Math.max(.001,inheritedDirectFoundation+currentLayerDirectRemainder),
     extraNaturalChain=delivery.pattern==='SEQUENTIAL'?Math.max(0,hits-1):0,
     deliveryChainPower=extraNaturalChain*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN,
+    freeDeliveryChainPower=Math.max(0,deliveryChainPower-paidNaturalChainPower),
     chainScalingPower=Math.max(0,compiledAllocation.axisPowerCredits.CHAIN_SCALING||0),
     weightAmplifiesChain=delivery.pattern==='SINGLE'&&
       finalRoute.mechanics.weightChannel==='CHAIN_SCALING',
@@ -12915,8 +13279,29 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     postureWaveInterval=postureWavePattern?
       Math.max(.08,Number(finalRoute.mechanics.postureWaveInterval)||.38):0,
     critPower=compiledAllocation.axisPowerCredits.CRIT_CHANCE||0,
-    critProgress=skillLocalCritChanceProgress(critPower,damage,
-      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier),critChance=critProgress.output,
+    rawCritProgress=skillLocalCritChanceProgress(critPower,totalDirectDamage,
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier),
+    critChance=clamp(rawCritProgress.output,0,1),
+    critOverflowPower=Math.max(0,critPower-rawCritProgress.fullChancePower),
+    critOverflowDamage=critOverflowPower/
+      (1+(SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier-1)*critChance),
+    finalDamage=Number(((totalDirectDamage+critOverflowDamage)/hits).toFixed(3)),
+    critProgress=Object.freeze({...rawCritProgress,output:critChance,
+      spent:Number(Math.min(critPower,rawCritProgress.fullChancePower).toFixed(4)),
+      reserve:0,overflowPower:Number(critOverflowPower.toFixed(4))}),
+    /* Mark-read Crit is anchored to Sharpshoot's authored foundation, not the
+       card's already-grown impact damage. Otherwise gaining rarity damage can
+       lower Crit-per-Mark and force a hidden rank repair. */
+    critMarkReadProgress=skillLocalCritChanceProgress(critMarkReadPower,
+      definition.damage*SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.markReadReference,
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,6),
+    critChancePerStartingMark=Number((critMarkReadProgress.output*
+      critReadWeightMultiplier).toFixed(6)),
+    critMarkRewardPower=Math.max(0,compiledAllocation.axisPowerCredits.CRIT_MARK_REWARD||0),
+    critMarkRewardProgress=skillRepeatedThresholdProgress(critMarkRewardPower,
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN*
+        SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.markRewardReferenceChance),
+    critMarkBonus=guaranteedCritMarkBonus+critMarkRewardProgress.rank,
     afflictionPower=compiledAllocation.axisPowerCredits.AFFLICTION_APPLICATION||0,
     afflictionProgress=skillLinearOutputProgress(afflictionPower,
       SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.powerPerBleed),bleed=afflictionProgress.output,
@@ -12930,7 +13315,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     finalRoute.mechanics.refinement==='ECHO_CHAIN_GENERATION'?null:
     Array.from({length:hits},(_,index)=>index===0?1:0),
     chainReadOffsetPattern=packetWavePattern?packetWavePattern.slice():null;
-  transformSharpshoot(command,{name:finalRoute.name,damage,hits,hitDamages,markGain,markGainPattern,cost:command.cost,
+  transformSharpshoot(command,{name:finalRoute.name,damage:finalDamage,hits,hitDamages,markGain,markGainPattern,cost:command.cost,
     markPulsePattern,markPulseInterval:markPulsePattern?
       Math.max(.08,Number(finalRoute.mechanics.markPulseInterval)||.16):0,
     markApplicationEventPower:pulseEventSpentPower,
@@ -12943,7 +13328,9 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     chainScalingTiming:finalRoute.mechanics.chainRule==='READ_PACKET_WAVE_START_CHAIN'?
       'PACKET_WAVE_START':String(finalRoute.mechanics.chainRule||'').indexOf('READ_STARTING_CHAIN')===0?
       'ACTION_START':'LIVE',
-    critChance,critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
+    critChance,critChancePerStartingMark,critMarkBonus,
+    critRollMode:finalRoute.mechanics.critRollMode||'PER_CONTACT',
+    critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
     affliction,defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
     impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
     bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||'BOW_STANDARD',
@@ -13027,7 +13414,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     /* Sequential natural Chain and Packet's lost-contact parity are intentional
        Delivery payoffs outside the Quality wallet. Weight is different: its Chain
        multiplier is paid by reducing clean impact before the multiplier is applied. */
-    accountedPower=sharpshootMarkBaselinePower(command)-deliveryChainPower-focusIdentityRewardPower-
+    accountedPower=sharpshootMarkBaselinePower(command)-freeDeliveryChainPower-focusIdentityRewardPower-
       bloomFoundationRewardPower-
       rankFloorAccountingPower-
       weightRelationshipAdjustmentPower-
@@ -13038,7 +13425,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       posturePrimerProgress.reserve+posturePrimerAmplificationProgress.reserve+
       postureThresholdProgress.reserve+postureThresholdCrescendoProgress.reserve+
       postureApplicationEventProgress.reserve+
-      critProgress.reserve+afflictionProgress.reserve+chargeProgress.reserve+expressedChainPower,
+      critProgress.reserve+critMarkReadProgress.reserve+critMarkRewardProgress.reserve+
+      afflictionProgress.reserve+chargeProgress.reserve+expressedChainPower,
     legacyWalletError=Number(Math.abs(accountedPower-targetPower).toFixed(4)),
     /* Compiler v5 validates immutable receipts and scenario bands directly.
        The v3 aggregate wallet error mixed authored Delivery rewards with paid
@@ -13075,7 +13463,9 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     POSTURE_THRESHOLD:postureThresholdProgress,
     POSTURE_THRESHOLD_CRESCENDO:postureThresholdCrescendoProgress,
     POSTURE_APPLICATION_EVENTS:postureApplicationEventProgress,
-    CRIT_CHANCE:critProgress,AFFLICTION_APPLICATION:afflictionProgress,DEFENSE_TEMPER:chargeProgress});
+    CRIT_CHANCE:critProgress,MARK_CRIT_READ:critMarkReadProgress,
+    CRIT_MARK_REWARD:critMarkRewardProgress,
+    AFFLICTION_APPLICATION:afflictionProgress,DEFENSE_TEMPER:chargeProgress});
   command.synthesisSecondaryPower=Object.freeze({CHAIN_SCALING:Number(chainScalingPower.toFixed(4)),
     CHAIN_DELIVERY:Number(deliveryChainPower.toFixed(4)),
     MARK_BLOOM_RATE:Number(bloomRateSpentPower.toFixed(4)),
@@ -13089,6 +13479,8 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     POSTURE_THRESHOLD_CRESCENDO:Number(postureThresholdCrescendoPower.toFixed(4)),
     POSTURE_APPLICATION_EVENTS:Number(postureApplicationEventPower.toFixed(4)),
     CRIT_CHANCE:Number(critPower.toFixed(4)),
+    MARK_CRIT_READ:Number(critMarkReadPower.toFixed(4)),
+    CRIT_MARK_REWARD:Number(critMarkRewardPower.toFixed(4)),
     AFFLICTION_APPLICATION:Number(afflictionPower.toFixed(4)),DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
   command.synthesisChainDeliveryPower=Number(deliveryChainPower.toFixed(4));
   command.synthesisRawChainScalingRate=sharpshootChainScalingRate(chainScalingPower,
@@ -13104,6 +13496,15 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.synthesisShotgunPacketBonusPower=Number(shotgunPacketBonusPower.toFixed(4));
   command.synthesisShotgunLiveReadParityPower=Number(shotgunLiveReadParityPower.toFixed(4));
   command.synthesisShotgunChainPaymentPower=Number(shotgunChainPaymentPower.toFixed(4));
+  command.synthesisPaidNaturalChainPower=Number(paidNaturalChainPower.toFixed(4));
+  command.synthesisCritReadWeightMultiplier=Number(critReadWeightMultiplier.toFixed(4));
+  command.synthesisCritReadWeightRewardPower=Number(critReadWeightRewardPower.toFixed(4));
+  command.synthesisCritReadWeightPaymentPower=Number(critReadWeightPaymentPower.toFixed(4));
+  command.synthesisCritOverflowPower=Number(critOverflowPower.toFixed(4));
+  command.synthesisCritMarkRewardPower=Number(critMarkRewardPower.toFixed(4));
+  command.synthesisGuaranteedCritMarkBonus=guaranteedCritMarkBonus;
+  command.synthesisGuaranteedCritMarkPaymentPower=
+    Number(guaranteedCritMarkPaymentPower.toFixed(4));
   command.synthesisRequestedMechanicPaymentPower=Number(requestedMechanicPayment.toFixed(4));
   command.synthesisCurrentLayerDirectBudget=Number(currentLayerDirectBudget.toFixed(4));
   command.synthesisCurrentLayerDirectSpend=Number(currentLayerDirectSpend.toFixed(4));
@@ -13143,7 +13544,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.synthesisRealChainMultiplier=realChainScalingMultiplier;
   command.synthesisCadenceQualityMultiplier=cadenceQualityMultiplier;
   command.synthesisDeliveryQualityMultiplier=deliveryQualityMultiplier;
-  command.synthesisFreeDeliveryPower=Number((deliveryChainPower+weightRelationshipRewardPower+
+  command.synthesisFreeDeliveryPower=Number((freeDeliveryChainPower+weightRelationshipRewardPower+
     shotgunPacketBonusPower+shotgunLiveReadParityPower+
     shotgunApexMarkRewardPower+Math.max(0,packetWaveBalance.adjustment)+
     apexRefinementPower+bloomFoundationRewardPower+rankFloorPower).toFixed(4));
@@ -14701,6 +15102,13 @@ function validateStableCommandSchema(mutation,state,lineage){
     throw new Error(mutation.id+' Chain scaling ramp must be finite and non-negative');
   if(!Number.isFinite(state.critChance||0)||(state.critChance||0)<0||(state.critChance||0)>1)
     throw new Error(mutation.id+' local Crit chance must be between 0 and 1');
+  if(!Number.isFinite(state.critChancePerStartingMark||0)||(state.critChancePerStartingMark||0)<0)
+    throw new Error(mutation.id+' starting-Mark Crit read must be finite and non-negative');
+  if(!Number.isFinite(state.critMarkBonus||0)||(state.critMarkBonus||0)<0||
+     !Number.isInteger(state.critMarkBonus||0))
+    throw new Error(mutation.id+' Critical Mark reward must be a non-negative integer');
+  if(!['PER_CONTACT','SHARED_ACTION'].includes(state.critRollMode||'PER_CONTACT'))
+    throw new Error(mutation.id+' has an invalid Critical roll mode');
   if(!Number.isFinite(state.critDamageMultiplier||CFG.CRIT_DAMAGE_MULT)||
       (state.critDamageMultiplier||CFG.CRIT_DAMAGE_MULT)<1)
     throw new Error(mutation.id+' Crit multiplier must be finite and at least 1');
@@ -15074,13 +15482,14 @@ function stableEvolutionActionOutcome(state,markStacks=0,startingChain=0){
     chain+=commandChainGain(state,i);
   }
   const finalChain=state.consumeChain?0:chain,bloomMark=commandBloomMarkGain(state,markStacks),
-    finalMark=Math.max(0,plan.remaining+(state.markGain||0)+bloomMark),
+    critMark=commandExpectedCritMarkGain(state,markStacks),
+    finalMark=Math.max(0,plan.remaining+(state.markGain||0)+bloomMark+critMark),
     chainDelta=finalChain-startingChain,markDelta=finalMark-markStacks,
     refund=(state.resolvePerHit||0)*hits+(state.resolveOnComplete||0)+
       commandResolveRuleAmount(state,{chainAtStart:startingChain,markAtStart:markStacks,
         consumedMark:plan.consumedTotal,causedBreak:false}),
     netResolve=refund-(state.cost||0);
-  return Object.freeze({damage,finalChain,finalMark,chainDelta,markDelta,refund,netResolve,bloomMark,
+  return Object.freeze({damage,finalChain,finalMark,chainDelta,markDelta,refund,netResolve,bloomMark,critMark,
     consumedMark:plan.consumedTotal,temporaryChain:plan.temporaryChain});
 }
 function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
@@ -15092,7 +15501,7 @@ function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
     outcome.netResolve*values.NET_RESOLVE+(state.resolvePerHit?values.RESOLVE_PER_HIT_ENGINE:0)+
     (state.resolveOverflowToChain?values.RESOLVE_OVERFLOW_OPTION:0)+
     commandExpectedPosturePower(state,markStacks)+commandExpectedPostureEventPower(state)+
-    commandExpectedLocalCritPower(state)+
+    commandExpectedLocalCritPower(state,markStacks)+
     commandExpectedAfflictionPower(state)+commandExpectedDefenseTemperPower(state);
 }
 function stableEvolutionCombinedGuardrailValue(state){
@@ -16785,6 +17194,13 @@ function resolveTurnActionHit(action){
     const gained=applyBossMarkEvent(markGain,'COMMAND_HIT');
     if(gained)floater(x,y-55,'MARK +'+gained+' · ×'+boss.mark,'#ff4d5f',16);
   }
+  if(critical&&command.critMarkBonus>0){
+    const gained=applyBossMarkEvent(command.critMarkBonus,'CRITICAL_MARK_REWARD');
+    if(gained){
+      burst(x,y-10,9,['#c995ff','#ff596d','#ffffff'],110,56,3,.4);
+      floater(x,y-82,'CRIT MARK +'+gained,'#c995ff',15);
+    }
+  }
   const trailGain=applyPlayerMarkTrailEvent();
   if(trailGain){
     const gained=trailGain;
@@ -16905,7 +17321,9 @@ function performPlayerAction(command){
     postureAtStart:boss.posture||0,postureMaxAtStart:boss.postureMax||CFG.BOSS_POSTURE_MAX,
     chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,
     critPlan:createCommandCritPlan(command,actorId,Math.random,
-      activeSkillLabCombat()&&skillLabSession.forceCritical?1:null)};
+      activeSkillLabCombat()&&skillLabSession.forceCritical?1:
+        command.critChancePerStartingMark>0?
+          commandLocalCritChanceAtMark(command,markPlan.markAtStart,actorId):null)};
   const breakAttack=boss.playerTurnBreak===true;
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
   if(chargeSpent)floater(VW/2,344,'CHARGE ×'+chargeSpent+' · BASE +'+damagePart(chargeBonus),'#7fc9ff',15);
@@ -23464,6 +23882,22 @@ function skillLabCompactSynthesisMechanics(command){
   else if(command.apexRefinementId==='POSTURE_READ_ESCALATION')
     lines.push('Apex: uncapped escalation adds '+damagePart(command.postureMarkEscalation||0)+
       ' Posture per pair of preserved starting Marks.');
+  if(command.apexRefinementId==='CRIT_VOLLEY_CONTACTS')lines.push('Apex: Quality grows independent Crit contacts faster; extra natural Chain contacts are paid.');
+  else if(command.apexRefinementId==='CRIT_VOLLEY_CHANCE')lines.push('Apex: highest local Crit chance on every independent volley contact.');
+  else if(command.apexRefinementId==='CRIT_VOLLEY_MARK')lines.push('Apex: largest guaranteed Mark package distributed across the volley.');
+  else if(command.apexRefinementId==='CRIT_VOLLEY_DAMAGE')lines.push('Apex: highest total direct volley damage.');
+  else if(command.apexRefinementId==='CRIT_WEIGHT_MARK_READ')lines.push('Apex: strongest Weight-amplified local Crit chance per preserved starting Mark.');
+  else if(command.apexRefinementId==='CRIT_WEIGHT_BASE_CHANCE')lines.push('Apex: highest local Crit chance before starting Mark is read.');
+  else if(command.apexRefinementId==='CRIT_WEIGHT_MARK')lines.push('Apex: largest guaranteed post-impact Mark reserve.');
+  else if(command.apexRefinementId==='CRIT_WEIGHT_DAMAGE')lines.push('Apex: highest heavy-arrow direct impact.');
+  else if(command.apexRefinementId==='CRIT_REWARD_BONUS')lines.push('Apex: largest non-damaging Mark reward when the arrow Crits.');
+  else if(command.apexRefinementId==='CRIT_REWARD_CHANCE')lines.push('Apex: highest chance to trigger the inherited Crit Mark reward.');
+  else if(command.apexRefinementId==='CRIT_REWARD_MARK')lines.push('Apex: largest Mark package guaranteed before the Crit result.');
+  else if(command.apexRefinementId==='CRIT_REWARD_DAMAGE')lines.push('Apex: highest real-arrow impact while retaining the Crit Mark reward.');
+  else if(command.apexRefinementId==='CRIT_PACKET_CONTACTS')lines.push('Apex: Quality grows simultaneous pellet count faster; the packet still grants one Chain.');
+  else if(command.apexRefinementId==='CRIT_PACKET_CHANCE')lines.push('Apex: highest chance for the one Crit roll shared by the whole packet.');
+  else if(command.apexRefinementId==='CRIT_PACKET_MARK')lines.push('Apex: largest guaranteed Mark package distributed across the packet.');
+  else if(command.apexRefinementId==='CRIT_PACKET_DAMAGE')lines.push('Apex: highest all-or-nothing packet damage jackpot.');
   const markRuleText=skillLabSynthesisMarkRuleText(command);
   if(markRuleText)lines.push(markRuleText);
   if(command.posture||command.posturePerChain||command.posturePerMark||command.postureMarkEscalation)
@@ -23481,6 +23915,13 @@ function skillLabCompactSynthesisMechanics(command){
   const crit=commandCritProfile(command,'knight');
   if(crit.chance>0||crit.precisionGain>0)lines.push('Critical: '+Math.round(crit.chance*100)+
     '% chance / x'+damagePart(crit.multiplier)+' Health and Posture.');
+  if(command.critChancePerStartingMark>0)lines.push('Marked Crit: +'+
+    (command.critChancePerStartingMark*100).toFixed(2)+'% local chance per preserved starting Mark; Weight x'+
+    damagePart(command.synthesisCritReadWeightMultiplier||1)+'.');
+  if(command.critMarkBonus>0)lines.push('Crit Mark: a successful Crit adds +'+command.critMarkBonus+
+    ' non-damaging Mark after impact.');
+  if(command.critRollMode==='SHARED_ACTION'&&command.hits>1)
+    lines.push('Crit roll: one shared result applies to every simultaneous pellet.');
   const history=(command.evolutionHistory||[]).map(node=>{
     const prefix=node.depth===1?'F':node.depth===2?'S':node.depth===3?'T':'A';
     return prefix+' '+node.rarity.slice(0,3);
@@ -23555,6 +23996,8 @@ function moveTreeSynthesisRaritySnapshot(command){
     chainRamp:(command.chainScalingRampPerHit||0)>0,
     weight:command.deliveryWeight||1,
     posture:command.posture||0,critChance:Number(((command.critChance||0)*100).toFixed(1)),
+    critRead:Number(((command.critChancePerStartingMark||0)*100).toFixed(2)),
+    critMark:command.critMarkBonus||0,
     bleed:commandBleedAmount(command),chargeRate:commandDefenseTemperRate(command),
     mark:command.markGain||0,pulses:(command.markPulsePattern||[]).length,
     bloomRate:Number(((command.markBloomRate||0)*100).toFixed(1)),
@@ -23615,6 +24058,8 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         entry.stats.chargeRate?('CHG +'+entry.stats.chargeRate+'/EACH · '+entry.stats.hits+' HIT'):
         entry.stats.bleed?(entry.stats.bleed+' BLEED / '+entry.stats.hits+' HIT'):
         entry.stats.posture?(entry.stats.posture+' POST / '+entry.stats.hits+' HIT'):
+        entry.stats.critRead?(entry.stats.critChance+'% CRIT Â· +'+entry.stats.critRead+'%/MRK'):
+        entry.stats.critMark?(entry.stats.critChance+'% CRIT Â· +'+entry.stats.critMark+' MRK'):
         entry.stats.critChance?(entry.stats.critChance+'% LOCAL CRIT'):
         entry.stats.ownsChainScaling?('CHN +'+entry.stats.chainDamagePerStack+' DMG/STACK'+
           (entry.stats.weight>1?' · WGT '+entry.stats.weight:
@@ -23631,6 +24076,8 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         ['WGT',entry.stats.weight-selected.stats.weight],
         ['POST',entry.stats.posture-selected.stats.posture],
         ['CRIT%',entry.stats.critChance-selected.stats.critChance],
+        ['C/MRK',entry.stats.critRead-selected.stats.critRead],
+        ['C.MRK',entry.stats.critMark-selected.stats.critMark],
         ['BLD',entry.stats.bleed-selected.stats.bleed],
         ['CHG',entry.stats.chargeRate-selected.stats.chargeRate],
         ['PLS',entry.stats.pulses-selected.stats.pulses],

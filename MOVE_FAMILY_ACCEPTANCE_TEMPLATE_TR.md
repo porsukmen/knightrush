@@ -10,6 +10,11 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Her kardesin oynanista lider oldugu tek bir alan belirlenir. Iki kardes yalniz sayi farkiyla ayni isi yapamaz.
 - En az bir alternatif tasarim incelenir. Daha iyi degilse neden elendigi not edilir.
 - Stable kart yeni bir ilgisiz mekanik acamaz; parent mekanigini derinlestirir.
+- Her Twist icin Delivery karari yazilir: neden Single/Sequential/Packet secildi, temaslarin
+  hangileri dogal Chain uretir, mekanigin hangi anini okunur kilar ve hangi komsu agacin
+  Delivery kimligini taklit etmemelidir. `SINGLE` da bilincli bir karardir; varsayilan cevap degildir.
+- Apex, parent Twist'in Delivery topology ve timing sozlesmesini aynen korur. Sadece o sozlesmenin
+  parametresini veya sunumunu guclendirebilir.
 
 ## 1. Yapi kapisi
 
@@ -65,6 +70,18 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Rank sekmeleri secilebilir ve farklar secili ranka gore dogru hesaplanir.
 - Runtime animasyonu hareketin Delivery ve mekanik farkini okunur hizda gosterir.
 
+## 8A. Delivery niyet kapisi
+
+- Combat contact sayisi ile gorsel projectile sayisi birbirine karistirilmaz.
+- Sequential temaslarin her biri dogal Chain uretir; Packet ancak acikca yazilan wave/contact
+  sozlesmesi kadar Chain uretir; hasarsiz event hic Chain uretmez.
+- Delivery Quality ile buyuyorsa buyuyen parametre (contact, pellet veya Weight) tek kaynaktan
+  hesaplanir ve gameplay limiti eklenmez.
+- Delivery'nin verdigi ek guc ya attribute wallet'indan odenir ya da adiyla kayitli, test edilen
+  sinirli bir relationship reward olur. Gizli ikinci Quality cuzdanina izin verilmez.
+- Ayni Delivery kullanan kardesler mekanik timing veya choreography ile okunur ayrim tasir;
+  farkli Delivery kullanan kardesler ise baska bir Primary/Secondary agacinin rolunu calmaz.
+
 ## 9. Son regresyon kapisi
 
 Calistirilmasi zorunlu komut:
@@ -108,3 +125,18 @@ aile commit veya push edilmez. Gorsel degisiklik varsa sessiz yerel tarayici tes
 - `0/49/50/60/75/90/99` durumlari ile `100/200/safe-integer` maksimum barlar denenir.
 - Esigi dusurmek T1'e yaklastigi, Posture overflowunu Health damage'e cevirmek yeni bir ucuncu
   mekanik actigi ve AP/Resolve odulu ekonomi revampini erkenden kilitledigi icin elenmistir.
+
+## F1S4 referans uygulamasi
+
+- T1 Sequential ve bagimsiz Crit roll; T2 Single Weight ve action-start Mark read; T3 Single
+  Crit-sonrasi hasarsiz Mark event; T4 Simultaneous Packet ve tek ortak Crit roll kullanir.
+- T1'in her gercek oku dogal Chain verir fakat Chain scaling almaz. T4 butun packet icin yalniz
+  bir Chain verir. T2 ve T3 birer temas oldugu icin birer dogal Chain verir.
+- Her dort Apex ailesi `1,024`, toplam aile `4,096` kartla taranir. Relationship, Crit chance,
+  Mark ve damage liderleri ayni rarity gecmisinde karsilastirilir.
+- Mark/Mark siniri her esdeger Twist history'sinde zorunludur: F1S4'un en yuksek garanti Mark'i,
+  F1S1'in en dusuk garanti Mark'inin en az bir altinda kalir.
+- T2'nin Mark-read sansi base Sharpshoot impactina baglidir; rarity damage artisi orani dusuremez.
+  T3'un garanti cekirdegi beklenen Crit olasiligi uzerinden kendi layer butcesinden odenir.
+- RNG testi T1 icin temas sayisi kadar, T4 icin action basina tam bir roll ister. Weight/Mark
+  jackpot problari finite kalir; authored scaling cap veya diminishing return almaz.

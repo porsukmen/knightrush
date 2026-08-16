@@ -89,6 +89,12 @@ The same mechanic may appear in neighbouring Form palettes. For example, `Chain 
 
 A Twist is not a new mechanic. It is an authored answer to: "How do these two existing mechanics work together?"
 
+Every Twist must also declare a Delivery intent, even when it remains `SINGLE`. The intent must
+state why this contact topology and timing express the chosen Primary/Secondary relationship,
+which visible contacts create natural Chain, and which neighbouring tree the Delivery must not
+imitate. Delivery is never decoration added after the mechanics. Apex inherits that exact intent;
+it may strengthen a parameter or presentation, but it cannot silently change the topology.
+
 ### 4. Apex: maximum expression
 
 - Inherits both `secondaryId` and `relationshipId` exactly.
@@ -245,6 +251,9 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
   a new Delivery at Specialization; otherwise it inherits Form. Twist may preserve or
   transform that compatible Delivery. Apex refines the chosen result.
 - Attribute does not directly imply hit count or animation. Sequential, Single and Simultaneous Packet remain Delivery decisions.
+- Every authored Twist records `deliveryIntent`. Review and validation must consider topology,
+  timing, natural Chain ownership, mechanic fit, animation readability, and adjacent-tree identity.
+  A `SINGLE` choice is valid only after these alternatives were considered, not as a default.
 - Delivery magnitude is `floor(sqrt(total cumulative Quality))`, minimum `1`, with no
   gameplay maximum. Sequential maps it to contact count, Simultaneous Packet to pellet
   count, and Single to Weight. A one-contact Sequential or Packet is valid.
@@ -563,10 +572,10 @@ families, so all `4^4` rarity histories are exercised before family-specific ass
 
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `12` Twist contracts and `43` Apex contracts;
-- `11,872` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `2,969` independent rank ladders and `8,907` adjacent rank comparisons;
-- `25,992` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `16` Twist contracts and `59` Apex contracts;
+- `16,224` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `4,057` independent rank ladders and `12,171` adjacent rank comparisons;
+- `35,592` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
@@ -636,6 +645,32 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   Posture. A1 must lead exactly when the condition opens, A2 Mark, A3 direct damage, and A4 at high
   bar. A `200`-Posture bar must produce exactly twice the Crescendo delta of a `100`-Posture bar at
   equal fill percentages, and safe-integer-sized bars must remain finite.
+
+### F1S4 Mark/Critical contract
+
+- MARK remains Primary and CRITICAL remains a move-local Secondary. The family never grants global
+  Crit, Precision, Chain scaling, Mark consumption, or an authored Mark cap. Crit damage remains
+  the global `x1.5`; Break multiplies the resulting Crit damage normally.
+- T1 is an independent-roll sequential volley. Every visible arrow creates one natural Chain and
+  rolls Crit separately. Extra contacts are partially paid from the current layer because Chain is
+  not this family's Secondary; the move never gains a Chain coefficient.
+- T2 is one weighted arrow. It snapshots and preserves starting Mark, then each Mark adds local Crit
+  chance. Weight amplifies only this Mark-read rate. The rate is anchored to Sharpshoot's authored
+  base impact so a higher rarity can never lower Crit-per-Mark; the runtime read is uncapped while
+  final probability naturally saturates at 100%.
+- T3 is one arrow whose successful Crit creates a separate non-damaging Mark event after impact.
+  It has a guaranteed one-Mark reward kernel at Common and scales through a separately priced
+  `CRIT_MARK_REWARD` axis. The reward creates no hit or Chain.
+- T4 is a simultaneous packet. All pellets share one action-level Crit roll and together create
+  exactly one natural Chain after damage. Pellet count scales with cumulative Quality, but pellets
+  never strengthen one another and do not turn the route into Mark/Chain.
+- Each Twist has four Apex roles: relationship strength, base Crit chance, guaranteed Mark output,
+  and clean damage. All `4,096` Apex cards are checked in `1,024` same-history groups. Every role
+  must lead somewhere, sibling playthrough spread stays within `28%`, and all `64` equivalent Twist
+  histories must remain at least one guaranteed Mark below the weakest Mark/Mark route.
+- Runtime validation proves T1 performs one Crit RNG roll per contact while T4 performs exactly one
+  shared roll per action. Safe-integer Weight and Mark probes must remain finite; no gameplay cap,
+  soft cap, or diminishing-return curve is inserted into the authored scaling.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
 

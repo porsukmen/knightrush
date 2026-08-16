@@ -526,6 +526,107 @@ try{
     return {routes:routes.length,ladders,comparisons,
       minDamageDelta:Number(minDamageDelta.toFixed(6)),minChainDelta};
   })();
+  globalThis.__criticalFamilyAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],specId='mark_critical_spec',
+      twistIds=['mark_critical_volley_twist','mark_critical_weight_twist',
+        'mark_critical_reward_twist','mark_critical_packet_twist'],
+      focusIds=['mark_focus_concentrated_twist','mark_focus_pulse_twist',
+        'mark_focus_bloom_twist','mark_focus_trail_twist'],twistRows=[];
+    let identityRows=0,minFocusMarkMargin=Infinity;
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities){
+        const commands=twistIds.map(id=>synthesizeSharpshootMarkPath(formRarity,specId,
+          specRarity,id,twistRarity)),focus=focusIds.map(id=>synthesizeSharpshootMarkPath(
+          formRarity,'mark_focus_spec',specRarity,id,twistRarity)),
+          minFocusMark=Math.min(...focus.map(command=>command.markGain)),
+          maxCriticalMark=Math.max(...commands.map(command=>command.markGain));
+        minFocusMarkMargin=Math.min(minFocusMarkMargin,minFocusMark-maxCriticalMark);
+        const [volley,weight,reward,packet]=commands;
+        if(commands.some(command=>!command||command.consumeChain||command.extraChainBonus>0||
+             (command.realChainScalingMultiplier||1)!==1)||
+           commandDeliveryContract(volley).pattern!=='SEQUENTIAL'||
+           totalCommandChainGain(volley)!==volley.hits||!(volley.hits>1)||
+           commandDeliveryContract(weight).pattern!=='SINGLE'||weight.hits!==1||
+           !(weight.critChancePerStartingMark>0)||commandMarkPlan(weight,12).consumedTotal!==0||
+           !(commandExpectedLocalCritChance(weight,12)>commandExpectedLocalCritChance(weight,0))||
+           commandDeliveryContract(reward).pattern!=='SINGLE'||!(reward.critMarkBonus>0)||
+           commandDeliveryContract(packet).pattern!=='SIMULTANEOUS_PACKET'||packet.hits<2||
+           packet.critRollMode!=='SHARED_ACTION'||totalCommandChainGain(packet)!==1)
+          throw new Error('F1S4 Twist identity or Delivery failed at '+
+            [formRarity,specRarity,twistRarity].join('/')+' '+JSON.stringify(commands.map(command=>({
+              name:command&&command.name,pattern:command&&commandDeliveryContract(command).pattern,
+              hits:command&&command.hits,chain:command&&totalCommandChainGain(command),
+              extra:command&&command.extraChainBonus,real:command&&command.realChainScalingMultiplier,
+              read:command&&command.critChancePerStartingMark,reward:command&&command.critMarkBonus,
+              roll:command&&command.critRollMode,consumed:command&&commandMarkPlan(command,12).consumedTotal}))));
+        twistRows.push({formRarity,specRarity,twistRarity,
+          commands:commands.map(command=>({id:command.apexRefinementId||command.name,
+            hits:command.hits,damage:commandDirectDamageTotal(command),mark:command.markGain,
+            crit:command.critChance,critRead:command.critChancePerStartingMark,
+            critMark:command.critMarkBonus,chain:totalCommandChainGain(command),
+            play:stableEvolutionPlaythroughVector(command).averageContribution}))});
+        identityRows++;
+      }
+    if(minFocusMarkMargin<1)throw new Error('F1S4 overtook F1S1 guaranteed Mark: '+minFocusMarkMargin);
+    const configs=[
+      {familyId:'F1S4T1',twistId:twistIds[0],ids:[
+        'mark_critical_volley_contacts_apex','mark_critical_volley_chance_apex',
+        'mark_critical_volley_mark_apex','mark_critical_volley_damage_apex'],
+        roles:['hits','crit','mark','damage']},
+      {familyId:'F1S4T2',twistId:twistIds[1],ids:[
+        'mark_critical_weight_read_apex','mark_critical_weight_chance_apex',
+        'mark_critical_weight_mark_apex','mark_critical_weight_damage_apex'],
+        roles:['critRead','crit','mark','damage']},
+      {familyId:'F1S4T3',twistId:twistIds[2],ids:[
+        'mark_critical_reward_bonus_apex','mark_critical_reward_chance_apex',
+        'mark_critical_reward_mark_apex','mark_critical_reward_damage_apex'],
+        roles:['critMark','crit','mark','damage']},
+      {familyId:'F1S4T4',twistId:twistIds[3],ids:[
+        'mark_critical_packet_contacts_apex','mark_critical_packet_chance_apex',
+        'mark_critical_packet_mark_apex','mark_critical_packet_damage_apex'],
+        roles:['hits','crit','mark','damage']}
+    ],families=[];
+    for(const config of configs){
+      let maxSpread=0,strictRoleRows=0;
+      const audit=auditStableApexFamily({familyId:config.familyId,specId,twistId:config.twistId,
+        ids:config.ids,inspect:({command,history})=>({id:history.id,
+          damage:commandDirectDamageTotal(command),mark:command.markGain,hits:command.hits,
+          crit:command.critChance,critRead:command.critChancePerStartingMark,
+          critMark:command.critMarkBonus,chain:totalCommandChainGain(command),
+          rollMode:command.critRollMode,play:stableEvolutionPlaythroughVector(command).averageContribution}),
+        inspectGroup:group=>{
+          for(let index=0;index<config.roles.length;index++){
+            const role=config.roles[index],chosen=group[index][role],best=Math.max(...group.map(row=>row[role]));
+            if(chosen+1e-6<best)throw new Error(config.familyId+' '+role+' role lost');
+            if(chosen>Math.max(...group.filter((_,i)=>i!==index).map(row=>row[role]))+1e-6)
+              strictRoleRows++;
+          }
+          const plays=group.map(row=>row.play),mean=plays.reduce((a,b)=>a+b,0)/plays.length,
+            spread=(Math.max(...plays)-Math.min(...plays))/Math.max(1,mean);
+          maxSpread=Math.max(maxSpread,spread);
+        }});
+      if(maxSpread>.28||strictRoleRows<1)throw new Error(config.familyId+
+        ' Apex balance/role separation failed '+JSON.stringify({maxSpread,strictRoleRows}));
+      families.push({familyId:config.familyId,cards:audit.cards,groups:audit.groups,
+        maxSpread:Number(maxSpread.toFixed(4)),strictRoleRows});
+    }
+    let sharedRolls=0,independentRolls=0;
+    const shared=createCommandCritPlan({hits:4,critChance:.5,critRollMode:'SHARED_ACTION'},
+      'knight',()=>{sharedRolls++;return .25;}),independent=createCommandCritPlan(
+      {hits:4,critChance:.5,critRollMode:'PER_CONTACT'},'knight',()=>{
+        independentRolls++;return independentRolls%2?.25:.75;});
+    if(sharedRolls!==1||new Set(shared.contacts.map(row=>row.critical)).size!==1||
+       independentRolls!==4||new Set(independent.contacts.map(row=>row.critical)).size!==2)
+      throw new Error('F1S4 shared/independent Crit runtime roll contract failed');
+    const hugeWeight=sharpshootCritReadWeightMultiplier(Number.MAX_SAFE_INTEGER),
+      hugeChance=commandExpectedLocalCritChance({critChance:.1,
+        critChancePerStartingMark:Number.MAX_VALUE},Number.MAX_SAFE_INTEGER);
+    if(!Number.isFinite(hugeWeight)||hugeWeight<=1||hugeChance!==1)
+      throw new Error('F1S4 uncapped Delivery/Mark read lost finite natural Crit saturation');
+    return {cards:families.reduce((sum,row)=>sum+row.cards,0),groups:families.reduce(
+      (sum,row)=>sum+row.groups,0),identityRows,minFocusMarkMargin,families,
+      runtime:{sharedRolls,independentRolls},finite:{hugeWeight,hugeChance},twistRows};
+  })();
   globalThis.__stableRankAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'),
@@ -546,7 +647,8 @@ try{
       primer:command.posturePrimer||0,primerAmplification:command.posturePrimerAmplification||0,
       finisher:command.postureThresholdBonus||0,
       finisherCrescendo:command.postureThresholdCrescendo||0,
-      crit:command.critChance||0,bleed:commandBleedAmount(command),
+      crit:command.critChance||0,critRead:command.critChancePerStartingMark||0,
+      critMark:command.critMarkBonus||0,bleed:commandBleedAmount(command),
       charge:commandDefenseTemperRate(command),pulses:(command.markPulsePattern||[]).length,
       bloom:command.markBloomRate||0,trail:command.phaseMarkTrailPerContact||0,
       chainDamage:commandOwnsChainScaling(command)?commandRealChainDamagePerStack(command):0
@@ -724,9 +826,9 @@ try{
       worstChildScoreGap,worstChildPlayGap};
   })();`;
   /* Full-history coverage grows deliberately with every materialized family.
-     Keep a finite guard, but allow the exhaustive 57-route matrix to finish on
+     Keep a finite guard, but allow the exhaustive 82-route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
-  vm.runInNewContext(source,sandbox,{filename:file,timeout:120000});
+  vm.runInNewContext(source,sandbox,{filename:file,timeout:180000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
   console.log(`RUNTIME_OK ${file}`);
   const audit=sandbox.__runtimeAudit;
@@ -879,6 +981,18 @@ try{
     cards:postureFinisherApex.cards,groups:postureFinisherApex.groups,
     parentInheritance:true,siblingRoles:true,rarityCoverage:true,
     scenarioBalance:true,runtimeOrdering:true,naturalBarScale:true}));
+  const criticalFamily=sandbox.__criticalFamilyAudit;
+  if(!criticalFamily||criticalFamily.cards!==4096||criticalFamily.groups!==1024||
+     criticalFamily.identityRows!==64||criticalFamily.minFocusMarkMargin<1||
+     criticalFamily.families.some(family=>family.cards!==1024||family.groups!==256||
+       family.maxSpread>.28||family.strictRoleRows<1))
+    throw new Error('F1S4 Mark/Critical family failed: '+JSON.stringify(criticalFamily));
+  console.log('MARK_CRITICAL_FAMILY '+JSON.stringify({cards:criticalFamily.cards,
+    groups:criticalFamily.groups,identityRows:criticalFamily.identityRows,
+    minFocusMarkMargin:criticalFamily.minFocusMarkMargin,families:criticalFamily.families,
+    runtime:criticalFamily.runtime,finite:criticalFamily.finite,
+    standard:criticalFamily.twistRows.filter(row=>row.formRarity==='COMMON'&&
+      row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
   const pureExpression=sandbox.__pureRarityExpressionAudit;
   if(!pureExpression||pureExpression.some(route=>{
     const rows=route.rows;
@@ -912,8 +1026,8 @@ try{
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
   const hierarchyAudit=sandbox.__stableHierarchyAudit;
-  if(!hierarchyAudit||hierarchyAudit.twists!==12||hierarchyAudit.apexes!==43||
-     hierarchyAudit.comparisons!==11872||hierarchyAudit.failures.length)
+  if(!hierarchyAudit||hierarchyAudit.twists!==16||hierarchyAudit.apexes!==59||
+     hierarchyAudit.comparisons!==16224||hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
@@ -951,14 +1065,14 @@ try{
     worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
     worstChildPlayGap:parentStrength.worstChildPlayGap}));
   const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  if(!parentStrength||parentStrength.routes!==61||parentStrength.comparisons!==25992||
+  if(!parentStrength||parentStrength.routes!==81||parentStrength.comparisons!==35592||
      parentStrength.reversals.length||
      parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
      parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
     throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-       expectedRoutes:61,expectedComparisons:25992,
+       expectedRoutes:81,expectedComparisons:35592,
       reversals:parentStrength&&parentStrength.reversals.slice(0,3),
       minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
       minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
@@ -988,12 +1102,17 @@ try{
        f1s3t4ApexCards:postureFinisherApex.cards,
        f1s3t4ApexGroups:postureFinisherApex.groups,
        f1s3t4ReferenceSpread:postureFinisherApex.maxReferenceSpread,
-       f1s3t4PlaySpread:postureFinisherApex.maxPlaySpread},
+       f1s3t4PlaySpread:postureFinisherApex.maxPlaySpread,
+       f1s4Cards:criticalFamily.cards,f1s4Groups:criticalFamily.groups,
+       f1s4IdentityRows:criticalFamily.identityRows,
+       f1s4MinMarkWall:criticalFamily.minFocusMarkMargin,
+       f1s4FamilySpreads:criticalFamily.families.map(family=>family.maxSpread)},
     bug:{passed:true,runtime:true,mechanicAudit:true,posturePrimer:true,
        uncappedPostureRead:true,uncappedEscalatingRead:true,
        safeIntegerEscalatingRead:true,generalPrimerAmplification:true,
        safeIntegerPrimerAmplification:true,finisherCrescendoSnapshot:true,
-       proportionalFinisherBarScale:true,safeIntegerFinisherCrescendo:true,doubleFracture:true},
+       proportionalFinisherBarScale:true,safeIntegerFinisherCrescendo:true,doubleFracture:true,
+       sharedCritRoll:true,independentCritRolls:true,finiteCritWeight:true},
     rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
       parentComparisons:parentStrength.comparisons},
     power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,

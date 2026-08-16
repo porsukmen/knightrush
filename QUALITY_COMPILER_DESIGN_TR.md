@@ -5,6 +5,33 @@ için kalıcı kaynak metindir. Executable ilk wallet vertical slice
 `KnightRush.html` içindeki F1 Mark Form, F1S1 Mark/Mark ve F1S2 Mark/Chain
 Specialization'larıdır.
 
+## Compiler v32 - F1S4 Mark/Critical vertical slice
+
+- F1S4 has four materialized Twists and four Apexes under each Twist: the current tree has
+  `16` Twists, `59` Apexes, and `82` materialized routes including Form.
+- T1 is a Sequential volley. Every contact owns an independent Crit roll and one natural Chain.
+  Because Chain is not this route's Secondary, a limited share of extra-contact Chain is paid from
+  the current layer as `paidNaturalChainPower`; the route never gains Chain scaling.
+- T2 is Single Weight. `MARK_CRIT_READ` converts against Sharpshoot's authored `16` base damage and
+  an `8 Mark` pricing reference. Higher rarity damage therefore cannot reduce Crit-per-Mark. Weight
+  expresses `20%` more read rate per step. Its payment uses the `0.50` Mark-ready scenario share;
+  this is a pricing reference, never a gameplay cap or diminishing-return curve.
+- T3 uses `CRIT_MARK_REWARD`. Its Common kernel creates `+1` non-damaging Mark event on Crit. The
+  newly guaranteed kernel is paid from the layer's direct budget at a `25%` reference Crit chance;
+  later Quality grows the same integer reward axis.
+- T4 is Simultaneous Packet. All pellets share one action-level Crit roll and the complete packet
+  creates exactly one natural Chain. T1's independent roll and T4's shared roll are checked against
+  real RNG call counts.
+- Crit chance naturally saturates at 100%. Any ordinary `CRIT_CHANCE` power beyond that point becomes
+  equivalent clean damage instead of vanishing. Mark-read and Weight have no authored gameplay cap;
+  safe-integer probes must remain finite.
+- The gate covers `4,096` F1S4 Apex cards, `1,024` same-history sibling groups, `64` Twist identity
+  histories, `12,171` rank comparisons, `16,224` hierarchy comparisons, and `35,592`
+  stronger-parent comparisons.
+- Every future Twist contract must carry `deliveryIntent`: why its topology/timing serves the
+  Primary/Secondary relationship, which contacts own natural Chain, and which adjacent tree boundary
+  it must preserve. Delivery is a tested synthesis decision, not animation decoration.
+
 ## 1. Temel karar
 
 Bir çocuk kart parent'ın sayısal statlarını mutate etmez. Nihai hareket her seçimde ve
