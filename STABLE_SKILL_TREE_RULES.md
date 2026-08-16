@@ -231,6 +231,15 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
 
 - A skill id never owns a bespoke hardcoded Bow timeline. Bow presentation is resolved from a bounded reusable recipe.
 - Delivery owns actor, family, targeting, contact pattern and phase timing. The Bow recipe owns raise, draw, hold, release, recovery, projectile travel and impact presentation.
+- Contact topology and choreography are separate contracts. Two moves may both remain `SINGLE`
+  while using different preparation, targeting and impact cues; a visual distinction never
+  invents a second combat contact.
+- New weapons and routes extend the immutable recipe registry instead of branching inside the
+  frame loop. A resolved action selects and freezes its recipe once; drawing uses fixed-cost
+  canvas primitives without per-frame arrays, particles, content scans or skill-id lookups.
+- The shared Bow character-motion scale is applied once while building the action timeline.
+  Raise, draw, hold, release and recovery may slow together, but projectile `arrowSpeed` remains
+  independent so readability changes cannot silently alter contact timing or combat balance.
 - Damage resolves on the generated `CONTACT` event. Changing arrow speed or draw timing must keep animation, projectile and combat contact synchronized.
 - Form selects the initial Delivery. A compatible Primary/Secondary pair may silently select
   a new Delivery at Specialization; otherwise it inherits Form. Twist may preserve or
@@ -548,10 +557,10 @@ It runs both lower-level commands and reports separate Structure, Design, Bug, R
 
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `8` Twist contracts and `24` Apex contracts;
-- `6,752` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `1,689` independent rank ladders and `5,067` adjacent rank comparisons;
-- `14,664` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `12` Twist contracts and `27` Apex contracts;
+- `7,776` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `1,945` independent rank ladders and `5,835` adjacent rank comparisons;
+- `16,776` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
@@ -561,6 +570,22 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   visible `0/5/10/15/20` Mark states and must remain inside `0.87-1.20` scenario value and
   `0.895-1.31` provisional rotation value ratios;
 - all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
+
+### F1S3 Mark/Posture contract
+
+- MARK remains Primary; POSTURE is a light-ranged Secondary. Secondary role `0.80` and Light Ranged
+  handling `0.40` create a linear `0.32` expression ratio. This is not an output cap.
+- The same expression applies to every later Posture-owned Twist receipt. Unexpressed Posture wallet
+  redirects to Primary Mark, so the bow cannot silently become a heavy Posture chassis.
+- T1 is reliable flat Posture. T2 preserves and reads every action-start Mark as uncapped Posture.
+  T3 installs a source-agnostic bonus consumed by the next positive Posture source. T4 snapshots the
+  action-start bar and gains a bonus at `50%` or above.
+- All four Twists preserve inherited damage, inherited Mark, one direct contact, and one natural Chain.
+  They may neither consume Mark nor introduce Chain scaling.
+- All four therefore keep `SINGLE` contact topology but use distinct Bow choreography: T1 compresses
+  a heavy Posture impact at the bow, T2 converges visible Mark aim around the target, T3 inscribes a
+  Posture-primer sigil, and T4 changes from a restrained finisher cue to a gold break-ready cue when
+  its action-start threshold is met. These are reusable recipe/cue ids, not four bespoke update loops.
 
 Adding a new materialized route must update the expected coverage count deliberately. A test count changing silently is a structure failure, even if the page still boots.
 

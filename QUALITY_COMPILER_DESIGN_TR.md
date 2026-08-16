@@ -367,6 +367,20 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
   `0.35 power/Posture` üzerinden gerçek çıktıya dönüşür. Hard cap, soft cap ve rarity
   lookup tablosu yoktur. Kalan wallet Primary Mark'a geri dağıtılır; iki-layer mevcut
   matriste Common/Common yaklaşık `3.4`, Legendary/Legendary yaklaşık `18.1` Posture üretir.
+- F1S3 altında dört materialized Twist vardır. T1 düz ve güvenilir Posture darbesidir. T2
+  action-start Mark'ı harcamadan her stack için lineer Posture okur. T3 kendi darbesinden
+  sonra bir sonraki pozitif Posture kaynağı için genel bir primer saklar; skill, parry veya
+  Knight Rush ayrımı yapmaz. T4 action başında bar en az `%50` doluysa ek Posture verir.
+  Dört route da Mark'ı ve tek temaslı hafif-yay chassis'ini korur; Quality ile tavansız ilerler.
+  Mekanik Delivery dördünde de `SINGLE` kalır fakat koreografileri ayrıdır: T1 yay yanında mavi
+  darbe sıkıştırması, T2 hedefte Mark yakınsaması, T3 primer mührü, T4 ise eşik altında sade ve
+  eşik hazırken altın finisher vurgusu kullanır. Bu ayrım yeni combat contact üretmez.
+  Ortak Bow hareket ölçeği timeline kurulurken bir kez uygulanır (`1.35x`); okun uçuş hızı aynı
+  kalır. Tarif seçimi action başında dondurulur ve cue çizimleri sabit maliyetli Canvas
+  primitive'leridir; frame içinde allocation, particle nesnesi veya skill-id taraması yapılmaz.
+  Secondary Handling ifadesi sonraki Twist receipt'lerinin Posture eksenlerine de uygulanır;
+  ifade edilemeyen wallet Primary Mark'a geri döner. `256` Form/Spec/Twist rarity kartı kimlik,
+  parent mirası, rarity, primer lifecycle ve tavansız Mark→Posture okuması için test edilir.
 - F1S4 Crit wallet'ı Secondary rol `0.80 × Stable Support 0.50 = 0.40` ile ifade edilir.
   Local Crit yüzdesi `ifade edilen Crit power / (base damage × (Crit multiplier - 1))`
   formülünden çıkar; dolayısıyla güçlü okun aynı Crit yüzdesini satın alması daha pahalıdır.
@@ -434,7 +448,9 @@ vermeleri değil, o Legendary kartın kendi temasını geleceğe taşımasıdır
    gerilemesi, minimum pellet okunabilirliği ve rol bulanıklığı için taranır.
 4. **Tamamlandı:** F1S1'in dört Mark/Mark Twist'i ve F1S1↔F1S2 kimlik duvarı runtime
    materialization + full-history denetimine taşındı.
-5. **Devam ediyor:** F1S1T1 iki dürüst Apex ile tamamlandı: saf Mark ve dengeli darbe.
+5. **Tamamlandı:** F1S3 Mark/Posture Specialization hafif-yay expression modeliyle yenilendi ve
+   dört Twist (impact, Mark read, next-source primer, half-bar finisher) materialize edildi.
+6. **Devam ediyor:** F1S1T1 iki dürüst Apex ile tamamlandı: saf Mark ve dengeli darbe.
    F1S1T2 üç Apex ile tamamlandı: pulse event yoğunluğu, toplam Mark payload ve gerçek ok darbesi.
    İlave pulse eventleri `2 power` ödeyen ayrı bir Mark alt-ekseni olarak fiyatlanır; Reserve ve
    parent mirası korunur. Apex sayısı sabit kota değil, parent Twist'in bağımsız eksen sayısıdır.

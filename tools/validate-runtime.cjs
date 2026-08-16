@@ -101,6 +101,68 @@ try{
       }
     return {uniform,histories};
   })();
+  globalThis.__postureTwistAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],ids=[
+      'mark_posture_impact_twist','mark_posture_mark_read_twist',
+      'mark_posture_primer_twist','mark_posture_finisher_twist'],rows=[];
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities)for(const id of ids){
+        const command=synthesizeSharpshootMarkPath(formRarity,'mark_posture_spec',specRarity,
+          id,twistRarity),parent=synthesizeSharpshootMarkPath(formRarity,'mark_posture_spec',specRarity),
+          flat=command.posture||0,perMark=command.posturePerMark||0,
+          primer=command.posturePrimer||0,threshold=command.postureThresholdBonus||0;
+        if(command.hits!==1||command.deliveryPattern!=='SINGLE'||command.markGain<parent.markGain||
+           commandDirectDamageTotal(command)+1e-6<commandDirectDamageTotal(parent))
+          throw new Error(id+' breaks inherited Mark/Posture bow chassis');
+        if(id===ids[0]&&(perMark||primer||threshold)||
+           id===ids[1]&&(!(perMark>0)||primer||threshold)||
+           id===ids[2]&&(!(primer>0)||perMark||threshold)||
+           id===ids[3]&&(!(threshold>0)||perMark||primer))
+          throw new Error(id+' blurred its unique Posture relationship');
+        rows.push({formRarity,specRarity,twistRarity,id,
+          damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+          flat,perMark,primer,threshold,
+          reference:Number(commandExpectedPosturePower(command,8).toFixed(3)),
+          score:Number(stableEvolutionCombinedGuardrailValue(command).toFixed(3))});
+      }
+    let maxScoreSpread=0;
+    for(const formRarity of rarities)for(const specRarity of rarities)for(const twistRarity of rarities){
+      const group=rows.filter(row=>row.formRarity===formRarity&&row.specRarity===specRarity&&
+        row.twistRarity===twistRarity),scores=group.map(row=>row.score),
+        mean=scores.reduce((sum,value)=>sum+value,0)/scores.length;
+      maxScoreSpread=Math.max(maxScoreSpread,(Math.max(...scores)-Math.min(...scores))/mean);
+    }
+    const standard=ids.map(id=>{
+      const command=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',id,'COMMON');
+      return {id,damage:Number(commandDirectDamageTotal(command).toFixed(3)),mark:command.markGain,
+        flat:command.posture||0,perMark:command.posturePerMark||0,
+        primer:command.posturePrimer||0,threshold:command.postureThresholdBonus||0,
+        reference:Number(commandExpectedPosturePower(command,8).toFixed(3))};
+    }),read=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',ids[1],'COMMON'),
+      finisher=synthesizeSharpshootMarkPath('COMMON','mark_posture_spec','COMMON',ids[3],'COMMON'),
+      readPlan=commandMarkPlan(read,8),readAtEight=commandPostureDamage(read,0,8,0,100),
+      readAtSixteen=commandPostureDamage(read,0,16,0,100),
+      finisherBelow=commandPostureDamage(finisher,0,0,49,100),
+      finisherAtHalf=commandPostureDamage(finisher,0,0,50,100),
+      finisherAbove=commandPostureDamage(finisher,0,0,99,100),
+      uncappedLow=commandPostureDamage(read,0,1000,0,100),
+      uncappedHigh=commandPostureDamage(read,0,1000000,0,100),savedBoss=boss;
+    boss={turnCombat:true,phase:'playerResolve',playerTurnBreak:false,state:'idle',posture:10,
+      postureMax:100,posturePrimer:0,pendingBreak:null};
+    installBossPosturePrimer(7);const installed=boss.posturePrimer;
+    applyTurnSkillPosture(5);const postureAfter=boss.posture,primerAfter=boss.posturePrimer;
+    boss=savedBoss;
+    if(readPlan.consumedTotal!==0||readPlan.remaining!==8||
+       Math.abs((readAtSixteen-readAtEight)-read.posturePerMark*8)>.001||
+       !(finisherAtHalf>finisherBelow)||finisherAbove!==finisherAtHalf||
+       !(uncappedHigh>uncappedLow)||installed!==7||postureAfter!==22||primerAfter!==0)
+      throw new Error('Mark/Posture runtime scaling or general primer lifecycle regressed');
+    return {cards:rows.length,rows,standard,maxScoreSpread:Number(maxScoreSpread.toFixed(4)),uncappedLow,uncappedHigh,
+      markReadRuntime:{consumed:readPlan.consumedTotal,remaining:readPlan.remaining,
+        readAtEight,readAtSixteen},
+      finisherRuntime:{below:finisherBelow,atHalf:finisherAtHalf,above:finisherAbove},
+      primerRuntime:{installed,postureAfter,primerAfter}};
+  })();
   globalThis.__pureRarityExpressionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=[
       'mark_focus_concentrated_twist','mark_focus_pulse_twist',
@@ -416,6 +478,15 @@ try{
     throw new Error('Mark/Mark versus Mark/Chain balance band failed: '+JSON.stringify({
       minScore:Math.min(...scoreRatios),maxScore:Math.max(...scoreRatios),
       minPlay:Math.min(...playRatios),maxPlay:Math.max(...playRatios)}));
+  const postureTwists=sandbox.__postureTwistAudit;
+  if(!postureTwists||postureTwists.cards!==256||postureTwists.standard.length!==4||
+     postureTwists.maxScoreSpread>.15)
+    throw new Error('F1S3 Twist coverage failed: '+JSON.stringify(postureTwists));
+  console.log('MARK_POSTURE_TWISTS '+JSON.stringify({cards:postureTwists.cards,
+    standard:postureTwists.standard,maxScoreSpread:postureTwists.maxScoreSpread,
+    uncappedLow:postureTwists.uncappedLow,
+    uncappedHigh:postureTwists.uncappedHigh,markReadRuntime:postureTwists.markReadRuntime,
+    finisherRuntime:postureTwists.finisherRuntime,primerRuntime:postureTwists.primerRuntime}));
   const pureExpression=sandbox.__pureRarityExpressionAudit;
   if(!pureExpression||pureExpression.some(route=>{
     const rows=route.rows;
@@ -449,8 +520,8 @@ try{
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
   const hierarchyAudit=sandbox.__stableHierarchyAudit;
-  if(!hierarchyAudit||hierarchyAudit.twists!==8||hierarchyAudit.apexes!==27||
-     hierarchyAudit.comparisons!==7520||hierarchyAudit.failures.length)
+  if(!hierarchyAudit||hierarchyAudit.twists!==12||hierarchyAudit.apexes!==27||
+     hierarchyAudit.comparisons!==7776||hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
@@ -488,14 +559,14 @@ try{
     worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
     worstChildPlayGap:parentStrength.worstChildPlayGap}));
   const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  if(!parentStrength||parentStrength.routes!==41||parentStrength.comparisons!==16392||
+  if(!parentStrength||parentStrength.routes!==45||parentStrength.comparisons!==16776||
      parentStrength.reversals.length||
      parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
      parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
     throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-      expectedRoutes:41,expectedComparisons:16392,
+      expectedRoutes:45,expectedComparisons:16776,
       reversals:parentStrength&&parentStrength.reversals.slice(0,3),
       minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
       minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
@@ -510,8 +581,9 @@ try{
       t3RoleRows:[audit.focusBloomApexAudit.rateRoleRows,audit.focusBloomApexAudit.markRoleRows,
         audit.focusBloomApexAudit.impactRoleRows],t4Cards:audit.focusTrailApexAudit.cards,
       t4RoleRows:[audit.focusTrailApexAudit.strengthRoleRows,audit.focusTrailApexAudit.markRoleRows,
-        audit.focusTrailApexAudit.impactRoleRows]},
-    bug:{passed:true,runtime:true,mechanicAudit:true},
+        audit.focusTrailApexAudit.impactRoleRows],f1s3Cards:postureTwists.cards,
+      f1s3Relationships:postureTwists.standard.length},
+    bug:{passed:true,runtime:true,mechanicAudit:true,posturePrimer:true,uncappedPostureRead:true},
     rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
       parentComparisons:parentStrength.comparisons},
     power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,
