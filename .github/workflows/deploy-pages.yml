@@ -28,8 +28,11 @@ jobs:
       - name: Validate canonical game source
         run: node tools/validate-html.cjs KnightRush.html
 
-      - name: Validate runtime balance contracts
-        run: node tools/validate-runtime.cjs KnightRush.html
+      - name: Validate fast runtime and closure contracts
+        run: node tools/validate-runtime.cjs KnightRush.html --quick
+
+      - name: Validate F2 adjacent-family balance matrix
+        run: node tools/validate-runtime.cjs KnightRush.html --adjacent
 
       - name: Build single-file Pages artifact
         shell: bash

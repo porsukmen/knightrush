@@ -37,9 +37,112 @@ sandbox.window=sandbox;sandbox.globalThis=sandbox;
 sandbox.addEventListener=noop;sandbox.removeEventListener=noop;sandbox.close=noop;
 sandbox.visualViewport=null;sandbox.AudioContext=function(){};sandbox.webkitAudioContext=function(){};
 
+/* Cross-family balance is a development audit, never a game boot cost. It compares
+   equal rarity histories by family mean so tactical specialists may peak in their
+   own scenario without one whole neighbouring tree becoming the universal winner. */
+const chainAdjacentAuditScript=String.raw`
+  ;globalThis.__chainAdjacentFamilyAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],specIds=[
+      'chain_mark_spec','chain_focus_spec','chain_posture_spec','chain_critical_spec',
+      'chain_affliction_spec','chain_charge_spec'],
+      families=specIds.map(specId=>{
+        const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+          route.parentId===specId),twistIds=twists.map(route=>route.id),
+          apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
+            twistIds.includes(route.parentId));
+        if(twists.length!==4||apexes.length!==16)
+          throw new Error(specId+' is incomplete for adjacent-family comparison');
+        return {specId,twists,apexes};
+      }),mean=values=>values.reduce((sum,value)=>sum+value,0)/values.length,
+      spread=values=>{const average=mean(values);return average>0?
+        (Math.max(...values)-Math.min(...values))/average:0;},
+      profile=commands=>({score:mean(commands.map(command=>
+          stableEvolutionCombinedGuardrailValue(command))),play:mean(commands.map(command=>
+          stableEvolutionPlaythroughVector(command).averageContribution))}),
+      familyRow=(family,formRarity,specRarity,twistRarity,apexRarity=null)=>{
+        const commands=apexRarity===null?family.twists.map(twist=>
+          synthesizeSharpshootChainDescendantPath(formRarity,specRarity,
+            twist.id,twistRarity)):
+          family.apexes.map(apex=>synthesizeSharpshootChainDescendantPath(formRarity,
+            specRarity,apex.parentId,twistRarity,apex.id,apexRarity));
+        return {specId:family.specId,...profile(commands)};
+      },twistRows=[],apexRows=[];
+    let maxTwistScoreSpread=0,maxTwistPlaySpread=0,maxApexScoreSpread=0,
+      maxApexPlaySpread=0,worstTwistScore=null,worstTwistPlay=null,
+      worstApexScore=null,worstApexPlay=null;
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities){
+        const entries=families.map(family=>familyRow(family,formRarity,specRarity,twistRarity)),
+          scoreSpread=spread(entries.map(entry=>entry.score)),
+          playSpread=spread(entries.map(entry=>entry.play)),row={formRarity,specRarity,
+            twistRarity,entries,scoreSpread,playSpread};
+        twistRows.push(row);
+        if(scoreSpread>maxTwistScoreSpread){maxTwistScoreSpread=scoreSpread;worstTwistScore=row;}
+        if(playSpread>maxTwistPlaySpread){maxTwistPlaySpread=playSpread;worstTwistPlay=row;}
+        for(const apexRarity of rarities){
+          const apexEntries=families.map(family=>familyRow(family,formRarity,specRarity,
+              twistRarity,apexRarity)),apexScoreSpread=spread(apexEntries.map(entry=>entry.score)),
+            apexPlaySpread=spread(apexEntries.map(entry=>entry.play)),apexRow={formRarity,
+              specRarity,twistRarity,apexRarity,entries:apexEntries,
+              scoreSpread:apexScoreSpread,playSpread:apexPlaySpread};
+          apexRows.push(apexRow);
+          if(apexScoreSpread>maxApexScoreSpread){maxApexScoreSpread=apexScoreSpread;
+            worstApexScore=apexRow;}
+          if(apexPlaySpread>maxApexPlaySpread){maxApexPlaySpread=apexPlaySpread;
+            worstApexPlay=apexRow;}
+        }
+      }
+    const aggregate=rows=>specIds.map(specId=>{
+        const entries=rows.flatMap(row=>row.entries.filter(entry=>entry.specId===specId));
+        return {specId,score:mean(entries.map(entry=>entry.score)),
+          play:mean(entries.map(entry=>entry.play))};
+      }),winnerCounts=rows=>Object.fromEntries(specIds.map(specId=>[specId,rows.reduce(
+        (count,row)=>count+(row.entries.reduce((best,entry)=>entry.play>best.play?entry:best,
+          row.entries[0]).specId===specId?1:0),0)])),twistAggregate=aggregate(twistRows),
+      apexAggregate=aggregate(apexRows),historyLimit=.20,aggregateLimit=.10,
+      twistAggregateScoreSpread=spread(twistAggregate.map(entry=>entry.score)),
+      twistAggregatePlaySpread=spread(twistAggregate.map(entry=>entry.play)),
+      apexAggregateScoreSpread=spread(apexAggregate.map(entry=>entry.score)),
+      apexAggregatePlaySpread=spread(apexAggregate.map(entry=>entry.play)),
+      round=value=>Number(value.toFixed(4));
+    return {passed:maxTwistScoreSpread<=historyLimit&&maxTwistPlaySpread<=historyLimit&&
+        maxApexScoreSpread<=historyLimit&&maxApexPlaySpread<=historyLimit&&
+        twistAggregateScoreSpread<=aggregateLimit&&twistAggregatePlaySpread<=aggregateLimit&&
+        apexAggregateScoreSpread<=aggregateLimit&&apexAggregatePlaySpread<=aggregateLimit,
+      historyLimit,aggregateLimit,families:specIds,
+      twist:{histories:twistRows.length,maxScoreSpread:round(maxTwistScoreSpread),
+        maxPlaySpread:round(maxTwistPlaySpread),worstScore:worstTwistScore,
+        worstPlay:worstTwistPlay,aggregate:twistAggregate,
+        aggregateScoreSpread:round(twistAggregateScoreSpread),
+        aggregatePlaySpread:round(twistAggregatePlaySpread),playWinners:winnerCounts(twistRows)},
+      apex:{histories:apexRows.length,maxScoreSpread:round(maxApexScoreSpread),
+        maxPlaySpread:round(maxApexPlaySpread),worstScore:worstApexScore,
+        worstPlay:worstApexPlay,aggregate:apexAggregate,
+        aggregateScoreSpread:round(apexAggregateScoreSpread),
+        aggregatePlaySpread:round(apexAggregatePlaySpread),playWinners:winnerCounts(apexRows)}};
+  })();`;
+
 try{
-  const source=match[1]+`\n;globalThis.__runtimeAudit=typeof SHARPSHOOT_MARK_MATERIALIZATION_AUDIT==='undefined'?null:
+  const exhaustiveSource=match[1]+`\n;globalThis.__runtimeAudit=typeof SHARPSHOOT_MARK_MATERIALIZATION_AUDIT==='undefined'?null:
     SHARPSHOOT_MARK_MATERIALIZATION_AUDIT;
+  globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_FORM_AUDIT;
+  globalThis.__chainSpecializationAudit=typeof SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT;
+  globalThis.__chainMarkFamilyAudit=typeof SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT;
+  globalThis.__chainFocusFamilyAudit=typeof SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT;
+  globalThis.__chainPostureFamilyAudit=typeof SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT;
+  globalThis.__chainAfflictionFamilyAudit=typeof SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT;
+  globalThis.__chainCriticalFamilyAudit=typeof SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT;
+  globalThis.__chainChargeFamilyAudit=typeof SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT;
+  globalThis.__chainClosureAudit=typeof SHARPSHOOT_CHAIN_CLOSURE_AUDIT==='undefined'?null:
+    SHARPSHOOT_CHAIN_CLOSURE_AUDIT;
   globalThis.__twistBalanceAudit=typeof SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT==='undefined'?null:
     SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT;
   const auditStableApexFamily=config=>{
@@ -491,18 +594,24 @@ try{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>{
         let current=route;
-        while(current&&current.id!=='mark_chain_spec')current=
+        while(current&&current.depth>2)current=
           current.parentId&&SHARPSHOOT_MARK_ROUTE_BY_ID[current.parentId];
-        return !!current&&route.runtimeReadiness==='MATERIALIZED';
+        return !!current&&current.depth===2&&current.secondaryAttributeId==='CHAIN'&&
+          route.runtimeReadiness==='MATERIALIZED';
       });
     let ladders=0,comparisons=0,minDamageDelta=Infinity,minChainDelta=Infinity;
     const commandFor=(route,history,rank)=>{
-      if(route.depth===2)return synthesizeSharpshootMarkPath(history[0],route.id,rank);
-      if(route.depth===3)return synthesizeSharpshootMarkPath(history[0],route.parentId,
-        history[1],route.id,rank);
+      if(route.depth===2)return route.formSlot===2?
+        synthesizeSharpshootChainPath(history[0],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],route.id,rank);
+      if(route.depth===3)return route.formSlot===2?
+        synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank);
       const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-        twist.id,history[2],route.id,rank);
+      return route.formSlot===2?
+        synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
+          twist.id,history[2],route.id,rank);
     },check=(route,history)=>{
       const commands=rarities.map(rank=>commandFor(route,history,rank));ladders++;
       for(let index=1;index<commands.length;index++){
@@ -844,6 +953,111 @@ try{
     return {cards:rows.length*4,rows,minBaseMark,minFocusMarkMargin,families,
       uncapped:{low,high,bankSeven:defenseChargeBankResult(3,7)}};
   })();
+  globalThis.__f1ClosureAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],specs=
+      SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&
+        route.formSlot===1&&route.runtimeReadiness==='MATERIALIZED').sort((a,b)=>a.slot-b.slot),
+      spread=values=>{
+        const mean=values.reduce((sum,value)=>sum+value,0)/values.length;
+        return (Math.max(...values)-Math.min(...values))/Math.max(1,mean);
+      },describe=command=>({score:stableEvolutionCombinedGuardrailValue(command),
+        play:stableEvolutionPlaythroughVector(command).averageContribution,
+        mark:Math.max(0,Number(command&&command.markGain)||0)}),
+      familyMean=commands=>{
+        const rows=commands.map(describe);
+        return {score:rows.reduce((sum,row)=>sum+row.score,0)/rows.length,
+          play:rows.reduce((sum,row)=>sum+row.play,0)/rows.length,
+          mark:rows.reduce((sum,row)=>sum+row.mark,0)/rows.length,
+          minMark:Math.min(...rows.map(row=>row.mark))};
+      },specRows=[],twistRows=[],apexRows=[];
+    const expectedSecondaries=new Set(COMBAT_ATTRIBUTE_IDS);
+    if(specs.length!==expectedSecondaries.size||new Set(specs.map(route=>
+      route.secondaryAttributeId)).size!==expectedSecondaries.size||specs.some(route=>
+        route.primaryAttributeId!=='MARK'||!expectedSecondaries.has(route.secondaryAttributeId)))
+      throw new Error('F1 closure needs exactly one materialized Specialization per Secondary');
+    let minBaseMark=Infinity,minFocusSpecMarkMargin=Infinity,minFocusTwistMarkMargin=Infinity,
+      minFocusApexMarkMargin=Infinity,maxSpecScoreSpread=0,maxSpecPlaySpread=0,
+      maxTwistScoreSpread=0,maxTwistPlaySpread=0,maxApexScoreSpread=0,maxApexPlaySpread=0;
+    for(const formRarity of rarities)for(const specRarity of rarities){
+      const families=specs.map(spec=>({specId:spec.id,...describe(
+        synthesizeSharpshootMarkPath(formRarity,spec.id,specRarity))})),
+        focus=families.find(row=>row.specId==='mark_focus_spec'),
+        others=families.filter(row=>row!==focus);
+      minBaseMark=Math.min(minBaseMark,...families.map(row=>row.mark));
+      minFocusSpecMarkMargin=Math.min(minFocusSpecMarkMargin,
+        focus.mark-Math.max(...others.map(row=>row.mark)));
+      const scoreSpread=spread(families.map(row=>row.score)),
+        playSpread=spread(families.map(row=>row.play));
+      maxSpecScoreSpread=Math.max(maxSpecScoreSpread,scoreSpread);
+      maxSpecPlaySpread=Math.max(maxSpecPlaySpread,playSpread);
+      specRows.push({formRarity,specRarity,scoreSpread:Number(scoreSpread.toFixed(4)),
+        playSpread:Number(playSpread.toFixed(4)),families});
+    }
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities){
+        const families=specs.map(spec=>{
+          const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+            route.parentId===spec.id&&route.runtimeReadiness==='MATERIALIZED');
+          if(!twists.length)throw new Error(spec.id+' has no materialized Twist family');
+          return {specId:spec.id,...familyMean(twists.map(twist=>
+            synthesizeSharpshootMarkPath(formRarity,spec.id,specRarity,twist.id,twistRarity)))};
+        }),focus=families.find(row=>row.specId==='mark_focus_spec'),
+          others=families.filter(row=>row!==focus),scoreSpread=spread(families.map(row=>row.score)),
+          playSpread=spread(families.map(row=>row.play));
+        minBaseMark=Math.min(minBaseMark,...families.map(row=>row.minMark));
+        minFocusTwistMarkMargin=Math.min(minFocusTwistMarkMargin,
+          focus.mark-Math.max(...others.map(row=>row.mark)));
+        maxTwistScoreSpread=Math.max(maxTwistScoreSpread,scoreSpread);
+        maxTwistPlaySpread=Math.max(maxTwistPlaySpread,playSpread);
+        twistRows.push({formRarity,specRarity,twistRarity,
+          scoreSpread:Number(scoreSpread.toFixed(4)),playSpread:Number(playSpread.toFixed(4)),families});
+      }
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities)for(const apexRarity of rarities){
+        const families=specs.map(spec=>{
+          const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+              route.parentId===spec.id&&route.runtimeReadiness==='MATERIALIZED'),commands=[];
+          for(const twist of twists){
+            const apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
+              route.parentId===twist.id&&route.runtimeReadiness==='MATERIALIZED');
+            if(apexes.length!==twist.apexTarget)throw new Error(twist.id+
+              ' closure Apex count drifted');
+            for(const apex of apexes)commands.push(synthesizeSharpshootMarkPath(formRarity,
+              spec.id,specRarity,twist.id,twistRarity,apex.id,apexRarity));
+          }
+          return {specId:spec.id,...familyMean(commands)};
+        }),focus=families.find(row=>row.specId==='mark_focus_spec'),
+          others=families.filter(row=>row!==focus),scoreSpread=spread(families.map(row=>row.score)),
+          playSpread=spread(families.map(row=>row.play));
+        minBaseMark=Math.min(minBaseMark,...families.map(row=>row.minMark));
+        minFocusApexMarkMargin=Math.min(minFocusApexMarkMargin,
+          focus.mark-Math.max(...others.map(row=>row.mark)));
+        maxApexScoreSpread=Math.max(maxApexScoreSpread,scoreSpread);
+        maxApexPlaySpread=Math.max(maxApexPlaySpread,playSpread);
+        apexRows.push({formRarity,specRarity,twistRarity,apexRarity,
+          scoreSpread:Number(scoreSpread.toFixed(4)),playSpread:Number(playSpread.toFixed(4)),families});
+      }
+    const worst=(rows,key)=>rows.slice().sort((a,b)=>b[key]-a[key])[0],standard={
+      spec:specRows.find(row=>row.formRarity==='COMMON'&&row.specRarity==='COMMON'),
+      twist:twistRows.find(row=>row.formRarity==='COMMON'&&row.specRarity==='COMMON'&&
+        row.twistRarity==='COMMON'),apex:apexRows.find(row=>row.formRarity==='COMMON'&&
+        row.specRarity==='COMMON'&&row.twistRarity==='COMMON'&&row.apexRarity==='COMMON')};
+    return {specs:specs.length,twists:SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.formSlot===1&&route.runtimeReadiness==='MATERIALIZED').length,
+      apexes:SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
+        route.formSlot===1&&route.runtimeReadiness==='MATERIALIZED').length,minBaseMark,minFocusSpecMarkMargin,
+      minFocusTwistMarkMargin:Number(minFocusTwistMarkMargin.toFixed(4)),
+      minFocusApexMarkMargin:Number(minFocusApexMarkMargin.toFixed(4)),
+      maxSpecScoreSpread:Number(maxSpecScoreSpread.toFixed(4)),
+      maxSpecPlaySpread:Number(maxSpecPlaySpread.toFixed(4)),
+      maxTwistScoreSpread:Number(maxTwistScoreSpread.toFixed(4)),
+      maxTwistPlaySpread:Number(maxTwistPlaySpread.toFixed(4)),
+      maxApexScoreSpread:Number(maxApexScoreSpread.toFixed(4)),
+      maxApexPlaySpread:Number(maxApexPlaySpread.toFixed(4)),standard,
+      worst:{specScore:worst(specRows,'scoreSpread'),specPlay:worst(specRows,'playSpread'),
+        twistScore:worst(twistRows,'scoreSpread'),twistPlay:worst(twistRows,'playSpread'),
+        apexScore:worst(apexRows,'scoreSpread'),apexPlay:worst(apexRows,'playSpread')}};
+  })();
   globalThis.__twistDeliveryDecisionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
@@ -856,8 +1070,10 @@ try{
       patternCounts[twist.delivery.pattern]=(patternCounts[twist.delivery.pattern]||0)+1;
       for(const formRarity of rarities)for(const specRarity of rarities)
         for(const twistRarity of rarities){
-          const command=synthesizeSharpshootMarkPath(formRarity,twist.parentId,specRarity,
-              twist.id,twistRarity),delivery=commandDeliveryContract(command),
+          const command=twist.formSlot===2?
+              synthesizeSharpshootChainDescendantPath(formRarity,specRarity,twist.id,twistRarity):
+              synthesizeSharpshootMarkPath(formRarity,twist.parentId,specRarity,
+                twist.id,twistRarity),delivery=commandDeliveryContract(command),
             chain=totalCommandChainGain(command),expectedChain=
               decision.resourcePolicy==='CHAIN_PER_CONTACT'?command.hits:1;
           if(delivery.pattern!==twist.delivery.pattern||chain!==expectedChain||
@@ -887,13 +1103,18 @@ try{
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'),
       regressions=[],stagnant=[];let ladders=0,comparisons=0;
     const commandFor=(route,history,rank)=>{
-      if(route.depth===1)return synthesizeSharpshootMarkPath(rank);
-      if(route.depth===2)return synthesizeSharpshootMarkPath(history[0],route.id,rank);
-      if(route.depth===3)return synthesizeSharpshootMarkPath(history[0],route.parentId,
-        history[1],route.id,rank);
+       if(route.depth===1)return synthesizeSharpshootFormRoute(route,rank);
+      if(route.depth===2)return route.formSlot===2?
+        synthesizeSharpshootChainPath(history[0],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],route.id,rank);
+      if(route.depth===3)return route.formSlot===2?
+        synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank);
       const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-        twist.id,history[2],route.id,rank);
+      return route.formSlot===2?
+        synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],route.id,rank):
+        synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
+          twist.id,history[2],route.id,rank);
     },profile=command=>({
       damage:commandDirectDamageTotal(command),mark:command.markGain||0,
       hits:command.hits||1,chain:totalCommandChainGain(command),
@@ -909,8 +1130,18 @@ try{
       bleedFinalMark:command.afflictionFinalMark||0,
       bleedBreak:command.afflictionBreakApplicationBonus||0,
       bleedEvents:command.afflictionApplicationEventPower||0,
+      markEvents:command.markApplicationEventPower||0,
       charge:commandDefenseTemperRate(command),pulses:(command.markPulsePattern||[]).length,
       bloom:command.markBloomRate||0,trail:command.phaseMarkTrailPerContact||0,
+      chainRamp:Array.from({length:Math.max(1,command.hits||1)},(_,index)=>
+        commandHitBase(command,index)*(command.chainScalingRampPerHit||0)*index*
+          SHARPSHOOT_CHAIN_SCALING_REFERENCE).reduce((sum,value)=>sum+value,0),
+      startingChainRate:Math.floor(SHARPSHOOT_CHAIN_SCALING_REFERENCE*
+        Math.max(0,command.startingChainHitRate||0)+1e-9),
+      secondWave:Array.from({length:Math.max(1,command.hits||1)},(_,index)=>
+        index>=Math.max(0,command.chainSecondWaveStartIndex||0)?
+          commandHitBase(command,index)*(command.chainSecondWaveBonus||0)*
+            SHARPSHOOT_CHAIN_SCALING_REFERENCE:0).reduce((sum,value)=>sum+value,0),
       chainDamage:commandOwnsChainScaling(command)?commandRealChainDamagePerStack(command):0
     }),check=(route,history)=>{
       const commands=rarities.map(rank=>commandFor(route,history,rank));ladders++;
@@ -943,13 +1174,22 @@ try{
     let comparisons=0,maxDamageRestored=0,maxMarkRestored=0,maxLayerGain=0,
       maxLegacyWalletError=0,maxRankFloorPower=0,maxRankStatFloorDamage=0;
     const pair=(route,history,rank)=>{
-      if(route.depth===2)return {parent:synthesizeSharpshootMarkPath(history[0]),
-        child:synthesizeSharpshootMarkPath(history[0],route.id,rank)};
-      if(route.depth===3)return {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,
-          history[1]),child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],
-          route.id,rank)};
+      if(route.depth===2)return route.formSlot===2?
+        {parent:synthesizeSharpshootChainForm(history[0]),
+          child:synthesizeSharpshootChainPath(history[0],route.id,rank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0]),
+          child:synthesizeSharpshootMarkPath(history[0],route.id,rank)};
+      if(route.depth===3)return route.formSlot===2?
+        {parent:synthesizeSharpshootChainPath(history[0],route.parentId,history[1]),
+          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1]),
+          child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank)};
       const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
+      return route.formSlot===2?
+        {parent:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2]),
+          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],
+            route.id,rank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
           twist.id,history[2]),child:synthesizeSharpshootMarkPath(history[0],twist.parentId,
           history[1],twist.id,history[2],route.id,rank)};
     },check=(route,history,rank)=>{
@@ -1035,13 +1275,23 @@ try{
       score:Number(stableEvolutionCombinedGuardrailValue(command).toFixed(3)),
       play:stableEvolutionPlaythroughVector(command).averageContribution}),
     commandsFor=(route,history,childRank)=>{
-      if(route.depth===2)return {parent:synthesizeSharpshootMarkPath(history[0]),
-        child:synthesizeSharpshootMarkPath(history[0],route.id,childRank)};
-      if(route.depth===3)return {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,
-          history[1]),child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],
-          route.id,childRank)};
+      if(route.depth===2)return route.formSlot===2?
+        {parent:synthesizeSharpshootChainForm(history[0]),
+          child:synthesizeSharpshootChainPath(history[0],route.id,childRank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0]),
+          child:synthesizeSharpshootMarkPath(history[0],route.id,childRank)};
+      if(route.depth===3)return route.formSlot===2?
+        {parent:synthesizeSharpshootChainPath(history[0],route.parentId,history[1]),
+          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,childRank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1]),
+          child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],
+            route.id,childRank)};
       const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
+      return route.formSlot===2?
+        {parent:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2]),
+          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],
+            route.id,childRank)}:
+        {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
           twist.id,history[2]),child:synthesizeSharpshootMarkPath(history[0],twist.parentId,
           history[1],twist.id,history[2],route.id,childRank)};
     };
@@ -1084,14 +1334,120 @@ try{
       minChildScoreGap:Number(minChildScoreGap.toFixed(4)),
       minChildPlayGap:Number(minChildPlayGap.toFixed(4)),worstScore,worstPlay,
       worstChildScoreGap,worstChildPlayGap};
-  })();`;
+  })();`,adjacentOnly=process.argv.includes('--adjacent'),exhaustive=process.argv.includes('--exhaustive'),
+    quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustive),
+    adjacentSource=match[1]+chainAdjacentAuditScript,source=quick?match[1]+`
+    ;globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_FORM_AUDIT;
+    globalThis.__chainSpecializationAudit=typeof SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT;
+    globalThis.__chainMarkFamilyAudit=typeof SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT;
+    globalThis.__chainFocusFamilyAudit=typeof SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT;
+    globalThis.__chainPostureFamilyAudit=typeof SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT;
+    globalThis.__chainAfflictionFamilyAudit=typeof SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT;
+    globalThis.__chainCriticalFamilyAudit=typeof SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT;
+    globalThis.__chainChargeFamilyAudit=typeof SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT;
+    globalThis.__chainClosureAudit=typeof SHARPSHOOT_CHAIN_CLOSURE_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHAIN_CLOSURE_AUDIT;`:adjacentOnly?adjacentSource:exhaustiveSource;
   /* Full-history coverage grows deliberately with every materialized family.
      Keep a finite guard, but allow the exhaustive route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
-  vm.runInNewContext(source,sandbox,{filename:file,timeout:180000});
+  vm.runInNewContext(source,sandbox,{filename:file,timeout:quick?60000:540000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
+  if(adjacentOnly){
+    const adjacent=sandbox.__chainAdjacentFamilyAudit;
+    console.log('CHAIN_ADJACENT_FAMILY_AUDIT '+JSON.stringify(adjacent));
+    if(!adjacent||!adjacent.passed)throw new Error('F2 adjacent-family balance failed: '+
+      JSON.stringify(adjacent));
+    process.exit(0);
+  }
+  if(quick){
+    const chainForm=sandbox.__chainFormAudit,chainSpecs=sandbox.__chainSpecializationAudit,
+      chainMark=sandbox.__chainMarkFamilyAudit,chainFocus=sandbox.__chainFocusFamilyAudit,
+      chainPosture=sandbox.__chainPostureFamilyAudit,
+      chainAffliction=sandbox.__chainAfflictionFamilyAudit,
+      chainCritical=sandbox.__chainCriticalFamilyAudit,
+      chainCharge=sandbox.__chainChargeFamilyAudit,chainClosure=sandbox.__chainClosureAudit;
+    if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
+       chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4')
+      throw new Error('Quick F2 Chain Form gate failed: '+JSON.stringify(chainForm));
+    if(!chainSpecs||!chainSpecs.passed||chainSpecs.cards!==96||chainSpecs.specializations!==6)
+      throw new Error('Quick F2 Specialization gate failed: '+JSON.stringify(chainSpecs));
+    if(!chainMark||!chainMark.passed||chainMark.twists!==4||chainMark.apexes!==16||
+       chainMark.cards!==32||chainMark.powerSpread>1.20)
+      throw new Error('Quick F2S1 Chain/Mark gate failed: '+JSON.stringify(chainMark));
+    if(!chainFocus||!chainFocus.passed||chainFocus.twists!==4||chainFocus.apexes!==16||
+       chainFocus.cards!==32||chainFocus.powerSpread>1.20)
+      throw new Error('Quick F2S2 Chain/Chain gate failed: '+JSON.stringify(chainFocus));
+    if(!chainPosture||!chainPosture.passed||chainPosture.twists!==4||
+       chainPosture.apexes!==16||chainPosture.cards!==32||chainPosture.powerSpread>1.20||
+       !chainPosture.roleLeaders||chainPosture.roleLeaders.length!==4)
+      throw new Error('Quick F2S3 Chain/Posture gate failed: '+JSON.stringify(chainPosture));
+    if(!chainAffliction||!chainAffliction.passed||chainAffliction.twists!==4||
+       chainAffliction.apexes!==16||chainAffliction.cards!==32||chainAffliction.powerSpread>1.20||
+       !chainAffliction.roleLeaders||chainAffliction.roleLeaders.length!==4)
+      throw new Error('Quick F2S5 Chain/Affliction gate failed: '+JSON.stringify(chainAffliction));
+    if(!chainCritical||!chainCritical.passed||chainCritical.twists!==4||
+       chainCritical.apexes!==16||chainCritical.cards!==32||chainCritical.powerSpread>1.20||
+       !chainCritical.roleLeaders||chainCritical.roleLeaders.length!==4)
+      throw new Error('Quick F2S4 Chain/Critical gate failed: '+JSON.stringify(chainCritical));
+    if(!chainCharge||!chainCharge.passed||chainCharge.twists!==4||
+       chainCharge.apexes!==16||chainCharge.cards!==32||chainCharge.powerSpread>1.20||
+       !chainCharge.roleLeaders||chainCharge.roleLeaders.length!==4)
+      throw new Error('Quick F2S6 Chain/Charge gate failed: '+JSON.stringify(chainCharge));
+    if(!chainClosure||!chainClosure.passed||chainClosure.specializations!==6||
+       chainClosure.twists!==24||chainClosure.apexes!==96||chainClosure.routeNodes!==127||
+       chainClosure.rankedCards!==508)
+      throw new Error('Quick F2 closure gate failed: '+JSON.stringify(chainClosure));
+    const adjacentFamilies=[chainMark,chainFocus,chainPosture,chainCritical,chainAffliction,
+      chainCharge].map(family=>{
+        const score=family.standard.reduce((sum,row)=>sum+row.score,0)/family.standard.length,
+          play=family.standard.reduce((sum,row)=>sum+row.play,0)/family.standard.length;
+        return {score,play};
+      }),mean=key=>adjacentFamilies.reduce((sum,row)=>sum+row[key],0)/adjacentFamilies.length,
+      spread=key=>(Math.max(...adjacentFamilies.map(row=>row[key]))-
+        Math.min(...adjacentFamilies.map(row=>row[key])))/mean(key),
+      adjacentQuick={scoreSpread:Number(spread('score').toFixed(4)),
+        playSpread:Number(spread('play').toFixed(4))};
+    if(adjacentQuick.scoreSpread>.12||adjacentQuick.playSpread>.12)
+      throw new Error('Quick F2 adjacent-family balance failed: '+JSON.stringify(adjacentQuick));
+    console.log('QUICK_RUNTIME_OK '+file);
+    console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
+    console.log('CHAIN_SPECIALIZATION_AUDIT '+JSON.stringify({
+      cards:chainSpecs.cards,standard:chainSpecs.standard,distinction:chainSpecs.distinction}));
+    console.log('CHAIN_MARK_FAMILY_AUDIT '+JSON.stringify(chainMark));
+    console.log('CHAIN_FOCUS_FAMILY_AUDIT '+JSON.stringify(chainFocus));
+    console.log('CHAIN_POSTURE_FAMILY_AUDIT '+JSON.stringify(chainPosture));
+    console.log('CHAIN_AFFLICTION_FAMILY_AUDIT '+JSON.stringify(chainAffliction));
+    console.log('CHAIN_CRITICAL_FAMILY_AUDIT '+JSON.stringify(chainCritical));
+    console.log('CHAIN_CHARGE_FAMILY_AUDIT '+JSON.stringify(chainCharge));
+    console.log('CHAIN_CLOSURE_AUDIT '+JSON.stringify(chainClosure));
+    console.log('CHAIN_ADJACENT_QUICK '+JSON.stringify(adjacentQuick));
+    process.exit(0);
+  }
   console.log(`RUNTIME_OK ${file}`);
   const audit=sandbox.__runtimeAudit;
+  const chainForm=sandbox.__chainFormAudit,chainSpecs=sandbox.__chainSpecializationAudit;
+  if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
+     chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4'||
+     chainForm.rows.some(row=>row.chain!==row.hits||row.mark<1))
+    throw new Error('F2 Chain Form contract failed: '+JSON.stringify(chainForm));
+  console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
+  if(!chainSpecs||!chainSpecs.passed||chainSpecs.cards!==96||chainSpecs.specializations!==6)
+    throw new Error('F2 Specialization contract failed: '+JSON.stringify(chainSpecs));
+  console.log('CHAIN_SPECIALIZATION_AUDIT '+JSON.stringify({
+    cards:chainSpecs.cards,standard:chainSpecs.standard,distinction:chainSpecs.distinction}));
+  const chainClosure=sandbox.__chainClosureAudit;
+  if(!chainClosure||!chainClosure.passed||chainClosure.specializations!==6||
+     chainClosure.twists!==24||chainClosure.apexes!==96||chainClosure.rankedCards!==508)
+    throw new Error('F2 closure contract failed: '+JSON.stringify(chainClosure));
+  console.log('CHAIN_CLOSURE_AUDIT '+JSON.stringify(chainClosure));
   if(audit&&audit.focusTwistBoundaryMatrix){
     const standard=audit.focusTwistMatrix.filter(row=>row.formRarity==='COMMON'&&
       row.specRarity==='COMMON'&&row.twistRarity==='COMMON');
@@ -1280,6 +1636,18 @@ try{
     families:chargeFamily.families,uncapped:chargeFamily.uncapped,
     standard:chargeFamily.rows.filter(row=>row.formRarity==='COMMON'&&
       row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
+  const f1Closure=sandbox.__f1ClosureAudit;
+  if(!f1Closure||f1Closure.specs!==6||f1Closure.twists!==24||f1Closure.apexes!==91||
+     f1Closure.minBaseMark<1||f1Closure.minFocusSpecMarkMargin<0||
+     f1Closure.minFocusTwistMarkMargin<1||f1Closure.minFocusApexMarkMargin<1||
+     f1Closure.maxSpecScoreSpread>.20||f1Closure.maxSpecPlaySpread>.20||
+     f1Closure.maxTwistScoreSpread>.35||f1Closure.maxTwistPlaySpread>.50||
+     f1Closure.maxApexScoreSpread>.35||f1Closure.maxApexPlaySpread>.50||
+     f1Closure.standard.spec.scoreSpread>.15||f1Closure.standard.spec.playSpread>.15||
+     f1Closure.standard.twist.scoreSpread>.30||f1Closure.standard.twist.playSpread>.40||
+     f1Closure.standard.apex.scoreSpread>.30||f1Closure.standard.apex.playSpread>.40)
+    throw new Error('F1 closure identity or cross-family balance failed: '+JSON.stringify(f1Closure));
+  console.log('F1_CLOSURE_REPORT '+JSON.stringify(f1Closure));
   const deliveryDecisions=sandbox.__twistDeliveryDecisionAudit;
   if(!deliveryDecisions||deliveryDecisions.rows!==deliveryDecisions.expectedRows||
      deliveryDecisions.splitPayloadRows!==64)
@@ -1412,6 +1780,15 @@ try{
        f1s5MinBaseMark:afflictionFamily.minBaseMark,
        f1s5MinFocusMarkWall:afflictionFamily.minFocusMarkMargin,
        f1s5FamilySpreads:afflictionFamily.families.map(family=>family.maxSpread),
+       f1Closure:{specs:f1Closure.specs,twists:f1Closure.twists,apexes:f1Closure.apexes,
+         minBaseMark:f1Closure.minBaseMark,
+         minFocusTwistMarkMargin:f1Closure.minFocusTwistMarkMargin,
+         minFocusApexMarkMargin:f1Closure.minFocusApexMarkMargin,
+         maxSpecScoreSpread:f1Closure.maxSpecScoreSpread,
+         maxTwistScoreSpread:f1Closure.maxTwistScoreSpread,
+         maxTwistPlaySpread:f1Closure.maxTwistPlaySpread,
+         maxApexScoreSpread:f1Closure.maxApexScoreSpread,
+         maxApexPlaySpread:f1Closure.maxApexPlaySpread},
        deliveryDecisionTwists:deliveryDecisions.twists,
        deliveryDecisionRows:deliveryDecisions.rows},
     bug:{passed:true,runtime:true,mechanicAudit:true,posturePrimer:true,

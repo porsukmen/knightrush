@@ -104,6 +104,10 @@ two siblings in a four-Twist family must be pair-specific rather than generic st
 Primary ownership remains dominant in every flow. Reversing Primary and Secondary creates a new
 family and must not copy the old family with renamed resources.
 
+Every materialized Stable Twist must provide this explicit `twistDesign` contract. Legacy inference
+is not accepted for a completed Form. The compiler may derive numbers, but it may never invent the
+player decision or resource direction from axis names alone.
+
 ### 4. Apex: maximum expression
 
 - Inherits both `secondaryId` and `relationshipId` exactly.
@@ -271,6 +275,13 @@ Per-hit damage, cadence, distribution, cost, and other unprotected weights may t
 - Every authored Twist records `deliveryIntent`. Review and validation must consider topology,
   timing, natural Chain ownership, mechanic fit, animation readability, and adjacent-tree identity.
   A `SINGLE` choice is valid only after these alternatives were considered, not as a default.
+- Every materialized move must select a presentation recipe that makes its actual mechanic readable.
+  A weighted Single projectile needs visibly longer draw/hold, larger projectile scale, slower flight
+  and stronger impact than a normal arrow; a volley, packet or echo needs choreography matching its
+  real contact order. These are data parameters, never new frame-loop branches.
+- Projectile texture is an interchangeable visual layer selected by the same recipe identity. Future
+  arrow art may vary by weapon, status or relationship without changing contact count, timing or
+  combat math.
 - Delivery magnitude is `floor(sqrt(total cumulative Quality))`, minimum `1`, with no
   gameplay maximum. Sequential maps it to contact count, Simultaneous Packet to pellet
   count, and Single to Weight. A one-contact Sequential or Packet is valid.
@@ -622,6 +633,26 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   visible Common conversion output, best-phase banking, and uncapped linear release at `2` and `20`
   Charge. Mark/Charge remains at least five guaranteed Mark below equivalent Mark/Mark histories.
 
+### F1 closure gate and F2 entry
+
+F1 is structurally closed only when all six Specializations, all `24` Twists and all `91` Apexes
+are materialized, every Twist has explicit Delivery and flexible-design metadata, and every Twist's
+declared `apexTarget` equals its real child count. Base Sharpshoot Mark must remain present in every
+route. Mark/Mark may tie at Specialization but must lead the other family means by at least one Mark
+from Twist onward.
+
+Cross-family power is measured at equal rarity histories. Ordinary all-Common history must remain
+inside `15%` at Specialization and `30% score / 40% play` at Twist and Apex. Across every rarity
+history, Specialization remains inside `20%`; Twist and Apex score remain inside `35%`, and the
+six-phase play proxy remains inside `50%`. The wider jackpot band is deliberate until the dedicated
+Mark-consuming combat skill exists. It is not permission to hide a normal-history winner.
+
+F2 begins with CHAIN Primary. Its first reference pair is CHAIN Primary / MARK Secondary. It must
+not copy F1S2 and rename the resource direction: Chain generation and live Chain use are the move's
+main purpose; Mark is supporting output or interaction. F1S2 remains a Mark builder that borrows
+Chain behavior. This reversed pair is the first proof that ownership changes gameplay rather than
+only labels.
+
 ### F1S3 Mark/Posture contract
 
 - MARK remains Primary; POSTURE is a light-ranged Secondary. Secondary role `0.80` and Light Ranged
@@ -717,6 +748,80 @@ Current authored jackpot examples are executable test fixtures:
 - `Blooded Refrain (Rare) -> Legendary Apex`: cost 5, Rarity Resonance II refunds 3.
 - `Royal Convergence (Legendary) -> Legendary Apex`: cost 6, Crown Resonance refunds all 6.
 
+### F2 Chain Primary Form contract
+
+- F2 is a self-sufficient `CHAIN Primary` sequential attack. Sharpshoot Base still supplies at least
+  one final-contact Mark; Form does not select a Secondary or consume either resource.
+- Every visible contact deals damage using current real Chain, then creates exactly one real Chain.
+  Defense Chain therefore affects contact one and Chain generated here affects later contacts live.
+- Total Quality selects contact count with `floor(sqrt(totalQuality))` and no gameplay cap. The Chain
+  wallet must pay extra contact output, within-action live reads, and the remaining Chain coefficient.
+- The Form wallet is `25% DIRECT_DAMAGE / 55% CHAIN_SCALING / 20% MARK_GAIN`. Rarity may not reduce
+  clean damage, total real Chain, final Mark, or real damage produced by one stored Chain.
+- Until the four-skill AP/Resolve pass, this Form remains `1 AP / 1 Resolve` and cannot smuggle in an
+  economy, Crit, Posture, Affliction, Charge, or resource-consumption mechanic.
+
+### F2 Chain Primary Specialization contract
+
+- F2 has six equal-access Stable Specializations: `Chain/Mark`, `Chain/Chain`, `Chain/Posture`,
+  `Chain/Critical`, `Chain/Affliction`, and `Chain/Charge`. All inherit the complete F2 Form receipt;
+  only the new Specialization packet is divided between Primary and Secondary. An older Legendary
+  Form may never be rewritten or flattened by a later Common Specialization.
+- Mixed routes allocate the new identity packet `70% Chain / 30% Secondary`; pure Chain allocates
+  `100% Chain`. Direct damage keeps its own `25%` route share. Light bow Posture uses the existing
+  `0.32` expression factor; Crit uses `0.40`; Mark, Affliction, and Charge use `1.00`. Power that the
+  Secondary cannot express returns to Chain rather than vanishing or becoming free damage.
+- Every route preserves F2's Sequential/Live contract: each visible contact reads current Chain,
+  deals damage, then creates exactly one real Chain. Total Quality continues to select contact count
+  with `floor(sqrt(totalQuality))`; Specialization does not reset the Form's accumulated Quality.
+- Sharpshoot's immutable Base Mark remains on the final real contact in every route. Chain/Mark adds
+  a visible supporting Mark when its `30%` packet can pay for it. If a discrete Mark threshold is
+  narrowly missed, the compiler may borrow only the missing price from that same Specialization's
+  Chain allocation; it may not borrow from Form history or create free power.
+- Chain/Posture divides one paid total Posture payload across real contacts. Local Crit affects the
+  Health and Posture of the same contact. Chain/Affliction installs one Bleed package per action,
+  never one per arrow. Chain/Charge banks once per action and divides its next released damage bonus
+  across contacts, so multi-hit Delivery cannot duplicate either Secondary for free.
+- Chain/Critical rolls move-local Crit independently per visible contact. Chain/Chain has no hidden
+  Secondary and must lead equal-history Chain coefficient/output. None of the six routes consumes
+  Mark, refunds AP/Resolve, or introduces a third mechanic at Specialization.
+- At Common/Common reference history, the six routes must remain in the same broad power band while
+  showing their Secondary immediately. `Chain/Mark` may tie F1 `Mark/Chain` in visible Mark at this
+  early threshold, but must retain more Chain payoff; later Mark-owned descendants remain responsible
+  for leading Mark output. Ownership is judged by the whole evolution path, not by swapping labels.
+- Executable coverage is `6 routes x 4 Form rarities x 4 Specialization rarities = 96 cards`.
+  Validation must prove parent inheritance, rank monotonicity, route-exclusive Secondary behavior,
+  real contact count/Chain equality, and the F1 Mark/Chain versus F2 Chain/Mark distinction.
+
+### F2S1 Chain/Mark Twist and Apex contract
+
+- Chain remains Primary, Mark remains supporting Secondary, and every visible arrow still reads
+  current Chain before creating exactly `+1` real Chain. No descendant consumes Mark, introduces a
+  third Attribute, refunds AP/Resolve, or adds an authored output cap.
+- T1 is the reliable live Ramp: later arrows gain a paid Chain coefficient during the same action.
+  T2 Etches the paid Mark package across Chain-producing contacts. T3 snapshots action-start Chain
+  once and turns it into real extra arrows; new Chain cannot recursively extend that action. T4 is
+  a sequential two-wave attack: wave one builds Chain and wave two receives the paid payoff.
+- Delivery changes only when the relationship needs it. All four are Sequential because every real
+  contact must create Chain; T4 alone adds a deliberate wave gap. T3's runtime contact growth has no
+  gameplay cap, but uses one action-start snapshot to prevent an automatic infinite loop.
+- Every Twist has four Apex refinements: relationship maximum, stored-Chain payoff, supporting Mark,
+  and clean impact. Apex preserves the exact Twist relationship and Delivery timing; it may not turn
+  Chain/Mark into Mark/Chain or replace the inherited move with an unrelated mechanic.
+- The four Common Twist references must stay within a `20%` sibling power band. Rarity can strengthen
+  direct damage, contacts, Mark, Chain payoff, or the named relationship parameter, but none of those
+  owned outputs may regress. Each rank carries at least `+1.1` visible clean damage over the previous
+  real rank before its mechanic gain is added.
+- Synthesis is parent-first and history-monotonic. A child begins above its immediate parent, the
+  previous real rank, and every one-step-lower Form/Spec/Twist history. At least `10%` of a stronger
+  parent's advantage, with a minimum visible gap of `1`, must survive into the same child route.
+- Strong inherited clean damage naturally increases the universal Chain read. That historical gain
+  is not charged to the newest layer twice. The new layer still pays every added real contact and its
+  authored Ramp/Momentum/Wave relationship power from the Chain wallet.
+- Executable minimum coverage is `4 Twist + 16 Apex`. The fast gate checks route count, identities,
+  runtime materialization and the Common sibling band; the exhaustive gate checks every rarity
+  ladder, parent history, Delivery decision and stronger-foundation retention.
+
 ## Mandatory negative checks
 
 The boot-time validator must reject at least these cases:
@@ -745,3 +850,95 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
 ## Short future prompt
 
 > Create a Stable evolution tree for `[skill]` using `STABLE_SKILL_TREE_RULES.md`. Treat the skill as one living move whose selected node replaces its parent; never assume mutually exclusive siblings coexist. Define Form Primary/chassis/affinities, make every Form self-sufficient from clean combat state, select one Secondary per Specialization, Twist only the inherited Primary-Secondary relationship, and let Apex maximize that exact relationship. Generate every child from its immediate parent, use declarative Mark rules when applicable, add executable contracts, and make all boot-time audits pass.
+
+## F2S2 Chain/Chain uygulama sözleşmesi
+
+- Primary ve Secondary CHAIN'dir. Sharpshoot kimliğinden yalnız base Mark miras alınır; ekstra Mark motoru, Mark tüketimi, üçüncü attribute veya AP/Resolve ekonomisi eklenmez.
+- T1 hızlanan seri atıştır: her temas canlı Chain'i okur, sonra `+1 Chain` verir; sonraki temas aynı saldırıda oluşan Chain'den yararlanır.
+- T2 ağır tek oktur: Quality ile büyüyen delivery yoğunluğu Weight'e sıkıştırılır; tek gerçek temas ve tam `+1 Chain` üretir.
+- T3 eşzamanlı pakettir: bütün oklar action-start Chain'i okur, ardından temas başına `+1 Chain` verir; paket kendi ürettiği Chain ile kendi hasarını büyütmez.
+- T4 yankılı vuruştur: tek projectile bırakılır, gecikmeli temaslar canlı Chain'i okur ve temas başına `+1 Chain` verir.
+- Temas sayısı ve Weight bütün rarity geçmişinin Quality'sinden türetilir; authored maksimum konmaz.
+- Aynı seviyedeki dört Twist ortalama güçte yakın kalır; All-Common referansındaki en güçlü/en zayıf oranı `1.20`yi aşamaz.
+- Her Twist dört Apex üretir. Apex parent delivery ve ilişkiyi korur; imza, yoğunluk, payoff veya temiz etki taraflarından birini güçlendirir.
+- Rarity, immediate parent ve geçmişteki güçlü temel avantajı hiçbir childda gerilemez.
+- Derived Chain katsayıları ortak referans Chain değeriyle fiyatlanır; aynı Quality hem direkt hasara hem Chain payoffuna tam değerle iki kez harcanmaz.
+
+## Görünen temas sonuç üretir — hard runtime kuralı
+
+- Ayrı görünen her projectile, kılıç teması, pellet veya echo gerçek bir sonuç taşır. Görselde üç ok vurup Bleed/Posture'un yalnız son oktan gelmesi yasaktır.
+- Tek bir toplam Posture ya da iki-tick Bleed paketi çoklu delivery ile taşınıyorsa paket temaslara bölünür. Temas sayısı toplam payloadu çoğaltmaz; hiçbir temas sıfır payla yalnız dekor olarak kalmaz.
+- “Her temas katkı verir” ile “her temas yeni status olayı tetikler” aynı şey değildir. Varsayılan status sözleşmesi aksiyon başına tek mantıksal uygulamadır; artifact proc sayısı ancak ayrıca tasarlanıp Quality bütçesinden ödenirse artar.
+- Simultaneous packet action-start kaynaklarını snapshotlar. Aynı packetın ürettiği Chain, packet içindeki kardeş pelletleri geriye dönük güçlendiremez.
+- Factory, runtime ve validator bu kuralı birlikte taşır. Materialized çoklu Affliction delivery, `EVERY_VISIBLE_CONTACT_CONTRIBUTES` ve `VISIBLE_PAYLOAD_PER_CONTACT` sözleşmesi olmadan boot edemez.
+
+## F2S3 Chain/Posture uygulama sözleşmesi
+
+- Dört Twist / on altı Apex vardır. Her görünür temas tam `+1 Chain` üretir ve Sharpshoot base Markını korur; bow ağır bir Posture silahına dönüşmez.
+- T1 toplam hafif-bow Posture paketini seri oklara eşit dağıtır. T2 tek Weight oku action-start Chain'i tüketmeden ek Posture'a çevirir.
+- T3 toplam Posture'un `%70`ini ilk oka, kalanını sonraki oklara dağıtır; amaç aynı aksiyon içinde erken Break açıp kalan gerçek temasların Break bonusundan yararlanabilmesidir.
+- T4 action-start Posture oranını tüketmeden Chain katsayısına çeviren tek-release/echo delivery'dir.
+- Dört Common Twist `1.20` güç bandında kalır. Her Twist'in dört Apex'i sırasıyla relationship, Chain payoff, Posture payoff ve temiz hasar tarafında kardeşlerinin mekanik lideri olmalıdır.
+
+## F2S5 Chain/Affliction uygulama sözleşmesi
+
+- Dört Twist / on altı Apex vardır. Sharpshoot base Markı ve görünür temas başına `+1 Chain` korunur; Affliction burada iki savunma ticki süren Bleed'dir.
+- T1 seri oklarla tek toplam yarayı parça parça kurar. Her ok gerçek Bleed payı uygular fakat toplam Bleed ok sayısıyla çarpılmaz.
+- T2 tek Weight oku action-start Chain'i tüketmeden iki ticklik Bleed'e çevirir. T3 tek yara bırakır; iki Bleed tickinin her biri gecikmeli ve ayrıca fiyatlanmış Chain döndürür.
+- T4 mevcut Bleed'i tüketmeden action-start snapshot olarak Chain katsayısına çeviren eşzamanlı pakettir; her pellet yeni yaranın gerçek payını ve sonrasında `+1 Chain` üretir.
+- Dört Common Twist `1.20` güç bandında kalır. Her Twist'in dört Apex'i relationship, Chain payoff, Bleed payoff ve temiz hasarda ayrı liderlik testi geçer.
+
+## F2 komşu aile güç kapısı
+
+- Tamamlanan F2 aileleri yalnız kendi kardeşleri içinde değil, aynı Form/Spec/Twist/Apex rarity
+  geçmişi altında birbirleriyle de karşılaştırılır. Bu kapı `Chain/Mark`, `Chain/Chain`,
+  `Chain/Posture`, `Chain/Critical`, `Chain/Affliction` ve `Chain/Charge` ailelerinin altısını da
+  kapsar; materialize edilen her yeni F2 ailesi aynı listeye eklenir.
+- All-Common hızlı kapıda Twist ve Apex aile ortalamalarının hem birleşik güç hem altı fazlık oynanış
+  katkısı farkı `%12`yi aşamaz.
+- Bütün rarity geçmişlerinde tekil jackpot kombinasyonları için en yüksek fark `%20` olabilir; fakat
+  bütün geçmişlerin aile ortalaması arasındaki fark `%10`u aşamaz. Böylece nadir bir rota gerçekten
+  sıçrayabilir, fakat bir aile bütün runlarda sistematik biçimde üstün veya zayıf kalamaz.
+- Bu karşılaştırma aynı attribute çıktısını zorlamaz. Posture, Bleed, Mark ve Chain kendi kullanım
+  senaryolarında fiyatlanır; kapı yalnız toplam yatırımın benzer değer üretmesini denetler.
+- Geliştirme komutu `node tools/validate-runtime.cjs KnightRush.html --adjacent` yalnız bu matrisi,
+  `--quick` ise boot, closure, rank ve All-Common kapılarını çalıştırır. Yayın kapısında iki komut da
+  ayrı ayrı geçer; eski monolitik F1 exhaustive matrisi her mobil deployda yeniden çalıştırılmaz.
+  Bu hesaplar oyun açılışında çalışmaz.
+
+## F2S4 Chain/Critical uygulama sözleşmesi
+
+- Dört Twist / on altı Apex vardır. CHAIN Primary kalır; Critical yalnız move-local Secondary'dir,
+  global Crit veya Precision üretmez.
+- T1 seri saldırıda sonraki temasların Crit ihtimalini büyütür. T2 tek ağır okta action-start Chain'i
+  tüketmeden yalnız Crit çarpanını büyütür. T3 her gerçek Critten sonra bonus Chain üretir ve sonraki
+  ok aynı saldırıda bunu okuyabilir. T4 tek release sonrası gecikmeli echolarda bağımsız Crit rolleri yapar.
+- Her Crit bonus Chain olayı gerçek Critten sonra çalışır; kendi Crit ihtimalini geriye dönük büyütemez.
+  Crit hasar çarpanı ve Chain okuması gameplay cap taşımaz, fakat olasılık doğal olarak `%100`de kalır.
+- Animasyon kimlikleri sırasıyla yükselen volley, ağır Crit oku, Crit-feedback volley ve tek-release
+  Crit echo olarak ayrılır. Apex parent delivery ve animasyon ailesini korur.
+
+## F2S6 Chain/Charge uygulama sözleşmesi
+
+- Dört Twist / on altı Apex vardır. Charge yalnız son savunma fazındaki en iyi Parry/Perfect Dodge
+  bankasını kullanır; Break ekstra Charge üretmez.
+- T1 bütün bankayı tüketip tek toplam hasarı seri Chain oklarına böler. T2 bütün bankayı tek ağır
+  impact sonrası bonus Chain'e çevirir. T3 action-start Chain'i koruyup tüketilen Charge hasarını
+  büyüten tek-release echo rotasıdır. T4 görünür temas sayısı kadar Charge harcar ve fazlasını saklar.
+- Hiçbir multihit aynı Charge noktasını birden fazla kez kullanamaz. Charge→Chain yalnız final
+  temastan sonra uygulanır; aynı saldırının önceki hasarını geriye dönük büyütmez.
+- Animasyon kimlikleri güvenilir Charge volley, ağır Charge patlaması, rezonans echo ve hızlı ölçülü
+  volley olarak ayrılır. Apex parent delivery ve animasyon ailesini korur.
+
+## F2 tamamlanma kapısı
+
+- F2 authored slice tam olarak `1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route node`
+  ve dört rarity ile `508 ranked card` içermelidir.
+- Her Specialization tam dört Twist, her Twist tam dört Apex sahibi olmalıdır. Ağaçta görünen ama
+  runtime command üretemeyen route kabul edilmez.
+- Her F2 Twist Sharpshoot base Markını korur. Görünen her temas tam `+1 Chain` üretir; delivery ile
+  Chain sonucu arasında dekor temas bulunamaz.
+- Chain/Crit değeri guardrail hesabında senaryonun action-start Chainini okumak zorundadır. Chain ile
+  büyüyen Crit ihtimali veya çarpanı sıfır-Chain gibi fiyatlanamaz; aksi halde rota sistematik nerflenir.
+- `SHARPSHOOT_CHAIN_CLOSURE_AUDIT` bu sayımı ve oynanabilirliği boot sırasında, `--quick` ise CI kapısında
+  doğrular. Tam komşu matris artık altı F2 ailesinin hepsini kapsar.

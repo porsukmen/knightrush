@@ -26,9 +26,10 @@ Script sırasıyla:
 Push sonrasında `.github/workflows/deploy-pages.yml` otomatik olarak:
 
 1. `KnightRush.html` dosyasını yeniden parse eder.
-2. Temiz bir `_site` artifact'i oluşturur.
-3. Artifact içinde yalnız `KnightRush.html -> index.html` yayın kopyasını üretir.
-4. Artifact'i GitHub Pages'e deploy eder.
+2. Hızlı runtime/closure kapısını ve ağır F2 komşu-aile matrisini ayrı süreçlerde doğrular.
+3. Temiz bir `_site` artifact'i oluşturur.
+4. Artifact içinde yalnız `KnightRush.html -> index.html` yayın kopyasını üretir.
+5. Artifact'i GitHub Pages'e deploy eder.
 
 Doğrudan `git push` kullanılsa bile aynı workflow çalışır; yayın kopyasını unutmak
 artık mümkün değildir.

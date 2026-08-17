@@ -15,6 +15,8 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
   Delivery kimligini taklit etmemelidir. `SINGLE` da bilincli bir karardir; varsayilan cevap degildir.
 - Tum ailelere zorunlu ayni T1/T2/T3/T4 sablonu uygulanmaz. Her Twist kendi kaynak akis yonunu,
   oyuncu kararini, Primary sonucunu, Secondary sonucunu ve sinerji kancasini aciklar.
+- Materialize edilen her Stable Twist bu bilgileri acik `twistDesign` metadata olarak tasir;
+  tamamlanmis bir Formda legacy tahmin veya bos alan kabul edilmez.
 - Dortlu bir ailede en az iki Twist iki attribute ciftine ozel olmalidir. Kardesler ayni oyuncu
   karari + Delivery + sinerji imzasini tekrarlayamaz.
 - Primary her zaman ana kimliktir. Primary/Secondary yer degistirdiginde ayni agac isimleri
@@ -75,6 +77,10 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Uzun-bas tooltip yalniz oyuncunun karar verecegi bilgiyi gosterir.
 - Rank sekmeleri secilebilir ve farklar secili ranka gore dogru hesaplanir.
 - Runtime animasyonu hareketin Delivery ve mekanik farkini okunur hizda gosterir.
+- Materialize edilen her move, kendi mekanigine uygun bir sunum recipe'si secer. Agir tek ok normal
+  oktan daha uzun cekis/bekleme, daha yavas ucus, daha buyuk siluet ve daha sert impact gostermelidir.
+- Projectile texture kimligi combat matematiginden ayridir; ileride ok gorseli degistirilirken temas
+  sayisi, zamanlama veya payload degismez.
 
 ## 8A. Delivery niyet kapisi
 
@@ -100,6 +106,13 @@ Ardindan:
 
 Otomatik validator `Structure`, `Design`, `Bug`, `Rarity` ve `Power` kapilarinin tamamini gecmeden
 aile commit veya push edilmez. Gorsel degisiklik varsa sessiz yerel tarayici testi de zorunludur.
+
+Form-only hizli kontrol icin:
+
+`node tools/validate-runtime.cjs KnightRush.html --quick`
+
+Yeni bir Form eklendiginde hizli kapida address/Form slotu, Base kimlik, Primary cikti, gercek
+Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz scaling kanitlanir.
 
 ## F1S3T2 referans uygulamasi
 
@@ -159,3 +172,140 @@ aile commit veya push edilmez. Gorsel degisiklik varsa sessiz yerel tarayici tes
   en az bir gorunur Mark biriktirmelidir. Bunlar cap degil, sifir-cikti tarifini yakalayan alt testlerdir.
 - `2` ve `20` Charge problari sonucun finite ve dogrusal buyudugunu; `7` Charge savunma fazi ise
   bankanin authored bir `3` sinirina kirpilmadigini kanitlar.
+
+## F1 kapanis kapisi
+
+- Tam F1 sayimi `6 Specialization / 24 Twist / 91 Apex` olmalidir. Her Twist'in `apexTarget`
+  degeri gercek materialize edilmis cocuk sayisiyla ayni olmalidir.
+- Her route Sharpshootun Base Mark ciktisini korur. Mark/Mark, Specializationda esitlenebilir;
+  Twist ve Apex aile ortalamasinda digerlerinden en az bir Mark onde kalir.
+- All-Common capraz aile farki Spec icin `%15`, Twist/Apex icin `%30 score / %40 play` bandini
+  asamaz. Tum rarity jackpotlarinda score `%35`, play `%50` ust siniridir.
+- Play bandi ikinci Mark-tuketen skill materialize edilince tekrar kalibre edilir; bu gecici not
+  normal raritylerde otomatik kazanan bir aileye izin vermez.
+- F2 ilk olarak CHAIN Primary / MARK Secondary ile baslar. F1S2 Mark/Chain kopyalanamaz:
+  F2de Chain hareketin ana amaci, Mark ise destekleyen cikti veya etkilesimdir.
+
+## F2 Chain Form referans uygulamasi
+
+- F2 `CHAIN Primary`dir; Sharpshootun degismeyen Base kimligi nedeniyle son gercek temasta en az
+  bir Mark birakir. Form Mark tuketmez ve henuz Secondary secmez.
+- Delivery `SEQUENTIAL / LIVE`dir. Her gorunen ok once mevcut gercek Chain ile hasar verir, sonra
+  tam `+1 Chain` ekler. Savunma fazindan tasinan Chain ilk oktan, bu saldirinin uretecegi Chain ise
+  sonraki oklardan itibaren okunur.
+- Form Quality profili `%25 DIRECT_DAMAGE / %55 CHAIN_SCALING / %20 MARK_GAIN`dir. Toplam Quality
+  `floor(sqrt(Quality))` ile temas sayisini belirler; bu formulu kesen gameplay cap yoktur.
+- Chain wallet ek temaslarin uretecegi gercek Chaini, saldiri icindeki canli Chain okumalarini ve
+  kalan Chain katsayisini birlikte oder. Ek ok yalniz animasyon degildir ve Quality disi bedava guc
+  olarak yazilamaz.
+- Standart Form rarityleri `3/6/10/16` toplam Quality ile `1/2/3/4` oka gider. Rarity temiz hasari,
+  gercek Chain ciktisini ve bir Chain stackinin saldiri boyunca verdigi toplam hasari azaltamaz.
+- Form `1 AP / 1 Resolve` kalir; Crit, Posture, Affliction, Charge, Mark/Chain tuketimi veya ekonomi
+  motoru ekleyemez. Bu maliyet, dort skill tamamlandiktan sonraki AP/Resolve revampinda yeniden ele
+  alinacak ve Form kimligiyle karistirilmayacaktir.
+
+## F2 Chain Specialization kabul listesi
+
+- Tam sayim `6 Specialization / 96 rarity history` olmalidir: Chain/Mark, Chain/Chain,
+  Chain/Posture, Chain/Critical, Chain/Affliction ve Chain/Charge.
+- Her cocuk F2 Formun hasarini, toplam Qualitysini, final-temas Base Markini ve canli Chain
+  davranisini miras alir. Specialization sadece kendi yeni Quality paketini bolusturur.
+- Her gercek temas once mevcut Chaini okur, sonra tam `+1 Chain` verir. Karttaki temas sayisi ile
+  runtime Chain ciktisi ayni olmalidir.
+- Chain/Mark gorunur Secondary Markini kendi `%30` paketinden oder. Gerekirse yalniz o paketin Chain
+  payindan esige kadar borclanabilir; Formdan veya bedava guc kaynagindan borclanamaz.
+- Chain/Chain esit gecmiste en yuksek Chain katsayisina sahip olur. Chain/Posture tek toplam Postureu
+  temaslara boler. Chain/Critical temas basina bagimsiz local Crit atar. Chain/Affliction aksiyon
+  basina tek Bleed paketi, Chain/Charge aksiyon basina tek Charge paketi uretir.
+- Rarity artarken temiz hasar, Mark, temas/Chain sayisi, Chain katkisi ve routea ait Secondary
+  payoff azalmaz. Parent gucu bir sonraki karta tasinir; Common child, Legendary parenti sifirlamaz.
+- All-Common referansta altinin toplam gucu yakin kalir ama davranislari ayirt edilebilir olur.
+  Chain/Mark, F1 Mark/Chaini isim degistirerek kopyalayamaz: F2 daha guclu Chain payoffu; F1 ise
+  gelisen soyunda daha guclu Mark sahipligi tasir.
+- Bu asamada hicbir route Mark tuketmez, AP/Resolve refund etmez veya ucuncu bir attribute eklemez.
+
+## F2S1 Chain/Mark kabul listesi
+
+- Tam sayim `4 Twist / 16 Apex`tir; her Twist tam dort materialize Apex cocuguna sahiptir.
+- T1 canli Chain rampi, T2 temaslara dagitilan Mark olaylari, T3 action-start Chain snapshotindan
+  gercek ok, T4 iki sirali dalga uretir. Dort rota birbirinin yalniz sayisal varyanti olmamalidir.
+- Her gorunen ok once mevcut Chaini okur, sonra tam `+1 Chain` verir. T3 yeni uretilen Chain ile ayni
+  aksiyonda yeniden ok uretemez; T4te yalniz ikinci dalga ozel payoff alir.
+- Common Twistler arasi guc orani `1.20`yi asamaz. Damage, Mark, temas/Chain, gercek Chain katkisi ve
+  routea ait relationship parametresi rarity artarken azalmaz.
+- Her rank onceki gercek ranktan en az `1.1` temiz hasar yukarida kurulur. Form, Spec veya Twist
+  gecmisindeki tek bir rarity artisi ayni childi zayiflatamaz; parent avantajinin en az `%10`u ve en
+  az `1` gorunur puani child farkinda korunur.
+- Runtime, tree preview ve rarity ladder ayni F2 derleyicisini kullanir. F2 cocuklari F1 Mark
+  derleyicisine dusmemeli; bu dispatch kuralinin testi yeni Chain ailelerinde otomatik tekrarlar.
+- Mark/Chain ile Chain/Mark karismamalidir: bu ailede asil motor Chain uretimi ve canli Chain hasari,
+  Mark ise hic tuketilmeyen destekleyici output veya uygulama zamanlamasidir.
+
+## F2S2 Chain/Chain kabul listesi
+
+- Tam sayım `4 Twist / 16 Apex`tir; her Twist tam dört materialize Apex çocuğuna sahiptir.
+- Aile yalnız Sharpshoot base Markını taşır. Ekstra Mark, Mark tüketimi, üçüncü attribute, AP/Resolve ekonomisi veya authored büyüme sınırı yoktur.
+- T1 canlı Chain kullanan hızlanan seri, T2 bir temaslı Weight oku, T3 action-start Chain snapshotlı eşzamanlı paket, T4 tek projectile bırakışlı gecikmeli yankıdır.
+- Görünen her temas tam `+1 Chain` verir. T2 her zaman tek temas/tek Chain'dir; T3 kendi ürettiği Chain'i aynı pakette okuyamaz; T4ün bütün yankıları canlı Chain'i okur.
+- Common Twistler arası güç oranı `1.20`yi aşamaz; dört route yalnız sayısal varyant değildir.
+- Rarity yükselirken gerçek hasar, Chain outputu, temas/Weight yoğunluğu ve routea ait payoff gerilemez.
+- Common child Legendary parenti sıfırlamaz. Parent avantajının en az `%10`u ve en az `1` görünür güç puanı sonraki kartta korunur.
+- Delivery yoğunluğu bütün geçmişin Quality'sinden türetilir ve maksimumla kesilmez.
+- Quality bütçesi doğrudan hasar ile derived Chain payoffuna iki kez tam değerle yazılamaz.
+
+## Görünen sonuç kabul listesi
+
+- [ ] Ayrı görünen her temas gerçek hasar ve tasarlanmış resource/status katkısı üretir.
+- [ ] Çoklu temasa taşınan tek toplam payload bütün temaslara pozitif payla bölünür.
+- [ ] Temas sayısı tek toplam Bleed/Posture payloadunu bedavaya çarpmaz.
+- [ ] Payload katkısı ile artifact/status uygulama olayı sayısı ayrı tanımlanır ve ayrı fiyatlanır.
+- [ ] Simultaneous packet yalnız action-start snapshotını okur; kendi ürettiği kaynakla aynı packetı recursive büyütmez.
+
+## F2S3 Chain/Posture kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [ ] T1 dağıtılmış Posture, T2 Chain→Posture Weight, T3 `%70` ilk-temas breach, T4 Posture→Chain echo kimliğini korur.
+- [ ] Her görünür temas `+1 Chain` üretir; çoklu delivery'deki her temas pozitif Posture payı taşır.
+- [ ] Bow Posture çıktısı destekleyici kalır; Common kardeş güç oranı `1.20`yi aşmaz.
+- [ ] Her Apex parentı büyütür; relationship, Chain, Posture ve temiz hasar Apexleri kendi ölçülerinde kardeş lideridir.
+
+## F2S5 Chain/Affliction kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [ ] T1 görünür wound volley, T2 Chain→Bleed Weight, T3 Bleed tick→Chain, T4 mevcut Bleed→Chain packet kimliğini korur.
+- [ ] Çoklu Bleed delivery'de bütün temaslar pozitif pay uygular; payların toplamı tam bir aksiyonluk Bleed paketine eşittir.
+- [ ] T3'ün gecikmeli Chain'i iki Bleed tickinde ayrı ayrı ödenir; T4 yalnız action-start Bleed ve Chain snapshotını okur.
+- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Bleed ve temiz hasar Apexleri ayrı liderlik testini geçer.
+
+## F2 komşu aile kabul listesi
+
+- [ ] Yeni aile, tamamlanmış bütün F2 komşularıyla aynı rarity geçmişleri altında karşılaştırma matrisine eklenmiştir.
+- [ ] All-Common Twist ve Apex aile ortalaması score/play farkı `%12`yi aşmaz.
+- [ ] Bütün rarity geçmişlerinde tekil maksimum fark `%20`, bütün geçmişlerin toplam aile ortalaması farkı `%10` veya altındadır.
+- [ ] Farklı attribute çıktıları aynı sayıya zorlanmamış; kendi gerçek kullanım senaryolarında fiyatlanmıştır.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --adjacent` ve `--quick` geçmektedir.
+
+## F2S4 Chain/Critical kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [ ] T1 artan Crit volley, T2 Chain→Crit çarpanı Weight, T3 Crit→canlı Chain feedback, T4 bağımsız Crit echo kimliğini korur.
+- [ ] Critical move-local kalır; global Crit/Precision sızdırmaz. Crit bonus Chain yalnız gerçek Critten sonra eklenir.
+- [ ] Ağır ok, volley, feedback ve echo animasyonları gerçek delivery ile eşleşir.
+- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Crit ve temiz hasar Apexleri ayrı liderlik testini geçer.
+
+## F2S6 Chain/Charge kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [ ] T1 full-bank volley, T2 Charge→Chain burst, T3 Chain×Charge echo, T4 temas başına ölçülü harcama kimliğini korur.
+- [ ] Bir Charge noktası bir kez harcanır; multihit bankayı çoğaltmaz ve temas fazlası Charge korunur.
+- [ ] Charge→Chain final temastan sonra çalışır; aynı saldırıyı geriye dönük prime etmez.
+- [ ] Dört rota mekaniklerine uygun ayrı animasyon recipe'si kullanır ve Apexler parent recipe ailesini korur.
+- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Charge ve temiz hasar Apexleri ayrı liderlik testini geçer.
+
+## F2 tam kapanış kabul listesi
+
+- [ ] Sayım `1 Form / 6 Specialization / 24 Twist / 96 Apex / 127 route / 508 rarity card`tır.
+- [ ] Her Specialization dört Twist, her Twist dört Apex taşır; her Twist gerçek runtime command üretir.
+- [ ] Altı F2 ailesi aynı komşu güç matrisinde test edilir; eksik aile sessizce matristen düşmez.
+- [ ] Chain/Crit guardrail hesabı action-start Chaini Crit ihtimali ve çarpanına aktarır.
+- [ ] `--quick`, `--adjacent`, browser smoke ve console error kontrolü geçmeden aile tamamlanmış sayılmaz.
