@@ -9258,19 +9258,38 @@ function applyCriticalPostureDamage(posture,result){
    objects: NEXT is paid at the next defense-phase end, LATER survives for the
    following one. A defense Break boosts only the tick it closes by ×1.25. */
 const BLEED_STATUS=Object.freeze({id:'BLEED',durationTicks:2,breakMultiplier:1.25,
-  totalDamageFactor:2,technicalCap:999,displayFloor:.05});
-function commandBleedAmount(command){
+  totalDamageFactor:2,technicalCap:Number.MAX_SAFE_INTEGER,displayFloor:.05});
+function commandBleedAmount(command,startingMark=0){
   const affliction=command&&command.affliction;
-  return affliction&&affliction.id===BLEED_STATUS.id?Math.max(0,Number(affliction.amount)||0):0;
+  return affliction&&affliction.id===BLEED_STATUS.id?Math.max(0,
+    (Number(affliction.amount)||0)+(Number(command.afflictionPerStartingMark)||0)*
+      Math.max(0,Number(startingMark)||0)):0;
+}
+function commandAppliedBleedAmount(command,startingMark=0,duringBreak=false){
+  const base=commandBleedAmount(command,startingMark),bonus=duringBreak?
+    Math.max(0,Number(command&&command.afflictionBreakApplicationBonus)||0):0;
+  return stableCombatNumber(base*(1+bonus));
+}
+function commandBleedContactAmount(command,startingMark,index){
+  const hits=Math.max(1,command&&command.hits||1),total=commandAppliedBleedAmount(command,
+    startingMark,boss&&boss.playerTurnBreak===true);
+  if(hits===1)return total;
+  const share=stableCombatNumber(total/hits);
+  return index===hits-1?stableCombatNumber(Math.max(0,total-share*(hits-1))):share;
 }
 function bossBleed(){return boss?Math.max(0,Math.min(BLEED_STATUS.technicalCap,Number(boss.bleed)||0)):0;}
 function bossBleedLater(){return boss?Math.max(0,Math.min(BLEED_STATUS.technicalCap,
   Number(boss.bleedLater)||0)):0;}
-function addBossBleed(amount){
+function bossBleedMark(){return boss?Math.max(0,Number(boss.bleedMark)||0):0;}
+function bossBleedMarkLater(){return boss?Math.max(0,Number(boss.bleedMarkLater)||0):0;}
+function addBossBleed(amount,markPerTick=0,finalMark=0){
   if(!boss||!(amount>0))return 0;
-  const before=bossBleed(),later=bossBleedLater();
+  const before=bossBleed(),later=bossBleedLater(),markNow=bossBleedMark(),markLater=bossBleedMarkLater();
   boss.bleed=stableCombatNumber(Math.min(BLEED_STATUS.technicalCap,before+amount));
   boss.bleedLater=stableCombatNumber(Math.min(BLEED_STATUS.technicalCap,later+amount));
+  boss.bleedMark=stableCombatNumber(markNow+Math.max(0,Number(markPerTick)||0));
+  boss.bleedMarkLater=stableCombatNumber(markLater+Math.max(0,Number(markPerTick)||0)+
+    Math.max(0,Number(finalMark)||0));
   return stableCombatNumber(boss.bleed-before);
 }
 function bleedPhaseTick(next,later=0,fromBreak=false){
@@ -9280,9 +9299,16 @@ function bleedPhaseTick(next,later=0,fromBreak=false){
 }
 function resolveBossPhaseBleed(fromBreak=false){
   if(!boss||boss.state==='dying'||boss.state==='finisher')return false;
-  const tick=bleedPhaseTick(bossBleed(),bossBleedLater(),fromBreak);
+  const markTick=bossBleedMark(),nextMark=bossBleedMarkLater(),
+    tick=bleedPhaseTick(bossBleed(),bossBleedLater(),fromBreak);
   boss.bleed=tick.next<BLEED_STATUS.displayFloor?0:tick.next;boss.bleedLater=0;
-  return tick.damage>0?hurtBoss(tick.damage,false,fromBreak?'bleed_break':'bleed',false):false;
+  boss.bleedMark=nextMark;boss.bleedMarkLater=0;
+  const defeated=tick.damage>0?hurtBoss(tick.damage,false,fromBreak?'bleed_break':'bleed',false):false;
+  if(!defeated&&markTick>0){
+    const gained=applyBossMarkEvent(markTick,'BLEED_MARK_REWARD');
+    if(gained)floater(VW/2,286,'BLOOD TRAIL MARK +'+damagePart(gained),'#d9788b',14);
+  }
+  return defeated;
 }
 /* Charge Secondary banks one bounded defense-phase result. It never scans
    history or allocates during combat: one stored integer and one in-progress
@@ -9406,6 +9432,9 @@ function createRunSkill(definition){
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
     markPulsePattern:null,markPulseInterval:0,markApplicationEventPower:0,
     markBloomRate:0,phaseMarkTrailPerContact:0,
+    afflictionPerStartingMark:0,afflictionMarkPerTick:0,afflictionFinalMark:0,
+    afflictionBreakApplicationBonus:0,afflictionSplitPerContact:false,
+    afflictionApplicationEventPower:0,
     synthesisAxisCredits:null,synthesisAxisReserve:null,synthesisIdentityAllocation:null,
     synthesisQualityReceipts:[],
     synthesisScenarioScores:null,synthesisScenarioRatios:null,synthesisImpactFloor:null,
@@ -9483,6 +9512,9 @@ function transformSharpshoot(skill,patch){
     postureThresholdBonus:0,postureThresholdRatio:0,postureThresholdCrescendo:0,
     postureWavePattern:null,
     postureWaveInterval:0,postureApplicationEventPower:0,affliction:null,
+    afflictionPerStartingMark:0,afflictionMarkPerTick:0,afflictionFinalMark:0,
+    afflictionBreakApplicationBonus:0,afflictionSplitPerContact:false,
+    afflictionApplicationEventPower:0,
     resolvePerHit:0,resolveOnComplete:0,resolveRule:null,
     resolveOverflowToChain:false,consumeChain:false,extraChainBonus:0,chainScalingRampPerHit:0,
     chainScalingTiming:'LIVE',realChainScalingMultiplier:1,apexRefinementId:null,
@@ -9757,15 +9789,16 @@ const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(
    its contacts arrive?" Keep those axes independent: sequential arrows naturally
    create visible Chain contacts without making every sequential move a Chain build.
 
-   Form owns Primary. Specialization adds Secondary. Twist may rebalance only those
-   two identities and choose a compatible Delivery transformation; Apex refines the
-   result. Rarity and Quality buy power, never a different identity. This registry is
-   authoring/compiler data only and adds no per-frame combat work. */
+   Every skill also owns an immutable Base Attribute. Form chooses Primary,
+   Specialization adds Secondary, and neither is allowed to erase that Base output.
+   Twist may rebalance Primary/Secondary and choose a compatible Delivery; Apex
+   refines the result. Rarity and Quality buy power, never a different identity. */
 const COMBAT_ATTRIBUTE_IDS=Object.freeze(['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE']);
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH','CHAIN_SCALING','CHAIN_MANAGEMENT',
   'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD',
   'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION',
+  'MARK_AFFLICTION_READ','AFFLICTION_MARK_REWARD','AFFLICTION_FINAL_MARK','AFFLICTION_APPLICATION_EVENTS',
   'CHARGE_RELEASE','DEFENSE_TEMPER'
 ]);
 const COMBAT_ATTRIBUTE_SCALING_AXIS_SET=new Set(COMBAT_ATTRIBUTE_SCALING_AXES);
@@ -9867,8 +9900,10 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
       scalingAxes:['AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
-    secondary:{promise:'Add smaller Bleed support while direct damage and the Primary remain in control.',
-      capabilities:['BLEED_APPLY','BLEED_SUPPORT'],scalingAxes:['AFFLICTION_APPLICATION'],
+    secondary:{promise:'Add smaller Bleed support while the Base Mark source and Primary remain in control.',
+      capabilities:['BLEED_APPLY','BLEED_SUPPORT'],scalingAxes:['AFFLICTION_APPLICATION',
+        'MARK_AFFLICTION_READ','AFFLICTION_MARK_REWARD','AFFLICTION_FINAL_MARK',
+        'AFFLICTION_APPLICATION_EVENTS','BREAK_RELATION'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
   combatAttributeDefinition({id:'CHARGE',name:'CHARGE',
@@ -10181,6 +10216,10 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseTime:.08,recoveryTime:.31,arrowSpeed:1080,arrowArc:19,arrowScale:1.05,drawStrength:.76,
     releaseRecoil:.27,trailStrength:.82,impactScale:1.08,impactShake:1.8,hitStop:.03,
     shotInterval:.38,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_AFFLICTION_PACKET',visualStyle:'AFFLICTION',raiseTime:.10,drawTime:.30,
+    holdTime:.07,releaseTime:.07,recoveryTime:.33,arrowSpeed:1120,arrowArc:14,arrowScale:.78,
+    drawStrength:.82,releaseRecoil:.48,trailStrength:.78,impactScale:.82,impactShake:2.1,
+    hitStop:.025,shotInterval:.16,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
   bowAnimationRecipe({id:'BOW_CHARGE',visualStyle:'CHARGE',raiseTime:.14,drawTime:.36,holdTime:.10,
     releaseTime:.10,recoveryTime:.36,arrowSpeed:1040,arrowArc:21,arrowScale:1.12,drawStrength:.88,
     releaseRecoil:.42,trailStrength:.88,impactScale:1.20,impactShake:3.2,hitStop:.05,
@@ -10200,6 +10239,11 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_posture_mark_read_twist:'BOW_POSTURE_CONVERGENCE',
   mark_posture_primer_twist:'BOW_POSTURE_PRIMER',
   mark_posture_finisher_twist:'BOW_POSTURE_FINISHER',
+  mark_affliction_serrated_volley_twist:'BOW_AFFLICTION_PACKET',
+  mark_affliction_volley_contacts_apex:'BOW_AFFLICTION_PACKET',
+  mark_affliction_volley_bleed_apex:'BOW_AFFLICTION_PACKET',
+  mark_affliction_volley_mark_apex:'BOW_AFFLICTION_PACKET',
+  mark_affliction_volley_damage_apex:'BOW_AFFLICTION_PACKET',
   mark_posture_impact_posture_apex:'BOW_POSTURE_IMPACT',
   mark_posture_impact_mark_apex:'BOW_POSTURE_CONVERGENCE',
   mark_posture_impact_damage_apex:'BOW_POSTURE_IMPACT',
@@ -10326,16 +10370,20 @@ const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
       Object.freeze({...delivery,pattern:'IMPACT_ECHO'}),0,600),
     shotgun=buildBowActionTimeline({hits:3,bowAnimationRecipeId:'BOW_SHOTGUN'},
       Object.freeze({...delivery,pattern:'SIMULTANEOUS_PACKET'}),0,600),
+    afflictionPacket=buildBowActionTimeline({hits:4,bowAnimationRecipeId:'BOW_AFFLICTION_PACKET'},
+      Object.freeze({...delivery,pattern:'SIMULTANEOUS_PACKET'}),0,600),
     twoWave=buildBowActionTimeline({hits:5,bowAnimationRecipeId:'BOW_SHOTGUN',
       packetWavePattern:Object.freeze([0,0,0,1,1])},
       Object.freeze({...delivery,pattern:'SIMULTANEOUS_PACKET'}),0,600),
     bounded=resolveBowAnimationRecipe({bowAnimationRecipeId:'BOW_STANDARD',bowAnimationOverrides:{
       arrowSpeed:99999,holdTime:-5}},0);
-  if(BOW_ANIMATION_RECIPES.list.length!==19||!(standard.contacts[0]>standard.releases[0])||
+  if(BOW_ANIMATION_RECIPES.list.length!==20||!(standard.contacts[0]>standard.releases[0])||
      !(heavy.contacts[0]>standard.contacts[0])||!(charged.recipe.arrowScale>
        bowAnimationRecipeById('BOW_CHARGE').arrowScale)||echo.releases.length!==1||
      echo.contacts.length!==3||!(echo.contacts[2]>echo.contacts[0])||shotgun.releases.length!==3||
-     new Set(shotgun.contacts).size!==1||twoWave.releases.length!==5||twoWave.waveCount!==2||
+     new Set(shotgun.contacts).size!==1||afflictionPacket.releases.length!==4||
+     new Set(afflictionPacket.contacts).size!==1||
+     afflictionPacket.recipe.visualStyle!=='AFFLICTION'||twoWave.releases.length!==5||twoWave.waveCount!==2||
      new Set(twoWave.contacts).size!==2||!(twoWave.contacts[3]>twoWave.contacts[0])||
      postureImpact.recipe.mechanicCue!=='POSTURE_IMPACT'||
      postureRead.recipe.mechanicCue!=='MARK_CONVERGENCE'||postureRead.cueStrength<=.12||
@@ -10692,6 +10740,9 @@ function skillAttributeRouteContract(data){
     throw new Error(data.id+' needs a valid tree address');
   if(data.apexTarget!==undefined&&(data.depth!==3||!Number.isInteger(data.apexTarget)||data.apexTarget<1))
     throw new Error(data.id+' has an invalid authored Apex target');
+  const baseAttributeId=data.baseAttributeId||'MARK';
+  if(!COMBAT_ATTRIBUTES.has(baseAttributeId))
+    throw new Error(data.id+' needs a registered Base Attribute');
   if(!COMBAT_ATTRIBUTES.has(data.primaryAttributeId))
     throw new Error(data.id+' needs a registered Primary Attribute');
   if(data.depth===1&&data.secondaryAttributeId!==null)
@@ -10707,6 +10758,27 @@ function skillAttributeRouteContract(data){
   const delivery=hasDelivery?commandDeliveryContract({id:'route_'+data.id,hits:data.contacts,
      deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
      deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
+  const deliveryDecision=data.depth===3?data.deliveryDecision:null;
+  if(data.depth===3&&data.runtimeReadiness==='MATERIALIZED'){
+    const allowedResourcePolicies=new Set(['ONE_CHAIN_TOTAL','CHAIN_PER_CONTACT']),
+      allowedPayloadPolicies=new Set(['PER_ACTION','READ_ONCE_PER_ACTION',
+        'DELAYED_NON_CONTACT_EVENTS','PHASE_FOLLOW_UP_EVENTS','PER_CONTACT_LIVE_READ',
+        'IMPACT_WITH_ECHOES','SIMULTANEOUS_CONTACT_PACKET','PER_CONTACT_INDEPENDENT_ROLLS',
+        'SHARED_ACTION_ROLL','SPLIT_TOTAL_ACROSS_CONTACTS']);
+    if(!deliveryDecision||typeof deliveryDecision.reason!=='string'||!deliveryDecision.reason||
+       !allowedResourcePolicies.has(deliveryDecision.resourcePolicy)||
+       !allowedPayloadPolicies.has(deliveryDecision.payloadPolicy)||
+       !COMBAT_DELIVERY_PATTERNS.includes(deliveryDecision.rejectedPattern)||
+       deliveryDecision.rejectedPattern===delivery.pattern)
+      throw new Error(data.id+' needs an explicit, testable Twist Delivery decision');
+    const expectedResourcePolicy=delivery.pattern==='SEQUENTIAL'?
+      'CHAIN_PER_CONTACT':'ONE_CHAIN_TOTAL';
+    if(deliveryDecision.resourcePolicy!==expectedResourcePolicy)
+      throw new Error(data.id+' Delivery resource policy contradicts its contact pattern');
+    if(deliveryDecision.payloadPolicy==='SPLIT_TOTAL_ACROSS_CONTACTS'&&
+       delivery.pattern!=='SIMULTANEOUS_PACKET')
+      throw new Error(data.id+' can split one payload only through a simultaneous packet');
+  }
   if(data.depth===1){
     const primary=combatAttributeRoleContract(data.primaryAttributeId,'PRIMARY');
     if(!primary.deliveryPatterns.includes(delivery.pattern)||!primary.deliveryTimings.includes(delivery.timing))
@@ -10739,8 +10811,9 @@ function skillAttributeRouteContract(data){
      baselineAttack.hits<1||!Number.isInteger(baselineAttack.markGain)||baselineAttack.markGain<1||
      !Number.isInteger(baselineAttack.resolveCost)||baselineAttack.resolveCost<0))
     throw new Error(data.id+' materialized baseline needs hits, positive Mark and Resolve cost');
-  return Object.freeze({...data,address,semanticLabel,name,identityBudget,mechanics,qualityProfile,qualityAxes,
-    baselineAttack,delivery,deliveryPolicy});
+  return Object.freeze({...data,baseAttributeId,address,semanticLabel,name,identityBudget,mechanics,
+    qualityProfile,qualityAxes,baselineAttack,delivery,
+    deliveryDecision:deliveryDecision?Object.freeze({...deliveryDecision}):null,deliveryPolicy});
 }
 const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
   skillAttributeRouteContract({id:'mark_primary_form',depth:1,parentId:null,formSlot:1,
@@ -10797,6 +10870,8 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:2,
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.08,MARK_GAIN:.92},
+    deliveryDecision:{reason:'One restrained impact keeps unconditional Mark immediate and readable.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'PER_ACTION',rejectedPattern:'SEQUENTIAL'},
     promise:'Fire one restrained impact that applies the route\'s largest unconditional Mark package immediately.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',
       relationship:'CONCENTRATED_MARK_PACKAGE',markRule:'NET_OUTPUT_ABOVE_SIBLING',guaranteedMarkBonus:2},
@@ -10806,6 +10881,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:3,
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.08,MARK_GAIN:.92},
+    deliveryDecision:{reason:'One real impact owns Chain; later Mark pulses are explicitly non-contact events.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Land one real arrow, then apply the earned Mark through separate non-damaging pulses that never create Chain.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',
       relationship:'SEPARATE_MARK_PULSES',markRule:'NET_OUTPUT_ABOVE_SIBLING',guaranteedMarkBonus:1,
@@ -10816,6 +10894,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:3,
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.08,MARK_GAIN:.92},
+    deliveryDecision:{reason:'Starting Mark must be snapshotted once before one Bloom calculation.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Start from its own smaller Mark package, then preserve and read visible action-start Mark through an independent uncapped Bloom.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',
       relationship:'STARTING_MARK_BLOOM',markRule:'NET_OUTPUT_ABOVE_SIBLING',guaranteedMarkBonus:1,
@@ -10827,6 +10908,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:3,
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.08,MARK_GAIN:.92},
+    deliveryDecision:{reason:'One seed hit installs a phase hook; later attacks provide the contacts.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'PHASE_FOLLOW_UP_EVENTS',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Apply a large guaranteed Mark package, then make every later damaging player contact this phase add Mark.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'MARK_GENERATE',
       relationship:'PLAYER_PHASE_MARK_TRAIL',markRule:'NET_OUTPUT_ABOVE_SIBLING',guaranteedMarkBonus:1,
@@ -10837,6 +10921,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:2,slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CHAIN_SCALING:.35},
+    deliveryDecision:{reason:'Ordered arrows must create and immediately reuse live Chain inside the action.',
+      resourcePolicy:'CHAIN_PER_CONTACT',payloadPolicy:'PER_CONTACT_LIVE_READ',
+      rejectedPattern:'SIMULTANEOUS_PACKET'},
     promise:'Continue the Mark/Chain sequential attack; cumulative Quality grows its arrow count and every later arrow benefits from Chain generated by earlier arrows.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
       relationship:'STANDARD_SEQUENTIAL_CONTINUATION',markRule:'NET_OUTPUT_REQUIRED',
@@ -10846,6 +10933,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:2,slot:2,primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CHAIN_SCALING:.35},
+    deliveryDecision:{reason:'Mark conversion is snapshotted once and compressed into one weighted impact.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Convert half of starting Mark into Chain, then compress Weight contacts of Chain scaling into one heavy arrow.',
     mechanics:{primaryOutput:'MARK_CONVERT_TO_CHAIN',secondaryOutput:'CHAIN_SCALING',
       relationship:'HALF_MARK_TO_WEIGHTED_CHAIN',markRule:'CONVERT_FRACTION_TO_CHAIN',
@@ -10856,6 +10946,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:2,slot:3,primaryAttributeId:'MARK',secondaryAttributeId:'CHAIN',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'IMPACT_ECHO',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CHAIN_SCALING:.35},
+    deliveryDecision:{reason:'One projectile owns the impact while echoes remain children of that impact.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'IMPACT_WITH_ECHOES',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Read and preserve Mark as temporary Chain for one projectile impact and its Quality-grown echo hits.',
     mechanics:{primaryOutput:'MARK_READ_AS_CHAIN',secondaryOutput:'CHAIN_SCALING',
       relationship:'MARK_ECHO_TEMPORARY_CHAIN',markRule:'READ_MARK_AS_TEMP_CHAIN',
@@ -10866,6 +10959,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',
     deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.60,CHAIN_SCALING:.20},
+    deliveryDecision:{reason:'Simultaneous pellets trade ordered live Chain for packet-wide Mark saturation.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'SIMULTANEOUS_CONTACT_PACKET',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Fire a Quality-grown shotgun packet; convert the sequential Chain contacts it gives up into equivalent Mark setup and add one Chain total.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CHAIN_SCALING',
       relationship:'SHOTGUN_MARK_SATURATION',markRule:'NET_OUTPUT_PER_PELLET',markPerPellet:1,
@@ -10876,6 +10972,8 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:3,slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.45,POSTURE_DAMAGE:.30},
+    deliveryDecision:{reason:'One readable impact keeps light-bow Posture pressure secondary and bounded.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'PER_ACTION',rejectedPattern:'SEQUENTIAL'},
     promise:'Preserve Mark setup and concentrate the secondary share into one reliable Posture impact.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
       relationship:'RELIABLE_POSTURE_IMPACT',markRule:'NET_OUTPUT_REQUIRED',
@@ -10885,6 +10983,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:3,slot:2,primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,POSTURE_DAMAGE:.15,MARK_POSTURE_READ:.20},
+    deliveryDecision:{reason:'Starting Mark is preserved and read once into one Posture impact.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Preserve action-start Mark and read every stack as additional Posture impact.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_DAMAGE',
       relationship:'MARK_READS_AS_POSTURE',markRule:'READ_MARK_PRESERVE',
@@ -10894,6 +10995,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:3,slot:3,primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,POSTURE_DAMAGE:.15,POSTURE_PRIMER:.20},
+    deliveryDecision:{reason:'One arrow installs one delayed bonus for the next independent Posture source.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Deal inherited Posture now, then prime the next positive Posture source with a stored bonus.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'POSTURE_SUPPORT',
       relationship:'PRIME_NEXT_POSTURE_SOURCE',markRule:'NET_OUTPUT_REQUIRED',
@@ -10903,6 +11007,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     formSlot:1,specializationSlot:3,slot:4,primaryAttributeId:'MARK',secondaryAttributeId:'POSTURE',
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,POSTURE_DAMAGE:.15,POSTURE_THRESHOLD:.20},
+    deliveryDecision:{reason:'The half-bar state is snapshotted once and paid through one finisher impact.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Keep the inherited impact and gain extra Posture when the action starts above half of the Break bar.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BREAK_PRESSURE',
       relationship:'HIGH_POSTURE_FINISHER',markRule:'NET_OUTPUT_REQUIRED',
@@ -11363,6 +11470,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',
     deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.40,CRIT_CHANCE:.35},
+    deliveryDecision:{reason:'Ordered contacts provide separate Crit rolls and visible natural Chain.',
+      resourcePolicy:'CHAIN_PER_CONTACT',payloadPolicy:'PER_CONTACT_INDEPENDENT_ROLLS',
+      rejectedPattern:'SIMULTANEOUS_PACKET'},
     promise:'Split one Mark/Critical attack across Quality-grown sequential arrows; every contact rolls local Crit independently.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
       relationship:'INDEPENDENT_CRIT_VOLLEY',markRule:'NET_OUTPUT_REQUIRED',
@@ -11374,6 +11484,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
     deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.15,MARK_CRIT_READ:.25},
+    deliveryDecision:{reason:'Starting Mark is read once into the local Crit chance of one weighted arrow.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Preserve starting Mark and let an uncapped heavy-arrow coefficient turn each visible stack into local Crit chance.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
       relationship:'STARTING_MARK_CRIT_READ',markRule:'READ_MARK_PRESERVE',
@@ -11385,6 +11498,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
     deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,CRIT_CHANCE:.20,CRIT_MARK_REWARD:.20},
+    deliveryDecision:{reason:'One real Crit check owns a later non-damaging Mark reward.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Land one arrow and, only on Critical, apply a separately priced non-damaging Mark burst after impact.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_SUPPORT',
       relationship:'CRIT_TRIGGERS_MARK_REWARD',markRule:'NET_OUTPUT_REQUIRED',
@@ -11396,6 +11512,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',
     deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.50,CRIT_CHANCE:.30},
+    deliveryDecision:{reason:'All simultaneous contacts must share one all-or-nothing Crit result.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'SHARED_ACTION_ROLL',
+      rejectedPattern:'SEQUENTIAL'},
     promise:'Release a Quality-grown simultaneous packet whose pellets share one all-or-nothing local Critical roll.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'CRIT_CHANCE',
       relationship:'SHARED_CRIT_PACKET',markRule:'NET_OUTPUT_REQUIRED',
@@ -11574,6 +11693,215 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
       relationship:'SHARED_CRIT_PACKET',refinement:'CRIT_PACKET_DAMAGE',
       markRule:'NET_OUTPUT_REQUIRED',criticalRule:'ONE_LOCAL_ROLL_SHARED_BY_PACKET',
       critRollMode:'SHARED_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_affliction_barbed_twist',depth:3,
+    parentId:'mark_affliction_spec',formSlot:1,specializationSlot:5,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.45,AFFLICTION_APPLICATION:.30},
+    deliveryDecision:{reason:'One dependable barb applies one readable two-tick wound.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'PER_ACTION',rejectedPattern:'SEQUENTIAL'},
+    promise:'Continue the single barbed arrow as the reliable Mark/Bleed baseline: one contact, one Mark package and one two-tick wound.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',
+      relationship:'BARBED_BLEED_BASELINE',markRule:'NET_OUTPUT_REQUIRED',
+      afflictionRule:'BLEED_PER_ACTION',deliveryIntent:'ONE_RELIABLE_BARBED_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_mark_read_twist',depth:3,
+    parentId:'mark_affliction_spec',formSlot:1,specializationSlot:5,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,AFFLICTION_APPLICATION:.20,MARK_AFFLICTION_READ:.20},
+    deliveryDecision:{reason:'Starting Mark is preserved and read once into one Bleed package.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',
+      rejectedPattern:'SEQUENTIAL'},
+    promise:'Preserve every action-start Mark and let each stack deepen the two Bleed ticks applied by one heavy barbed arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',
+      relationship:'STARTING_MARK_DEEPENS_BLEED',markRule:'READ_MARK_PRESERVE',
+      afflictionRule:'UNCAPPED_BLEED_PER_STARTING_MARK',weightChannel:'MARK_AFFLICTION_READ',
+      deliveryIntent:'ONE_WEIGHTED_CONTACT_READS_MARK_INTO_BLEED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_blood_trail_twist',depth:3,
+    parentId:'mark_affliction_spec',formSlot:1,specializationSlot:5,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,AFFLICTION_APPLICATION:.20,AFFLICTION_MARK_REWARD:.20},
+    deliveryDecision:{reason:'One wound seeds two future non-contact Bleed and Mark events.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+      rejectedPattern:'SEQUENTIAL'},
+    promise:'Apply one wound now, then make each of its two future Bleed ticks leave a separately priced Mark reward.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',
+      relationship:'BLEED_TICKS_GENERATE_MARK',markRule:'NET_OUTPUT_REQUIRED',
+      afflictionRule:'TWO_TICKS_ADD_MARK',deliveryIntent:'ONE_CONTACT_THEN_TWO_DELAYED_MARK_EVENTS'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_serrated_volley_twist',depth:3,
+    parentId:'mark_affliction_spec',formSlot:1,specializationSlot:5,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,AFFLICTION_APPLICATION:.25,AFFLICTION_APPLICATION_EVENTS:.15},
+    deliveryDecision:{reason:'Simultaneous barbs maximize wound events without leaking Chain-per-contact identity.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'SPLIT_TOTAL_ACROSS_CONTACTS',
+      rejectedPattern:'SEQUENTIAL'},
+    promise:'Split one total Bleed payload across a Quality-grown simultaneous barb packet; every pellet opens one wound event but the packet adds one Chain total.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',
+      relationship:'SERRATED_WOUND_VOLLEY',markRule:'NET_OUTPUT_REQUIRED',
+      afflictionRule:'BLEED_SPLIT_PER_CONTACT',
+      deliveryIntent:'SIMULTANEOUS_CONTACTS_SPLIT_ONE_TOTAL_BLEED_AND_ONE_CHAIN'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_affliction_barbed_bleed_apex',depth:4,
+    parentId:'mark_affliction_barbed_twist',formSlot:1,specializationSlot:5,twistSlot:1,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.70},
+    promise:'Preserve the reliable single barb and maximize the equal Bleed amount paid on each of its two future ticks.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'BARBED_BLEED_BASELINE',
+      refinement:'BARBED_BLEED_VOLUME',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_PER_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_barbed_mark_apex',depth:4,
+    parentId:'mark_affliction_barbed_twist',formSlot:1,specializationSlot:5,twistSlot:1,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.65,AFFLICTION_APPLICATION:.20},
+    promise:'Keep the same two-tick wound and allocate the Apex packet toward the largest guaranteed Mark setup.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'BARBED_BLEED_BASELINE',
+      refinement:'BARBED_MARK_VOLUME',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_PER_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_barbed_damage_apex',depth:4,
+    parentId:'mark_affliction_barbed_twist',formSlot:1,specializationSlot:5,twistSlot:1,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.65,MARK_GAIN:.15,AFFLICTION_APPLICATION:.20},
+    promise:'Keep the inherited Mark and Bleed package while maximizing the clean impact damage of the real arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'BARBED_BLEED_BASELINE',
+      refinement:'BARBED_IMPACT_DAMAGE',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_PER_ACTION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_barbed_break_apex',depth:4,
+    parentId:'mark_affliction_barbed_twist',formSlot:1,specializationSlot:5,twistSlot:1,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.20,AFFLICTION_APPLICATION:.30,BREAK_RELATION:.35},
+    promise:'Keep the normal barb but apply a larger two-tick Bleed package when the arrow is fired during a Break player phase.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'BARBED_BLEED_BASELINE',
+      refinement:'BARBED_BREAK_APPLICATION',markRule:'NET_OUTPUT_REQUIRED',
+      afflictionRule:'BREAK_PHASE_AMPLIFIES_APPLICATION'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_affliction_read_scale_apex',depth:4,
+    parentId:'mark_affliction_mark_read_twist',formSlot:1,specializationSlot:5,twistSlot:2,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.15,MARK_AFFLICTION_READ:.55},
+    promise:'Maximize the uncapped Bleed added by every preserved action-start Mark without consuming the reserve.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'STARTING_MARK_DEEPENS_BLEED',
+      refinement:'BLEED_MARK_READ_SCALE',markRule:'READ_MARK_PRESERVE',
+      afflictionRule:'UNCAPPED_BLEED_PER_STARTING_MARK',weightChannel:'MARK_AFFLICTION_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_read_bleed_apex',depth:4,
+    parentId:'mark_affliction_mark_read_twist',formSlot:1,specializationSlot:5,twistSlot:2,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.55,MARK_AFFLICTION_READ:.15},
+    promise:'Preserve the Mark read and maximize the flat Bleed applied even when the target begins with no Mark.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'STARTING_MARK_DEEPENS_BLEED',
+      refinement:'BLEED_MARK_READ_BASE',markRule:'READ_MARK_PRESERVE',
+      afflictionRule:'UNCAPPED_BLEED_PER_STARTING_MARK',weightChannel:'MARK_AFFLICTION_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_read_mark_apex',depth:4,
+    parentId:'mark_affliction_mark_read_twist',formSlot:1,specializationSlot:5,twistSlot:2,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,AFFLICTION_APPLICATION:.15,MARK_AFFLICTION_READ:.15},
+    promise:'Keep the uncapped Mark-to-Bleed read and leave the largest guaranteed Mark reserve after impact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'STARTING_MARK_DEEPENS_BLEED',
+      refinement:'BLEED_MARK_READ_MARK',markRule:'READ_MARK_PRESERVE',
+      afflictionRule:'UNCAPPED_BLEED_PER_STARTING_MARK',weightChannel:'MARK_AFFLICTION_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_read_damage_apex',depth:4,
+    parentId:'mark_affliction_mark_read_twist',formSlot:1,specializationSlot:5,twistSlot:2,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.55,MARK_GAIN:.15,AFFLICTION_APPLICATION:.15,MARK_AFFLICTION_READ:.15},
+    promise:'Keep the uncapped Mark-to-Bleed read while maximizing the heavy arrow impact that applies the wound.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'STARTING_MARK_DEEPENS_BLEED',
+      refinement:'BLEED_MARK_READ_DAMAGE',markRule:'READ_MARK_PRESERVE',
+      afflictionRule:'UNCAPPED_BLEED_PER_STARTING_MARK',weightChannel:'MARK_AFFLICTION_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_affliction_trail_tick_apex',depth:4,
+    parentId:'mark_affliction_blood_trail_twist',formSlot:1,specializationSlot:5,twistSlot:3,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.15,AFFLICTION_MARK_REWARD:.55},
+    promise:'Maximize the delayed Mark reward paid by both future Bleed ticks.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'BLEED_TICKS_GENERATE_MARK',
+      refinement:'BLOOD_TRAIL_TICK_MARK',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'TWO_TICKS_ADD_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_trail_bleed_apex',depth:4,
+    parentId:'mark_affliction_blood_trail_twist',formSlot:1,specializationSlot:5,twistSlot:3,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.55,AFFLICTION_MARK_REWARD:.15},
+    promise:'Keep Mark rewards on both ticks while maximizing the Bleed damage carried by the wound.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'BLEED_TICKS_GENERATE_MARK',
+      refinement:'BLOOD_TRAIL_BLEED',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'TWO_TICKS_ADD_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_trail_mark_apex',depth:4,
+    parentId:'mark_affliction_blood_trail_twist',formSlot:1,specializationSlot:5,twistSlot:3,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,AFFLICTION_APPLICATION:.15,AFFLICTION_MARK_REWARD:.15},
+    promise:'Preserve both delayed Mark rewards and maximize the guaranteed Mark applied by the real arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'BLEED_TICKS_GENERATE_MARK',
+      refinement:'BLOOD_TRAIL_IMPACT_MARK',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'TWO_TICKS_ADD_MARK'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_trail_final_apex',depth:4,
+    parentId:'mark_affliction_blood_trail_twist',formSlot:1,specializationSlot:5,twistSlot:3,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,AFFLICTION_APPLICATION:.15,
+      AFFLICTION_MARK_REWARD:.15,AFFLICTION_FINAL_MARK:.40},
+    promise:'Keep the Mark paid by both ticks and add a larger separately priced Mark burst to the second and final tick.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_SUPPORT',relationship:'BLEED_TICKS_GENERATE_MARK',
+      refinement:'BLOOD_TRAIL_FINAL_MARK',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'FINAL_TICK_MARK_BURST'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_affliction_volley_contacts_apex',depth:4,
+    parentId:'mark_affliction_serrated_volley_twist',formSlot:1,specializationSlot:5,twistSlot:4,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.35,AFFLICTION_APPLICATION:.25,AFFLICTION_APPLICATION_EVENTS:.20},
+    promise:'Grow the paid sequential barb count faster while splitting the same total Bleed budget across every visible wound.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'SERRATED_WOUND_VOLLEY',
+      refinement:'SERRATED_CONTACTS',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_SPLIT_PER_CONTACT',
+      deliveryQualityMultiplier:1.25},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_volley_bleed_apex',depth:4,
+    parentId:'mark_affliction_serrated_volley_twist',formSlot:1,specializationSlot:5,twistSlot:4,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.20,AFFLICTION_APPLICATION:.55,AFFLICTION_APPLICATION_EVENTS:.10},
+    promise:'Keep the inherited barb count and maximize the total Bleed payload distributed across its contacts.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'SERRATED_WOUND_VOLLEY',
+      refinement:'SERRATED_BLEED',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_SPLIT_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_volley_mark_apex',depth:4,
+    parentId:'mark_affliction_serrated_volley_twist',formSlot:1,specializationSlot:5,twistSlot:4,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.60,AFFLICTION_APPLICATION:.15,AFFLICTION_APPLICATION_EVENTS:.10},
+    promise:'Keep the serrated wound delivery and distribute the largest guaranteed Mark package across its arrows.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'SERRATED_WOUND_VOLLEY',
+      refinement:'SERRATED_MARK',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_SPLIT_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_affliction_volley_damage_apex',depth:4,
+    parentId:'mark_affliction_serrated_volley_twist',formSlot:1,specializationSlot:5,twistSlot:4,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.60,MARK_GAIN:.15,AFFLICTION_APPLICATION:.15,AFFLICTION_APPLICATION_EVENTS:.10},
+    promise:'Keep the inherited wound events and maximize the clean direct damage distributed across the volley.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'SERRATED_WOUND_VOLLEY',
+      refinement:'SERRATED_DAMAGE',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_SPLIT_PER_CONTACT'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'})
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
@@ -11605,9 +11933,9 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
       echoRoute=route.depth>=3&&route.mechanics.primaryOutput==='MARK_READ_AS_CHAIN'&&
         route.mechanics.markRule==='READ_MARK_AS_TEMP_CHAIN'&&
         route.mechanics.temporaryChainPerEffectiveMark===.35&&route.mechanics.markCurve==='FULL';
-    if(route.powerBudget!==form.powerBudget||route.primaryAttributeId!=='MARK'||
+    if(route.powerBudget!==form.powerBudget||route.baseAttributeId!=='MARK'||route.primaryAttributeId!=='MARK'||
        (!sourceRoute&&!converterRoute&&!echoRoute))
-      throw new Error(route.id+' breaks Mark Primary or the equal route budget');
+      throw new Error(route.id+' breaks Sharpshoot Base Mark, Mark Primary or the equal route budget');
     if(route.depth===2&&route.parentId!==form.id)
       throw new Error(route.id+' leaves the Mark Form lineage');
     if(route.depth===2&&(Object.prototype.hasOwnProperty.call(route.mechanics,'relationship')||
@@ -11706,7 +12034,7 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      trailApexes.filter(route=>route.mechanics.markTrailStrengthAxis).length!==1)
     throw new Error('F1S1T4 needs exactly three priced Trail Apex refinements');
   const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
-  if(twists.length!==16||!directChain||directChain.parentId!=='mark_chain_spec'||
+  if(twists.length!==20||!directChain||directChain.parentId!=='mark_chain_spec'||
      directChain.delivery.pattern!=='SEQUENTIAL'||directChain.delivery.contactCount!==1||
      directChain.mechanics.chainRule!=='READ_LIVE_CHAIN_PER_CONTACT')
     throw new Error('F1S2T1 pilot Twist contract is incomplete');
@@ -11847,6 +12175,51 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      critRewardApexes.some(route=>route.mechanics.criticalRule!=='CRIT_ADDS_NON_DAMAGE_MARK')||
      critPacketApexes.some(route=>route.mechanics.critRollMode!=='SHARED_ACTION'))
     throw new Error('F1S4 Apex families leaked or lost their exact Twist mechanic');
+  const afflictionTwists=twists.filter(route=>route.parentId==='mark_affliction_spec'),
+    afflictionRelationships=new Set(afflictionTwists.map(route=>route.mechanics.relationship)),
+    afflictionBarbed=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_affliction_barbed_twist,
+    afflictionRead=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_affliction_mark_read_twist,
+    afflictionTrail=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_affliction_blood_trail_twist,
+    afflictionVolley=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_affliction_serrated_volley_twist;
+  if(afflictionTwists.length!==4||afflictionRelationships.size!==4||
+     afflictionTwists.some(route=>route.baseAttributeId!=='MARK'||route.primaryAttributeId!=='MARK'||
+       route.secondaryAttributeId!=='AFFLICTION'||route.apexTarget!==4)||
+     !afflictionBarbed||afflictionBarbed.delivery.pattern!=='SINGLE'||
+       afflictionBarbed.mechanics.afflictionRule!=='BLEED_PER_ACTION'||
+     !afflictionRead||afflictionRead.delivery.pattern!=='SINGLE'||
+       afflictionRead.mechanics.markRule!=='READ_MARK_PRESERVE'||
+       afflictionRead.mechanics.afflictionRule!=='UNCAPPED_BLEED_PER_STARTING_MARK'||
+     !afflictionTrail||afflictionTrail.delivery.pattern!=='SINGLE'||
+       afflictionTrail.mechanics.afflictionRule!=='TWO_TICKS_ADD_MARK'||
+     !afflictionVolley||afflictionVolley.delivery.pattern!=='SIMULTANEOUS_PACKET'||
+       afflictionVolley.mechanics.afflictionRule!=='BLEED_SPLIT_PER_CONTACT'||
+       afflictionVolley.mechanics.paysNaturalChain)
+    throw new Error('F1S5 needs four exact Mark/Affliction Twist and Delivery contracts');
+  const afflictionApexContract=(parentId,refinements,pattern)=>{
+    const family=apexes.filter(route=>route.parentId===parentId),actual=
+      new Set(family.map(route=>route.mechanics.refinement));
+    if(family.length!==4||actual.size!==4||refinements.some(id=>!actual.has(id))||
+       family.some(route=>route.delivery.pattern!==pattern||route.baseAttributeId!=='MARK'||
+         route.secondaryAttributeId!=='AFFLICTION'||route.mechanics.relationship!==
+           SHARPSHOOT_MARK_ROUTE_BY_ID[parentId].mechanics.relationship))
+      throw new Error(parentId+' needs four exact Affliction Apex refinements');
+    return family;
+  };
+  const afflictionBarbedApexes=afflictionApexContract('mark_affliction_barbed_twist',
+      ['BARBED_BLEED_VOLUME','BARBED_MARK_VOLUME','BARBED_IMPACT_DAMAGE','BARBED_BREAK_APPLICATION'],'SINGLE'),
+    afflictionReadApexes=afflictionApexContract('mark_affliction_mark_read_twist',
+      ['BLEED_MARK_READ_SCALE','BLEED_MARK_READ_BASE','BLEED_MARK_READ_MARK','BLEED_MARK_READ_DAMAGE'],'SINGLE'),
+    afflictionTrailApexes=afflictionApexContract('mark_affliction_blood_trail_twist',
+      ['BLOOD_TRAIL_TICK_MARK','BLOOD_TRAIL_BLEED','BLOOD_TRAIL_IMPACT_MARK','BLOOD_TRAIL_FINAL_MARK'],'SINGLE'),
+    afflictionVolleyApexes=afflictionApexContract('mark_affliction_serrated_volley_twist',
+      ['SERRATED_CONTACTS','SERRATED_BLEED','SERRATED_MARK','SERRATED_DAMAGE'],'SIMULTANEOUS_PACKET');
+  if(afflictionReadApexes.some(route=>route.mechanics.markRule!=='READ_MARK_PRESERVE'||
+       route.mechanics.weightChannel!=='MARK_AFFLICTION_READ')||
+     afflictionTrailApexes.some(route=>!String(route.mechanics.afflictionRule).includes('MARK'))||
+     afflictionVolleyApexes.some(route=>route.mechanics.paysNaturalChain)||
+     afflictionBarbedApexes.filter(route=>route.mechanics.refinement==='BARBED_BREAK_APPLICATION')
+       .some(route=>!(route.qualityProfile.BREAK_RELATION>0)))
+    throw new Error('F1S5 Apex families leaked or lost their exact Twist mechanic');
   const directApexes=apexes.filter(route=>route.parentId==='mark_chain_direct_twist'),
     apexRefinements=new Set(directApexes.map(route=>route.mechanics.refinement));
   if(directApexes.length!==4||apexRefinements.size!==4||
@@ -11965,10 +12338,32 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   mark_critical_packet_contacts_apex:'Aynı ortak Crit sonucunu paylaşan shotgun pelletlerinin sayısını Quality ile artırır. Tek başarılı zar daha çok teması birden Crit yapar; paket yine toplam yalnızca 1 Chain bırakır.',
   mark_critical_packet_chance_apex:'Pellet sayısını sabit tutar, bütün paketin paylaştığı tek yerel Crit ihtimalini yükseltir. Ya hep ya hiç kimliğini korurken saldırının tamamen Crit olmasını daha güvenilir yapar.',
   mark_critical_packet_mark_apex:'Ortak Crit zarına sahip shotgun paketini korur ve garanti Mark üretimini pelletlerin üzerine dağıtarak artırır. Crit patlaması ararken daha büyük bir Mark rezervi de hazırlar.',
-  mark_critical_packet_damage_apex:'Ortak Crit zarını ve pellet sayısını korur, Quality gücünü paketin toplam taban hasarına aktarır. Zar başarılı olduğunda bütün paketin büyütülmüş hasarı birden Crit olur.'
+  mark_critical_packet_damage_apex:'Ortak Crit zarını ve pellet sayısını korur, Quality gücünü paketin toplam taban hasarına aktarır. Zar başarılı olduğunda bütün paketin büyütülmüş hasarı birden Crit olur.',
+
+  mark_affliction_spec:'Sharpshootun doğal Mark üretimini koruyan tek dikenli ok, yanında iki boss fazı süren küçük bir Bleed bırakır. Mark tüketmez; ikinci skill için kaynak hazırlarken gecikmeli hasar kurar.',
+  mark_affliction_barbed_twist:'Tek dikenli okla garanti Mark ve iki eşit Bleed ticki bırakır. Ek koşul veya kaynak istemeyen, Mark/Affliction rotasının en güvenilir ve doğrudan devamıdır.',
+  mark_affliction_mark_read_twist:'Saldırı başındaki bütün Markları tüketmeden okur ve her stacki iki Bleed tickinin miktarına ekler. Büyük Mark rezervini koruyarak gecikmeli hasara dönüştüren ağır tek oktur.',
+  mark_affliction_blood_trail_twist:'Gerçek ok Mark ve Bleed uygular; yaranın sonraki iki Bleed ticki gerçekleştiğinde ayrıca Mark bırakır. Kaynağı şimdi kurup iki savunma fazı boyunca büyüten gecikmeli üretim rotasıdır.',
+  mark_affliction_serrated_volley_twist:'Aynı anda çıkan dikenli shotgun pelletleri toplam Bleed paketini aralarında paylaşır. Her pellet ayrı yara uygulama olayıdır; paket toplam yalnızca 1 Chain üretir ve pellet sayısı Bleedi bedavaya çarpmaz.',
+  mark_affliction_barbed_bleed_apex:'Tek ok ve iki tick yapısını değiştirmeden her tickte ödenecek Bleed miktarını en fazla büyütür. Mark kurulumunu koruyan saf gecikmeli hasar varyantıdır.',
+  mark_affliction_barbed_mark_apex:'İki ticklik Bleed paketini korur, Apex gücünün çoğunu gerçek okun garanti Mark üretimine aktarır. Sonraki Mark tüketen saldırıyı en iyi hazırlayan barbed varyantıdır.',
+  mark_affliction_barbed_damage_apex:'Garanti Mark ve iki tick Bleedi korurken gerçek okun doğrudan hasarını en fazla büyütür. Gecikmeli hasarı kaybetmeden anlık vuruş isteyen güvenli varyanttır.',
+  mark_affliction_barbed_break_apex:'Normal durumda temel barbed ok gibi çalışır; Break oyuncu fazında kullanılırsa uyguladığı iki ticklik Bleed paketini ayrıca büyütür. Break penceresini gelecekteki hasara çevirir.',
+  mark_affliction_read_scale_apex:'Başlangıç Marklarını tüketmeden okuyan sistemi korur ve her Markın iki ticke eklediği Bleedi en fazla artırır. Büyük rezervlerde sınırsız doğrusal ölçeklenen uzman varyanttır.',
+  mark_affliction_read_bleed_apex:'Mark başına gelen ek Bleedi korur, boss üzerinde hiç Mark yokken bile uygulanan düz Bleed miktarını büyütür. Daha güvenilir başlangıç hasarı sağlayan varyanttır.',
+  mark_affliction_read_mark_apex:'Marktan Bleed okumasını ve rezervi tüketmeme kuralını korur, vuruştan sonra bırakılan garanti Markı büyütür. Bir sonraki kullanımın ölçeğini kendi hazırlamaya başlar.',
+  mark_affliction_read_damage_apex:'Mark başına iki tick Bleed okumasını korur, Apex gücünü yaranın açıldığı gerçek okun hasarına verir. Büyük rezervle hem anlık hem gecikmeli hasar üretir.',
+  mark_affliction_trail_tick_apex:'Yaranın iki Bleed tickinin de bıraktığı Mark miktarını en fazla büyütür. Hasarı değil, iki gelecek savunma fazına yayılan gecikmeli kaynak üretimini önceler.',
+  mark_affliction_trail_bleed_apex:'Her iki tickteki Mark ödülünü korur ve yaranın iki faz boyunca verdiği Bleed hasarını büyütür. Gecikmeli kaynak ile gecikmeli hasarı birlikte taşıyan varyanttır.',
+  mark_affliction_trail_mark_apex:'İki gelecek Bleed tickinin Mark ödülünü korur, gerçek okun hemen bıraktığı garanti Mark paketini büyütür. Hem şimdi hem daha sonra Mark kurar.',
+  mark_affliction_trail_final_apex:'Her iki tickin normal Mark ödülünü korur ve ikinci, son ticke daha büyük bir Mark patlaması ekler. En yavaş çalışan fakat en büyük geç rezervi hazırlayan varyanttır.',
+  mark_affliction_volley_contacts_apex:'Toplam Bleed ve tek Chain sözleşmesini bozmadan Quality ile daha fazla eşzamanlı pellet üretir. Ham gücü değil, ayrı yara uygulama olaylarını ve gelecekteki artifact tetiklerini önceler.',
+  mark_affliction_volley_bleed_apex:'Shotgun pellet sayısını korur ve pelletlerin arasında paylaştırılan toplam Bleed paketini büyütür. Çoklu yara kimliğini korurken gecikmeli hasarı önceler.',
+  mark_affliction_volley_mark_apex:'Eşzamanlı shotgun paketini ve bölünmüş yaraları korur, toplam garanti Markı pelletlerin üzerine dağıtarak artırır. Paket yine yalnızca 1 Chain üretir.',
+  mark_affliction_volley_damage_apex:'Yara olaylarını ve toplam Bleed paylaşımını korur, doğrudan hasarı shotgun pelletlerinin üzerine dağıtarak büyütür. Çoklu temas ailesinin en saldırgan varyantıdır.'
 });
 const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
-  const families=new Set(['MARK','CHAIN','CRITICAL']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  const families=new Set(['MARK','CHAIN','CRITICAL','AFFLICTION']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
     .filter(route=>route.depth===1||families.has(route.secondaryAttributeId)),
     expected=new Set(routes.map(route=>route.id)),authored=Object.keys(SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR),
     missing=routes.filter(route=>!SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]).map(route=>route.id),
@@ -11997,7 +12392,7 @@ const SHARPSHOOT_MARK_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
     buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
     focusAxis:'PRIMARY_SECONDARY_BALANCE',summary:route.promise,
     details:Object.freeze([
-      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Base: '+route.baseAttributeId+' · Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
       route.delivery?'Delivery: '+route.delivery.pattern.replace(/_/g,' ')+
         ' selected now; cumulative Quality grows its parameter.':
         'Delivery: inherited from F1 until a Twist explicitly transforms it.',
@@ -12012,7 +12407,7 @@ const SHARPSHOOT_MARK_TWIST_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRA
     buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
     focusAxis:'PRIMARY_SECONDARY_RELATIONSHIP',summary:route.promise,
     details:Object.freeze([
-      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Base: '+route.baseAttributeId+' · Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
       'Relationship: '+route.mechanics.relationship.replace(/_/g,' ')+'.',
       'Delivery: '+route.delivery.pattern.replace(/_/g,' ')+' · '+route.delivery.timing.replace(/_/g,' ')+'.'
      ]),prototypeContract:true})));
@@ -12024,7 +12419,7 @@ const SHARPSHOOT_MARK_APEX_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRAC
     buildAspect:'MARK_SATURATION',secondaryId:route.secondaryAttributeId,
     focusAxis:'TWIST_REFINEMENT',summary:route.promise,
     details:Object.freeze([
-      'Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
+      'Base: '+route.baseAttributeId+' · Primary: MARK · Secondary: '+route.secondaryAttributeId+'.',
       'Refinement: '+route.mechanics.refinement.replace(/_/g,' ')+'.',
       'Delivery remains '+route.delivery.pattern.replace(/_/g,' ')+' · '+
         route.delivery.timing.replace(/_/g,' ')+'.'
@@ -12037,8 +12432,8 @@ const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
 const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
   if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
-     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==16||
-     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==59||
+     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==20||
+     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==75||
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
@@ -12072,7 +12467,9 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'posturePrimerAmplification',
   'postureThresholdBonus','postureThresholdRatio','postureThresholdCrescendo',
   'postureWavePattern','postureWaveInterval',
-  'postureApplicationEventPower','affliction',
+  'postureApplicationEventPower','affliction','afflictionPerStartingMark','afflictionMarkPerTick',
+  'afflictionFinalMark','afflictionBreakApplicationBonus','afflictionSplitPerContact',
+  'afflictionApplicationEventPower',
   'resolvePerHit','resolveOnComplete','resolveRule','resolveOverflowToChain','consumeChain',
   'extraChainBonus','chainScalingRampPerHit','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
   'realChainScalingMultiplier','apexRefinementId','packetWaveCount','packetWavePattern',
@@ -12517,7 +12914,7 @@ function synthesizeF1StablePath(formRarity='COMMON',specializationId=null,specia
    Specialization are complete attacks. A compatible Attribute pair may silently
    select its Delivery at Specialization; Twist may preserve or transform it.
    Cumulative Quality controls only that Delivery's parameter, never its identity. */
-const SHARPSHOOT_MARK_COMPILER_VERSION=32;
+const SHARPSHOOT_MARK_COMPILER_VERSION=33;
 const SHARPSHOOT_MARK_PULSE_EVENT_POWER=2,
   SHARPSHOOT_MARK_BLOOM_RATE_POWER=1.5,
   SHARPSHOOT_MARK_BLOOM_RATE_STEP=.05,
@@ -12717,7 +13114,9 @@ function sharpshootCritReadWeightMultiplier(weight){
 }
 const SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
-  powerPerBleed:BLEED_STATUS.totalDamageFactor,specializationApplicationGuardrail:11
+  powerPerBleed:BLEED_STATUS.totalDamageFactor,specializationApplicationGuardrail:11,
+  markReadReference:8,breakApplicationReferenceBleed:10,breakActiveShare:.35,
+  offIdentityNaturalChainPaymentShare:.15
 });
 const SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
@@ -12871,8 +13270,16 @@ function commandExpectedCritMarkGain(command,markStacks=0){
     procChance=command&&command.critRollMode==='SHARED_ACTION'?chance:1-Math.pow(1-chance,hits);
   return bonus*procChance;
 }
-function commandExpectedAfflictionPower(command){
-  return commandBleedAmount(command)*BLEED_STATUS.totalDamageFactor;
+function commandExpectedAfflictionPower(command,
+    markStacks=SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.markReadReference){
+  const bleed=commandBleedAmount(command,markStacks),breakBonus=Math.max(0,
+      Number(command&&command.afflictionBreakApplicationBonus)||0),
+    markPerTick=Math.max(0,Number(command&&command.afflictionMarkPerTick)||0),
+    finalMark=Math.max(0,Number(command&&command.afflictionFinalMark)||0);
+  return bleed*BLEED_STATUS.totalDamageFactor*(1+breakBonus*
+      SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakActiveShare)+
+    (markPerTick*BLEED_STATUS.durationTicks+finalMark)*SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN+
+    Math.max(0,Number(command&&command.afflictionApplicationEventPower)||0);
 }
 function commandExpectedDefenseTemperPower(command){
   return commandDefenseTemperRate(command)*DEFENSE_CHARGE.expectedSpend;
@@ -13038,7 +13445,9 @@ function applyStableRankStatFloor(command,lowerCommand){
   for(const key of ['markGain','posture','posturePerMark','postureMarkEscalation','posturePrimer',
     'posturePrimerAmplification','postureThresholdBonus','postureThresholdCrescendo',
     'critChance','critChancePerStartingMark','critMarkBonus','defenseTemperDamagePerCharge',
-    'markBloomRate','phaseMarkTrailPerContact','realChainScalingMultiplier'])floor(key);
+    'markBloomRate','phaseMarkTrailPerContact','realChainScalingMultiplier',
+    'afflictionPerStartingMark','afflictionMarkPerTick','afflictionFinalMark',
+    'afflictionBreakApplicationBonus','afflictionApplicationEventPower'])floor(key);
   const lowerBleed=commandBleedAmount(lowerCommand),currentBleed=commandBleedAmount(command);
   if(currentBleed<lowerBleed){command.affliction=Object.freeze({id:BLEED_STATUS.id,amount:lowerBleed});
     restored++;statsRestored++;restoredKeys.push('affliction');}
@@ -13248,10 +13657,13 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       finalRoute.mechanics.refinement==='TWO_WAVE'?packetWaveCount:1,
     shotgunChainPaymentPower=delivery.pattern==='SIMULTANEOUS_PACKET'?
       Math.max(0,shotgunChainTotal-1)*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN:0,
+    offIdentityNaturalChainPaymentShare=finalRoute.secondaryAttributeId==='AFFLICTION'?
+      SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.offIdentityNaturalChainPaymentShare:
+      SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.offIdentityNaturalChainPaymentShare,
     paidNaturalChainPower=finalRoute.mechanics.paysNaturalChain?
       Math.max(0,hits-Math.max(1,parentCommand&&parentCommand.hits||1))*
         SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN*
-        SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.offIdentityNaturalChainPaymentShare:0,
+        offIdentityNaturalChainPaymentShare:0,
     requestedMechanicPayment=guaranteedMarkPower+shotgunMarkPower+shotgunApexMarkPower+
       echoChainPaymentPower+shotgunChainPaymentPower+paidNaturalChainPower+
       critReadWeightPaymentPower+guaranteedCritMarkPaymentPower,
@@ -13386,6 +13798,29 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     afflictionProgress=skillLinearOutputProgress(afflictionPower,
       SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.powerPerBleed),bleed=afflictionProgress.output,
     affliction=bleed?Object.freeze({id:BLEED_STATUS.id,amount:bleed}):null,
+    markAfflictionReadPower=compiledAllocation.axisPowerCredits.MARK_AFFLICTION_READ||0,
+    markAfflictionReadProgress=skillLinearOutputProgress(markAfflictionReadPower,
+      SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.markReadReference*
+        BLEED_STATUS.totalDamageFactor,5),
+    afflictionPerStartingMark=markAfflictionReadProgress.output,
+    afflictionMarkRewardPower=compiledAllocation.axisPowerCredits.AFFLICTION_MARK_REWARD||0,
+    afflictionMarkRewardProgress=skillLinearOutputProgress(afflictionMarkRewardPower,
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN*BLEED_STATUS.durationTicks,4),
+    afflictionMarkPerTick=afflictionMarkRewardProgress.output,
+    afflictionFinalMarkPower=compiledAllocation.axisPowerCredits.AFFLICTION_FINAL_MARK||0,
+    afflictionFinalMarkProgress=skillLinearOutputProgress(afflictionFinalMarkPower,
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,4),
+    afflictionFinalMark=afflictionFinalMarkProgress.output,
+    afflictionBreakPower=compiledAllocation.axisPowerCredits.BREAK_RELATION||0,
+    afflictionBreakProgress=skillLinearOutputProgress(afflictionBreakPower,
+      SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakApplicationReferenceBleed*
+        BLEED_STATUS.totalDamageFactor*
+        SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakActiveShare,4),
+    afflictionBreakApplicationBonus=finalRoute.mechanics.refinement==='BARBED_BREAK_APPLICATION'?
+      afflictionBreakProgress.output:0,
+    afflictionApplicationEventPower=Math.max(0,
+      compiledAllocation.axisPowerCredits.AFFLICTION_APPLICATION_EVENTS||0),
+    afflictionSplitPerContact=finalRoute.mechanics.afflictionRule==='BLEED_SPLIT_PER_CONTACT',
     chargePower=compiledAllocation.axisPowerCredits.DEFENSE_TEMPER||0,
     chargeProgress=skillLinearOutputProgress(chargePower,
       SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),chargeRate=chargeProgress.output;
@@ -13411,14 +13846,18 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     critChance,critChancePerStartingMark,critMarkBonus,
     critRollMode:finalRoute.mechanics.critRollMode||'PER_CONTACT',
     critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
-    affliction,defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
+    affliction,afflictionPerStartingMark,afflictionMarkPerTick,afflictionFinalMark,
+    afflictionBreakApplicationBonus,afflictionSplitPerContact,afflictionApplicationEventPower,
+    defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
     impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
-    bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||'BOW_STANDARD',
+    bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||
+      (finalRoute.secondaryAttributeId==='AFFLICTION'?'BOW_AFFLICTION':'BOW_STANDARD'),
     deliveryMagnitude,deliveryWeight,chainBonusWeight,apexRefinementId:finalRoute.mechanics.refinement||null,
     packetWaveCount,packetWavePattern,chainReadOffsetPattern,
     deliveryProfileId:delivery.profileId,
     deliveryPattern:delivery.pattern,
-    deliveryTiming:delivery.timing});
+    deliveryTiming:delivery.timing,
+    payloadApplication:{AFFLICTION:afflictionSplitPerContact?'PER_CONTACT':'PER_ACTION'}});
   const inheritance=compileStableLayerInheritance(command,parentCommand,finalRoute,finalReceipt,
       {chainScalingPower,rarityDirectExpressionPower}),
     rawRankDamage=commandDirectDamageTotal(command),rawRankHitDamages=Array.from({length:hits},
@@ -13545,7 +13984,13 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     POSTURE_APPLICATION_EVENTS:postureApplicationEventProgress,
     CRIT_CHANCE:critProgress,MARK_CRIT_READ:critMarkReadProgress,
     CRIT_MARK_REWARD:critMarkRewardProgress,
-    AFFLICTION_APPLICATION:afflictionProgress,DEFENSE_TEMPER:chargeProgress});
+    AFFLICTION_APPLICATION:afflictionProgress,MARK_AFFLICTION_READ:markAfflictionReadProgress,
+    AFFLICTION_MARK_REWARD:afflictionMarkRewardProgress,
+    AFFLICTION_FINAL_MARK:afflictionFinalMarkProgress,
+    BREAK_RELATION:afflictionBreakProgress,
+    AFFLICTION_APPLICATION_EVENTS:Object.freeze({output:hits,rank:hits,
+      credit:Number(afflictionApplicationEventPower.toFixed(4)),spent:afflictionApplicationEventPower,
+      reserve:0,next:null,needed:null,progress:1}),DEFENSE_TEMPER:chargeProgress});
   command.synthesisSecondaryPower=Object.freeze({CHAIN_SCALING:Number(chainScalingPower.toFixed(4)),
     CHAIN_DELIVERY:Number(deliveryChainPower.toFixed(4)),
     MARK_BLOOM_RATE:Number(bloomRateSpentPower.toFixed(4)),
@@ -13561,7 +14006,13 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     CRIT_CHANCE:Number(critPower.toFixed(4)),
     MARK_CRIT_READ:Number(critMarkReadPower.toFixed(4)),
     CRIT_MARK_REWARD:Number(critMarkRewardPower.toFixed(4)),
-    AFFLICTION_APPLICATION:Number(afflictionPower.toFixed(4)),DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
+    AFFLICTION_APPLICATION:Number(afflictionPower.toFixed(4)),
+    MARK_AFFLICTION_READ:Number(markAfflictionReadPower.toFixed(4)),
+    AFFLICTION_MARK_REWARD:Number(afflictionMarkRewardPower.toFixed(4)),
+    AFFLICTION_FINAL_MARK:Number(afflictionFinalMarkPower.toFixed(4)),
+    BREAK_RELATION:Number(afflictionBreakPower.toFixed(4)),
+    AFFLICTION_APPLICATION_EVENTS:Number(afflictionApplicationEventPower.toFixed(4)),
+    DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
   command.synthesisChainDeliveryPower=Number(deliveryChainPower.toFixed(4));
   command.synthesisRawChainScalingRate=sharpshootChainScalingRate(chainScalingPower,
     commandDirectDamageTotal(command));
@@ -13641,7 +14092,9 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
   command.evolutionName=command.name;command.evolutionType='STABLE';
   command.legendaryStampSlots=history.filter(node=>node.legendaryStampSlot).length;
   command.legendaryStamps=[];refreshSkillRarityResonance(command);
-  const secondaryText=finalRoute.depth>1&&finalRoute.secondaryAttributeId==='MARK'?
+  const afflictionReferenceBleed=commandBleedAmount(command,
+    SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.markReadReference),
+    secondaryText=finalRoute.depth>1&&finalRoute.secondaryAttributeId==='MARK'?
       'Mark Secondary: the complete attribute wallet remains dedicated to uncapped Mark generation.':
     command.extraChainBonus?'Chain Secondary: '+(CFG.CHAIN_BONUS*100).toFixed(0)+
       '% base + '+(command.extraChainBonus*100).toFixed(1)+'% skill = '+
@@ -13655,11 +14108,26 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       'Critical Secondary: '+(critChance*100).toFixed(1)+'% local chance at ×'+
       damagePart(SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier)+'; no Precision or global Crit.':bleed?
       'Affliction Secondary: +'+bleed+' Bleed for two phase-end ticks; Break tick ×'+
-      damagePart(BLEED_STATUS.breakMultiplier)+'.':chargeRate?
+      damagePart(BLEED_STATUS.breakMultiplier)+(command.afflictionPerStartingMark>0?
+        '; at 8 starting Mark each tick becomes '+damagePart(afflictionReferenceBleed):'')+
+      (command.afflictionMarkPerTick>0?'; each tick gives +'+
+        damagePart(command.afflictionMarkPerTick)+' Mark':'')+'.':chargeRate?
       'Charge Secondary: +'+chargeRate+' base damage per banked Charge; expected at ×'+
       DEFENSE_CHARGE.expectedSpend+', capped at ×'+DEFENSE_CHARGE.max+'.':
       'No Secondary output before Specialization.';
-  const relationshipText=finalRoute.mechanics.relationship==='RELIABLE_POSTURE_IMPACT'?
+  const relationshipText=finalRoute.mechanics.relationship==='BARBED_BLEED_BASELINE'?
+      'Twist: one reliable barbed contact applies one complete two-tick Bleed package.':
+    finalRoute.mechanics.relationship==='STARTING_MARK_DEEPENS_BLEED'?
+      'Twist: every preserved action-start Mark adds +'+
+        damagePart(command.afflictionPerStartingMark)+' to both Bleed ticks.':
+    finalRoute.mechanics.relationship==='BLEED_TICKS_GENERATE_MARK'?
+      'Twist: both Bleed ticks give +'+damagePart(command.afflictionMarkPerTick)+
+        ' Mark'+(command.afflictionFinalMark>0?'; the final tick adds another +'+
+          damagePart(command.afflictionFinalMark):'')+'.':
+    finalRoute.mechanics.relationship==='SERRATED_WOUND_VOLLEY'?
+      'Twist: '+command.hits+' simultaneous shotgun contacts split one total '+
+        damagePart(commandBleedAmount(command))+' Bleed package and add 1 Chain total.':
+    finalRoute.mechanics.relationship==='RELIABLE_POSTURE_IMPACT'?
       'Twist: one reliable impact concentrates this light bow\'s secondary Posture output.':
     finalRoute.mechanics.relationship==='MARK_READS_AS_POSTURE'?
       'Twist: every action-start Mark adds +'+damagePart(posturePerMark)+
@@ -17286,6 +17754,15 @@ function resolveTurnActionHit(action){
     const gained=trailGain;
     if(gained)floater(x,y-78,'MARK TRAIL +'+gained+' · ×'+boss.mark,'#ff7a87',14);
   }
+  if(command.afflictionSplitPerContact){
+    const bleed=commandBleedContactAmount(command,action.markStacks,index);
+    if(bleed>0){
+      const divisor=Math.max(1,action.hits),added=addBossBleed(bleed,
+        Math.max(0,Number(command.afflictionMarkPerTick)||0)/divisor,
+        Math.max(0,Number(command.afflictionFinalMark)||0)/divisor);
+      floater(x,y-82,'WOUND '+(index+1)+'/'+action.hits+' +'+damagePart(added),'#d9788b',13);
+    }
+  }
   if(action.hitIndex===action.hits){
     const bloomGain=commandBloomMarkGain(command,action.markStacks);
     if(bloomGain){
@@ -17296,9 +17773,10 @@ function resolveTurnActionHit(action){
       const installed=installPlayerMarkTrail(command);
       floater(x,y-126,'MARK TRAIL · +'+installed+' PER NEXT HIT','#ff8f9a',13);
     }
-    const bleed=commandBleedAmount(command);
+    const bleed=command.afflictionSplitPerContact?0:commandAppliedBleedAmount(command,
+      action.markStacks,boss.playerTurnBreak===true);
     if(bleed){
-      const added=addBossBleed(bleed);
+      const added=addBossBleed(bleed,command.afflictionMarkPerTick,command.afflictionFinalMark);
       floater(x,y-82,'BLEED +'+damagePart(added),'#d9788b',15);
     }
     const postureBase=commandPostureDamage(command,action.chainAtStart,action.markStacks,
@@ -18660,7 +19138,8 @@ function startBoss(definitionId=null){
     ap:CFG.TURN_AP_BASE,apMax:CFG.TURN_AP_BASE,
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
     playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
-    bleed:0,bleedLater:0,charge:0,defenseChargeProgress:0,chargeEnabled:false,
+    bleed:0,bleedLater:0,bleedMark:0,bleedMarkLater:0,
+    charge:0,defenseChargeProgress:0,chargeEnabled:false,
     partyActor:'knight',playerActionReturnMenu:'root',allyAttackAnim:0,
     playerMarkTrailPerContact:0,lastMarkEvent:null,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
@@ -21537,7 +22016,8 @@ function startSkillLabCombat(){
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
   boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.posturePrimer=0;
   boss.posturePrimerAmplification=0;boss.mark=0;
-  boss.bleed=0;boss.bleedLater=0;boss.charge=0;boss.defenseChargeProgress=0;
+  boss.bleed=0;boss.bleedLater=0;boss.bleedMark=0;boss.bleedMarkLater=0;
+  boss.charge=0;boss.defenseChargeProgress=0;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
 }
@@ -21560,6 +22040,7 @@ function applySkillLabPreset(id,audible=true){
   if(!values)return false;
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
+  boss.bleedMark=0;boss.bleedMarkLater=0;
   boss.charge=0;boss.defenseChargeProgress=0;
   chainStacks=values.chain;
   boss.posture=values.posture;boss.posturePrimer=0;boss.posturePrimerAmplification=0;

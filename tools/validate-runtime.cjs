@@ -627,6 +627,163 @@ try{
       (sum,row)=>sum+row.groups,0),identityRows,minFocusMarkMargin,families,
       runtime:{sharedRolls,independentRolls},finite:{hugeWeight,hugeChance},twistRows};
   })();
+  globalThis.__afflictionFamilyAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],specId='mark_affliction_spec',
+      twistIds=['mark_affliction_barbed_twist','mark_affliction_mark_read_twist',
+        'mark_affliction_blood_trail_twist','mark_affliction_serrated_volley_twist'],
+      focusTwistIds=['mark_focus_concentrated_twist','mark_focus_pulse_twist',
+        'mark_focus_bloom_twist','mark_focus_trail_twist'],twistRows=[];
+    let identityRows=0,minBaseMark=Infinity,minFocusMarkMargin=Infinity;
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities){
+        const commands=twistIds.map(id=>synthesizeSharpshootMarkPath(formRarity,specId,
+          specRarity,id,twistRarity)),focus=focusTwistIds.map(id=>synthesizeSharpshootMarkPath(
+          formRarity,'mark_focus_spec',specRarity,id,twistRarity)),
+          [barbed,read,trail,volley]=commands;
+        minBaseMark=Math.min(minBaseMark,...commands.map(command=>command.markGain));
+        minFocusMarkMargin=Math.min(minFocusMarkMargin,
+          Math.min(...focus.map(command=>command.markGain))-
+          Math.max(...commands.map(command=>command.markGain)));
+        const volleyBleed=commandBleedAmount(volley,8),splitBleed=Array.from(
+          {length:volley.hits},(_,index)=>commandBleedContactAmount(volley,8,index))
+          .reduce((sum,value)=>sum+value,0);
+        if(commands.some(command=>!command||command.markGain<1||command.consumeMark||
+             commandMarkPlan(command,12).consumedTotal!==0)||
+           commandDeliveryContract(barbed).pattern!=='SINGLE'||barbed.hits!==1||
+           !(commandBleedAmount(barbed,0)>0)||barbed.afflictionPerStartingMark||
+           barbed.afflictionMarkPerTick||barbed.afflictionSplitPerContact||
+           commandDeliveryContract(read).pattern!=='SINGLE'||read.hits!==1||
+           !(read.afflictionPerStartingMark>0)||read.afflictionMarkPerTick||
+           commandBleedAmount(read,12)<=commandBleedAmount(read,0)||
+           commandDeliveryContract(trail).pattern!=='SINGLE'||trail.hits!==1||
+           !(trail.afflictionMarkPerTick>0)||trail.afflictionPerStartingMark||
+           commandDeliveryContract(volley).pattern!=='SIMULTANEOUS_PACKET'||volley.hits<2||
+           !volley.afflictionSplitPerContact||totalCommandChainGain(volley)!==1||
+           !volley.chainGainPattern||volley.chainGainPattern[0]!==1||
+           volley.chainGainPattern.slice(1).some(Boolean)||
+           Math.abs(splitBleed-volleyBleed)>1e-6)
+          throw new Error('F1S5 Twist identity, Base Mark, or Delivery failed at '+
+            [formRarity,specRarity,twistRarity].join('/')+' '+JSON.stringify(commands.map(command=>({
+              name:command&&command.name,pattern:command&&commandDeliveryContract(command).pattern,
+              hits:command&&command.hits,mark:command&&command.markGain,
+              bleed:command&&commandBleedAmount(command,12),
+              read:command&&command.afflictionPerStartingMark,
+              tickMark:command&&command.afflictionMarkPerTick,
+              split:command&&command.afflictionSplitPerContact,
+              consumed:command&&commandMarkPlan(command,12).consumedTotal}))));
+        twistRows.push({formRarity,specRarity,twistRarity,
+          commands:commands.map(command=>({id:command.name,hits:command.hits,
+            damage:commandDirectDamageTotal(command),mark:command.markGain,
+            bleed:commandBleedAmount(command,8),read:command.afflictionPerStartingMark,
+            tickMark:command.afflictionMarkPerTick,chain:totalCommandChainGain(command),
+            play:stableEvolutionPlaythroughVector(command).averageContribution}))});
+        identityRows++;
+      }
+    if(minBaseMark<1)throw new Error('F1S5 lost Sharpshoot Base Mark: '+minBaseMark);
+    if(minFocusMarkMargin<1)throw new Error('F1S5 overtook F1S1 Primary Mark: '+minFocusMarkMargin);
+    const configs=[
+      {familyId:'F1S5T1',twistId:twistIds[0],ids:[
+        'mark_affliction_barbed_bleed_apex','mark_affliction_barbed_mark_apex',
+        'mark_affliction_barbed_damage_apex','mark_affliction_barbed_break_apex'],
+        roles:['bleed','mark','damage','breakBleed']},
+      {familyId:'F1S5T2',twistId:twistIds[1],ids:[
+        'mark_affliction_read_scale_apex','mark_affliction_read_bleed_apex',
+        'mark_affliction_read_mark_apex','mark_affliction_read_damage_apex'],
+        roles:['read','bleed','mark','damage']},
+      {familyId:'F1S5T3',twistId:twistIds[2],ids:[
+        'mark_affliction_trail_tick_apex','mark_affliction_trail_bleed_apex',
+        'mark_affliction_trail_mark_apex','mark_affliction_trail_final_apex'],
+        roles:['tickMark','bleed','mark','finalMark']},
+      {familyId:'F1S5T4',twistId:twistIds[3],ids:[
+        'mark_affliction_volley_contacts_apex','mark_affliction_volley_bleed_apex',
+        'mark_affliction_volley_mark_apex','mark_affliction_volley_damage_apex'],
+        roles:['hits','bleed','mark','damage']}
+    ],families=[];
+    for(const config of configs){
+      let maxSpread=0,strictRoleRows=0;
+      const audit=auditStableApexFamily({familyId:config.familyId,specId,
+        twistId:config.twistId,ids:config.ids,inspect:({command,history})=>({id:history.id,
+          damage:commandDirectDamageTotal(command),mark:command.markGain,hits:command.hits,
+          bleed:commandBleedAmount(command,0),read:command.afflictionPerStartingMark||0,
+          tickMark:command.afflictionMarkPerTick||0,finalMark:command.afflictionFinalMark||0,
+          breakBleed:command.afflictionBreakApplicationBonus||0,
+          chain:totalCommandChainGain(command),
+          play:stableEvolutionPlaythroughVector(command).averageContribution}),
+        inspectGroup:group=>{
+          for(let index=0;index<config.roles.length;index++){
+            const role=config.roles[index],chosen=group[index][role],
+              best=Math.max(...group.map(row=>row[role]));
+            if(chosen+1e-6<best)throw new Error(config.familyId+' '+role+' role lost');
+            if(chosen>Math.max(...group.filter((_,i)=>i!==index).map(row=>row[role]))+1e-6)
+              strictRoleRows++;
+          }
+          const plays=group.map(row=>row.play),mean=plays.reduce((a,b)=>a+b,0)/plays.length,
+            spread=(Math.max(...plays)-Math.min(...plays))/Math.max(1,mean);
+          maxSpread=Math.max(maxSpread,spread);
+        }});
+      if(maxSpread>.28||strictRoleRows<1)throw new Error(config.familyId+
+        ' Apex balance/role separation failed '+JSON.stringify({maxSpread,strictRoleRows}));
+      families.push({familyId:config.familyId,cards:audit.cards,groups:audit.groups,
+        maxSpread:Number(maxSpread.toFixed(4)),strictRoleRows});
+    }
+    const read=synthesizeSharpshootMarkPath('COMMON',specId,'COMMON',twistIds[1],'COMMON'),
+      low=commandBleedAmount(read,1000),high=commandBleedAmount(read,1000000),
+      extreme=commandBleedAmount(read,Number.MAX_SAFE_INTEGER),
+      breakApex=synthesizeSharpshootMarkPath('COMMON',specId,'COMMON',twistIds[0],
+        'COMMON','mark_affliction_barbed_break_apex','COMMON'),
+      normalBleed=commandAppliedBleedAmount(breakApex,0,false),
+      breakBleed=commandAppliedBleedAmount(breakApex,0,true),savedBoss=boss;
+    boss={bleed:0,bleedTurns:0,bleedLater:0,bleedLaterTurns:0,bleedMark:0,
+      bleedMarkLater:0};
+    addBossBleed(10,2,3);
+    const delayed={bleed:boss.bleed,bleedLater:boss.bleedLater,
+      markPerTick:boss.bleedMark,finalTickMark:boss.bleedMarkLater};
+    boss=savedBoss;
+    if(!Number.isFinite(extreme)||!(high>low)||!(extreme>high)||
+       !(breakBleed>normalBleed)||delayed.bleed!==10||delayed.bleedLater!==10||
+       delayed.markPerTick!==2||delayed.finalTickMark!==5)
+      throw new Error('F1S5 uncapped read, Break application, or delayed Mark runtime failed');
+    return {cards:families.reduce((sum,row)=>sum+row.cards,0),groups:families.reduce(
+      (sum,row)=>sum+row.groups,0),identityRows,minBaseMark,minFocusMarkMargin,families,
+      runtime:{normalBleed,breakBleed,delayed},uncapped:{low,high,extreme},twistRows};
+  })();
+  globalThis.__twistDeliveryDecisionAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=
+      SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+        route.runtimeReadiness==='MATERIALIZED'),patternCounts=Object.create(null);
+    let rows=0,splitPayloadRows=0;
+    for(const twist of twists){
+      const decision=twist.deliveryDecision;
+      if(!decision||!decision.reason||!decision.rejectedPattern)
+        throw new Error(twist.id+' lost its authored Delivery decision');
+      patternCounts[twist.delivery.pattern]=(patternCounts[twist.delivery.pattern]||0)+1;
+      for(const formRarity of rarities)for(const specRarity of rarities)
+        for(const twistRarity of rarities){
+          const command=synthesizeSharpshootMarkPath(formRarity,twist.parentId,specRarity,
+              twist.id,twistRarity),delivery=commandDeliveryContract(command),
+            chain=totalCommandChainGain(command),expectedChain=
+              decision.resourcePolicy==='CHAIN_PER_CONTACT'?command.hits:1;
+          if(delivery.pattern!==twist.delivery.pattern||chain!==expectedChain||
+             (delivery.pattern==='SINGLE'&&command.hits!==1)||
+             (delivery.pattern!=='SINGLE'&&command.hits<2))
+            throw new Error(twist.id+' runtime Delivery contradicts its authored decision at '+
+              [formRarity,specRarity,twistRarity].join('/')+' '+JSON.stringify({
+                pattern:delivery.pattern,hits:command.hits,chain,decision}));
+          if(decision.payloadPolicy==='SPLIT_TOTAL_ACROSS_CONTACTS'){
+            const total=commandAppliedBleedAmount(command,8,false),split=Array.from(
+              {length:command.hits},(_,index)=>commandBleedContactAmount(command,8,index))
+              .reduce((sum,value)=>sum+value,0);
+            if(!command.afflictionSplitPerContact||Math.abs(total-split)>1e-6)
+              throw new Error(twist.id+' multiplied or lost its split payload');
+            splitPayloadRows++;
+          }
+          rows++;
+        }
+    }
+    if(twists.length!==20||rows!==1280||splitPayloadRows!==64)
+      throw new Error('Stable Twist Delivery decision coverage drifted');
+    return {twists:twists.length,rows,splitPayloadRows,patternCounts};
+  })();
   globalThis.__stableRankAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'),
@@ -649,6 +806,11 @@ try{
       finisherCrescendo:command.postureThresholdCrescendo||0,
       crit:command.critChance||0,critRead:command.critChancePerStartingMark||0,
       critMark:command.critMarkBonus||0,bleed:commandBleedAmount(command),
+      bleedRead:command.afflictionPerStartingMark||0,
+      bleedTickMark:command.afflictionMarkPerTick||0,
+      bleedFinalMark:command.afflictionFinalMark||0,
+      bleedBreak:command.afflictionBreakApplicationBonus||0,
+      bleedEvents:command.afflictionApplicationEventPower||0,
       charge:commandDefenseTemperRate(command),pulses:(command.markPulsePattern||[]).length,
       bloom:command.markBloomRate||0,trail:command.phaseMarkTrailPerContact||0,
       chainDamage:commandOwnsChainScaling(command)?commandRealChainDamagePerStack(command):0
@@ -826,7 +988,7 @@ try{
       worstChildScoreGap,worstChildPlayGap};
   })();`;
   /* Full-history coverage grows deliberately with every materialized family.
-     Keep a finite guard, but allow the exhaustive 82-route matrix to finish on
+     Keep a finite guard, but allow the exhaustive route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
   vm.runInNewContext(source,sandbox,{filename:file,timeout:180000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
@@ -993,6 +1155,26 @@ try{
     runtime:criticalFamily.runtime,finite:criticalFamily.finite,
     standard:criticalFamily.twistRows.filter(row=>row.formRarity==='COMMON'&&
       row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
+  const afflictionFamily=sandbox.__afflictionFamilyAudit;
+  if(!afflictionFamily||afflictionFamily.cards!==4096||afflictionFamily.groups!==1024||
+     afflictionFamily.identityRows!==64||afflictionFamily.minBaseMark<1||
+     afflictionFamily.minFocusMarkMargin<1||
+     afflictionFamily.families.some(family=>family.cards!==1024||family.groups!==256||
+       family.maxSpread>.28||family.strictRoleRows<1))
+    throw new Error('F1S5 Mark/Affliction family failed: '+JSON.stringify(afflictionFamily));
+  console.log('MARK_AFFLICTION_FAMILY '+JSON.stringify({cards:afflictionFamily.cards,
+    groups:afflictionFamily.groups,identityRows:afflictionFamily.identityRows,
+    minBaseMark:afflictionFamily.minBaseMark,
+    minFocusMarkMargin:afflictionFamily.minFocusMarkMargin,
+    families:afflictionFamily.families,runtime:afflictionFamily.runtime,
+    uncapped:afflictionFamily.uncapped,
+    standard:afflictionFamily.twistRows.filter(row=>row.formRarity==='COMMON'&&
+      row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
+  const deliveryDecisions=sandbox.__twistDeliveryDecisionAudit;
+  if(!deliveryDecisions||deliveryDecisions.twists!==20||deliveryDecisions.rows!==1280||
+     deliveryDecisions.splitPayloadRows!==64)
+    throw new Error('Stable Twist Delivery decision gate failed: '+JSON.stringify(deliveryDecisions));
+  console.log('TWIST_DELIVERY_DECISIONS '+JSON.stringify(deliveryDecisions));
   const pureExpression=sandbox.__pureRarityExpressionAudit;
   if(!pureExpression||pureExpression.some(route=>{
     const rows=route.rows;
@@ -1026,8 +1208,12 @@ try{
     stagnant:rankAudit.stagnant.length,byStat:regressionStats,byRoute:regressionRoutes,
     examples:rankAudit.regressions.slice(0,20)}));
   const hierarchyAudit=sandbox.__stableHierarchyAudit;
-  if(!hierarchyAudit||hierarchyAudit.twists!==16||hierarchyAudit.apexes!==59||
-     hierarchyAudit.comparisons!==16224||hierarchyAudit.failures.length)
+  const hierarchySpecs=hierarchyAudit?hierarchyAudit.routes-hierarchyAudit.twists-
+      hierarchyAudit.apexes:0,
+    expectedHierarchyComparisons=hierarchyAudit?hierarchySpecs*16+
+      hierarchyAudit.twists*64+hierarchyAudit.apexes*256:0;
+  if(!hierarchyAudit||hierarchyAudit.twists!==20||hierarchyAudit.apexes!==75||
+     hierarchyAudit.comparisons!==expectedHierarchyComparisons||hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));
@@ -1065,14 +1251,18 @@ try{
     worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
     worstChildPlayGap:parentStrength.worstChildPlayGap}));
   const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  if(!parentStrength||parentStrength.routes!==81||parentStrength.comparisons!==35592||
+  const expectedParentRoutes=hierarchyAudit.routes,
+    expectedParentComparisons=hierarchySpecs*12+hierarchyAudit.twists*96+
+      hierarchyAudit.apexes*576;
+  if(!parentStrength||parentStrength.routes!==expectedParentRoutes||
+     parentStrength.comparisons!==expectedParentComparisons||
      parentStrength.reversals.length||
      parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
      parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
      parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
     throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-       expectedRoutes:81,expectedComparisons:35592,
+       expectedRoutes:expectedParentRoutes,expectedComparisons:expectedParentComparisons,
       reversals:parentStrength&&parentStrength.reversals.slice(0,3),
       minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
       minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
@@ -1106,13 +1296,21 @@ try{
        f1s4Cards:criticalFamily.cards,f1s4Groups:criticalFamily.groups,
        f1s4IdentityRows:criticalFamily.identityRows,
        f1s4MinMarkWall:criticalFamily.minFocusMarkMargin,
-       f1s4FamilySpreads:criticalFamily.families.map(family=>family.maxSpread)},
+       f1s4FamilySpreads:criticalFamily.families.map(family=>family.maxSpread),
+       f1s5Cards:afflictionFamily.cards,f1s5Groups:afflictionFamily.groups,
+       f1s5IdentityRows:afflictionFamily.identityRows,
+       f1s5MinBaseMark:afflictionFamily.minBaseMark,
+       f1s5MinFocusMarkWall:afflictionFamily.minFocusMarkMargin,
+       f1s5FamilySpreads:afflictionFamily.families.map(family=>family.maxSpread),
+       deliveryDecisionTwists:deliveryDecisions.twists,
+       deliveryDecisionRows:deliveryDecisions.rows},
     bug:{passed:true,runtime:true,mechanicAudit:true,posturePrimer:true,
        uncappedPostureRead:true,uncappedEscalatingRead:true,
        safeIntegerEscalatingRead:true,generalPrimerAmplification:true,
        safeIntegerPrimerAmplification:true,finisherCrescendoSnapshot:true,
        proportionalFinisherBarScale:true,safeIntegerFinisherCrescendo:true,doubleFracture:true,
-       sharedCritRoll:true,independentCritRolls:true,finiteCritWeight:true},
+       sharedCritRoll:true,independentCritRolls:true,finiteCritWeight:true,
+       uncappedAfflictionRead:true,breakAffliction:true,delayedAfflictionMark:true},
     rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
       parentComparisons:parentStrength.comparisons},
     power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,
