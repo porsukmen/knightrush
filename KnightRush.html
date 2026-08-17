@@ -9310,11 +9310,12 @@ function resolveBossPhaseBleed(fromBreak=false){
   }
   return defeated;
 }
-/* Charge Secondary banks one bounded defense-phase result. It never scans
-   history or allocates during combat: one stored integer and one in-progress
-   integer are enough for every Parry/Perfect/Break hook. */
-const DEFENSE_CHARGE=Object.freeze({max:3,phaseBase:1,successGain:1,breakFloor:2,
-  expectedSpend:2});
+/* Charge Secondary banks the best single defense-phase performance until used.
+   There is no authored gameplay ceiling: the finite boss phase is the natural
+   limit. Runtime still stores only one integer for the bank and one for the
+   active phase, so uncapped synthesis does not add frame cost. */
+const DEFENSE_CHARGE=Object.freeze({perfectDodgeGain:1,parryGain:2,expectedSpend:2,
+  labPreviewCycle:8});
 const CHAIN_PHASE_POLICY=Object.freeze({defenseToPlayer:'CARRY',playerToDefense:'RESET'});
 function chainAfterPlayerPhase(){return 0;}
 const CHAIN_PHASE_POLICY_AUDIT=(()=>{
@@ -9326,35 +9327,47 @@ const CHAIN_PHASE_POLICY_AUDIT=(()=>{
 function commandDefenseTemperRate(command){
   return Math.max(0,Number(command&&command.defenseTemperDamagePerCharge)||0);
 }
-function chargeRouteEquipped(){return runSkills.some(command=>commandDefenseTemperRate(command)>0);}
+function commandChargeMode(command){
+  return command&&command.chargeMode||
+    (commandDefenseTemperRate(command)>0?'FULL_RELEASE':'NONE');
+}
+function commandUsesDefenseCharge(command){return commandChargeMode(command)!=='NONE';}
+function chargeRouteEquipped(){return runSkills.some(command=>commandUsesDefenseCharge(command));}
 function bossChargeEnabled(){return !!(boss&&boss.chargeEnabled);}
-function bossCharge(){return boss?Math.max(0,Math.min(DEFENSE_CHARGE.max,Number(boss.charge)||0)):0;}
+function safeDefenseCharge(value){
+  const numeric=Math.floor(Math.max(0,Number(value)||0));
+  return Number.isSafeInteger(numeric)?numeric:Number.MAX_SAFE_INTEGER;
+}
+function bossCharge(){return boss?safeDefenseCharge(boss.charge):0;}
 function startDefenseChargePhase(){
   if(!boss)return 0;
-  boss.defenseChargeProgress=bossChargeEnabled()?DEFENSE_CHARGE.phaseBase:0;
+  boss.defenseChargeProgress=0;
   return boss.defenseChargeProgress;
 }
-function recordDefenseChargeSuccess(){
+function recordDefenseChargeSuccess(amount){
   if(!boss||boss.phase!=='dodge'||!bossChargeEnabled())return 0;
-  const before=Math.max(0,Number(boss.defenseChargeProgress)||0);
-  boss.defenseChargeProgress=Math.min(DEFENSE_CHARGE.max,before+DEFENSE_CHARGE.successGain);
+  const before=safeDefenseCharge(boss.defenseChargeProgress),gain=safeDefenseCharge(amount);
+  boss.defenseChargeProgress=safeDefenseCharge(before+gain);
   return boss.defenseChargeProgress-before;
 }
-function defenseChargeBankResult(stored,progress,fromBreak=false){
-  const completed=Math.min(DEFENSE_CHARGE.max,Math.max(Number(progress)||0,
-    fromBreak?DEFENSE_CHARGE.breakFloor:0));
-  return Math.max(0,Math.min(DEFENSE_CHARGE.max,Math.max(Number(stored)||0,completed)));
+function defenseChargeBankResult(stored,progress){
+  return Math.max(safeDefenseCharge(stored),safeDefenseCharge(progress));
 }
 function finalizeDefenseChargePhase(fromBreak=false){
   if(!boss||!bossChargeEnabled()){if(boss)boss.defenseChargeProgress=0;return 0;}
   const before=bossCharge();
-  boss.charge=defenseChargeBankResult(before,boss.defenseChargeProgress,fromBreak);
+  boss.charge=defenseChargeBankResult(before,boss.defenseChargeProgress);
   boss.defenseChargeProgress=0;
   if(boss.charge>before)floater(VW/2-112,278,'CHARGE BANKED ×'+boss.charge,'#7fc9ff',14);
   return boss.charge-before;
 }
-function consumeBossCharge(){
-  const value=bossCharge();if(boss)boss.charge=0;return value;
+function consumeBossCharge(amount=Number.MAX_SAFE_INTEGER){
+  const available=bossCharge(),spent=Math.min(available,safeDefenseCharge(amount));
+  if(boss)boss.charge=available-spent;return spent;
+}
+function restoreBossCharge(amount){
+  if(!boss)return 0;const before=bossCharge();boss.charge=safeDefenseCharge(before+amount);
+  return boss.charge-before;
 }
 /* Mark is an encounter resource, not a three-token damage buff. The technical
    ceiling only protects arithmetic/save data; authored moves must balance gain
@@ -9522,7 +9535,10 @@ function transformSharpshoot(skill,patch){
     chainBonusWeight:1,packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
     critChance:0,critChancePerStartingMark:0,critMarkBonus:0,critRollMode:'PER_CONTACT',
     critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
-    defenseTemperDamagePerCharge:0,defenseTemperMaxCharge:DEFENSE_CHARGE.max,col:'#c0f79a'
+    defenseTemperDamagePerCharge:0,chargeMode:null,chargeMarkPerCharge:0,
+    chargeDamagePerMarkPerCharge:0,chargeRetentionRate:0,chargeBreakDamagePerCharge:0,
+    chargeDistributedDamagePerCharge:0,chargeDistributedMarkPerAction:0,
+    chargeFinalDamagePerCharge:0,col:'#c0f79a'
   },patch);
 }
 /* Evolution is authored as a four-deep tree, while rarity and mutation type stay
@@ -9799,7 +9815,9 @@ const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD',
   'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION',
   'MARK_AFFLICTION_READ','AFFLICTION_MARK_REWARD','AFFLICTION_FINAL_MARK','AFFLICTION_APPLICATION_EVENTS',
-  'CHARGE_RELEASE','DEFENSE_TEMPER'
+  'CHARGE_RELEASE','DEFENSE_TEMPER','CHARGE_TO_MARK','MARK_CHARGE_READ',
+  'CHARGE_RETENTION','CHARGE_BREAK_RELATION','CHARGE_DISTRIBUTION',
+  'CHARGE_ACTION_MARK','CHARGE_FINAL_RELEASE'
 ]);
 const COMBAT_ATTRIBUTE_SCALING_AXIS_SET=new Set(COMBAT_ATTRIBUTE_SCALING_AXES);
 const COMBAT_ATTRIBUTE_CAPABILITIES=Object.freeze([
@@ -9913,8 +9931,10 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
       capabilities:['CHARGE_RELEASE'],scalingAxes:['CHARGE_RELEASE'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['DELAYED_RELEASE'],
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
-    secondary:{promise:'Resolve now, then temper the result through perfect defense during the boss phase.',
-      capabilities:['DEFENSE_TEMPER'],scalingAxes:['DEFENSE_TEMPER'],
+    secondary:{promise:'Resolve now and cash the best earned Parry/Perfect-Dodge score from one defense phase into the inherited move.',
+      capabilities:['DEFENSE_TEMPER'],scalingAxes:['DEFENSE_TEMPER','CHARGE_TO_MARK',
+        'MARK_CHARGE_READ','CHARGE_RETENTION','CHARGE_BREAK_RELATION','CHARGE_DISTRIBUTION',
+        'CHARGE_ACTION_MARK','CHARGE_FINAL_RELEASE'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}})
 ].forEach(def=>COMBAT_ATTRIBUTES.register(def));
@@ -10223,7 +10243,15 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
   bowAnimationRecipe({id:'BOW_CHARGE',visualStyle:'CHARGE',raiseTime:.14,drawTime:.36,holdTime:.10,
     releaseTime:.10,recoveryTime:.36,arrowSpeed:1040,arrowArc:21,arrowScale:1.12,drawStrength:.88,
     releaseRecoil:.42,trailStrength:.88,impactScale:1.20,impactShake:3.2,hitStop:.05,
-    shotInterval:.42,holdPerCharge:.035,scalePerCharge:.07,recoilPerCharge:.09})
+    shotInterval:.42,holdPerCharge:.035,scalePerCharge:.07,recoilPerCharge:.09}),
+  bowAnimationRecipe({id:'BOW_CHARGE_PACKET',visualStyle:'CHARGE',raiseTime:.10,drawTime:.30,holdTime:.08,
+    releaseTime:.07,recoveryTime:.34,arrowSpeed:1120,arrowArc:15,arrowScale:.78,drawStrength:.82,
+    releaseRecoil:.48,trailStrength:.86,impactScale:.84,impactShake:2.3,hitStop:.028,
+    shotInterval:.18,holdPerCharge:.018,scalePerCharge:.025,recoilPerCharge:.035}),
+  bowAnimationRecipe({id:'BOW_CHARGE_QUICK',visualStyle:'CHARGE',raiseTime:.08,drawTime:.22,holdTime:.04,
+    releaseTime:.06,recoveryTime:.25,arrowSpeed:1240,arrowArc:12,arrowScale:.92,drawStrength:.70,
+    releaseRecoil:.30,trailStrength:.72,impactScale:.96,impactShake:1.8,hitStop:.025,
+    shotInterval:.28,holdPerCharge:.01,scalePerCharge:.02,recoilPerCharge:.02})
 ].forEach(recipe=>BOW_ANIMATION_RECIPES.register(recipe));
 Object.freeze(BOW_ANIMATION_RECIPES.ids);Object.freeze(BOW_ANIMATION_RECIPES.list);
 Object.freeze(BOW_ANIMATION_RECIPES.byId);Object.freeze(BOW_ANIMATION_RECIPES);
@@ -10377,7 +10405,7 @@ const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
       Object.freeze({...delivery,pattern:'SIMULTANEOUS_PACKET'}),0,600),
     bounded=resolveBowAnimationRecipe({bowAnimationRecipeId:'BOW_STANDARD',bowAnimationOverrides:{
       arrowSpeed:99999,holdTime:-5}},0);
-  if(BOW_ANIMATION_RECIPES.list.length!==20||!(standard.contacts[0]>standard.releases[0])||
+  if(BOW_ANIMATION_RECIPES.list.length<20||!(standard.contacts[0]>standard.releases[0])||
      !(heavy.contacts[0]>standard.contacts[0])||!(charged.recipe.arrowScale>
        bowAnimationRecipeById('BOW_CHARGE').arrowScale)||echo.releases.length!==1||
      echo.contacts.length!==3||!(echo.contacts[2]>echo.contacts[0])||shotgun.releases.length!==3||
@@ -10758,6 +10786,17 @@ function skillAttributeRouteContract(data){
   const delivery=hasDelivery?commandDeliveryContract({id:'route_'+data.id,hits:data.contacts,
      deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
      deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
+  const twistDesign=data.depth===3&&data.twistDesign?Object.freeze({...data.twistDesign}):null;
+  if(twistDesign){
+    const flowIds=new Set(['PARALLEL','SECONDARY_TO_PRIMARY','PRIMARY_TO_SECONDARY',
+      'COUPLED_LOOP','ATTRIBUTE_NATIVE']);
+    if(typeof twistDesign.playerDecision!=='string'||!twistDesign.playerDecision||
+       typeof twistDesign.primaryOutcome!=='string'||!twistDesign.primaryOutcome||
+       typeof twistDesign.secondaryOutcome!=='string'||!twistDesign.secondaryOutcome||
+       typeof twistDesign.synergyHook!=='string'||!twistDesign.synergyHook||
+       !flowIds.has(twistDesign.resourceFlow)||typeof twistDesign.pairSpecific!=='boolean')
+      throw new Error(data.id+' needs an explicit flexible Twist design decision');
+  }
   const deliveryDecision=data.depth===3?data.deliveryDecision:null;
   if(data.depth===3&&data.runtimeReadiness==='MATERIALIZED'){
     const allowedResourcePolicies=new Set(['ONE_CHAIN_TOTAL','CHAIN_PER_CONTACT']),
@@ -10813,7 +10852,7 @@ function skillAttributeRouteContract(data){
     throw new Error(data.id+' materialized baseline needs hits, positive Mark and Resolve cost');
   return Object.freeze({...data,baseAttributeId,address,semanticLabel,name,identityBudget,mechanics,
     qualityProfile,qualityAxes,baselineAttack,delivery,
-    deliveryDecision:deliveryDecision?Object.freeze({...deliveryDecision}):null,deliveryPolicy});
+    deliveryDecision:deliveryDecision?Object.freeze({...deliveryDecision}):null,twistDesign,deliveryPolicy});
 }
 const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
   skillAttributeRouteContract({id:'mark_primary_form',depth:1,parentId:null,formSlot:1,
@@ -10861,9 +10900,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
   skillAttributeRouteContract({id:'mark_charge_spec',depth:2,parentId:'mark_primary_form',formSlot:1,
     slot:6,primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
     qualityProfile:{DIRECT_DAMAGE:.35,MARK_GAIN:.45,DEFENSE_TEMPER:.20},
-    promise:'Keep Mark dominant and convert one banked defense score into bounded base damage.',
+    promise:'Keep Mark dominant and turn the best earned defense-phase score into immediate base damage.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',markRule:'NET_OUTPUT_REQUIRED',
-      chargeRule:'BANK_MAX_THREE_CONSUME_ON_USE'},
+      chargeRule:'BEST_PHASE_BANK_CONSUME_ON_USE'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
   skillAttributeRouteContract({id:'mark_focus_concentrated_twist',depth:3,parentId:'mark_focus_spec',
     formSlot:1,specializationSlot:1,slot:1,primaryAttributeId:'MARK',secondaryAttributeId:'MARK',
@@ -11902,6 +11941,231 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     promise:'Keep the inherited wound events and maximize the clean direct damage distributed across the volley.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'BLEED_PAYLOAD',relationship:'SERRATED_WOUND_VOLLEY',
       refinement:'SERRATED_DAMAGE',markRule:'NET_OUTPUT_REQUIRED',afflictionRule:'BLEED_SPLIT_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_charge_release_twist',depth:3,
+    parentId:'mark_charge_spec',formSlot:1,specializationSlot:6,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.45,DEFENSE_TEMPER:.30},
+    deliveryDecision:{reason:'One heavy arrow makes the complete earned defense bank readable as one release.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',rejectedPattern:'SEQUENTIAL'},
+    twistDesign:{resourceFlow:'PARALLEL',pairSpecific:true,
+      playerDecision:'Cash the complete defense bank now for one reliable impact.',
+      primaryOutcome:'The real arrow remains a dependable Mark source.',
+      secondaryOutcome:'Earned Charge becomes immediate base damage.',
+      synergyHook:'Defense performance and single-impact multipliers.'},
+    promise:'Consume the complete earned Charge bank in one heavy Mark arrow; every Charge adds immediate base damage.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'CHARGE_FULL_RELEASE',markRule:'NET_OUTPUT_REQUIRED',
+      chargeRule:'BEST_PHASE_BANK_CONSUME_ALL',weightChannel:'DEFENSE_TEMPER'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_packet_twist',depth:3,
+    parentId:'mark_charge_spec',formSlot:1,specializationSlot:6,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.25,DEFENSE_TEMPER:.10,CHARGE_TO_MARK:.55},
+    deliveryDecision:{reason:'A simultaneous packet turns one bank into visible marking contacts without sequential Chain leakage.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'SIMULTANEOUS_CONTACT_PACKET',
+      rejectedPattern:'SEQUENTIAL'},
+    twistDesign:{resourceFlow:'SECONDARY_TO_PRIMARY',pairSpecific:true,
+      playerDecision:'Spend defense performance on target setup instead of the largest impact.',
+      primaryOutcome:'Charge creates an additional conditional Mark package.',
+      secondaryOutcome:'The complete Charge bank is consumed as the catalyst.',
+      synergyHook:'Mark consumers, contact artifacts and simultaneous packets.'},
+    promise:'Consume earned Charge in one simultaneous packet that adds conditional Mark while the whole packet creates one Chain.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'CHARGE_TO_MARK_PACKET',markRule:'NET_OUTPUT_REQUIRED',
+      chargeRule:'CONSUME_ALL_ADD_MARK',chargeMode:'MARK_PACKET'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_resonance_twist',depth:3,
+    parentId:'mark_charge_spec',formSlot:1,specializationSlot:6,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.40,DEFENSE_TEMPER:.15,MARK_CHARGE_READ:.25},
+    deliveryDecision:{reason:'Starting Mark and earned Charge are snapshotted once into one focused release.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'READ_ONCE_PER_ACTION',rejectedPattern:'SEQUENTIAL'},
+    twistDesign:{resourceFlow:'PRIMARY_TO_SECONDARY',pairSpecific:true,
+      playerDecision:'Preserve a large Mark reserve until a strong defense phase can resonate with it.',
+      primaryOutcome:'Starting Mark remains on the target and the arrow adds new Mark.',
+      secondaryOutcome:'Every preserved starting Mark strengthens each released Charge.',
+      synergyHook:'Persistent Mark reserves and skilled defense.'},
+    promise:'Preserve action-start Mark and let every stack strengthen each consumed Charge in one focused arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'MARK_CHARGE_RESONANCE',markRule:'READ_MARK_PRESERVE',
+      chargeRule:'CONSUME_ALL_MARK_RESONANCE',chargeMode:'MARK_RESONANCE',
+      weightChannel:'MARK_CHARGE_READ'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_distribution_twist',depth:3,
+    parentId:'mark_charge_spec',formSlot:1,specializationSlot:6,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',apexTarget:4,powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.20,CHARGE_DISTRIBUTION:.15,CHARGE_ACTION_MARK:.55},
+    deliveryDecision:{reason:'One quick primer opens a phase engine; later skills keep their own honest contact topology.',
+      resourcePolicy:'ONE_CHAIN_TOTAL',payloadPolicy:'PHASE_FOLLOW_UP_EVENTS',
+      rejectedPattern:'SIMULTANEOUS_PACKET'},
+    twistDesign:{resourceFlow:'COUPLED_LOOP',pairSpecific:true,
+      playerDecision:'Open with Sharpshoot and distribute the bank across the rest of this attack phase.',
+      primaryOutcome:'Every empowered action supports the Mark build.',
+      secondaryOutcome:'Charge is spent one point per offensive action instead of all at once.',
+      synergyHook:'Action ordering, other equipped skills and on-action artifacts.'},
+    promise:'Spend one Charge on this quick Mark arrow, then let later offensive actions spend one each for damage and Mark support.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',markRule:'NET_OUTPUT_REQUIRED',
+      chargeRule:'ONE_PER_ACTION_PHASE_ENGINE',chargeMode:'DISTRIBUTED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_charge_release_power_apex',depth:4,
+    parentId:'mark_charge_release_twist',formSlot:1,specializationSlot:6,twistSlot:1,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.15,DEFENSE_TEMPER:.65},
+    promise:'Preserve the complete single release and maximize immediate damage paid by every earned Charge.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_FULL_RELEASE',
+      refinement:'CHARGE_RELEASE_POWER',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'FULL_RELEASE',
+      weightChannel:'DEFENSE_TEMPER'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_release_mark_apex',depth:4,
+    parentId:'mark_charge_release_twist',formSlot:1,specializationSlot:6,twistSlot:1,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.65,DEFENSE_TEMPER:.20},
+    promise:'Keep the complete Charge release while maximizing the guaranteed Mark package left by the arrow.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_FULL_RELEASE',
+      refinement:'CHARGE_RELEASE_MARK',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'FULL_RELEASE',
+      weightChannel:'DEFENSE_TEMPER'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_release_reserve_apex',depth:4,
+    parentId:'mark_charge_release_twist',formSlot:1,specializationSlot:6,twistSlot:1,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.25,CHARGE_RETENTION:.45},
+    promise:'Release the complete bank, then recover a Quality-priced share for another action without inventing Charge.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_FULL_RELEASE',
+      refinement:'CHARGE_RELEASE_RESERVE',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'FULL_RELEASE',
+      weightChannel:'DEFENSE_TEMPER'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_release_break_apex',depth:4,
+    parentId:'mark_charge_release_twist',formSlot:1,specializationSlot:6,twistSlot:1,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.25,CHARGE_BREAK_RELATION:.45},
+    promise:'Keep the normal release and add a separately priced Charge coefficient during the four-second Break window.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_FULL_RELEASE',
+      refinement:'CHARGE_RELEASE_BREAK',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'FULL_RELEASE',
+      weightChannel:'DEFENSE_TEMPER'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_charge_packet_mark_apex',depth:4,
+    parentId:'mark_charge_packet_twist',formSlot:1,specializationSlot:6,twistSlot:2,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,DEFENSE_TEMPER:.15,CHARGE_TO_MARK:.60},
+    promise:'Maximize the conditional Mark created by every consumed Charge without creating sequential Chain.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_TO_MARK_PACKET',
+      refinement:'CHARGE_PACKET_MARK',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'MARK_PACKET'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_packet_damage_apex',depth:4,
+    parentId:'mark_charge_packet_twist',formSlot:1,specializationSlot:6,twistSlot:2,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.60,MARK_GAIN:.15,DEFENSE_TEMPER:.15,CHARGE_TO_MARK:.10},
+    promise:'Keep Charge-to-Mark conversion and maximize the clean damage shared by the packet.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_TO_MARK_PACKET',
+      refinement:'CHARGE_PACKET_DAMAGE',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'MARK_PACKET'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_packet_reserve_apex',depth:4,
+    parentId:'mark_charge_packet_twist',formSlot:1,specializationSlot:6,twistSlot:2,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,DEFENSE_TEMPER:.10,CHARGE_TO_MARK:.25,CHARGE_RETENTION:.40},
+    promise:'Keep the marking packet and recover a priced share of its spent defense bank.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_TO_MARK_PACKET',
+      refinement:'CHARGE_PACKET_RESERVE',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'MARK_PACKET'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_packet_wave_apex',depth:4,
+    parentId:'mark_charge_packet_twist',formSlot:1,specializationSlot:6,twistSlot:2,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SIMULTANEOUS_PACKET',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.30,DEFENSE_TEMPER:.15,CHARGE_TO_MARK:.35},
+    promise:'Split the inherited packet across two waves so the second arrives after the first wave establishes Mark.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'CHARGE_TO_MARK_PACKET',
+      refinement:'TWO_WAVE',markRule:'NET_OUTPUT_REQUIRED',chargeMode:'MARK_PACKET',packetWaves:2},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_charge_resonance_charge_apex',depth:4,
+    parentId:'mark_charge_resonance_twist',formSlot:1,specializationSlot:6,twistSlot:3,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.55,MARK_CHARGE_READ:.15},
+    promise:'Keep the uncapped Mark resonance and maximize the flat damage supplied by every Charge.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'MARK_CHARGE_RESONANCE',
+      refinement:'RESONANCE_CHARGE',markRule:'READ_MARK_PRESERVE',chargeMode:'MARK_RESONANCE',
+      weightChannel:'MARK_CHARGE_READ'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_resonance_read_apex',depth:4,
+    parentId:'mark_charge_resonance_twist',formSlot:1,specializationSlot:6,twistSlot:3,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.15,MARK_CHARGE_READ:.55},
+    promise:'Preserve the Mark bank and maximize how strongly every stack amplifies each consumed Charge.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'MARK_CHARGE_RESONANCE',
+      refinement:'RESONANCE_MARK_READ',markRule:'READ_MARK_PRESERVE',chargeMode:'MARK_RESONANCE',
+      weightChannel:'MARK_CHARGE_READ'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_resonance_mark_apex',depth:4,
+    parentId:'mark_charge_resonance_twist',formSlot:1,specializationSlot:6,twistSlot:3,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.55,DEFENSE_TEMPER:.15,MARK_CHARGE_READ:.15},
+    promise:'Keep the complete two-resource resonance and leave the largest guaranteed Mark package after impact.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'MARK_CHARGE_RESONANCE',
+      refinement:'RESONANCE_MARK',markRule:'READ_MARK_PRESERVE',chargeMode:'MARK_RESONANCE',
+      weightChannel:'MARK_CHARGE_READ'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_resonance_reserve_apex',depth:4,
+    parentId:'mark_charge_resonance_twist',formSlot:1,specializationSlot:6,twistSlot:3,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,DEFENSE_TEMPER:.10,MARK_CHARGE_READ:.25,CHARGE_RETENTION:.40},
+    promise:'Keep Mark-to-Charge resonance and recover a priced share of the bank for another skill use.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',relationship:'MARK_CHARGE_RESONANCE',
+      refinement:'RESONANCE_RESERVE',markRule:'READ_MARK_PRESERVE',chargeMode:'MARK_RESONANCE',
+      weightChannel:'MARK_CHARGE_READ'},baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+
+  skillAttributeRouteContract({id:'mark_charge_distribution_opening_apex',depth:4,
+    parentId:'mark_charge_distribution_twist',formSlot:1,specializationSlot:6,twistSlot:4,slot:1,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.55,CHARGE_DISTRIBUTION:.10,CHARGE_ACTION_MARK:.05},
+    promise:'Keep the phase engine and maximize the opening arrow that spends its first Charge.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_OPENING',
+      markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_distribution_shared_apex',depth:4,
+    parentId:'mark_charge_distribution_twist',formSlot:1,specializationSlot:6,twistSlot:4,slot:2,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,CHARGE_DISTRIBUTION:.60,CHARGE_ACTION_MARK:.15},
+    promise:'Keep one Charge per action and maximize the packet-safe damage shared with later offensive actions.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_SHARED_DAMAGE',
+      markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_distribution_mark_apex',depth:4,
+    parentId:'mark_charge_distribution_twist',formSlot:1,specializationSlot:6,twistSlot:4,slot:3,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,CHARGE_DISTRIBUTION:.15,CHARGE_ACTION_MARK:.60},
+    promise:'Keep the distributed damage and maximize the Mark support attached once to each empowered action.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_ACTION_MARK',
+      markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
+    baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'mark_charge_distribution_final_apex',depth:4,
+    parentId:'mark_charge_distribution_twist',formSlot:1,specializationSlot:6,twistSlot:4,slot:4,
+    primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,CHARGE_DISTRIBUTION:.15,CHARGE_ACTION_MARK:.10,
+      CHARGE_FINAL_RELEASE:.50},
+    promise:'Keep the phase engine and make the action that spends the final banked Charge its strongest release.',
+    mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_FINAL_RELEASE',
+      markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'})
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
@@ -11961,6 +12225,23 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
        route.deliveryPolicy!=='TWIST_SELECTS_COMPATIBLE_DELIVERY'||!route.delivery)
       throw new Error(route.id+' does not preserve its Specialization identity through a Twist relationship');
     validateAttributeDeliveryCompatibility(route.primaryAttributeId,route.secondaryAttributeId,route.delivery);
+  }
+  /* Explicit families use a palette, never four globally fixed Twist slots.
+     The validator protects distinct player decisions and pair-specific craft
+     without prescribing which relationship must occupy T1/T2/T3/T4. */
+  for(const specialization of specs){
+    const family=twists.filter(route=>route.parentId===specialization.id),
+      explicit=family.filter(route=>route.twistDesign);
+    if(!explicit.length)continue;
+    if(explicit.length!==family.length)
+      throw new Error(specialization.id+' mixes explicit and legacy Twist design contracts');
+    const decisions=new Set(explicit.map(route=>route.twistDesign.playerDecision)),
+      signatures=new Set(explicit.map(route=>[route.twistDesign.resourceFlow,
+        route.delivery.pattern,route.delivery.timing,route.deliveryDecision.payloadPolicy,
+        route.twistDesign.synergyHook].join('|'))),
+      pairSpecific=explicit.filter(route=>route.twistDesign.pairSpecific).length;
+    if(decisions.size!==explicit.length||signatures.size!==explicit.length||pairSpecific<2)
+      throw new Error(specialization.id+' Twist palette repeats a decision or lacks pair-specific craft');
   }
   for(const route of apexes){
     const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
@@ -12034,7 +12315,7 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      trailApexes.filter(route=>route.mechanics.markTrailStrengthAxis).length!==1)
     throw new Error('F1S1T4 needs exactly three priced Trail Apex refinements');
   const directChain=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_chain_direct_twist;
-  if(twists.length!==20||!directChain||directChain.parentId!=='mark_chain_spec'||
+  if(!directChain||directChain.parentId!=='mark_chain_spec'||
      directChain.delivery.pattern!=='SEQUENTIAL'||directChain.delivery.contactCount!==1||
      directChain.mechanics.chainRule!=='READ_LIVE_CHAIN_PER_CONTACT')
     throw new Error('F1S2T1 pilot Twist contract is incomplete');
@@ -12220,6 +12501,29 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      afflictionBarbedApexes.filter(route=>route.mechanics.refinement==='BARBED_BREAK_APPLICATION')
        .some(route=>!(route.qualityProfile.BREAK_RELATION>0)))
     throw new Error('F1S5 Apex families leaked or lost their exact Twist mechanic');
+  const chargeTwists=twists.filter(route=>route.parentId==='mark_charge_spec'),
+    chargeRelationships=new Set(chargeTwists.map(route=>route.mechanics.relationship)),
+    chargeModes=new Set(chargeTwists.map(route=>route.mechanics.chargeMode||'FULL_RELEASE'));
+  if(chargeTwists.length!==4||chargeRelationships.size!==4||chargeModes.size!==4||
+     chargeTwists.some(route=>route.apexTarget!==4||!route.twistDesign||
+       route.baseAttributeId!=='MARK'||route.primaryAttributeId!=='MARK'||
+       route.secondaryAttributeId!=='CHARGE')||
+     SHARPSHOOT_MARK_ROUTE_BY_ID.mark_charge_packet_twist.delivery.pattern!==
+       'SIMULTANEOUS_PACKET'||
+     SHARPSHOOT_MARK_ROUTE_BY_ID.mark_charge_resonance_twist.mechanics.markRule!==
+       'READ_MARK_PRESERVE'||
+     SHARPSHOOT_MARK_ROUTE_BY_ID.mark_charge_distribution_twist.mechanics.chargeMode!==
+       'DISTRIBUTED')
+    throw new Error('F1S6 needs four explicit and distinct Mark/Charge Twist contracts');
+  const chargeApexFamilies=new Map();
+  for(const twist of chargeTwists){
+    const family=apexes.filter(route=>route.parentId===twist.id);
+    if(family.length!==4||new Set(family.map(route=>route.mechanics.refinement)).size!==4||
+       family.some(route=>route.mechanics.relationship!==twist.mechanics.relationship||
+         route.delivery.pattern!==twist.delivery.pattern))
+      throw new Error(twist.id+' needs four exact Charge Apex refinements');
+    chargeApexFamilies.set(twist.id,Object.freeze(family));
+  }
   const directApexes=apexes.filter(route=>route.parentId==='mark_chain_direct_twist'),
     apexRefinements=new Set(directApexes.map(route=>route.mechanics.refinement));
   if(directApexes.length!==4||apexRefinements.size!==4||
@@ -12360,10 +12664,32 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   mark_affliction_volley_contacts_apex:'Toplam Bleed ve tek Chain sözleşmesini bozmadan Quality ile daha fazla eşzamanlı pellet üretir. Ham gücü değil, ayrı yara uygulama olaylarını ve gelecekteki artifact tetiklerini önceler.',
   mark_affliction_volley_bleed_apex:'Shotgun pellet sayısını korur ve pelletlerin arasında paylaştırılan toplam Bleed paketini büyütür. Çoklu yara kimliğini korurken gecikmeli hasarı önceler.',
   mark_affliction_volley_mark_apex:'Eşzamanlı shotgun paketini ve bölünmüş yaraları korur, toplam garanti Markı pelletlerin üzerine dağıtarak artırır. Paket yine yalnızca 1 Chain üretir.',
-  mark_affliction_volley_damage_apex:'Yara olaylarını ve toplam Bleed paylaşımını korur, doğrudan hasarı shotgun pelletlerinin üzerine dağıtarak büyütür. Çoklu temas ailesinin en saldırgan varyantıdır.'
+  mark_affliction_volley_damage_apex:'Yara olaylarını ve toplam Bleed paylaşımını korur, doğrudan hasarı shotgun pelletlerinin üzerine dağıtarak büyütür. Çoklu temas ailesinin en saldırgan varyantıdır.',
+
+  mark_charge_spec:'Sharpshootun Mark üretimini korur. Son savunma fazındaki Perfect Dodge ve Parrylerden kazanılan Chargeı tüketerek tek okun taban hasarını artırır; hareketi geciktirmez.',
+  mark_charge_release_twist:'Birikmiş Chargeın tamamını tek ağır oka boşaltır. Güvenilir Mark üretimini korurken iyi savunmayı doğrudan ve anlık hasara çeviren sade devam rotasıdır.',
+  mark_charge_packet_twist:'Chargeı eşzamanlı bir işaret paketine dönüştürür. Paket toplam 1 Chain üretir; doğrudan hasardan vazgeçmeden iyi savunmayı sonraki Mark tüketen skill için kuruluma yatırır.',
+  mark_charge_resonance_twist:'Başlangıç Marklarını tüketmeden okur; her Mark, harcanan her Chargeın hasar katkısını büyütür. Büyük Mark rezervi ile iyi savunmayı aynı ağır atışta birleştirir.',
+  mark_charge_distribution_twist:'İlk hızlı ok 1 Charge harcar ve kalan bankayı oyuncu fazındaki sonraki saldırılara açar. Her saldırı yalnızca 1 Charge kullanır; çoklu vuruş bonusu çoğaltmaz.',
+  mark_charge_release_power_apex:'Tek ağır boşaltımı korur ve her Chargeın doğrudan hasar katkısını en fazla büyütür. Mark miktarından çok savunma başarısının anlık karşılığını önceler.',
+  mark_charge_release_mark_apex:'Bütün Chargeı hasara boşaltmaya devam eder fakat Apex gücünü okun garanti Mark paketine verir. Sonraki Mark tüketen hareketi en iyi hazırlayan boşaltım varyantıdır.',
+  mark_charge_release_reserve_apex:'Ağır atış Charge bankasını kullanır, ardından ödediği güce göre harcanan Chargeın bir bölümünü geri saklar. Aynı oyuncu fazında ikinci kullanım ihtimali yaratır.',
+  mark_charge_release_break_apex:'Normal durumda temel ağır boşaltım gibi çalışır. Break oyuncu fazında her Chargea ayrıca taban hasar ekleyerek savunmadan gelen Break penceresini güçlü bir karşı saldırıya çevirir.',
+  mark_charge_packet_mark_apex:'Charge başına üretilen koşullu Markı en fazla büyütür. Eşzamanlı pelletler tek Chain sözleşmesini korur ve ana amacı büyük hedef kurulumu olur.',
+  mark_charge_packet_damage_apex:'Charge-to-Mark paketini korur fakat Apex gücünü pelletlere dağıtılan temiz hasara verir. Düşük Charge durumunda bile daha güvenilir anlık sonuç üretir.',
+  mark_charge_packet_reserve_apex:'İşaret paketini ve Charge-to-Mark dönüşümünü korur, harcanan bankanın Quality ile fiyatlanmış bir bölümünü geri saklar. Kurulum ile yeniden kullanım arasında denge kurar.',
+  mark_charge_packet_wave_apex:'Aynı işaret paketini iki ayrı dalgaya böler. İlk dalga Mark ve Chain kurar; ikinci dalga ayrı bir temas zamanı yaratarak on-hit artifactleri için yeni tetik sunar.',
+  mark_charge_resonance_charge_apex:'Mark × Charge rezonansını korur ve Mark olmasa bile her Chargeın verdiği düz hasarı en fazla büyütür. Çift kaynak motorunun daha güvenilir tarafıdır.',
+  mark_charge_resonance_read_apex:'Her başlangıç Markının her Chargea eklediği hasar katsayısını en fazla büyütür. Markları tüketmeden yüksek rezervlerde tavansız doğrusal ölçeklenir.',
+  mark_charge_resonance_mark_apex:'İki kaynaklı rezonans hasarını korur ve vuruştan sonra bırakılan garanti Markı büyütür. Bir sonraki rezonans kullanımının Primary kaynağını kendi hazırlar.',
+  mark_charge_resonance_reserve_apex:'Markları tüketmeden rezonans kurar ve harcanan Chargeın fiyatlanmış bir bölümünü geri saklar. Yüksek kurulumun tek atıştan sonra tamamen sıfırlanmasını önler.',
+  mark_charge_distribution_opening_apex:'Faz motorunu korur ve ilk Chargeı kullanan Sharpshoot okunun hasarını büyütür. Diğer skillere geçmeden önce daha güçlü bir açılış sağlar.',
+  mark_charge_distribution_shared_apex:'Her saldırının yalnızca 1 Charge tüketmesi kuralını korur ve sonraki saldırılara verilen paket-başı hasarı en fazla büyütür. Çoklu hit bu bonusu kopyalayamaz.',
+  mark_charge_distribution_mark_apex:'Charge ile güçlenen her saldırının bir kez bıraktığı Mark desteğini büyütür. Diğer üç skilli geçici olarak Sharpshootun Primary Mark planına bağlar.',
+  mark_charge_distribution_final_apex:'Dağıtılmış Charge motorunu korur; bankadaki son Chargeı harcayan mevcut saldırıya ekstra hasar verir. Yeni bir vuruş üretmeden fazın bitiriş kararını ödüllendirir.'
 });
 const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
-  const families=new Set(['MARK','CHAIN','CRITICAL','AFFLICTION']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  const families=new Set(['MARK','CHAIN','CRITICAL','AFFLICTION','CHARGE']),routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
     .filter(route=>route.depth===1||families.has(route.secondaryAttributeId)),
     expected=new Set(routes.map(route=>route.id)),authored=Object.keys(SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR),
     missing=routes.filter(route=>!SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]).map(route=>route.id),
@@ -12432,8 +12758,10 @@ const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
 const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
   if(SHARPSHOOT_MARK_LAB_NODES.length!==6||
-     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==20||
-     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==75||
+     SHARPSHOOT_MARK_TWIST_LAB_NODES.length!==
+       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3).length||
+     SHARPSHOOT_MARK_APEX_LAB_NODES.length!==
+       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4).length||
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
@@ -12476,7 +12804,9 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'chainReadOffsetPattern',
   'critChance','critChancePerStartingMark','critMarkBonus','critRollMode',
   'critDamageMultiplier','critPrecisionGain',
-  'defenseTemperDamagePerCharge','defenseTemperMaxCharge',
+  'defenseTemperDamagePerCharge','chargeMode','chargeMarkPerCharge',
+  'chargeDamagePerMarkPerCharge','chargeRetentionRate','chargeBreakDamagePerCharge',
+  'chargeDistributedDamagePerCharge','chargeDistributedMarkPerAction','chargeFinalDamagePerCharge',
   'deliveryProfileId','deliveryPattern','deliveryTiming','targeting','animationProfile','projectileStyle',
   'bowAnimationRecipeId','bowAnimationOverrides','payloadApplication'
 ]);
@@ -13120,7 +13450,8 @@ const SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE=Object.freeze({
 });
 const SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE=Object.freeze({
   deliveryProfileId:'OWNER_BOW',role:'SECONDARY',expressionRatio:1,
-  expectedCharge:DEFENSE_CHARGE.expectedSpend,maxCharge:DEFENSE_CHARGE.max,
+  expectedCharge:DEFENSE_CHARGE.expectedSpend,markReadReference:8,
+  breakActiveShare:.35,retainedChargePower:4,finalReleaseShare:.5,
   specializationRateGuardrail:11
 });
 function sharpshootSecondaryExpressionRatio(attributeId){
@@ -13282,7 +13613,21 @@ function commandExpectedAfflictionPower(command,
     Math.max(0,Number(command&&command.afflictionApplicationEventPower)||0);
 }
 function commandExpectedDefenseTemperPower(command){
-  return commandDefenseTemperRate(command)*DEFENSE_CHARGE.expectedSpend;
+  const envelope=SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE,charge=envelope.expectedCharge;
+  return commandDefenseTemperRate(command)*charge+
+    Math.max(0,Number(command&&command.chargeMarkPerCharge)||0)*charge*
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN+
+    Math.max(0,Number(command&&command.chargeDamagePerMarkPerCharge)||0)*charge*
+      envelope.markReadReference+
+    Math.min(1,Math.max(0,Number(command&&command.chargeRetentionRate)||0))*charge*
+      envelope.retainedChargePower+
+    Math.max(0,Number(command&&command.chargeBreakDamagePerCharge)||0)*charge*
+      envelope.breakActiveShare+
+    Math.max(0,Number(command&&command.chargeDistributedDamagePerCharge)||0)*charge+
+    Math.max(0,Number(command&&command.chargeDistributedMarkPerAction)||0)*charge*
+      SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN+
+    Math.max(0,Number(command&&command.chargeFinalDamagePerCharge)||0)*
+      envelope.finalReleaseShare;
 }
 function postureMarkPairCount(markStacks){
   const count=Math.max(0,Number(markStacks)||0);
@@ -13445,6 +13790,9 @@ function applyStableRankStatFloor(command,lowerCommand){
   for(const key of ['markGain','posture','posturePerMark','postureMarkEscalation','posturePrimer',
     'posturePrimerAmplification','postureThresholdBonus','postureThresholdCrescendo',
     'critChance','critChancePerStartingMark','critMarkBonus','defenseTemperDamagePerCharge',
+    'chargeMarkPerCharge','chargeDamagePerMarkPerCharge','chargeRetentionRate',
+    'chargeBreakDamagePerCharge','chargeDistributedDamagePerCharge',
+    'chargeDistributedMarkPerAction','chargeFinalDamagePerCharge',
     'markBloomRate','phaseMarkTrailPerContact','realChainScalingMultiplier',
     'afflictionPerStartingMark','afflictionMarkPerTick','afflictionFinalMark',
     'afflictionBreakApplicationBonus','afflictionApplicationEventPower'])floor(key);
@@ -13823,7 +14171,40 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     afflictionSplitPerContact=finalRoute.mechanics.afflictionRule==='BLEED_SPLIT_PER_CONTACT',
     chargePower=compiledAllocation.axisPowerCredits.DEFENSE_TEMPER||0,
     chargeProgress=skillLinearOutputProgress(chargePower,
-      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),chargeRate=chargeProgress.output;
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),chargeRate=chargeProgress.output,
+    chargeMarkPower=compiledAllocation.axisPowerCredits.CHARGE_TO_MARK||0,
+    chargeMarkProgress=skillLinearOutputProgress(chargeMarkPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge*
+        SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,4),
+    chargeMarkPerCharge=chargeMarkProgress.output,
+    markChargeReadPower=compiledAllocation.axisPowerCredits.MARK_CHARGE_READ||0,
+    markChargeReadProgress=skillLinearOutputProgress(markChargeReadPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge*
+        SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.markReadReference,6),
+    chargeDamagePerMarkPerCharge=markChargeReadProgress.output,
+    chargeRetentionPower=compiledAllocation.axisPowerCredits.CHARGE_RETENTION||0,
+    chargeRetentionProgress=skillLinearOutputProgress(chargeRetentionPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge*
+        SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.retainedChargePower,4),
+    chargeRetentionRate=chargeRetentionProgress.output,
+    chargeBreakPower=compiledAllocation.axisPowerCredits.CHARGE_BREAK_RELATION||0,
+    chargeBreakProgress=skillLinearOutputProgress(chargeBreakPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge*
+        SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.breakActiveShare,4),
+    chargeBreakDamagePerCharge=chargeBreakProgress.output,
+    chargeDistributionPower=compiledAllocation.axisPowerCredits.CHARGE_DISTRIBUTION||0,
+    chargeDistributionProgress=skillLinearOutputProgress(chargeDistributionPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge,4),
+    chargeDistributedDamagePerCharge=chargeDistributionProgress.output,
+    chargeActionMarkPower=compiledAllocation.axisPowerCredits.CHARGE_ACTION_MARK||0,
+    chargeActionMarkProgress=skillLinearOutputProgress(chargeActionMarkPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge*
+        SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,4),
+    chargeDistributedMarkPerAction=chargeActionMarkProgress.output,
+    chargeFinalPower=compiledAllocation.axisPowerCredits.CHARGE_FINAL_RELEASE||0,
+    chargeFinalProgress=skillLinearOutputProgress(chargeFinalPower,
+      SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.finalReleaseShare,4),
+    chargeFinalDamagePerCharge=chargeFinalProgress.output;
   const chainGainPattern=finalRoute.mechanics.refinement==='PELLET_CHAIN'?null:
     packetWavePattern?sharpshootPacketWaveStartPattern(packetWavePattern):
     delivery.pattern==='SEQUENTIAL'||hits===1||
@@ -13848,10 +14229,18 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     critDamageMultiplier:SHARPSHOOT_CRITICAL_SECONDARY_ENVELOPE.multiplier,critPrecisionGain:0,
     affliction,afflictionPerStartingMark,afflictionMarkPerTick,afflictionFinalMark,
     afflictionBreakApplicationBonus,afflictionSplitPerContact,afflictionApplicationEventPower,
-    defenseTemperDamagePerCharge:chargeRate,defenseTemperMaxCharge:DEFENSE_CHARGE.max,
+    defenseTemperDamagePerCharge:chargeRate,chargeMode:finalRoute.mechanics.chargeMode||
+      (chargeRate>0?'FULL_RELEASE':null),chargeMarkPerCharge,
+    chargeDamagePerMarkPerCharge,chargeRetentionRate,chargeBreakDamagePerCharge,
+    chargeDistributedDamagePerCharge,chargeDistributedMarkPerAction,
+    chargeFinalDamagePerCharge,
     impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
     bowAnimationRecipeId:SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[finalRoute.id]||
-      (finalRoute.secondaryAttributeId==='AFFLICTION'?'BOW_AFFLICTION':'BOW_STANDARD'),
+      (finalRoute.secondaryAttributeId==='AFFLICTION'?'BOW_AFFLICTION':
+       finalRoute.secondaryAttributeId==='CHARGE'?
+        (delivery.pattern==='SIMULTANEOUS_PACKET'?'BOW_CHARGE_PACKET':
+         finalRoute.mechanics.chargeMode==='DISTRIBUTED'?'BOW_CHARGE_QUICK':'BOW_CHARGE'):
+       'BOW_STANDARD'),
     deliveryMagnitude,deliveryWeight,chainBonusWeight,apexRefinementId:finalRoute.mechanics.refinement||null,
     packetWaveCount,packetWavePattern,chainReadOffsetPattern,
     deliveryProfileId:delivery.profileId,
@@ -13990,7 +14379,11 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     BREAK_RELATION:afflictionBreakProgress,
     AFFLICTION_APPLICATION_EVENTS:Object.freeze({output:hits,rank:hits,
       credit:Number(afflictionApplicationEventPower.toFixed(4)),spent:afflictionApplicationEventPower,
-      reserve:0,next:null,needed:null,progress:1}),DEFENSE_TEMPER:chargeProgress});
+      reserve:0,next:null,needed:null,progress:1}),DEFENSE_TEMPER:chargeProgress,
+    CHARGE_TO_MARK:chargeMarkProgress,MARK_CHARGE_READ:markChargeReadProgress,
+    CHARGE_RETENTION:chargeRetentionProgress,CHARGE_BREAK_RELATION:chargeBreakProgress,
+    CHARGE_DISTRIBUTION:chargeDistributionProgress,CHARGE_ACTION_MARK:chargeActionMarkProgress,
+    CHARGE_FINAL_RELEASE:chargeFinalProgress});
   command.synthesisSecondaryPower=Object.freeze({CHAIN_SCALING:Number(chainScalingPower.toFixed(4)),
     CHAIN_DELIVERY:Number(deliveryChainPower.toFixed(4)),
     MARK_BLOOM_RATE:Number(bloomRateSpentPower.toFixed(4)),
@@ -14012,7 +14405,14 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     AFFLICTION_FINAL_MARK:Number(afflictionFinalMarkPower.toFixed(4)),
     BREAK_RELATION:Number(afflictionBreakPower.toFixed(4)),
     AFFLICTION_APPLICATION_EVENTS:Number(afflictionApplicationEventPower.toFixed(4)),
-    DEFENSE_TEMPER:Number(chargePower.toFixed(4))});
+    DEFENSE_TEMPER:Number(chargePower.toFixed(4)),
+    CHARGE_TO_MARK:Number(chargeMarkPower.toFixed(4)),
+    MARK_CHARGE_READ:Number(markChargeReadPower.toFixed(4)),
+    CHARGE_RETENTION:Number(chargeRetentionPower.toFixed(4)),
+    CHARGE_BREAK_RELATION:Number(chargeBreakPower.toFixed(4)),
+    CHARGE_DISTRIBUTION:Number(chargeDistributionPower.toFixed(4)),
+    CHARGE_ACTION_MARK:Number(chargeActionMarkPower.toFixed(4)),
+    CHARGE_FINAL_RELEASE:Number(chargeFinalPower.toFixed(4))});
   command.synthesisChainDeliveryPower=Number(deliveryChainPower.toFixed(4));
   command.synthesisRawChainScalingRate=sharpshootChainScalingRate(chainScalingPower,
     commandDirectDamageTotal(command));
@@ -14112,10 +14512,23 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
         '; at 8 starting Mark each tick becomes '+damagePart(afflictionReferenceBleed):'')+
       (command.afflictionMarkPerTick>0?'; each tick gives +'+
         damagePart(command.afflictionMarkPerTick)+' Mark':'')+'.':chargeRate?
-      'Charge Secondary: +'+chargeRate+' base damage per banked Charge; expected at ×'+
-      DEFENSE_CHARGE.expectedSpend+', capped at ×'+DEFENSE_CHARGE.max+'.':
+      'Charge Secondary: +'+chargeRate+' base damage per earned Charge; balanced at the ×'+
+      DEFENSE_CHARGE.expectedSpend+' reference with no authored gameplay cap.':
       'No Secondary output before Specialization.';
-  const relationshipText=finalRoute.mechanics.relationship==='BARBED_BLEED_BASELINE'?
+  const relationshipText=finalRoute.mechanics.relationship==='CHARGE_FULL_RELEASE'?
+      'Twist: earned Charge is spent in one release; every Charge adds +'+
+        damagePart(chargeRate)+' base damage before Chain, Crit and Break.':
+    finalRoute.mechanics.relationship==='CHARGE_TO_MARK_PACKET'?
+      'Twist: the complete Charge bank becomes a simultaneous packet; every Charge adds +'+
+        damagePart(command.chargeMarkPerCharge)+' Mark after the final contact.':
+    finalRoute.mechanics.relationship==='MARK_CHARGE_RESONANCE'?
+      'Twist: action-start Mark is preserved; every Mark and every consumed Charge add +'+
+        damagePart(command.chargeDamagePerMarkPerCharge)+' base damage together.':
+    finalRoute.mechanics.relationship==='DISTRIBUTED_CHARGE_MARK_ENGINE'?
+      'Twist: spend one Charge per offensive action this phase; each spend adds +'+
+        damagePart(command.chargeDistributedDamagePerCharge)+' damage and +'+
+        damagePart(command.chargeDistributedMarkPerAction)+' carried Mark progress once per action.':
+    finalRoute.mechanics.relationship==='BARBED_BLEED_BASELINE'?
       'Twist: one reliable barbed contact applies one complete two-tick Bleed package.':
     finalRoute.mechanics.relationship==='STARTING_MARK_DEEPENS_BLEED'?
       'Twist: every preserved action-start Mark adds +'+
@@ -14331,7 +14744,7 @@ const SHARPSHOOT_MARK_MATERIALIZATION_AUDIT=(()=>{
        chargeDelivery.pattern!=='SINGLE'||chargeDelivery.timing!=='IMMEDIATE'||
        chargeCommand.synthesisPowerError>.01||!(chargeRate>0)||chargeCommand.consumeChain||
        commandChainGain(chargeCommand,0)!==1||!chargeReserve||
-       chargeCommand.defenseTemperMaxCharge!==DEFENSE_CHARGE.max||chargeCommand.affliction||
+       chargeCommand.affliction||
        chargeCommand.critChance>0||chargeCommand.posture>0)
       throw new Error('F1S6 failed working Mark/Charge materialization at '+formRarity+' / '+specRarity);
     chargeMatrix.push(Object.freeze({formRarity,specRarity,damage:chargeCommand.damage,
@@ -15665,9 +16078,11 @@ function validateStableCommandSchema(mutation,state,lineage){
     throw new Error(mutation.id+' Crit Precision gain must be between 0 and 1');
   if(!Number.isFinite(state.defenseTemperDamagePerCharge||0)||(state.defenseTemperDamagePerCharge||0)<0)
     throw new Error(mutation.id+' defense-temper damage must be finite and non-negative');
-  if(!Number.isInteger(state.defenseTemperMaxCharge||DEFENSE_CHARGE.max)||
-      (state.defenseTemperMaxCharge||DEFENSE_CHARGE.max)!==DEFENSE_CHARGE.max)
-    throw new Error(mutation.id+' Stable Charge Secondary must use the shared bounded Charge maximum');
+  for(const key of ['chargeMarkPerCharge','chargeDamagePerMarkPerCharge','chargeRetentionRate',
+    'chargeBreakDamagePerCharge','chargeDistributedDamagePerCharge',
+    'chargeDistributedMarkPerAction','chargeFinalDamagePerCharge'])
+    if(!Number.isFinite(state[key]||0)||(state[key]||0)<0)
+      throw new Error(mutation.id+' '+key+' must be finite and non-negative');
   if(state.affliction&&(
       state.affliction.id!==BLEED_STATUS.id||!Number.isFinite(state.affliction.amount)||
       state.affliction.amount<=0||state.affliction.amount>BLEED_STATUS.technicalCap))
@@ -16374,7 +16789,14 @@ function stableRarityIdentityProfile(state){
     POSTURE:Math.max(0,state&&state.posture||0),
     CRIT_CHANCE:Math.max(0,state&&state.critChance||0),
     BLEED:commandBleedAmount(state),
-    DEFENSE_TEMPER:commandDefenseTemperRate(state)
+    DEFENSE_TEMPER:commandDefenseTemperRate(state),
+    CHARGE_TO_MARK:Math.max(0,Number(state&&state.chargeMarkPerCharge)||0),
+    MARK_CHARGE_READ:Math.max(0,Number(state&&state.chargeDamagePerMarkPerCharge)||0),
+    CHARGE_RETENTION:Math.max(0,Number(state&&state.chargeRetentionRate)||0),
+    CHARGE_BREAK:Math.max(0,Number(state&&state.chargeBreakDamagePerCharge)||0),
+    CHARGE_DISTRIBUTION:Math.max(0,Number(state&&state.chargeDistributedDamagePerCharge)||0),
+    CHARGE_ACTION_MARK:Math.max(0,Number(state&&state.chargeDistributedMarkPerAction)||0),
+    CHARGE_FINAL:Math.max(0,Number(state&&state.chargeFinalDamagePerCharge)||0)
   });
 }
 function validateStableRarityIdentityNonRegression(previous,current,context='Stable route'){
@@ -17415,8 +17837,52 @@ function commandHitBase(command,index){
   return command.hitDamages&&command.hitDamages[index]!==undefined?command.hitDamages[index]:command.damage;
 }
 function commandDefenseTemperBonus(command,charge=bossCharge()){
-  return stableDamage(commandDefenseTemperRate(command)*Math.max(0,Math.min(
-    command&&command.defenseTemperMaxCharge||DEFENSE_CHARGE.max,Number(charge)||0)));
+  return stableDamage(commandDefenseTemperRate(command)*safeDefenseCharge(charge));
+}
+function commandChargeReleaseBonus(command,charge,startingMark=0,broken=false){
+  const spent=safeDefenseCharge(charge),marks=safeDefenseCharge(startingMark);
+  return stableDamage(spent*(commandDefenseTemperRate(command)+
+    Math.max(0,Number(command&&command.chargeDamagePerMarkPerCharge)||0)*marks+
+    (broken?Math.max(0,Number(command&&command.chargeBreakDamagePerCharge)||0):0)));
+}
+function commandChargeMarkBonus(command,charge){
+  return Math.max(0,Math.floor(safeDefenseCharge(charge)*
+    Math.max(0,Number(command&&command.chargeMarkPerCharge)||0)+1e-9));
+}
+function commandChargeRetained(command,charge){
+  const spent=safeDefenseCharge(charge),rate=Math.max(0,
+    Number(command&&command.chargeRetentionRate)||0);
+  return Math.min(spent,Math.max(0,Math.floor(spent*rate+1e-9)));
+}
+function distributedChargeEngineFrom(command){
+  return {damagePerAction:commandDefenseTemperRate(command)+
+      Math.max(0,Number(command&&command.chargeDistributedDamagePerCharge)||0),
+    markPerAction:Math.max(0,Number(command&&command.chargeDistributedMarkPerAction)||0),
+    finalDamage:Math.max(0,Number(command&&command.chargeFinalDamagePerCharge)||0),markCarry:0};
+}
+function commandChargeCombatText(command){
+  if(!commandUsesDefenseCharge(command))return '';
+  const mode=commandChargeMode(command),rate=commandDefenseTemperRate(command),parts=[
+    'Perfect Dodge +1, Parry +2 Charge verir; Break ayrıca Charge vermez. Banka tek savunma fazının en iyi sonucunu saklar ve gameplay sınırı yoktur.'
+  ];
+  if(mode==='FULL_RELEASE')parts.push('Bütün banka tüketilir; Charge başına +'+
+    damagePart(rate)+' taban hasar.');
+  else if(mode==='MARK_PACKET')parts.push('Bütün banka tüketilir; Charge başına '+
+    damagePart(command.chargeMarkPerCharge)+' koşullu Mark katsayısı ve +'+damagePart(rate)+
+    ' taban hasar uygulanır.');
+  else if(mode==='MARK_RESONANCE')parts.push('Bütün banka tüketilir; her Charge +'+
+    damagePart(rate)+' taban hasar ve her başlangıç Markı × Charge için +'+
+    damagePart(command.chargeDamagePerMarkPerCharge)+' hasar verir. Marklar tüketilmez.');
+  else if(mode==='DISTRIBUTED')parts.push('Bu oyuncu fazındaki her saldırı 1 Charge tüketir; saldırı paketi başına +'+
+    damagePart(rate+Math.max(0,Number(command.chargeDistributedDamagePerCharge)||0))+
+    ' taban hasar ve '+damagePart(command.chargeDistributedMarkPerAction)+' biriken Mark payı verir.');
+  if(command.chargeRetentionRate>0)parts.push('Harcanan Chargeın %'+
+    damagePart(command.chargeRetentionRate*100)+' kadarı doğal olarak geri saklanır; harcanandan fazlası üretilemez.');
+  if(command.chargeBreakDamagePerCharge>0)parts.push('Break fazında Charge başına ayrıca +'+
+    damagePart(command.chargeBreakDamagePerCharge)+' taban hasar.');
+  if(command.chargeFinalDamagePerCharge>0)parts.push('Son Chargeı harcayan saldırı +'+
+    damagePart(command.chargeFinalDamagePerCharge)+' taban hasar alır.');
+  return parts.join(' ');
 }
 function commandChainGain(command,index=0){
   if(command.addsChain===false)return 0;
@@ -17543,6 +18009,7 @@ function endPlayerTurn(){
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
   clearPlayerMarkTrail();
+  boss.distributedChargeEngine=null;
   if(endedBreak){
     boss.posture=0;boss.breakEntryZ=undefined;boss.breakSource=null;
     boss.pendingBreak=null;boss.playerTurnBreak=false;
@@ -17764,6 +18231,10 @@ function resolveTurnActionHit(action){
     }
   }
   if(action.hitIndex===action.hits){
+    if(action.chargeMarkBonus>0){
+      const gained=applyBossMarkEvent(action.chargeMarkBonus,'CHARGE_MARK_REWARD');
+      if(gained)floater(x,y-102,'CHARGE MARK +'+gained+' · ×'+boss.mark,'#7fc9ff',15);
+    }
     const bloomGain=commandBloomMarkGain(command,action.markStacks);
     if(bloomGain){
       const gained=applyBossMarkEvent(bloomGain,'STARTING_MARK_BLOOM');
@@ -17841,14 +18312,38 @@ function performPlayerAction(command){
     cost=command.cost||0,apCost=command.apCost||1;
   if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
   beginSkillLabActionLog(command);
-  const chargeSpent=actorId==='knight'&&commandDefenseTemperRate(command)>0?consumeBossCharge():0,
-    chargeBonus=commandDefenseTemperBonus(command,chargeSpent);
+  const startingMark=bossMark(),chargeMode=commandChargeMode(command);
+  let chargeSpent=0,chargeBonus=0,chargeMarkBonus=0,chargeRetained=0,
+    distributedChargeAction=false;
+  if(actorId==='knight'){
+    let engine=boss.distributedChargeEngine;
+    if(chargeMode==='DISTRIBUTED'&&bossCharge()>0){
+      const carry=engine&&Number(engine.markCarry)||0;
+      engine=distributedChargeEngineFrom(command);engine.markCarry=carry;
+      boss.distributedChargeEngine=engine;
+    }
+    if(engine&&bossCharge()>0){
+      chargeSpent=consumeBossCharge(1);distributedChargeAction=chargeSpent>0;
+      chargeBonus=stableDamage(engine.damagePerAction+
+        (bossCharge()===0?engine.finalDamage:0));
+      engine.markCarry+=engine.markPerAction;
+      chargeMarkBonus=Math.max(0,Math.floor(engine.markCarry+1e-9));
+      engine.markCarry-=chargeMarkBonus;
+    }else if(commandUsesDefenseCharge(command)&&chargeMode!=='DISTRIBUTED'){
+      chargeSpent=consumeBossCharge();
+      chargeBonus=commandChargeReleaseBonus(command,chargeSpent,startingMark,
+        boss.playerTurnBreak===true);
+      chargeMarkBonus=commandChargeMarkBonus(command,chargeSpent);
+      chargeRetained=commandChargeRetained(command,chargeSpent);
+      if(chargeRetained)restoreBossCharge(chargeRetained);
+    }
+  }
   boss.ap-=apCost;
   boss.resolve-=cost;
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionReturnMenu=skill?'skills':'root';
   const delivery=commandDeliveryContract(command),hits=command.hits||1,
-    markPlan=commandMarkPlan(command,bossMark()),
+    markPlan=commandMarkPlan(command,startingMark),
     bowGeometry=actorId==='knight'&&delivery.profileId==='OWNER_BOW'?bowTurnActionGeometry():null,
     bowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance,
       markPlan.markAtStart,boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX):null,
@@ -17877,7 +18372,8 @@ function performPlayerAction(command){
     postureWaveTimeline,postureWaveIndex:postureWaveTimeline?1:0,postureWaveTotal:0,
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
     postureAtStart:boss.posture||0,postureMaxAtStart:boss.postureMax||CFG.BOSS_POSTURE_MAX,
-    chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,
+    chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,chargeMarkBonus,
+    chargeRetained,distributedChargeAction,
     critPlan:createCommandCritPlan(command,actorId,Math.random,
       activeSkillLabCombat()&&skillLabSession.forceCritical?1:
         command.critChancePerStartingMark>0?
@@ -17987,7 +18483,7 @@ function doPerfectDodge(src){
   if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   if(src!==MINIBOSS_SOURCE&&activeSkillLabCombat()&&skillLabSession.defenseStats)
     skillLabSession.defenseStats.perfects++;
-  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess();
+  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess(DEFENSE_CHARGE.perfectDodgeGain);
   addKnightRush(CFG.RUSH_PER_DODGE);
   doCounter(src);
 }
@@ -18046,7 +18542,7 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   if(src!==MINIBOSS_SOURCE&&activeSkillLabCombat()&&skillLabSession.defenseStats)
     skillLabSession.defenseStats.parries++;
-  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess();
+  if(src!==MINIBOSS_SOURCE)recordDefenseChargeSuccess(DEFENSE_CHARGE.parryGain);
   addKnightRush(CFG.RUSH_PER_PARRY);
   const crit=src!==MINIBOSS_SOURCE?rollGlobalCritical():null;
   if(src!==MINIBOSS_SOURCE)applyBossPosture(
@@ -19139,7 +19635,7 @@ function startBoss(definitionId=null){
     resolve:CFG.TURN_RESOLVE_START,resolveMax:CFG.TURN_RESOLVE_MAX,
     playerMenu:'root',playerActionTimer:0,playerTurnBreak:false,turnAction:null,mark:0,
     bleed:0,bleedLater:0,bleedMark:0,bleedMarkLater:0,
-    charge:0,defenseChargeProgress:0,chargeEnabled:false,
+    charge:0,defenseChargeProgress:0,chargeEnabled:false,distributedChargeEngine:null,
     partyActor:'knight',playerActionReturnMenu:'root',allyAttackAnim:0,
     playerMarkTrailPerContact:0,lastMarkEvent:null,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
@@ -22017,7 +22513,7 @@ function startSkillLabCombat(){
   boss.partyActor='knight';boss.playerTurnBreak=false;boss.posture=0;boss.posturePrimer=0;
   boss.posturePrimerAmplification=0;boss.mark=0;
   boss.bleed=0;boss.bleedLater=0;boss.bleedMark=0;boss.bleedMarkLater=0;
-  boss.charge=0;boss.defenseChargeProgress=0;
+  boss.charge=0;boss.defenseChargeProgress=0;boss.distributedChargeEngine=null;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
 }
@@ -22041,7 +22537,7 @@ function applySkillLabPreset(id,audible=true){
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
   boss.bleedMark=0;boss.bleedMarkLater=0;
-  boss.charge=0;boss.defenseChargeProgress=0;
+  boss.charge=0;boss.defenseChargeProgress=0;boss.distributedChargeEngine=null;
   chainStacks=values.chain;
   boss.posture=values.posture;boss.posturePrimer=0;boss.posturePrimerAmplification=0;
   boss.playerTurnBreak=values.broken;
@@ -22282,15 +22778,15 @@ const BLEED_SYSTEM_AUDIT=(()=>{
     expired:second.next,totalFactor:BLEED_STATUS.totalDamageFactor});
 })();
 const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
-  const command={defenseTemperDamagePerCharge:2,defenseTemperMaxCharge:DEFENSE_CHARGE.max},
+  const command={defenseTemperDamagePerCharge:2},
     stacked=combatTurnHitDamageBreakdown(10+commandDefenseTemperBonus(command,3),0,0,0,true,.05,true,1.5);
   if(commandDefenseTemperBonus(command,0)!==0||commandDefenseTemperBonus(command,2)!==4||
-     commandDefenseTemperBonus(command,3)!==6||commandDefenseTemperBonus(command,99)!==6||
-     commandExpectedDefenseTemperPower(command)!==4||defenseChargeBankResult(0,1,false)!==1||
-     defenseChargeBankResult(0,1,true)!==2||defenseChargeBankResult(3,1,false)!==3||stacked.final!==36)
-    throw new Error('Charge Secondary must price ×2, cap ×3 and add bounded base damage');
+     commandDefenseTemperBonus(command,3)!==6||commandDefenseTemperBonus(command,20)!==40||
+     commandExpectedDefenseTemperPower(command)!==4||defenseChargeBankResult(0,1)!==1||
+     defenseChargeBankResult(0,2)!==2||defenseChargeBankResult(3,1)!==3||stacked.final!==36)
+    throw new Error('Charge Secondary must price ×2, preserve the best phase and scale without a gameplay cap');
   return Object.freeze({expected:commandDefenseTemperBonus(command,2),
-    maximum:commandDefenseTemperBonus(command,3),cap:DEFENSE_CHARGE.max,critBreak:stacked.final});
+    uncappedTwenty:commandDefenseTemperBonus(command,20),critBreak:stacked.final});
 })();
 function uiConfirm(){
   if(mode==='menu'){ debugBossStart=false; debugMiniStart=false; debugMiniMoves=false; }
@@ -22605,7 +23101,7 @@ function skillTooltipContent(command){
       chargeRate=commandDefenseTemperRate(command);
     if(markText)additions.push(markText);if(critText)additions.push(critText);
     if(bleed)additions.push('Bleed adds '+damagePart(bleed)+' to each of the next two defense-phase ticks. A defense Break closes one phase and gives only that tick ×'+damagePart(BLEED_STATUS.breakMultiplier)+'. Bleed then advances normally; Crit, Chain and the direct Break bonus do not apply.');
-    if(chargeRate)additions.push('Charge banks up to 3: completing a defense phase gives 1, every Perfect Dodge or Parry adds 1, and a defense Break guarantees at least 2. This move consumes the bank for +'+damagePart(chargeRate)+' base damage per Charge; the bonus can scale with Chain, Crit and Break.');
+    if(commandUsesDefenseCharge(command))additions.push(commandChargeCombatText(command));
     if(bowText)additions.push(bowText);if(economy)additions.push(economy);if(resonance)additions.push(resonance);
     return {paragraphs:command.evolutionText.concat(additions)};
   }
@@ -22869,7 +23365,7 @@ function drawDefenseChargeStatus(actor){
   if(!actor||!actor.chargeEnabled)return;
   const progress=actor.phase==='dodge'?Math.max(0,Number(actor.defenseChargeProgress)||0):0,
     value=Math.max(bossCharge(),progress);if(!(value>0))return;
-  const x=VW/2-160,y=163,label='CHARGE '+value+'/'+DEFENSE_CHARGE.max;
+  const x=VW/2-160,y=163,label='CHARGE '+value;
   g.save();g.textAlign='left';g.textBaseline='middle';g.font='bold 9px monospace';
   g.fillStyle='#7fc9ff';g.fillText(label,x,y);
   const right=x+Math.ceil(g.measureText(label).width)+7;g.fillStyle='#29536d';
@@ -24473,9 +24969,7 @@ function skillLabCompactSynthesisMechanics(command){
       (command.postureMarkEscalation?' + '+damagePart(command.postureMarkEscalation)+
         ' per starting-Mark pair':'')+'.');
   if(command.extraChainBonus)lines.push(skillLabChainScalingText(command,true));
-  const chargeRate=commandDefenseTemperRate(command);
-  if(chargeRate)lines.push('Charge: spend up to '+DEFENSE_CHARGE.max+' for +'+damagePart(chargeRate)+
-    ' damage each.');
+  if(commandUsesDefenseCharge(command))lines.push(commandChargeCombatText(command));
   const bleed=commandBleedAmount(command);
   if(bleed)lines.push('Bleed: '+damagePart(bleed)+' damage for the next 2 defense phases.');
   const crit=commandCritProfile(command,'knight');
@@ -24532,10 +25026,7 @@ function skillLabMutationMechanics(command){
   }
   if(command.consumeChain)lines.push('Damage uses the starting Chain, then all Chain is consumed after the attack.');
   if(command.extraChainBonus)lines.push(skillLabChainScalingText(command));
-  const chargeRate=commandDefenseTemperRate(command);
-  if(chargeRate)lines.push('Charge: consume up to '+DEFENSE_CHARGE.max+' banked defense Charge for +'+
-    damagePart(chargeRate)+' base damage each. Expected Quality value is priced at ×'+
-    DEFENSE_CHARGE.expectedSpend+'; only this move consumes the bank.');
+  if(commandUsesDefenseCharge(command))lines.push(commandChargeCombatText(command));
   const bleed=commandBleedAmount(command);
   if(bleed)lines.push('Bleed: +'+damagePart(bleed)+' to each of the next two defense-phase ticks. '+
     'A defense Break pays one tick at ×'+damagePart(BLEED_STATUS.breakMultiplier)+
@@ -24564,7 +25055,13 @@ function moveTreeSynthesisRaritySnapshot(command){
     posture:command.posture||0,critChance:Number(((command.critChance||0)*100).toFixed(1)),
     critRead:Number(((command.critChancePerStartingMark||0)*100).toFixed(2)),
     critMark:command.critMarkBonus||0,
-    bleed:commandBleedAmount(command),chargeRate:commandDefenseTemperRate(command),
+    bleed:commandBleedAmount(command),chargeMode:commandChargeMode(command),
+    chargeRate:commandDefenseTemperRate(command),
+    chargeMark:command.chargeMarkPerCharge||0,chargeRead:command.chargeDamagePerMarkPerCharge||0,
+    chargeRetain:command.chargeRetentionRate||0,chargeBreak:command.chargeBreakDamagePerCharge||0,
+    chargeDist:command.chargeDistributedDamagePerCharge||0,
+    chargeActionMark:command.chargeDistributedMarkPerAction||0,
+    chargeFinal:command.chargeFinalDamagePerCharge||0,
     mark:command.markGain||0,pulses:(command.markPulsePattern||[]).length,
     bloomRate:Number(((command.markBloomRate||0)*100).toFixed(1)),
     trail:command.phaseMarkTrailPerContact||0,cost:command.cost||0});
@@ -24621,6 +25118,10 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
       lines.push(entry.stats.pulses?(entry.stats.pulses+' PULSE · '+entry.stats.chain+' CHN'):
         entry.stats.bloomRate?('BLOOM '+entry.stats.bloomRate+'% · '+entry.stats.chain+' CHN'):
         entry.stats.trail?('TRAIL +'+entry.stats.trail+'/HIT · '+entry.stats.chain+' CHN'):
+        entry.stats.chargeMode==='MARK_PACKET'?('CHG>MRK '+damagePart(entry.stats.chargeMark)+' / CHG'):
+        entry.stats.chargeMode==='MARK_RESONANCE'?('MRK×CHG +'+damagePart(entry.stats.chargeRead)):
+        entry.stats.chargeMode==='DISTRIBUTED'?('DIST +'+damagePart(entry.stats.chargeDist)+
+          ' · M/A '+damagePart(entry.stats.chargeActionMark)):
         entry.stats.chargeRate?('CHG +'+entry.stats.chargeRate+'/EACH · '+entry.stats.hits+' HIT'):
         entry.stats.bleed?(entry.stats.bleed+' BLEED / '+entry.stats.hits+' HIT'):
         entry.stats.posture?(entry.stats.posture+' POST / '+entry.stats.hits+' HIT'):
@@ -24646,6 +25147,13 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         ['C.MRK',entry.stats.critMark-selected.stats.critMark],
         ['BLD',entry.stats.bleed-selected.stats.bleed],
         ['CHG',entry.stats.chargeRate-selected.stats.chargeRate],
+        ['C>MRK',entry.stats.chargeMark-selected.stats.chargeMark],
+        ['M×C',entry.stats.chargeRead-selected.stats.chargeRead],
+        ['C.RET',entry.stats.chargeRetain-selected.stats.chargeRetain],
+        ['C.BRK',entry.stats.chargeBreak-selected.stats.chargeBreak],
+        ['C.DST',entry.stats.chargeDist-selected.stats.chargeDist],
+        ['C.MRK',entry.stats.chargeActionMark-selected.stats.chargeActionMark],
+        ['C.FIN',entry.stats.chargeFinal-selected.stats.chargeFinal],
         ['PLS',entry.stats.pulses-selected.stats.pulses],
         ['BLM%',entry.stats.bloomRate-selected.stats.bloomRate],
         ['TRL',entry.stats.trail-selected.stats.trail],
@@ -24820,7 +25328,7 @@ function skillLabCombatTap(pt){
     applySkillLabPreset(preset.id);return true;
   }
   if(pointInRect(pt,SKILL_LAB_COMBAT_CRIT)){
-    if(bossChargeEnabled())boss.charge=(bossCharge()+1)%(DEFENSE_CHARGE.max+1);
+    if(bossChargeEnabled())boss.charge=(bossCharge()+1)%(DEFENSE_CHARGE.labPreviewCycle+1);
     else skillLabSession.forceCritical=!skillLabSession.forceCritical;
     SFX.swipe();return true;
   }
@@ -24885,7 +25393,7 @@ function drawSkillLabCombatOverlay(){
   g.fillText((boss.phase==='dodge'?'BOSS ACTIVE':'PLAYER ACTIVE')+
     '  /  PHASE '+stats.phases+'  /  PERFECT '+stats.perfects+
     '  /  PARRY '+stats.parries+'  /  HIT '+stats.hits+
-    (bossChargeEnabled()?'  /  CHG '+liveCharge+'/'+DEFENSE_CHARGE.max:''),VW/2,384);
+    (bossChargeEnabled()?'  /  CHG '+liveCharge:''),VW/2,384);
 }
 function drawDebugCfg(){
   g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);

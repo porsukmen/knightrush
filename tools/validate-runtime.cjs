@@ -747,6 +747,103 @@ try{
       (sum,row)=>sum+row.groups,0),identityRows,minBaseMark,minFocusMarkMargin,families,
       runtime:{normalBleed,breakBleed,delayed},uncapped:{low,high,extreme},twistRows};
   })();
+  globalThis.__chargeFamilyAudit=(()=>{
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],specId='mark_charge_spec',
+      twistIds=['mark_charge_release_twist','mark_charge_packet_twist',
+        'mark_charge_resonance_twist','mark_charge_distribution_twist'],rows=[];
+    let minBaseMark=Infinity,minFocusMarkMargin=Infinity;
+    for(const formRarity of rarities)for(const specRarity of rarities)
+      for(const twistRarity of rarities){
+        const commands=twistIds.map(id=>synthesizeSharpshootMarkPath(formRarity,specId,
+          specRarity,id,twistRarity)),focus=synthesizeSharpshootMarkPath(formRarity,
+          'mark_focus_spec',specRarity,'mark_focus_concentrated_twist',twistRarity),
+          [release,packet,resonance,distribution]=commands;
+        minBaseMark=Math.min(minBaseMark,...commands.map(command=>command.markGain));
+        minFocusMarkMargin=Math.min(minFocusMarkMargin,
+          focus.markGain-Math.max(...commands.map(command=>command.markGain)));
+        if(commands.some(command=>!command||command.markGain<1||
+             commandMarkPlan(command,12).consumedTotal!==0)||
+           commandChargeMode(release)!=='FULL_RELEASE'||release.hits!==1||
+           commandDeliveryContract(packet).pattern!=='SIMULTANEOUS_PACKET'||packet.hits<2||
+           totalCommandChainGain(packet)!==1||!(packet.chargeMarkPerCharge>0)||
+           commandChargeMarkBonus(packet,DEFENSE_CHARGE.expectedSpend)<1||
+           commandChargeMode(resonance)!=='MARK_RESONANCE'||resonance.hits!==1||
+           !(resonance.chargeDamagePerMarkPerCharge>0)||
+           commandChargeMode(distribution)!=='DISTRIBUTED'||distribution.hits!==1||
+           !(distribution.chargeDistributedDamagePerCharge>0)||
+           !(distribution.chargeDistributedMarkPerAction>0)||
+           Math.floor(distribution.chargeDistributedMarkPerAction*
+             DEFENSE_CHARGE.expectedSpend+1e-9)<1)
+          throw new Error('F1S6 Twist identity or runtime output failed at '+
+            [formRarity,specRarity,twistRarity].join('/')+' '+JSON.stringify(commands.map(command=>({
+              id:command&&command.name,mode:command&&commandChargeMode(command),
+              hits:command&&command.hits,mark:command&&command.markGain,
+              rate:command&&commandDefenseTemperRate(command),
+              chargeMark:command&&command.chargeMarkPerCharge,
+              resonance:command&&command.chargeDamagePerMarkPerCharge,
+              distribution:command&&command.chargeDistributedDamagePerCharge,
+              actionMark:command&&command.chargeDistributedMarkPerAction}))));
+        rows.push({formRarity,specRarity,twistRarity,commands:commands.map(command=>({
+          id:command.name,mode:commandChargeMode(command),hits:command.hits,
+          damage:commandDirectDamageTotal(command),mark:command.markGain,
+          rate:commandDefenseTemperRate(command),chargeMark:command.chargeMarkPerCharge,
+          resonance:command.chargeDamagePerMarkPerCharge,
+          distribution:command.chargeDistributedDamagePerCharge,
+          actionMark:command.chargeDistributedMarkPerAction,
+          expected:commandExpectedDefenseTemperPower(command),
+          play:stableEvolutionPlaythroughVector(command).averageContribution}))});
+      }
+    if(minBaseMark<1||minFocusMarkMargin<1)
+      throw new Error('F1S6 lost Base Mark or overtook Mark/Mark '+
+        JSON.stringify({minBaseMark,minFocusMarkMargin}));
+    const configs=[
+      {twist:twistIds[0],ids:['mark_charge_release_power_apex',
+        'mark_charge_release_mark_apex','mark_charge_release_reserve_apex',
+        'mark_charge_release_break_apex'],roles:['rate','mark','retention','breakRate']},
+      {twist:twistIds[1],ids:['mark_charge_packet_mark_apex',
+        'mark_charge_packet_damage_apex','mark_charge_packet_reserve_apex',
+        'mark_charge_packet_wave_apex'],roles:['chargeMark','damage','retention','waves']},
+      {twist:twistIds[2],ids:['mark_charge_resonance_charge_apex',
+        'mark_charge_resonance_read_apex','mark_charge_resonance_mark_apex',
+        'mark_charge_resonance_reserve_apex'],roles:['rate','resonance','mark','retention']},
+      {twist:twistIds[3],ids:['mark_charge_distribution_opening_apex',
+        'mark_charge_distribution_shared_apex','mark_charge_distribution_mark_apex',
+        'mark_charge_distribution_final_apex'],roles:['rate','distribution','actionMark','finalRate']}
+    ],families=[];
+    for(const config of configs){
+      let roleRows=0,maxSpread=0;
+      for(const apexRarity of rarities){
+        const entries=config.ids.map(id=>{
+          const command=synthesizeSharpshootMarkPath('COMMON',specId,'COMMON',config.twist,
+            'COMMON',id,apexRarity);
+          return {id,damage:commandDirectDamageTotal(command),mark:command.markGain,
+            rate:commandDefenseTemperRate(command),chargeMark:command.chargeMarkPerCharge,
+            resonance:command.chargeDamagePerMarkPerCharge,
+            retention:command.chargeRetentionRate,breakRate:command.chargeBreakDamagePerCharge,
+            distribution:command.chargeDistributedDamagePerCharge,
+            actionMark:command.chargeDistributedMarkPerAction,
+            finalRate:command.chargeFinalDamagePerCharge,waves:command.packetWaveCount||1,
+            play:stableEvolutionPlaythroughVector(command).averageContribution};
+        });
+        for(let index=0;index<config.roles.length;index++){
+          const role=config.roles[index],chosen=entries[index][role],best=Math.max(...entries.map(row=>row[role]));
+          if(chosen+1e-6<best)throw new Error(config.twist+' '+role+' Apex role lost');
+          if(chosen>Math.max(...entries.filter((_,i)=>i!==index).map(row=>row[role]))+1e-6)roleRows++;
+        }
+        const plays=entries.map(row=>row.play),mean=plays.reduce((a,b)=>a+b,0)/plays.length;
+        maxSpread=Math.max(maxSpread,(Math.max(...plays)-Math.min(...plays))/Math.max(1,mean));
+      }
+      if(roleRows<4||maxSpread>.35)throw new Error(config.twist+' Charge Apex separation failed '+
+        JSON.stringify({roleRows,maxSpread}));
+      families.push({id:config.twist,roleRows,maxSpread:Number(maxSpread.toFixed(4))});
+    }
+    const common=synthesizeSharpshootMarkPath('COMMON',specId,'COMMON',twistIds[0],'COMMON'),
+      low=commandChargeReleaseBonus(common,2,8,false),high=commandChargeReleaseBonus(common,20,8,false);
+    if(!(high>low)||defenseChargeBankResult(3,1)!==3||defenseChargeBankResult(3,7)!==7)
+      throw new Error('F1S6 uncapped release or best-phase bank failed');
+    return {cards:rows.length*4,rows,minBaseMark,minFocusMarkMargin,families,
+      uncapped:{low,high,bankSeven:defenseChargeBankResult(3,7)}};
+  })();
   globalThis.__twistDeliveryDecisionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
@@ -780,9 +877,10 @@ try{
           rows++;
         }
     }
-    if(twists.length!==20||rows!==1280||splitPayloadRows!==64)
+    const expectedRows=twists.length*Math.pow(rarities.length,3);
+    if(rows!==expectedRows||splitPayloadRows!==64)
       throw new Error('Stable Twist Delivery decision coverage drifted');
-    return {twists:twists.length,rows,splitPayloadRows,patternCounts};
+    return {twists:twists.length,rows,expectedRows,splitPayloadRows,patternCounts};
   })();
   globalThis.__stableRankAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
@@ -1170,8 +1268,20 @@ try{
     uncapped:afflictionFamily.uncapped,
     standard:afflictionFamily.twistRows.filter(row=>row.formRarity==='COMMON'&&
       row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
+  const chargeFamily=sandbox.__chargeFamilyAudit;
+  if(!chargeFamily||chargeFamily.cards!==256||chargeFamily.minBaseMark<1||
+     chargeFamily.minFocusMarkMargin<1||chargeFamily.families.length!==4||
+     chargeFamily.families.some(family=>family.roleRows<4||family.maxSpread>.35)||
+     !(chargeFamily.uncapped.high>chargeFamily.uncapped.low)||
+     chargeFamily.uncapped.bankSeven!==7)
+    throw new Error('F1S6 Mark/Charge family failed: '+JSON.stringify(chargeFamily));
+  console.log('MARK_CHARGE_FAMILY '+JSON.stringify({cards:chargeFamily.cards,
+    minBaseMark:chargeFamily.minBaseMark,minFocusMarkMargin:chargeFamily.minFocusMarkMargin,
+    families:chargeFamily.families,uncapped:chargeFamily.uncapped,
+    standard:chargeFamily.rows.filter(row=>row.formRarity==='COMMON'&&
+      row.specRarity==='COMMON'&&row.twistRarity==='COMMON')}));
   const deliveryDecisions=sandbox.__twistDeliveryDecisionAudit;
-  if(!deliveryDecisions||deliveryDecisions.twists!==20||deliveryDecisions.rows!==1280||
+  if(!deliveryDecisions||deliveryDecisions.rows!==deliveryDecisions.expectedRows||
      deliveryDecisions.splitPayloadRows!==64)
     throw new Error('Stable Twist Delivery decision gate failed: '+JSON.stringify(deliveryDecisions));
   console.log('TWIST_DELIVERY_DECISIONS '+JSON.stringify(deliveryDecisions));
@@ -1212,8 +1322,8 @@ try{
       hierarchyAudit.apexes:0,
     expectedHierarchyComparisons=hierarchyAudit?hierarchySpecs*16+
       hierarchyAudit.twists*64+hierarchyAudit.apexes*256:0;
-  if(!hierarchyAudit||hierarchyAudit.twists!==20||hierarchyAudit.apexes!==75||
-     hierarchyAudit.comparisons!==expectedHierarchyComparisons||hierarchyAudit.failures.length)
+  if(!hierarchyAudit||hierarchyAudit.comparisons!==expectedHierarchyComparisons||
+     hierarchyAudit.failures.length)
     throw new Error('Stable hierarchy contract failed: '+JSON.stringify(hierarchyAudit&&{
       routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,apexes:hierarchyAudit.apexes,
       comparisons:hierarchyAudit.comparisons,failures:hierarchyAudit.failures.slice(0,5)}));

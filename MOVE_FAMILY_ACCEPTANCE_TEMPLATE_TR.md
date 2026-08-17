@@ -13,6 +13,12 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Her Twist icin Delivery karari yazilir: neden Single/Sequential/Packet secildi, temaslarin
   hangileri dogal Chain uretir, mekanigin hangi anini okunur kilar ve hangi komsu agacin
   Delivery kimligini taklit etmemelidir. `SINGLE` da bilincli bir karardir; varsayilan cevap degildir.
+- Tum ailelere zorunlu ayni T1/T2/T3/T4 sablonu uygulanmaz. Her Twist kendi kaynak akis yonunu,
+  oyuncu kararini, Primary sonucunu, Secondary sonucunu ve sinerji kancasini aciklar.
+- Dortlu bir ailede en az iki Twist iki attribute ciftine ozel olmalidir. Kardesler ayni oyuncu
+  karari + Delivery + sinerji imzasini tekrarlayamaz.
+- Primary her zaman ana kimliktir. Primary/Secondary yer degistirdiginde ayni agac isimleri
+  degistirilerek kopyalanamaz; kaynak yonu ve oyuncu karari yeniden tasarlanir.
 - Apex, parent Twist'in Delivery topology ve timing sozlesmesini aynen korur. Sadece o sozlesmenin
   parametresini veya sunumunu guclendirebilir.
 
@@ -140,3 +146,16 @@ aile commit veya push edilmez. Gorsel degisiklik varsa sessiz yerel tarayici tes
   T3'un garanti cekirdegi beklenen Crit olasiligi uzerinden kendi layer butcesinden odenir.
 - RNG testi T1 icin temas sayisi kadar, T4 icin action basina tam bir roll ister. Weight/Mark
   jackpot problari finite kalir; authored scaling cap veya diminishing return almaz.
+
+## F1S6 referans uygulamasi
+
+- Savunma fazi `0` Charge ile baslar; Perfect Dodge `+1`, Parry `+2` verir. Break ekstra Charge
+  vermez. Banka fazlari toplamaz, eski banka ile yeni fazin buyugunu saklar ve gameplay cap kullanmaz.
+- T1 bankayi tek hasar salimina, T2 kosullu Mark packetine, T3 korunmus Mark x Charge okumasina,
+  T4 ise faz boyunca aksiyon basina bir Charge harcayan motora cevirir.
+- Dort Twist ayni global slot kalibindan uretilmez. Her birinin kaynak yonu, oyuncu karari,
+  Primary/Secondary sonucu ve sinerji kancasi metadata ile test edilir.
+- Common T2 referans `2 Charge` ile en az bir gorunur kosullu Mark vermeli; Common T4 iki aksiyonda
+  en az bir gorunur Mark biriktirmelidir. Bunlar cap degil, sifir-cikti tarifini yakalayan alt testlerdir.
+- `2` ve `20` Charge problari sonucun finite ve dogrusal buyudugunu; `7` Charge savunma fazi ise
+  bankanin authored bir `3` sinirina kirpilmadigini kanitlar.

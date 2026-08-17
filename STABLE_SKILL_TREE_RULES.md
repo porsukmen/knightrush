@@ -95,6 +95,15 @@ which visible contacts create natural Chain, and which neighbouring tree the Del
 imitate. Delivery is never decoration added after the mechanics. Apex inherits that exact intent;
 it may strengthen a parameter or presentation, but it cannot silently change the topology.
 
+Twist families use a flexible relationship palette, not one compulsory global T1/T2/T3/T4
+template. Each authored Twist declares its resource flow (`PARALLEL`, `SECONDARY_TO_PRIMARY`,
+`PRIMARY_TO_SECONDARY`, `COUPLED_LOOP`, or an attribute-native alternative), its player decision,
+both attribute outcomes, and its synergy hook. Siblings may choose whichever flows best fit the
+pair, but may not repeat the same player decision plus Delivery plus synergy signature. At least
+two siblings in a four-Twist family must be pair-specific rather than generic stat variants.
+Primary ownership remains dominant in every flow. Reversing Primary and Secondary creates a new
+family and must not copy the old family with renamed resources.
+
 ### 4. Apex: maximum expression
 
 - Inherits both `secondaryId` and `relationshipId` exactly.
@@ -154,16 +163,24 @@ The Form Primary output or interaction must always remain present. Any channel t
 
 - Charge Primary commits the move across a defense phase and later Releases for zero AP
   and zero additional Resolve. Charge Secondary never delays its inherited move.
-- Charge Secondary banks defense performance: completing a defense phase gives `1`, each
-  Perfect Dodge or Parry adds `1`, and a defense Break guarantees at least `2`. The shared
-  bank caps at `3`, persists until used, and never accumulates beyond that cap.
+- Charge Secondary starts a defense phase at `0`: Perfect Dodge gives `1`, Parry gives `2`,
+  and Break itself gives no Charge. Ending a defense phase stores the better of that phase and
+  the existing bank. Separate phases therefore do not add together, but a weak phase cannot erase
+  a stronger unspent bank. There is no authored gameplay maximum.
 - Only a command with `DEFENSE_TEMPER` consumes the bank. Other skills, Fight and companions
-  cannot spend it. Repeating the same command in one player phase finds an empty bank.
+  cannot spend it unless an explicit Twist opens a priced phase engine. A normal full-release
+  command empties the bank; retention Apexes may restore only a priced fraction of what was spent.
 - Secondary Charge converts the consumed bank into base damage, so ordinary Chain, Crit and
-  Break rules may multiply it. It cannot refund AP/Resolve or increase Mark by default.
-- Stable synthesis prices the conditional output at expected `2 Charge`; `3 Charge` is the
-  bounded reward for strong defense, not a second Quality budget. Rate comes from accumulated
-  Quality and one shared formula, never a per-rarity table.
+  Break rules may multiply it. It cannot refund AP/Resolve. Mark conversion, Mark resonance,
+  retention, Break interaction, and phase distribution exist only when a Twist/Apex explicitly
+  pays for that relationship from its Quality wallet.
+- Stable synthesis prices conditional output at expected `2 Charge`. All Charge rates come from
+  accumulated Quality and shared formulas, never per-rarity tables or runtime caps.
+
+The current Mark/Charge family demonstrates four valid flexible relationships: full immediate
+release, Charge-to-Mark simultaneous packet, preserved-Mark/Charge resonance, and a one-Charge-per-
+offensive-action phase engine. These are examples for the generator, not four mandatory slots for
+future attribute pairs.
 
 ## Mark resource contract
 
@@ -572,10 +589,10 @@ families, so all `4^4` rarity histories are exercised before family-specific ass
 
 The runtime gate must cover all materialized Sharpshoot routes, not a hand-picked sample. The current slice requires:
 
-- exactly `16` Twist contracts and `59` Apex contracts;
-- `16,224` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
-- `4,057` independent rank ladders and `12,171` adjacent rank comparisons;
-- `35,592` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
+- exactly `24` Twist contracts and `91` Apex contracts;
+- `24,928` immediate parent-to-child comparisons across every prior-rarity history and offered rank;
+- `6,233` independent rank ladders and `18,699` adjacent rank comparisons;
+- `54,792` stronger-parent comparisons, changing every earlier rarity one adjacent step while fixing the exact child route and rank;
 - zero inherited damage, Mark, owned Weight, real Chain payoff, or full-playthrough regression;
 - zero parent-strength reversal, at least `10%` score/play gap retention, and at least `1` visible child gap whenever the parent gap is meaningful;
 - zero stagnant rank step;
@@ -585,6 +602,25 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   visible `0/5/10/15/20` Mark states and must remain inside `0.87-1.20` scenario value and
   `0.895-1.31` provisional rotation value ratios;
 - all existing per-family identity, scenario, sibling, animation-delivery, and Mark runtime audits.
+
+### F1S6 Mark/Charge contract
+
+- MARK remains Primary; CHARGE is immediate Secondary support. Every route keeps Sharpshoot's
+  guaranteed Mark output and neither consumes existing Mark nor delays the attack by default.
+- Perfect Dodge gives `1` and Parry gives `2` Charge. Break banks the completed defense phase but
+  adds no Charge. The bank stores the best unspent single-phase result, has no gameplay cap, and is
+  consumed only by an explicit Charge command or its authored distributed phase engine.
+- T1 releases the full bank as base damage. T2 converts the full bank into a simultaneous conditional
+  Mark packet. T3 preserves starting Mark and multiplies its read by consumed Charge. T4 spends one
+  Charge per offensive action and carries fractional Mark progress across the phase.
+- T1/T2/T3 consume the complete bank. Retention Apexes may restore only a Quality-priced fraction of
+  the amount actually spent. T4 clears its temporary engine at phase end while leaving unspent banked
+  Charge intact. None of these paths refunds AP or Resolve.
+- All four Twists declare explicit flexible-design metadata. Their player decisions and combined
+  Delivery/synergy signatures must remain unique; this four-route set is not a global slot template.
+- Runtime validation covers `256` Form/Spec/Twist rarity histories, four Apex role families per Twist,
+  visible Common conversion output, best-phase banking, and uncapped linear release at `2` and `20`
+  Charge. Mark/Charge remains at least five guaranteed Mark below equivalent Mark/Mark histories.
 
 ### F1S3 Mark/Posture contract
 
