@@ -111,6 +111,13 @@ Form-only hizli kontrol icin:
 
 `node tools/validate-runtime.cjs KnightRush.html --quick`
 
+Form tamamlandiktan sonra temsili tam-gecmis balance matrisi de zorunludur:
+
+`node tools/validate-runtime.cjs KnightRush.html --posture-balance`
+
+Bu agir kapi oyun bootunda calismaz. Common/Uncommon/Rare/Legendary ve karisik gecmislerde
+Twist kardeslerini, Apex kardeslerini, komsu aile ortalamalarini ve dort Apex rolunu birlikte denetler.
+
 Yeni bir Form eklendiginde hizli kapida address/Form slotu, Base kimlik, Primary cikti, gercek
 Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz scaling kanitlanir.
 
@@ -224,6 +231,24 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
   gelisen soyunda daha guclu Mark sahipligi tasir.
 - Bu asamada hicbir route Mark tuketmez, AP/Resolve refund etmez veya ucuncu bir attribute eklemez.
 
+## F3 Posture Form referans uygulamasi
+
+- F3 `POSTURE Primary`dir; Sharpshootun degismeyen Base kimligi nedeniyle en az bir Mark birakir.
+  Tek gercek temas once hasar verir, sonra tam `+1 Chain` uretir ve ancak bundan sonra Posture
+  paketini uygular.
+- Delivery `SINGLE / IMMEDIATE` ve animasyon `BOW_POSTURE`dur: uzun cekis, belirgin bekleme, yavas
+  zırh-delici ok ve sert impact. Sahte ek temas veya volley kullanilmaz.
+- Form Quality profili `%25 DIRECT_DAMAGE / %20 MARK_GAIN / %55 POSTURE_DAMAGE`dir. Posture sayisi
+  Qualityden matematiksel olarak uretilir; gameplay cap veya elle yazilmis rarity tablosu yoktur.
+- Temiz hasar Base Sharpshootun altina inemez. Rarity yukselirken temiz hasar, Mark ve Posture
+  azalmaz; hareket her rankta `1 AP / 1 Resolve` kalir.
+- Bu ok Posture'u kirarsa okun Health hasari daha once cozulmus oldugu icin kendi kendine Break
+  bonusu alamaz. Breakin `+1 AP`, Resolve ve `+%50` hasar odulu sonraki komutlara aittir.
+- F3 bir Health burst Formu degil, Break zamanlamasi kuran setup Formudur. Crit, Affliction,
+  Charge, Mark tuketimi, ekstra Chain scaling veya ekonomi motoru Form katmaninda eklenmez.
+- Hizli kapida dort rarity karti, tek temas, tek Chain, en az bir Mark, artan Posture, parent hasar
+  korunumu, agir animasyon ve `AFTER_FINAL_CONTACT` sirasi birlikte test edilir.
+
 ## F2S1 Chain/Mark kabul listesi
 
 - Tam sayim `4 Twist / 16 Apex`tir; her Twist tam dort materialize Apex cocuguna sahiptir.
@@ -309,3 +334,66 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] Altı F2 ailesi aynı komşu güç matrisinde test edilir; eksik aile sessizce matristen düşmez.
 - [ ] Chain/Crit guardrail hesabı action-start Chaini Crit ihtimali ve çarpanına aktarır.
 - [ ] `--quick`, `--adjacent`, browser smoke ve console error kontrolü geçmeden aile tamamlanmış sayılmaz.
+
+## Base Attribute kabul listesi
+
+- [ ] Weapon skill için merkezi Base Attribute contract kayıtlıdır; başka silahın base outputu kopyalanmamıştır.
+- [ ] Her Stable katman yalnız kendi yeni paketinin merkezi Base payını öder; geçmiş güç ikinci kez vergilenmez.
+- [ ] Sharpshoot rotalarında normalize `MARK_GAIN` payı en az `%10`dur ve bu pay ücretsiz değildir.
+- [ ] Otomatik göç Base payını eklerken mevcut Primary/Secondary mekanik profile değerlerini azaltmamıştır.
+- [ ] Base reserve receipt üzerinde saklanır, kaybolmaz ve authored gameplay cap taşımaz.
+- [ ] Base, Primary, direct parent ve rarity çıktıları gerilemez; bütün komşu aile testleri yeniden geçer.
+
+## F3 Specialization kabul listesi
+
+- [ ] Altı route ve dört rarity ile `96` sentez kombinasyonu gerçek runtime command üretir.
+- [ ] Bütün rotalar `SINGLE`, bir gerçek temas, `+1 Chain`, pozitif Base Mark ve `AFTER_FINAL_CONTACT` Posture taşır.
+- [ ] Mark rotası parenttan görünür biçimde fazla Mark üretir ve Mark tüketmez; Chain rotası pozitif Chain scaling taşır.
+- [ ] Saf Posture kardeşlerinin en yüksek düz Posture çıktısına sahiptir.
+- [ ] Crit hem Health hem Posture'u etkiler; Bleed iki tick ve Break uygulama bonusu `%25`; Charge tek banka tüketimidir.
+- [ ] Rarity yükselirken damage, Mark, Posture ve birleşik güç gerilemez; kardeş spread `%12`yi aşmaz.
+
+## F3 tam kapanış kabul listesi
+
+- [ ] Sayım `1 Form / 6 Specialization / 24 Twist / 96 Apex / 127 route / 508 rarity card`tır.
+- [ ] Her Specialization dört Twist, her Twist dört Apex taşır; bütün rotalar gerçek runtime command üretir.
+- [ ] Görünen her temas gerçek payload payı ve tam `+1 Chain` taşır; temassız reward/echo ayrıca gösterilir.
+- [ ] Break→Mark/Chain, sonraki Posture→Mark, Crit→Posture, Bleed→Posture ve Charge→Posture ilişkileri Quality ile ölçeklenir ve guardrail hesabında fiyatlanır.
+- [ ] Shared packet Crit tek roll, sequential Crit temas başına roll yapar; Crit Health ve direct Posture'u birlikte çarpar.
+- [ ] Simultaneous Bleed packet kendi içinde açtığı Break'i sömürmez; sequential Bleed sonraki gerçek temaslarda kullanabilir.
+- [ ] Measured Charge yalnız Break için gereken bankayı harcar; full release ve delayed echo rotaları bütün bankayı bir kez tüketir.
+- [ ] Apex parent delivery/mekaniğini korur; rank ve parent çıktıları gerilemez, gameplay cap veya diminishing eklenmez.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` içindeki F3 closure ve mechanic kapıları geçer.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --posture-balance` 18 temsili rarity geçmişinde Twist/Apex kardeşlerini, komşu aileleri ve Apex rollerini geçirir.
+
+## F4 Critical Form ve Specialization kabul listesi
+
+- [ ] F4 tek gorunur temas, tek gercek Chain, pozitif Base Mark ve `1 AP / 1 Resolve` ile materializedir.
+- [ ] Form move-local Chance ve movea ait kalici Precision uretir; non-Crit Precision ekler, Crit sifirlar ve state turler arasinda korunur.
+- [ ] Alti route `Critical/Mark`, `Critical/Chain`, `Critical/Posture`, `Critical/Critical`, `Critical/Affliction`, `Critical/Charge` olarak esit erisimlidir.
+- [ ] Bütün `96` rarity kombinasyonu parent damage, Mark, Crit chance, uzun vadeli Crit orani, Precision ve Crit carpanini geriletmez.
+- [ ] Yalniz Critical/Critical pre-Twist `CRIT_POWER` ekseni satin alir ve Common/Common kardeslerinde en yuksek local Crit carpanina sahiptir.
+- [ ] Mark parenttan gorunur fazla Mark; Chain action-start scaling; Posture Critlenen direct Posture; Affliction iki tick Bleed; Charge pre-Crit banka release uretir.
+- [ ] Chance/Precision dogal tavana ulasinca odenmis Quality kaybolmaz; local Crit carpanina Reserve/overflow olarak akar ve runtime stat clip uygulanmaz.
+- [ ] Skill Lab rarity kartlari Chance, Precision, uzun-vadeli Crit orani ve carpani ayri gosterir.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` F4 Form, F4 Specialization, runtime Precision ve rarity ladder auditlerini gecirir.
+
+## F4S4 Critical/Critical Twist kabul listesi
+
+- [ ] Dort Twist sirali bagimsiz roll, tek agir Precision odemesi, Crit-cascade ve ortak-roll packet olarak mekanik bakimdan ayridir.
+- [ ] T1 gerceklesen her sirali okta 1 Chain kurar fakat Chain scaling satin almaz.
+- [ ] T2 stored Precisioni action basinda bir kez okur; bonus yalniz Crit carpanina gider.
+- [ ] T3 ilk okta parent saldiriyi garanti eder, her Critte devam eder, ilk normal vurusla durur ve gorunmeyen oklar icin RNG harcamaz.
+- [ ] T4 packet boyunca tek Crit sonucu ve tek Precision update kullanir; toplam 1 Chain kurar.
+- [ ] 256 rarity kombinasyonunda parent damage/Mark/Chance/Precision/Crit rate/carpan gerilemez; rank yukselirken stat dusmez.
+- [ ] Common kardes power spread `%20`yi asmaz ve hicbir rota `extraChainBonus` kazanmaz.
+
+## F4S4 Critical/Critical Apex kabul listesi
+
+- [ ] Tam sayim `4 Twist / 16 Apex`tir; her Twist tam dort materialize Apex cocuguna sahiptir.
+- [ ] Her Apex parent roll modelini, delivery timingini, dogal Chain kuralini ve Precision davranisini aynen korur.
+- [ ] A1 parent imzasinin lideridir; Sequence/Cascade/Packet bir ucretli gorunur temas ekler, Verdict stored-Precision okumasini buyutur.
+- [ ] A2 Sequence/Cascade/Packette Crit sansi lideridir. Verdict A2 stored Precision dongusunu oldurmez; bunun yerine garanti Base Mark kurulumunun lideridir.
+- [ ] A3 move-local Crit carpani, A4 temiz direct damage lideridir; hicbir Apex Chain scaling kazanmaz.
+- [ ] Parent damage, Mark, Chance, Precision, stored-Precision read ve Crit carpani gerilemez; rarity ranki sahip olunan stati dusurmez.
+- [ ] `CCC/LCC/LLC/LLL` gecmisleri x 4 Apex rarity x 16 Apex = `256` boot-safe kart matrisi gecer.

@@ -137,6 +137,14 @@ The Form Primary output or interaction must always remain present. Any channel t
 
 - Critical Secondary grants only move-local flat chance. It cannot grant global Crit,
   change the `×1.5` multiplier, or open the Primary-only Precision engine.
+- Critical Primary owns two paid axes: move-local base Chance and persistent Precision.
+  After a non-Crit contact, that move gains its authored Precision for its next use; a
+  successful Crit resets only that move's stored Precision. The state survives turns.
+- Before Twist, only the pure `Critical/Critical` Specialization may explicitly allocate
+  Quality to `CRIT_POWER`. Mixed Critical-Primary Specializations retain the standard
+  multiplier. If Chance or Precision reaches its natural probability ceiling, paid
+  overflow may continue into move-local Crit damage instead of disappearing; this is
+  synthesis overflow, not a third authored mechanic.
 - Local chance is priced by expected direct Health damage:
   `Crit power / (base damage × (Crit multiplier - 1))`.
 - Crit chance must be synthesized from accumulated Quality and expression policy, never
@@ -146,6 +154,63 @@ The Form Primary output or interaction must always remain present. Any channel t
   that contact's direct Health and Posture together; it does not multiply Mark payload,
   Chain bonus, Bleed or another delayed effect unless a later authored rule says so.
 - Crit and Break multiply in order; the standard result is `1.5 × 1.5 = 2.25`.
+
+### F4 Critical Primary Form and Specialization contract
+
+- F4 is one precise `SINGLE` arrow. It keeps Sharpshoot Base Mark, creates one real Chain,
+  costs `1 AP / 1 Resolve`, and establishes Chance plus persistent Precision.
+- Its six equal-access Specializations are `Critical/Mark`, `Critical/Chain`,
+  `Critical/Posture`, `Critical/Critical`, `Critical/Affliction`, and `Critical/Charge`.
+- Every Specialization preserves the complete Form receipt. Its own Quality packet may
+  improve the Critical engine and add exactly one Secondary; it cannot dilute inherited
+  damage, Mark, base Chance, effective long-run Crit rate, Precision, or multiplier.
+- `Critical/Mark` must visibly exceed the parent Mark output. `Critical/Chain` reads
+  action-start Chain. `Critical/Posture` applies the same local Crit result to direct
+  Health and direct Posture. `Critical/Affliction` adds two-tick Bleed, which never Crits.
+  `Critical/Charge` releases the best defense-phase bank into impact before the Crit roll.
+- `Critical/Critical` is the only pre-Twist route with an authored `CRIT_POWER` axis and
+  must have the strongest Common/Common multiplier among its six siblings.
+- Runtime acceptance covers all `4 × 4 × 6 = 96` Form-rarity / Specialization-rarity
+  combinations, all seven rarity ladders, parent inheritance, sibling power spread, and
+  the persistent Precision reset sequence.
+
+### F4S4 Critical/Critical Twist contract
+
+- T1 is an ordered independent-roll volley. A failed arrow raises Precision for the next
+  arrow in the same action. Every sequential arrow creates one natural Chain, but the
+  route owns no `CHAIN_SCALING` axis.
+- T2 is one Weight arrow. It snapshots stored Precision once and converts a paid
+  `CRIT_PRECISION_POWER_READ` wallet into extra move-local Crit multiplier. The bonus is
+  conditional on a Crit and can never become normal-hit damage.
+- T3 is a Crit cascade, not a miss cascade. The first arrow always carries the complete
+  inherited attack. Each Crit releases the next paid arrow; the first non-Crit ends the
+  action without rolling hidden future arrows. Quality grows the planned sequence with
+  no authored gameplay cap.
+- T4 is a simultaneous shared-roll packet. All pellets Crit or fail together, the packet
+  creates one total Chain, and persistent Precision updates exactly once for the action.
+- Every Twist preserves parent damage, Mark, Chance, Precision, long-run Crit rate and
+  multiplier. Rarity may never regress those outputs. The full `4 × 4 × 4 × 4 = 256`
+  Twist matrix and runtime roll semantics are part of the quick gate.
+
+### F4S4 Critical/Critical Apex contract
+
+- Each of the four Twists owns exactly four Apex children. An Apex preserves its parent
+  roll mode, contact timing, natural Chain truth and persistent-Precision behavior.
+- A1 maximizes the parent's signature. Sequence, Cascade and Packet receive one paid
+  visible contact beyond the normal cumulative-Quality cadence; Verdict instead grows
+  its stored-Precision multiplier read. The authored contact bonus has no global cap:
+  future cumulative Quality can continue increasing the underlying delivery magnitude.
+- A2 improves Crit reliability for Sequence, Cascade and Packet. Verdict is the deliberate
+  exception: raising its Chance toward certainty destroys the miss-built Precision loop,
+  so its A2 strengthens guaranteed post-hit Base Mark setup instead.
+- A3 is the move-local Crit multiplier leader. A4 is the clean direct-impact leader.
+  Neither may steal Chain scaling or invent a new resource engine.
+- Earlier damage, Mark, Chance, Precision, stored-Precision read and Crit multiplier are
+  immutable. Rarity rank may preserve an output but may never reduce it.
+- The boot-safe audit covers all four Apex rarities across four representative histories
+  (`CCC`, `LCC`, `LLC`, `LLL`): `16 × 4 × 4 = 256` synthesized cards. This representative
+  matrix is intentional runtime-cost control; exhaustive development audits do not belong
+  on the player's boot path.
 
 ## Bleed output contract
 
@@ -653,6 +718,21 @@ main purpose; Mark is supporting output or interaction. F1S2 remains a Mark buil
 Chain behavior. This reversed pair is the first proof that ownership changes gameplay rather than
 only labels.
 
+### F3 Posture Form contract
+
+- POSTURE is Primary while Sharpshoot's immutable Base output keeps at least one Mark.
+- Delivery is one heavy `SINGLE / IMMEDIATE` bow contact. It deals Health damage, creates exactly
+  one real Chain, applies Mark, and only then resolves its Posture packet.
+- The Quality profile is `25% DIRECT_DAMAGE / 20% MARK_GAIN / 55% POSTURE_DAMAGE`. The compiler
+  derives all rarity values from cumulative Quality and `POSTURE_DAMAGE = 0.35` guardrail power;
+  there is no authored gameplay cap or rarity lookup table.
+- Clean damage may trail other sibling Forms but can never fall below Base Sharpshoot or a lower
+  rarity of the same Form. Mark and Posture are also rank-monotonic.
+- If the Posture packet causes Break, the triggering arrow cannot retroactively receive Break
+  damage. The attack-phase Break reward opens one AP and the empowered phase for later commands.
+- F3 is a timing setup Form, not a hidden Health burst, volley, Crit, Affliction, Charge, Mark-spend,
+  extra-Chain-scaling, or economy engine. Those rights require later authored layers.
+
 ### F1S3 Mark/Posture contract
 
 - MARK remains Primary; POSTURE is a light-ranged Secondary. Secondary role `0.80` and Light Ranged
@@ -942,3 +1022,36 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
   büyüyen Crit ihtimali veya çarpanı sıfır-Chain gibi fiyatlanamaz; aksi halde rota sistematik nerflenir.
 - `SHARPSHOOT_CHAIN_CLOSURE_AUDIT` bu sayımı ve oynanabilirliği boot sırasında, `--quick` ise CI kapısında
   doğrular. Tam komşu matris artık altı F2 ailesinin hepsini kapsar.
+
+## Weapon Base Attribute katmanı
+
+- Her weapon skill bir değişmez Base Attribute sözleşmesine sahiptir. Base Attribute, Form Primary ve Specialization Secondary ile aynı kavram değildir.
+- Her Stable katman yalnız kendi yeni Quality/power makbuzunun merkezi payını Base Attribute'a yatırır. Pay toplam karta tekrar tekrar uygulanmaz ve bileşik vergi oluşturmaz.
+- Sharpshoot için merkezi değer `%10 MARK_GAIN`dir. Bütün F1/F2/F3 Stable rotaları bu payı taşır; Mark Primary/Secondary rotaları bunun üzerine ayrıca Mark yatırımı alır.
+- Base pay normalize edilirken mevcut mekanik eksenler korunur. Eksik pay doğrudan hasar ifadesinden alınır; Apex factory'si ilişki, Primary, Secondary ve impact liderlerini ayrıca koruyacak şekilde ödeme kaynağını seçer.
+- Resource eşiğine ulaşmayan güç reserve olarak kalır. Reserve kaybolmaz, gameplay üst sınırı yoktur ve sonraki rarity/depth makbuzlarıyla kristalleşebilir.
+- Stable çocuk Base outputunu, Primary outputunu veya parentın görünür çıktısını azaltamaz. Distorted/Corrupted ancak ileride açık bir trade sözleşmesiyle bu kuralı değiştirebilir.
+- Yeni bir weapon route, kayıtlı Base Attribute sözleşmesi olmadan compile edilemez.
+
+## F3 Posture Specialization sözleşmesi
+
+- F3'ün altı Specialization'ı `Posture/Mark`, `Posture/Chain`, `Posture/Posture`, `Posture/Critical`, `Posture/Affliction`, `Posture/Charge` olarak materializedir.
+- Her rota tek ağır gerçek temas, tam `+1 Chain`, Sharpshoot Base Mark ve `AFTER_FINAL_CONTACT` Posture sıralamasını korur.
+- Specialization paketinde `%25` direct expression, `%10` Base Mark ve kalan `%65` Primary/Secondary ilişki bütçesi bulunur. Karışık rotada ilişki bütçesi `70/30`, saf Posture rotasında tamamı Posture'dur.
+- Posture/Mark Mark okumaz veya tüketmez. Posture/Chain yalnız action-start Chain'i can hasarında okur. Posture/Critical'ın yerel Crit'i Health ve Posture'u birlikte çarpar.
+- Posture/Affliction iki tick Bleed uygular ve Break sırasında uygulama bonusu `%25`tir. Posture/Charge en iyi savunma-fazı bankasını yalnız bir kez tüketir.
+- Bütün 96 Form-rarity × Specialization-rarity kombinasyonu parent, rarity, identity ve `%12` sibling power testinden geçmelidir.
+
+## F3 Posture tam kapanış sözleşmesi
+
+- Sayım `1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route / 508 rarity card`dır.
+- Her Twist dört ayrı gameplay kararıdır. Her Apex parent mekaniği ve delivery ailesini koruyup sırasıyla ilişki, Posture, Secondary veya temiz impact yönünü büyütür.
+- Posture/Mark; ağır marka, Break→Mark, sonraki Posture→Mark izi ve eşzamanlı scatter olarak ayrılır. Posture/Chain; breaker volley, başlangıç Chain→Posture, Break→Chain ve canlı Chain echo olarak ayrılır.
+- Saf Posture; crusher, sıralı temas, gecikmeli temassız fracture ve başarısız Break primerı kullanır. Crit; tek roll, bağımsız temas rolleri, ortak packet rollü ve Crit→Posture fracture kullanır.
+- Affliction; ağır wound, sıralı wound, mevcut Bleed→Posture okuması ve eşzamanlı packet kullanır. Charge; can hasarı release, Posture release, yalnız gereken Charge harcaması ve temassız Posture echo kullanır.
+- Görünen her temas `+1 Chain` ve gerçek payload payı üretir. Temassız Mark/Chain/Posture olayları temas gibi gösterilmez. Eşzamanlı packet kendi içinde açtığı Break'i sonraki pelletlerin Bleed bonusu için kullanamaz.
+- Crit direct Health ve direct Posture'u birlikte çarpar. Bleed Break bonusu `%25`tir. Measured Charge barı kırmak için gerekeni harcar, yetmezse bütün bankayı kullanır ve fazlayı saklar.
+- Twist/Apex makbuzları parent Form/Spec bütçesini yeniden dağıtmaz. Rank yükselirken sahip olunan damage, Base Mark, direct Posture veya delivery gerilemez; hiçbir scaling kanalında authored gameplay cap/diminishing bulunmaz.
+- Ağır, volley, packet, echo, affliction ve charge hareketleri mekanikle eşleşen Bow recipe kullanır. Tam 508 kartlık closure ve 24 imza mekaniği yalnız geliştirme validatorında çalışır; oyun boot maliyetine eklenmez.
+- `--posture-balance` ayrı geliştirme kapısıdır: 18 temsili full-history örneğinde 108 Twist kardeş, 432 Apex kardeş, 24 Apex rol grubu ve altı komşu aileyi denetler. Twist/Apex maksimum spread `%20`, ortalama `%10`; komşu aile maksimum spread `%20`, ortalama `%12`yi aşamaz.
+- Bir Quality ekseni gerçek temasa dönüşüyorsa temasın ürettiği Chain bir kez fiyatlanır; temasa dönüşmeyen event rezervi ayrıca korunur. Crit ihtimali zaten beklenti hesabında uygulandığı için Crit→Posture echo tekrar aktiflik oranına bölünmez. Posture'a çevrilen Charge yollarında `DEFENSE_TEMPER` bütçesi kaybolmaz, aynı Charge→Posture çıktısına katılır.

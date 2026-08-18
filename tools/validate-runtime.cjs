@@ -127,6 +127,10 @@ try{
     SHARPSHOOT_MARK_MATERIALIZATION_AUDIT;
   globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
     SHARPSHOOT_CHAIN_FORM_AUDIT;
+  globalThis.__postureFormAudit=typeof SHARPSHOOT_POSTURE_FORM_AUDIT==='undefined'?null:
+    SHARPSHOOT_POSTURE_FORM_AUDIT;
+  globalThis.__postureSpecializationAudit=typeof SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT==='undefined'?null:
+    SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT;
   globalThis.__chainSpecializationAudit=typeof SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT==='undefined'?null:
     SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT;
   globalThis.__chainMarkFamilyAudit=typeof SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT==='undefined'?null:
@@ -1335,10 +1339,34 @@ try{
       minChildPlayGap:Number(minChildPlayGap.toFixed(4)),worstScore,worstPlay,
       worstChildScoreGap,worstChildPlayGap};
   })();`,adjacentOnly=process.argv.includes('--adjacent'),exhaustive=process.argv.includes('--exhaustive'),
-    quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustive),
-    adjacentSource=match[1]+chainAdjacentAuditScript,source=quick?match[1]+`
+    postureBalanceOnly=process.argv.includes('--posture-balance'),
+    quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustive&&!postureBalanceOnly),
+    adjacentSource=match[1]+chainAdjacentAuditScript,
+    postureBalanceSource=match[1]+`
+    ;globalThis.__postureBalanceAudit=typeof runSharpshootPostureBalanceAudit==='undefined'?null:
+      runSharpshootPostureBalanceAudit();`,
+    source=postureBalanceOnly?postureBalanceSource:quick?match[1]+`
     ;globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_FORM_AUDIT;
+    globalThis.__postureFormAudit=typeof SHARPSHOOT_POSTURE_FORM_AUDIT==='undefined'?null:
+      SHARPSHOOT_POSTURE_FORM_AUDIT;
+    globalThis.__criticalFormAudit=typeof SHARPSHOOT_CRITICAL_FORM_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_FORM_AUDIT;
+    globalThis.__criticalSpecializationAudit=
+      typeof SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT;
+    globalThis.__criticalFocusTwistAudit=
+      typeof SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT;
+    globalThis.__criticalFocusApexAudit=
+      typeof SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT;
+    globalThis.__postureSpecializationAudit=typeof SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT==='undefined'?null:
+      SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT;
+    globalThis.__postureClosureAudit=typeof runSharpshootPostureClosureAudit==='undefined'?null:
+      runSharpshootPostureClosureAudit();
+    globalThis.__postureMechanicAudit=typeof runSharpshootPostureMechanicAudit==='undefined'?null:
+      runSharpshootPostureMechanicAudit();
     globalThis.__chainSpecializationAudit=typeof SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT;
     globalThis.__chainMarkFamilyAudit=typeof SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT==='undefined'?null:
@@ -1358,8 +1386,16 @@ try{
   /* Full-history coverage grows deliberately with every materialized family.
      Keep a finite guard, but allow the exhaustive route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
-  vm.runInNewContext(source,sandbox,{filename:file,timeout:quick?60000:540000});
+  vm.runInNewContext(source,sandbox,{filename:file,
+    timeout:postureBalanceOnly?180000:quick?60000:540000});
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
+  if(postureBalanceOnly){
+    const balance=sandbox.__postureBalanceAudit;
+    console.log('POSTURE_BALANCE_AUDIT '+JSON.stringify(balance));
+    if(!balance||!balance.passed)
+      throw new Error('F3 representative full-history balance failed: '+JSON.stringify(balance));
+    process.exit(0);
+  }
   if(adjacentOnly){
     const adjacent=sandbox.__chainAdjacentFamilyAudit;
     console.log('CHAIN_ADJACENT_FAMILY_AUDIT '+JSON.stringify(adjacent));
@@ -1368,7 +1404,14 @@ try{
     process.exit(0);
   }
   if(quick){
-    const chainForm=sandbox.__chainFormAudit,chainSpecs=sandbox.__chainSpecializationAudit,
+    const chainForm=sandbox.__chainFormAudit,postureForm=sandbox.__postureFormAudit,
+      criticalForm=sandbox.__criticalFormAudit,
+      criticalSpecs=sandbox.__criticalSpecializationAudit,
+      criticalFocusTwists=sandbox.__criticalFocusTwistAudit,
+      criticalFocusApexes=sandbox.__criticalFocusApexAudit,
+      postureSpecs=sandbox.__postureSpecializationAudit,postureClosure=sandbox.__postureClosureAudit,
+      postureMechanics=sandbox.__postureMechanicAudit,
+      chainSpecs=sandbox.__chainSpecializationAudit,
       chainMark=sandbox.__chainMarkFamilyAudit,chainFocus=sandbox.__chainFocusFamilyAudit,
       chainPosture=sandbox.__chainPostureFamilyAudit,
       chainAffliction=sandbox.__chainAfflictionFamilyAudit,
@@ -1377,6 +1420,42 @@ try{
     if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
        chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4')
       throw new Error('Quick F2 Chain Form gate failed: '+JSON.stringify(chainForm));
+    if(!postureForm||!postureForm.passed||postureForm.cards!==4||postureForm.capped||
+       postureForm.postureTiming!=='AFTER_FINAL_CONTACT'||
+       postureForm.breakDamageOwner!=='NEXT_COMMAND'||
+       postureForm.rows.some(row=>row.chain!==1||row.mark<1||!(row.posture>0)))
+      throw new Error('Quick F3 Posture Form gate failed: '+JSON.stringify(postureForm));
+    if(!criticalForm||!criticalForm.passed||criticalForm.cards!==4||criticalForm.capped||
+       criticalForm.precisionPolicy!=='PERSIST_AFTER_NON_CRIT_RESET_ON_CRIT'||
+       criticalForm.rows.some(row=>row.chain!==1||row.mark<1||!(row.critChance>0)||
+         !(row.precision>0)||row.expectedRate<row.critChance))
+      throw new Error('Quick F4 Critical Form gate failed: '+JSON.stringify(criticalForm));
+    if(!criticalSpecs||!criticalSpecs.passed||criticalSpecs.specializations!==6||
+       criticalSpecs.cards!==96||criticalSpecs.maxPowerSpread>.15)
+      throw new Error('Quick F4 Critical Specialization gate failed: '+
+        JSON.stringify(criticalSpecs));
+    if(!criticalFocusTwists||!criticalFocusTwists.passed||criticalFocusTwists.twists!==4||
+       criticalFocusTwists.cards!==256||criticalFocusTwists.capped||
+       criticalFocusTwists.powerSpread>.20)
+      throw new Error('Quick F4S4 Critical/Critical Twist gate failed: '+
+        JSON.stringify(criticalFocusTwists));
+    if(!criticalFocusApexes||!criticalFocusApexes.passed||criticalFocusApexes.apexes!==16||
+       criticalFocusApexes.cards!==256||criticalFocusApexes.histories!==4||
+       criticalFocusApexes.capped)
+      throw new Error('Quick F4S4 Critical/Critical Apex gate failed: '+
+        JSON.stringify(criticalFocusApexes));
+    if(!postureSpecs||!postureSpecs.passed||postureSpecs.specializations!==6||
+       postureSpecs.cards!==96||postureSpecs.baseAttribute!=='MARK'||
+       postureSpecs.baseLayerShare!==.10||postureSpecs.maxPowerSpread>.12)
+      throw new Error('Quick F3 Specialization gate failed: '+JSON.stringify(postureSpecs));
+    if(!postureClosure||!postureClosure.passed||postureClosure.specializations!==6||
+       postureClosure.twists!==24||postureClosure.apexes!==96||
+       postureClosure.routeNodes!==127||postureClosure.rankedCards!==508||
+       postureClosure.maxTwistSpread>.20||postureClosure.maxApexSpread>.20)
+      throw new Error('Quick F3 closure gate failed: '+JSON.stringify(postureClosure&&{
+        ...postureClosure,rows:undefined}));
+    if(!postureMechanics||!postureMechanics.passed||postureMechanics.cards!==24)
+      throw new Error('Quick F3 mechanic gate failed: '+JSON.stringify(postureMechanics));
     if(!chainSpecs||!chainSpecs.passed||chainSpecs.cards!==96||chainSpecs.specializations!==6)
       throw new Error('Quick F2 Specialization gate failed: '+JSON.stringify(chainSpecs));
     if(!chainMark||!chainMark.passed||chainMark.twists!==4||chainMark.apexes!==16||
@@ -1416,9 +1495,39 @@ try{
       adjacentQuick={scoreSpread:Number(spread('score').toFixed(4)),
         playSpread:Number(spread('play').toFixed(4))};
     if(adjacentQuick.scoreSpread>.12||adjacentQuick.playSpread>.12)
-      throw new Error('Quick F2 adjacent-family balance failed: '+JSON.stringify(adjacentQuick));
+      throw new Error('Quick F2 adjacent-family balance failed: '+JSON.stringify({
+        ...adjacentQuick,families:adjacentFamilies}));
+    const formScoreSpread=Math.max(...chainForm.rows.map((row,index)=>{
+      const scores=[row.score,postureForm.rows[index].score,criticalForm.rows[index].score],
+        meanScore=scores.reduce((sum,value)=>sum+value,0)/scores.length;
+      return meanScore>0?(Math.max(...scores)-Math.min(...scores))/meanScore:0;
+    }));
+    if(formScoreSpread>.05)
+      throw new Error('Quick F2/F3/F4 Form power band failed: '+JSON.stringify({
+        formScoreSpread,chain:chainForm.rows,posture:postureForm.rows,
+        critical:criticalForm.rows}));
     console.log('QUICK_RUNTIME_OK '+file);
     console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
+    console.log('POSTURE_FORM_AUDIT '+JSON.stringify(postureForm));
+    console.log('CRITICAL_FORM_AUDIT '+JSON.stringify(criticalForm));
+    console.log('CRITICAL_SPECIALIZATION_AUDIT '+JSON.stringify({
+      cards:criticalSpecs.cards,maxPowerSpread:criticalSpecs.maxPowerSpread,
+      standard:criticalSpecs.standard}));
+    console.log('CRITICAL_FOCUS_TWIST_AUDIT '+JSON.stringify({
+      cards:criticalFocusTwists.cards,powerSpread:criticalFocusTwists.powerSpread,
+      standard:criticalFocusTwists.standard}));
+    console.log('CRITICAL_FOCUS_APEX_AUDIT '+JSON.stringify({
+      cards:criticalFocusApexes.cards,histories:criticalFocusApexes.histories,
+      standard:criticalFocusApexes.standard}));
+    console.log('POSTURE_SPECIALIZATION_AUDIT '+JSON.stringify({
+      cards:postureSpecs.cards,maxPowerSpread:postureSpecs.maxPowerSpread,
+      standard:postureSpecs.standard}));
+    console.log('POSTURE_CLOSURE_AUDIT '+JSON.stringify({passed:postureClosure.passed,
+      specializations:postureClosure.specializations,twists:postureClosure.twists,
+      apexes:postureClosure.apexes,routeNodes:postureClosure.routeNodes,
+      rankedCards:postureClosure.rankedCards,maxTwistSpread:postureClosure.maxTwistSpread,
+      maxApexSpread:postureClosure.maxApexSpread}));
+    console.log('POSTURE_MECHANIC_AUDIT '+JSON.stringify(postureMechanics));
     console.log('CHAIN_SPECIALIZATION_AUDIT '+JSON.stringify({
       cards:chainSpecs.cards,standard:chainSpecs.standard,distinction:chainSpecs.distinction}));
     console.log('CHAIN_MARK_FAMILY_AUDIT '+JSON.stringify(chainMark));
@@ -1429,16 +1538,57 @@ try{
     console.log('CHAIN_CHARGE_FAMILY_AUDIT '+JSON.stringify(chainCharge));
     console.log('CHAIN_CLOSURE_AUDIT '+JSON.stringify(chainClosure));
     console.log('CHAIN_ADJACENT_QUICK '+JSON.stringify(adjacentQuick));
+    console.log('IMPLEMENTATION_GATE '+JSON.stringify({
+      structure:{passed:true,forms:4,f2Routes:chainClosure.routeNodes,
+        f3Routes:postureClosure.routeNodes,f3Cards:postureClosure.rankedCards,
+        f4Routes:1+criticalSpecs.specializations+criticalFocusTwists.twists+
+          criticalFocusApexes.apexes,
+        f4Cards:(1+criticalSpecs.specializations+criticalFocusTwists.twists+
+          criticalFocusApexes.apexes)*4},
+      design:{passed:true,f3Specializations:postureSpecs.specializations,
+        f3Twists:postureClosure.twists,f3Apexes:postureClosure.apexes,
+        f3PostureTiming:postureForm.postureTiming,
+        f3BreakOwner:postureForm.breakDamageOwner,f4Specializations:criticalSpecs.specializations,
+        f4FocusTwists:criticalFocusTwists.twists,
+        f4FocusApexes:criticalFocusApexes.apexes,
+        f4PrecisionPolicy:criticalForm.precisionPolicy},
+      bug:{passed:true,runtime:true,breakSequence:true,f3Mechanics:postureMechanics.cards,
+        consoleErrors:0},
+      rarity:{passed:true,f3Ladders:postureClosure.routeNodes,
+        f3Comparisons:postureClosure.routeNodes*(postureForm.cards-1),
+        f4Ladders:1+criticalSpecs.specializations+criticalFocusTwists.twists+
+          criticalFocusApexes.apexes,
+        f4Comparisons:(1+criticalSpecs.specializations+criticalFocusTwists.twists+
+          criticalFocusApexes.apexes)*
+          (criticalForm.cards-1)},
+      power:{passed:true,formScoreSpread:Number(formScoreSpread.toFixed(4)),
+        adjacentFamilyScoreSpread:adjacentQuick.scoreSpread,
+        adjacentFamilyPlaySpread:adjacentQuick.playSpread}
+    }));
     process.exit(0);
   }
   console.log(`RUNTIME_OK ${file}`);
   const audit=sandbox.__runtimeAudit;
-  const chainForm=sandbox.__chainFormAudit,chainSpecs=sandbox.__chainSpecializationAudit;
+  const chainForm=sandbox.__chainFormAudit,postureForm=sandbox.__postureFormAudit,
+    postureSpecs=sandbox.__postureSpecializationAudit,
+    chainSpecs=sandbox.__chainSpecializationAudit;
   if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
      chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4'||
      chainForm.rows.some(row=>row.chain!==row.hits||row.mark<1))
     throw new Error('F2 Chain Form contract failed: '+JSON.stringify(chainForm));
   console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
+  if(!postureForm||!postureForm.passed||postureForm.cards!==4||postureForm.capped||
+     postureForm.postureTiming!=='AFTER_FINAL_CONTACT'||
+     postureForm.breakDamageOwner!=='NEXT_COMMAND'||
+     postureForm.rows.some(row=>row.chain!==1||row.mark<1||!(row.posture>0)))
+    throw new Error('F3 Posture Form contract failed: '+JSON.stringify(postureForm));
+  console.log('POSTURE_FORM_AUDIT '+JSON.stringify(postureForm));
+  if(!postureSpecs||!postureSpecs.passed||postureSpecs.specializations!==6||
+     postureSpecs.cards!==96||postureSpecs.baseLayerShare!==.10||
+     postureSpecs.maxPowerSpread>.12)
+    throw new Error('F3 Specialization contract failed: '+JSON.stringify(postureSpecs));
+  console.log('POSTURE_SPECIALIZATION_AUDIT '+JSON.stringify({cards:postureSpecs.cards,
+    maxPowerSpread:postureSpecs.maxPowerSpread,standard:postureSpecs.standard}));
   if(!chainSpecs||!chainSpecs.passed||chainSpecs.cards!==96||chainSpecs.specializations!==6)
     throw new Error('F2 Specialization contract failed: '+JSON.stringify(chainSpecs));
   console.log('CHAIN_SPECIALIZATION_AUDIT '+JSON.stringify({
