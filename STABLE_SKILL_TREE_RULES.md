@@ -23,8 +23,12 @@ Stable synthesis is an immutable fold:
 - At least 25% of the current receipt's `DIRECT_DAMAGE` allocation remains visible as new clean damage. Relationship costs may shape the rest, but cannot reach backward into parent damage.
 - Every Stable layer must improve both the four-scenario guardrail and the six-turn playthrough guardrail. Resource conversion is evaluated by the real scenario, including the opportunity cost of consumed Mark; inheritance may not add synthetic conversion damage to make the result pass.
 - Increasing the current card's rank may preserve a stat while another stat grows, but it may never reduce damage, Mark, contact count, Chain output, real Chain damage, Weight, Posture, Crit chance, Bleed, Charge rate, pulse count, Bloom, or Trail. At least one owned output must improve; the rounded six-turn score may remain equal but may never fall.
-- A Delivery transformation may redistribute hits, but the complete inherited damage remains. A minimum six damage per visible damaging contact protects combat readability.
-- Weight exists only when the current route explicitly owns `weightChannel`. Single-hit Mark/Mark and other non-owners always compile with Weight `1`.
+- A Delivery transformation may redistribute hits, but the complete inherited damage remains. Contact count never creates a free minimum-damage floor; uncapped Delivery divides only damage that was actually purchased.
+- If a Stable Twist collapses a multi-contact parent into one heavy contact, the lost parent Delivery value must be declared as `CONVERT_PARENT_DELIVERY_VALUE_TO_DIRECT`. It is transferred into the heavy impact, not deleted, granted again, or charged to the new Twist receipt.
+- `CONVERT_PARENT_WEIGHT_TO_CONTACTS` is the inverse authored reshape: a heavy Single parent may become real visible contacts. Only `DELIVERY_WEIGHT` may fall; damage, Primary output and combat payoff remain immutable.
+- `CONVERT_PARENT_CHAIN_TO_NON_CONTACT_PAYLOAD` allows an echo/packet reshape to replace repeated physical Chain events with one honest action-level Chain event. Only `NATURAL_CHAIN` may fall; the lost delivery budget must remain visible in the authored payload.
+- `CONVERT_PARENT_CONTACTS_TO_SINGLE_PAYLOAD` is used by an explicitly authored Single Twist that compresses a multi-contact parent into one Weight/read/delayed payload. Only contacts and their natural Chain events may fall; the parent combat value must survive in the Single relationship.
+- Single-contact Delivery may retain a Quality-scaled Weight handling/animation parameter. Only a combat multiplier such as `chainBonusWeight` requires an explicit `weightChannel`; a non-owner never receives that multiplier.
 - Weight and authored mechanic payments apply only to the current layer's direct-damage remainder. They never divide or spend the parent's realized damage.
 - Stable synthesis commands are cached by their complete deterministic route and rarity history. Callers receive copies, so validation is fast without sharing mutable combat state.
 
@@ -80,6 +84,12 @@ The same mechanic may appear in neighbouring Form palettes. For example, `Chain 
 - May move weight from Primary toward Secondary or the reverse.
 - Cannot introduce a third mechanic, swap the Secondary, or reset to Form.
 - Uses the Form contract's relationship focus axis.
+
+Twist variety is also governed by `TWIST_AUTHORING_CONTRACT_TR.md`. From F5 onward every
+materialized Twist must carry an executable Identity V1 card. Four siblings are authored and
+audited as one set. Their core fingerprints must differ; changing only numbers or Delivery is an
+automatic failure. Each family declares signature mechanic engines, a generic reader/converter
+budget, reversed-family comparisons and a maximum sibling-similarity band before content exists.
 - Is authored once as a rarity-neutral mechanical blueprint. Common, Uncommon,
   Rare, and Legendary are four power expressions of that same blueprint.
 - Rarity cannot change the Twist's Delivery pattern, relationship,
@@ -174,6 +184,37 @@ The Form Primary output or interaction must always remain present. Any channel t
   combinations, all seven rarity ladders, parent inheritance, sibling power spread, and
   the persistent Precision reset sequence.
 
+### F5 Affliction Primary Form and Specialization contract
+
+- F5 is the Stable Bleed engine: one `SINGLE` arrow, one natural Chain, Sharpshoot Base Mark,
+  `1 AP / 1 Resolve`, and a fixed two-tick Bleed packet. Its immediate damage intentionally
+  trails F1-F4 because the same paid Affliction packet resolves again across defense phases.
+- Bleed is synthesized as `Affliction Power / 2` per tick. Rarity raises paid damage, Mark or
+  Bleed; it never lengthens Stable Bleed, lets Bleed Crit, or lets Bleed inherit Chain scaling.
+- Its six equal-access Specializations are `Affliction/Mark`, `Affliction/Chain`,
+  `Affliction/Posture`, `Affliction/Critical`, `Affliction/Affliction`, and
+  `Affliction/Charge`. Every child preserves the entire Form receipt and divides only its own
+  new relationship packet.
+- `Affliction/Mark` buys a visible extra Mark from its own packet. `Affliction/Chain` is the
+  only Specialization that becomes a sequential delivery; every real contact creates Chain and
+  carries a positive share of one total Bleed packet. Contact count may borrow only the missing
+  threshold price from that layer's Affliction share. It does not multiply Bleed for free.
+- `Affliction/Posture` adds direct Posture, `Affliction/Critical` adds local Chance without
+  Precision or Critting Bleed, `Affliction/Affliction` owns the largest Bleed packet, and
+  `Affliction/Charge` releases one defense-phase bank without delaying the inherited move.
+- Runtime acceptance covers all `4 × 4 × 6 = 96` Form/Spec rarity histories, parent and rarity
+  monotonicity, all six visible identities, fixed duration, and a `13%` sibling power band.
+- F5 closure is materialized as `24 Twist + 96 Apex`; together with Form and six Specializations it
+  is `127 route nodes / 508 ranked cards`. Every Twist has one paid relationship axis and every Apex
+  preserves that relationship while emphasizing signature, wound payload, balance, or clean impact.
+- Pure `Affliction/Affliction` may own explicit uncapped Bleed Power, but only its Virulence Twist
+  spends the relationship packet as flat wound potency. Reopen, Backload, and Layered Wounds spend
+  the same packet on retrigger, tick shape, or real application events; flat potency cannot silently
+  leak into every pure-Affliction sibling.
+- F5 runtime stores aggregate two-tick buckets rather than per-card/per-wound objects. The amount of
+  authored content therefore does not add per-frame work. Sequential contacts still pay for every
+  natural Chain and divide one total wound packet instead of multiplying it.
+
 ### F4S4 Critical/Critical Twist contract
 
 - T1 is an ordered independent-roll volley. A failed arrow raises Precision for the next
@@ -191,6 +232,25 @@ The Form Primary output or interaction must always remain present. Any channel t
 - Every Twist preserves parent damage, Mark, Chance, Precision, long-run Crit rate and
   multiplier. Rarity may never regress those outputs. The full `4 × 4 × 4 × 4 = 256`
   Twist matrix and runtime roll semantics are part of the quick gate.
+
+### F4S1-F4S3 Critical foundation Twist/Apex contract
+
+- F4S1 Critical/Mark dört ayrı ilişki taşır: başlangıç Markını tüketmeden Crit şansına okuyan
+  Aim; gerçek Critten ücretli Mark üreten Bounty; bağımsız Critli sıralı oklar sonrası tek toplam
+  Mark bırakan Tracking; tek ortak Crit sonucu ve pelletlere bölünmüş tek Mark paketi kullanan Packet.
+- F4S2 Critical/Chain dört ayrı ilişki taşır: canlı Chain ve Precision kuran Crescendo;
+  başlangıç Chainini Crit çarpanına okuyan Weight; Critten ücretli canlı Chain üreten Feedback;
+  başlangıç Chainini Crit ihtimaline okuyan Lock. Hiçbiri Chain tüketmez.
+- F4S3 Critical/Posture light-bow Posture sınırında kalır: Verdict tek Crit sonucuyla Health ve
+  Posture'u birlikte çarpar; Volley Posture'u bağımsız Crit temaslarına böler; Fracture gerçek
+  Critten hasarsız/Chainsiz Posture echo üretir; Packet tek ortak Crit sonucu kullanır.
+- Sequential gerçek temas başına bir Chain, simultaneous packet toplam bir Chain üretir. Delivery
+  sayısı kümülatif Quality ile büyür; authored gameplay cap veya diminishing uygulanmaz.
+- Her Twist tam dört Apex taşır. A1 ilişki imzasını, A2 Crit güvenilirliğini, A3 Secondary çıktıyı,
+  A4 temiz impactı büyütür; Apex parent delivery, roll, Precision ve Chain gerçeğini değiştiremez.
+- Tam F4 kapısı `1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route / 508 rarity card`
+  sayımını, her rank merdivenini, parent mirasını, on iki foundation Twist kimliğini ve aile güç
+  bantlarını denetler.
 
 ### F4S4 Critical/Critical Apex contract
 
@@ -230,8 +290,15 @@ The Form Primary output or interaction must always remain present. Any channel t
 
 ## Charge output contract
 
-- Charge Primary commits the move across a defense phase and later Releases for zero AP
-  and zero additional Resolve. Charge Secondary never delays its inherited move.
+- Charge Primary pays its normal AP/Resolve immediately, deals no damage and ends the current
+  Knight activation. During the following defense phase every Perfect Dodge adds `1` and every
+  Parry adds `2`; all successes in that phase stack, taking a hit does not erase them and no
+  gameplay cap is authored.
+- The next player phase exposes the same move as a zero-AP, zero-Resolve Release. The player may
+  use other commands first, but Finish Turn must auto-Release it before opening a new enemy phase,
+  so a prepared shot can never be carried indefinitely. A zero-success defense still releases
+  the base attack. If defense entered Break, the Release receives the normal direct `×1.5` bonus.
+- Charge Secondary never delays its inherited move.
 - Charge Secondary starts a defense phase at `0`: Perfect Dodge gives `1`, Parry gives `2`,
   and Break itself gives no Charge. Ending a defense phase stores the better of that phase and
   the existing bank. Separate phases therefore do not add together, but a weak phase cannot erase
@@ -947,6 +1014,15 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
 ## Görünen temas sonuç üretir — hard runtime kuralı
 
 - Ayrı görünen her projectile, kılıç teması, pellet veya echo gerçek bir sonuç taşır. Görselde üç ok vurup Bleed/Posture'un yalnız son oktan gelmesi yasaktır.
+- `IMPACT_ECHO` yalnız başına temas sayısını söylemez. Materialized her Twist açıkça
+  `REAL_CONTACT_ECHOES` ya da `ONE_REAL_CONTACT_WITH_NON_CONTACT_PAYLOAD` sözleşmesi taşır.
+  Birincide her echo fiziksel hit olarak görünür ve sonuç üretir. İkincide yalnız ilk temas fiziksel
+  hit/Chain üretir; gecikmiş olay ikinci projectile veya temas gibi çizilmez ve mutlaka sıfırdan büyük,
+  denetlenebilir bir payload taşır.
+- `SEQUENTIAL`, `SIMULTANEOUS_PACKET` ve fiziksel `IMPACT_ECHO` düşük toplam Qualityde
+  bir temasla başlayabilir; sırf pattern adı yüzünden sahte ikinci temas eklenmez. Ancak bütün rarity
+  geçmişi boyunca delivery büyümeli ve yüksek Qualityde authored çoklu-temas kimliğini gerçekten
+  göstermelidir. Her rankta Chain, o rankın gerçek temas sözleşmesiyle eşleşir.
 - Tek bir toplam Posture ya da iki-tick Bleed paketi çoklu delivery ile taşınıyorsa paket temaslara bölünür. Temas sayısı toplam payloadu çoğaltmaz; hiçbir temas sıfır payla yalnız dekor olarak kalmaz.
 - “Her temas katkı verir” ile “her temas yeni status olayı tetikler” aynı şey değildir. Varsayılan status sözleşmesi aksiyon başına tek mantıksal uygulamadır; artifact proc sayısı ancak ayrıca tasarlanıp Quality bütçesinden ödenirse artar.
 - Simultaneous packet action-start kaynaklarını snapshotlar. Aynı packetın ürettiği Chain, packet içindeki kardeş pelletleri geriye dönük güçlendiremez.
@@ -1055,3 +1131,65 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
 - Ağır, volley, packet, echo, affliction ve charge hareketleri mekanikle eşleşen Bow recipe kullanır. Tam 508 kartlık closure ve 24 imza mekaniği yalnız geliştirme validatorında çalışır; oyun boot maliyetine eklenmez.
 - `--posture-balance` ayrı geliştirme kapısıdır: 18 temsili full-history örneğinde 108 Twist kardeş, 432 Apex kardeş, 24 Apex rol grubu ve altı komşu aileyi denetler. Twist/Apex maksimum spread `%20`, ortalama `%10`; komşu aile maksimum spread `%20`, ortalama `%12`yi aşamaz.
 - Bir Quality ekseni gerçek temasa dönüşüyorsa temasın ürettiği Chain bir kez fiyatlanır; temasa dönüşmeyen event rezervi ayrıca korunur. Crit ihtimali zaten beklenti hesabında uygulandığı için Crit→Posture echo tekrar aktiflik oranına bölünmez. Posture'a çevrilen Charge yollarında `DEFENSE_TEMPER` bütçesi kaybolmaz, aynı Charge→Posture çıktısına katılır.
+
+## F4S5 Critical/Affliction Twist sözleşmesi
+
+- Critical Primary kalır: her rota move-local Crit ihtimali ve kalıcı Precision taşır. Affliction, iki savunma ticki süren daha küçük Secondary Bleed paketidir.
+- T1 sıralı volleydir. Her ok bağımsız Crit atar, non-Crit Precision sonraki gerçek oka yetişir; tek toplam Bleed paketi oklara bölünür ve her ok bir doğal Chain üretir.
+- T2 tek ağır rupture okudur. Base Bleed her durumda uygulanır; yalnız doğrudan ok Crit atarsa ücretli ek Bleed açılır. Bleed tickleri Crit atmaz.
+- T3 Bloodsight tek ağır okudur. Action başındaki mevcut Bleed tüketilmeden bir kez okunur ve yalnız okun Crit çarpanını büyütür. Yeni Bleed vuruştan sonra uygulandığı için aynı saldırıyı besleyemez.
+- T4 eşzamanlı dikenli pakettir. Bütün pelletler tek Crit sonucu ve tek Precision update paylaşır; toplam Bleed pelletlere bölünür ve paket toplam bir Chain üretir.
+- Bleed, Crit ödülü ve Bleed→Crit okuma katsayısı authored gameplay cap taşımaz. Crit ihtimalinin doğal `%100` sınırı dışında sentetik limit veya diminishing uygulanmaz.
+- Dört rota parent damage, Base Mark, Crit/Precision ve Bleed değerlerini geriletemez; Chain scaling satın alamaz. Bütün `256` Form × Spec × Twist rarity kombinasyonu ve Common kardeş `%20` güç bandı otomatik denetlenir.
+- Her Twist dört Apex taşır: A1 parent ilişkisinin, A2 Crit güvenilirliğinin, A3 toplam Bleed paketinin, A4 temiz direct impactın lideridir. Apex parent Crit roll modelini, wound sırasını, delivery ailesini ve doğal Chain kuralını değiştiremez.
+- Apex denetimi `CCC/LCC/LLC/LLL` geçmişleri × dört Apex rarity × on altı route ile `256` kart çalıştırır; parent/rank gerilemesi ve `%20` kardeş güç bandı zorunludur.
+
+## F4S6 Critical/Charge Twist ve Apex sözleşmesi
+
+- Critical Primary ve Sharpshoot Base Mark bütün rotalarda korunur. Charge yalnız son savunma
+  fazının en iyi bankasını taşır; Perfect Dodge `+1`, Parry `+2`, Break `+0` verir.
+- T1 bütün bankayı tek ağır okun tabanına Crit kontrolünden önce ekler. İmza Apexi yalnız Charge
+  kaynaklı parçanın başarılı Crit karşılığını büyütür. T2 aynı tek ödemeyi bağımsız Crit atan sıralı
+  oklar arasında böler; her gerçek ok bir Chain üretir fakat banka temas başına kopyalanmaz.
+- T3 action-start Chargeı tüketmeden önce bir kez okur: önce move-local Crit ihtimalini, `%100` doğal
+  tavandan sonraki gücü move-local Crit çarpanını büyütür. Global Crit üretmez.
+- T4 ilk oku her zaman atar; ek ok hazırlığı başlangıç Charge miktarını aşamaz. Iskalar Precision
+  büyütür, ilk Crit actionı bitirir. Crit iadesi yalnız harcanmış bankanın ücretli oranıdır ve
+  harcanandan fazla Charge üretemez.
+- Dört Twist ve on altı Apex vardır. A1 parent ilişkisinin, A2 Crit güvenilirliğinin, A3 Charge
+  karşılığının, A4 temiz impactın lideridir. Parent damage, Mark, Crit/Precision ve Charge çıktısı
+  gerilemez; gameplay scalingine authored üst sınır eklenmez.
+- Oyun bootunda yalnız `4/16` closure sayımı yapılır. Rarity, parent, rol, güç ve runtime matrisi
+  `runSharpshootCriticalChargeFamilyAudit()` üzerinden geliştirme validatorında çalışır.
+
+## F6 Charge Primary Specialization, Twist ve Apex sözleşmesi
+
+- F6'nın değişmez fiili `öde → saldırmadan savun → sonraki oyuncu fazında ücretsiz Release`tir.
+  Specialization ve Twist bu sırayı değiştiremez. Perfect Dodge `+1`, Parry `+2` Charge verir;
+  darbe kazanılmış Chargeı silmez, Break Charge üretmez ve authored gameplay cap yoktur.
+- Altı Secondary `Mark / Chain / Posture / Critical / Affliction / Charge`dır. Her Specialization
+  kendi tam saldırısıdır; Base Markı ve görünür her ok için bir gerçek Chain'i korur.
+- Charge/Chain dört ayrı rol taşır: canlı Chain üreten volley, başlangıç Chainini tüketmeden okuyan
+  ağır Release, Chargeı sonraki saldırılar için Chaine çeviren ağır Release ve başlangıç Chaininin
+  yarısını açıkça harcayan burst. Bu dört rol birbirinin sayı varyasyonu olamaz.
+- Saf Charge rotası bedava ikinci bütçe almaz. Ücretli `Charge Power` aynı-attribute ustalığıdır:
+  güvenilir Release, sonraki oyuncu fazında gerçek artçı ok, kesintisiz savunma serisi ve Releasei
+  aynı elde sona bırakma sırası olarak dört farklı karar üretir.
+- Artçı ok bir sonraki player hand'de gerçek temas ve tam bir Chain üretir; Markı kopyalamaz.
+  Savunmada darbe streak büyümesini keser fakat kazanılmış Chargeı geri almaz. Last Commandın doğal
+  sınırı o eldeki AP sayısıdır; mekanik için authored stack tavanı eklenmez.
+- Posture measured yalnız Break için gereken Chargeı harcar ve fazlayı bankaya geri bırakır. Chain
+  spender action-start Chainin yarısını tüketir. Her ikisi de harcadığı kaynak kadar fiyatlanır;
+  aynı kaynak hem korunmuş hem tüketilmiş gibi iki kez sayılamaz.
+- Charge/Posture fracture echo `IMPACT_ECHO` ritmini kullanır fakat yalnız bir fiziksel ok teması
+  vardır. İkinci olay hasarsız, non-contact Posture dalgasıdır; bu yüzden ikinci Health hit veya
+  doğal Chain üretmez. Delivery denetimi fiziksel echo ile payload echo ayrımını açıkça korur.
+- Her Twist dört Apex taşır. A1 parentın özel Charge ilişkisini, A2 temel Charge Releasei, A3
+  Secondary ifadeyi ve A4 temiz direct impactı büyütür. Saf Charge rotasında A3 yeni kaynak açmaz;
+  ilişki ile Release arasındaki ücretli dengeyi büyütür. Apex parent delivery ailesini, gecikme
+  sırasını, resource tüketimini ve `chargeReleaseBehavior` kimliğini değiştiremez.
+- F6 sayımı `1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route / 508 rarity card`dır.
+  `SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT` bütün Spec/Twist rarity merdivenlerine ek olarak
+  `96 Apex × 4 rarity = 384` Apex kartını; parent/Base Mark sürekliliğini, görünür temas–Chain
+  doğruluğunu, rol liderlerini ve `%25` kardeş güç bandını denetler.
+  Bütün sentez hesabı kart oluşturulurken yapılır; frame loop authored kart sayısını taramaz.

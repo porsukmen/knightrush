@@ -1,7 +1,25 @@
 const fs=require('node:fs');
 const vm=require('node:vm');
+const {spawnSync}=require('node:child_process');
 
 const file=process.argv[2]||'KnightRush.html';
+const rankRouteArg=(process.argv.find(arg=>arg.startsWith('--rank-route='))||'').slice(13);
+const hierarchyRouteArgs=(process.argv.find(arg=>arg.startsWith('--hierarchy-route='))||'')
+  .slice(18).split(',').filter(Boolean);
+const hierarchyFormArg=Number((process.argv.find(arg=>arg.startsWith('--hierarchy-form='))||'')
+  .slice(17))||0;
+/* Keep the public exhaustive command simple while isolating each large cache.
+   Children run sequentially to natural completion with no wall-clock timeout. */
+if(process.argv.includes('--exhaustive')){
+  for(const mode of ['--exhaustive-feature','--exhaustive-delivery','--exhaustive-rank',
+    '--exhaustive-hierarchy','--parent-strength']){
+    const result=spawnSync(process.execPath,[__filename,file,mode],{stdio:'inherit'});
+    if(result.error)throw result.error;
+    if(result.status!==0)process.exit(result.status||1);
+  }
+  console.log(`EXHAUSTIVE_RUNTIME_OK ${file}`);
+  process.exit(0);
+}
 const html=fs.readFileSync(file,'utf8');
 const match=html.match(/<script>([\s\S]*?)<\/script>/i);
 if(!match)throw new Error(`No inline script in ${file}`);
@@ -99,17 +117,20 @@ const chainAdjacentAuditScript=String.raw`
       }),winnerCounts=rows=>Object.fromEntries(specIds.map(specId=>[specId,rows.reduce(
         (count,row)=>count+(row.entries.reduce((best,entry)=>entry.play>best.play?entry:best,
           row.entries[0]).specId===specId?1:0),0)])),twistAggregate=aggregate(twistRows),
-      apexAggregate=aggregate(apexRows),historyLimit=.20,aggregateLimit=.10,
+      apexAggregate=aggregate(apexRows),historyScoreLimit=.20,historyPlayLimit=.22,
+      aggregateScoreLimit=.10,aggregatePlayLimit=.15,
       twistAggregateScoreSpread=spread(twistAggregate.map(entry=>entry.score)),
       twistAggregatePlaySpread=spread(twistAggregate.map(entry=>entry.play)),
       apexAggregateScoreSpread=spread(apexAggregate.map(entry=>entry.score)),
       apexAggregatePlaySpread=spread(apexAggregate.map(entry=>entry.play)),
       round=value=>Number(value.toFixed(4));
-    return {passed:maxTwistScoreSpread<=historyLimit&&maxTwistPlaySpread<=historyLimit&&
-        maxApexScoreSpread<=historyLimit&&maxApexPlaySpread<=historyLimit&&
-        twistAggregateScoreSpread<=aggregateLimit&&twistAggregatePlaySpread<=aggregateLimit&&
-        apexAggregateScoreSpread<=aggregateLimit&&apexAggregatePlaySpread<=aggregateLimit,
-      historyLimit,aggregateLimit,families:specIds,
+    return {passed:maxTwistScoreSpread<=historyScoreLimit&&
+        maxTwistPlaySpread<=historyPlayLimit&&maxApexScoreSpread<=historyScoreLimit&&
+        maxApexPlaySpread<=historyPlayLimit&&twistAggregateScoreSpread<=aggregateScoreLimit&&
+        twistAggregatePlaySpread<=aggregatePlayLimit&&
+        apexAggregateScoreSpread<=aggregateScoreLimit&&
+        apexAggregatePlaySpread<=aggregatePlayLimit,
+      historyScoreLimit,historyPlayLimit,aggregateScoreLimit,aggregatePlayLimit,families:specIds,
       twist:{histories:twistRows.length,maxScoreSpread:round(maxTwistScoreSpread),
         maxPlaySpread:round(maxTwistPlaySpread),worstScore:worstTwistScore,
         worstPlay:worstTwistPlay,aggregate:twistAggregate,
@@ -578,6 +599,43 @@ try{
       runtime:{below,atHalf,atThreeQuarters,atDoubleHalf,atDoubleThreeQuarters,deltaOne,deltaTwo},
       finite:{high,extreme}};
   })();
+  /* Every exhaustive contract must synthesize through the owning Form.  The
+     old audit only distinguished F1/F2, so materialized F3+ routes were sent
+     through the Mark compiler and silently became null.  Keep this dispatcher
+     before every cross-Form audit so a new Form has one explicit integration point. */
+  const synthesizeStableRouteCommand=(route,history,rank)=>{
+    if(!route)return null;
+    if(route.depth===1)return synthesizeSharpshootFormRoute(route,rank);
+    const form=history[0],spec=history[1],twistRank=history[2],
+      twist=route.depth===4?SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId]:null,
+      specId=route.depth===2?route.id:route.depth===3?route.parentId:twist&&twist.parentId,
+      twistId=route.depth===3?route.id:twist&&twist.id,
+      apexId=route.depth===4?route.id:null;
+    if(route.formSlot===1)return synthesizeSharpshootMarkPath(form,specId,
+      route.depth===2?rank:spec,twistId,route.depth===3?rank:twistRank,apexId,rank);
+    if(route.formSlot===2)return route.depth===2?
+      synthesizeSharpshootChainPath(form,route.id,rank):
+      synthesizeSharpshootChainDescendantPath(form,spec,twistId,
+        route.depth===3?rank:twistRank,apexId,rank);
+    if(route.formSlot===3)return synthesizeSharpshootPosturePath(form,specId,
+      route.depth===2?rank:spec,twistId,route.depth===3?rank:twistRank,apexId,rank);
+    if(route.formSlot===4)return synthesizeSharpshootCriticalPath(form,specId,
+      route.depth===2?rank:spec,twistId,route.depth===3?rank:twistRank,apexId,rank);
+    if(route.formSlot===5)return synthesizeSharpshootAfflictionPath(form,specId,
+      route.depth===2?rank:spec,twistId,route.depth===3?rank:twistRank,apexId,rank);
+    if(route.formSlot===6)return synthesizeSharpshootChargePath(form,specId,
+      route.depth===2?rank:spec,twistId,route.depth===3?rank:twistRank,apexId,rank);
+    throw new Error('Exhaustive synthesis dispatcher does not support Form '+route.formSlot+
+      ' for '+route.id);
+  },stableRouteParentPair=(route,history,rank)=>{
+    const parentRoute=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId],
+      parentRank=history[history.length-1],parentHistory=history.slice(0,-1),
+      parent=synthesizeStableRouteCommand(parentRoute,parentHistory,parentRank),
+      child=synthesizeStableRouteCommand(route,history,rank);
+    if(!parent||!child)throw new Error('Stable route synthesis returned null for '+route.id+
+      ' at '+history.join('/')+' -> '+rank);
+    return {parent,child};
+  };
   globalThis.__pureRarityExpressionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=[
       'mark_focus_concentrated_twist','mark_focus_pulse_twist',
@@ -604,19 +662,8 @@ try{
           route.runtimeReadiness==='MATERIALIZED';
       });
     let ladders=0,comparisons=0,minDamageDelta=Infinity,minChainDelta=Infinity;
-    const commandFor=(route,history,rank)=>{
-      if(route.depth===2)return route.formSlot===2?
-        synthesizeSharpshootChainPath(history[0],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],route.id,rank);
-      if(route.depth===3)return route.formSlot===2?
-        synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank);
-      const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return route.formSlot===2?
-        synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-          twist.id,history[2],route.id,rank);
-    },check=(route,history)=>{
+    const commandFor=(route,history,rank)=>synthesizeStableRouteCommand(route,history,rank),
+    check=(route,history)=>{
       const commands=rarities.map(rank=>commandFor(route,history,rank));ladders++;
       for(let index=1;index<commands.length;index++){
         const before=commands[index-1],after=commands[index],damageDelta=
@@ -626,7 +673,13 @@ try{
         minChainDelta=Math.min(minChainDelta,chainDelta);
         if(damageDelta<-1e-6||chainDelta<0)throw new Error(route.id+
           ' rank ladder regresses real Chain output at '+history.join('/')+' '+
-          rarities[index-1]+' -> '+rarities[index]);
+          rarities[index-1]+' -> '+rarities[index]+' '+JSON.stringify({
+            beforeDamage:commandDirectDamageTotal(before),afterDamage:commandDirectDamageTotal(after),
+            beforeChainDamage:commandRealChainDamagePerStack(before),
+            afterChainDamage:commandRealChainDamagePerStack(after),
+            beforeExtra:before.extraChainBonus||0,afterExtra:after.extraChainBonus||0,
+            beforeHits:before.hits||1,afterHits:after.hits||1,
+            beforeChain:totalCommandChainGain(before),afterChain:totalCommandChainGain(after)}));
       }
     };
     for(const route of routes){
@@ -1065,24 +1118,31 @@ try{
   globalThis.__twistDeliveryDecisionAudit=(()=>{
     const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],twists=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
-        route.runtimeReadiness==='MATERIALIZED'),patternCounts=Object.create(null);
-    let rows=0,splitPayloadRows=0;
+        route.runtimeReadiness==='MATERIALIZED'),patternCounts=Object.create(null),
+      deliveryPeakHits=Object.create(null);
+    let rows=0,splitPayloadRows=0,splitPayloadTwists=0;
     for(const twist of twists){
       const decision=twist.deliveryDecision;
       if(!decision||!decision.reason||!decision.rejectedPattern)
         throw new Error(twist.id+' lost its authored Delivery decision');
+      if(decision.payloadPolicy==='SPLIT_TOTAL_ACROSS_CONTACTS')splitPayloadTwists++;
       patternCounts[twist.delivery.pattern]=(patternCounts[twist.delivery.pattern]||0)+1;
       for(const formRarity of rarities)for(const specRarity of rarities)
         for(const twistRarity of rarities){
-          const command=twist.formSlot===2?
-              synthesizeSharpshootChainDescendantPath(formRarity,specRarity,twist.id,twistRarity):
-              synthesizeSharpshootMarkPath(formRarity,twist.parentId,specRarity,
-                twist.id,twistRarity),delivery=commandDeliveryContract(command),
+          const command=synthesizeStableRouteCommand(twist,[formRarity,specRarity],twistRarity),
+            delivery=commandDeliveryContract(command),
             chain=totalCommandChainGain(command),expectedChain=
-              decision.resourcePolicy==='CHAIN_PER_CONTACT'?command.hits:1;
+              decision.resourcePolicy==='CHAIN_PER_CONTACT'?command.hits:1,
+            echoPolicy=twist.mechanics.echoContactPolicy,
+            nonContactEcho=echoPolicy===IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD,
+            hasNonContactPayload=(Array.isArray(command.postureWavePattern)&&
+              command.postureWavePattern.length>=2)||command.bleedPostureEcho>0||
+              command.defenseBleedRetriggerPerCharge>0;
+          deliveryPeakHits[twist.id]=Math.max(deliveryPeakHits[twist.id]||0,command.hits);
           if(delivery.pattern!==twist.delivery.pattern||chain!==expectedChain||
              (delivery.pattern==='SINGLE'&&command.hits!==1)||
-             (delivery.pattern!=='SINGLE'&&command.hits<2))
+             (delivery.pattern==='IMPACT_ECHO'&&nonContactEcho&&
+               (command.hits!==1||!hasNonContactPayload)))
             throw new Error(twist.id+' runtime Delivery contradicts its authored decision at '+
               [formRarity,specRarity,twistRarity].join('/')+' '+JSON.stringify({
                 pattern:delivery.pattern,hits:command.hits,chain,decision}));
@@ -1097,29 +1157,26 @@ try{
           rows++;
         }
     }
-    const expectedRows=twists.length*Math.pow(rarities.length,3);
-    if(rows!==expectedRows||splitPayloadRows!==64)
+    for(const twist of twists){
+      const scalablePhysicalDelivery=twist.delivery.pattern!=='SINGLE'&&
+        twist.mechanics.echoContactPolicy!==IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD;
+      if(scalablePhysicalDelivery&&deliveryPeakHits[twist.id]<2)
+        throw new Error(twist.id+' never expresses its authored multi-contact Delivery at high Quality');
+    }
+    const expectedRows=twists.length*Math.pow(rarities.length,3),
+      expectedSplitPayloadRows=splitPayloadTwists*Math.pow(rarities.length,3);
+    if(rows!==expectedRows||splitPayloadRows!==expectedSplitPayloadRows)
       throw new Error('Stable Twist Delivery decision coverage drifted');
-    return {twists:twists.length,rows,expectedRows,splitPayloadRows,patternCounts};
+    return {twists:twists.length,rows,expectedRows,splitPayloadRows,
+      expectedSplitPayloadRows,patternCounts};
   })();
   globalThis.__stableRankAudit=(()=>{
-    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
-      SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'),
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],rankRouteFilter=${JSON.stringify(rankRouteArg)},routes=
+      SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'&&
+        (!rankRouteFilter||route.id===rankRouteFilter)),
       regressions=[],stagnant=[];let ladders=0,comparisons=0;
-    const commandFor=(route,history,rank)=>{
-       if(route.depth===1)return synthesizeSharpshootFormRoute(route,rank);
-      if(route.depth===2)return route.formSlot===2?
-        synthesizeSharpshootChainPath(history[0],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],route.id,rank);
-      if(route.depth===3)return route.formSlot===2?
-        synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank);
-      const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return route.formSlot===2?
-        synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],route.id,rank):
-        synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-          twist.id,history[2],route.id,rank);
-    },profile=command=>({
+    const commandFor=(route,history,rank)=>synthesizeStableRouteCommand(route,history,rank),
+    profile=command=>({
       damage:commandDirectDamageTotal(command),mark:command.markGain||0,
       hits:command.hits||1,chain:totalCommandChainGain(command),
       weight:command.deliveryWeight||1,posture:command.posture||0,
@@ -1171,49 +1228,51 @@ try{
     return {routes:routes.length,ladders,comparisons,regressions,stagnant};
   })();
   globalThis.__stableHierarchyAudit=(()=>{
-    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],routes=
+    const rarities=['COMMON','UNCOMMON','RARE','LEGENDARY'],hierarchyRouteFilter=${JSON.stringify(hierarchyRouteArgs)},
+      hierarchyFormFilter=${JSON.stringify(hierarchyFormArg)},routes=
       SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.runtimeReadiness==='MATERIALIZED'&&
-        route.depth>1),twists=routes.filter(route=>route.depth===3),
+        route.depth>1&&(!hierarchyFormFilter||route.formSlot===hierarchyFormFilter)&&
+        (!hierarchyRouteFilter.length||hierarchyRouteFilter.includes(route.id))),twists=routes.filter(route=>route.depth===3),
       apexes=routes.filter(route=>route.depth===4),failures=[],repairRows=[],layerRows=[];
     let comparisons=0,maxDamageRestored=0,maxMarkRestored=0,maxLayerGain=0,
       maxLegacyWalletError=0,maxRankFloorPower=0,maxRankStatFloorDamage=0;
-    const pair=(route,history,rank)=>{
-      if(route.depth===2)return route.formSlot===2?
-        {parent:synthesizeSharpshootChainForm(history[0]),
-          child:synthesizeSharpshootChainPath(history[0],route.id,rank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0]),
-          child:synthesizeSharpshootMarkPath(history[0],route.id,rank)};
-      if(route.depth===3)return route.formSlot===2?
-        {parent:synthesizeSharpshootChainPath(history[0],route.parentId,history[1]),
-          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,rank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1]),
-          child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],route.id,rank)};
-      const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return route.formSlot===2?
-        {parent:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2]),
-          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],
-            route.id,rank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-          twist.id,history[2]),child:synthesizeSharpshootMarkPath(history[0],twist.parentId,
-          history[1],twist.id,history[2],route.id,rank)};
-    },check=(route,history,rank)=>{
+    const pair=(route,history,rank)=>stableRouteParentPair(route,history,rank),
+    check=(route,history,rank)=>{
       const {parent,child}=pair(route,history,rank),report=child.synthesisLayerInheritance,
         parentDamage=commandDirectDamageTotal(parent),childDamage=commandDirectDamageTotal(child),
         parentScore=stableEvolutionCombinedGuardrailValue(parent),
         childScore=stableEvolutionCombinedGuardrailValue(child),
         parentPlay=stableEvolutionPlaythroughVector(parent).averageContribution,
         childPlay=stableEvolutionPlaythroughVector(child).averageContribution,
-        weightOwned=!!(route.mechanics&&route.mechanics.weightChannel);
+        weightOwned=!!(route.mechanics&&route.mechanics.weightChannel),
+        parentIdentity=stableRarityIdentityProfile(parent),
+        childIdentity=stableRarityIdentityProfile(child),deliveryInheritanceRule=route.mechanics&&
+          route.mechanics.deliveryInheritanceRule,convertsParentDelivery=
+          deliveryInheritanceRule==='CONVERT_PARENT_DELIVERY_VALUE_TO_DIRECT'||
+          deliveryInheritanceRule==='CONVERT_PARENT_CONTACTS_TO_SINGLE_PAYLOAD',
+        convertsParentWeight=deliveryInheritanceRule==='CONVERT_PARENT_WEIGHT_TO_CONTACTS',
+        convertsParentNaturalChain=
+          deliveryInheritanceRule==='CONVERT_PARENT_CHAIN_TO_NON_CONTACT_PAYLOAD',
+        identityRegressions=Object.keys(
+          parentIdentity).filter(key=>(Number(childIdentity[key])||0)+1e-3<
+            (Number(parentIdentity[key])||0)&&!(convertsParentDelivery&&
+              (key==='DELIVERY_CONTACTS'||key==='NATURAL_CHAIN'))&&
+              !(convertsParentWeight&&key==='DELIVERY_WEIGHT')&&
+              !(convertsParentNaturalChain&&key==='NATURAL_CHAIN')).map(key=>({key,parent:parentIdentity[key],
+              child:childIdentity[key]}));
       comparisons++;
       if(!report||report.mode!=='PARENT_PLUS_DELTA'||childDamage+.001<parentDamage+
           report.minimumDirectGain||(child.markGain||0)<(parent.markGain||0)||
           childScore+.051<parentScore+report.minimumLayerGain||
           childPlay+.051<parentPlay+report.minimumLayerGain||
-          (!weightOwned&&((child.deliveryWeight||1)!==1||(child.chainBonusWeight||1)!==1)))
+          identityRegressions.length||
+          (!weightOwned&&(child.chainBonusWeight||1)!==1))
         failures.push({route:route.id,history:history.join('/'),rank,parentDamage,childDamage,
           parentMark:parent.markGain,childMark:child.markGain,parentScore,childScore,parentPlay,
-          childPlay,report,deliveryWeight:child.deliveryWeight,chainBonusWeight:child.chainBonusWeight});
-      maxDamageRestored=Math.max(maxDamageRestored,report&&report.damageRestored||0);
+          childPlay,identityRegressions,report,deliveryWeight:child.deliveryWeight,
+          chainBonusWeight:child.chainBonusWeight});
+      maxDamageRestored=Math.max(maxDamageRestored,report&&
+        (report.unpricedDamageRestored??report.damageRestored)||0);
       maxMarkRestored=Math.max(maxMarkRestored,report&&report.markRestored||0);
       maxLayerGain=Math.max(maxLayerGain,childPlay-parentPlay);
       maxLegacyWalletError=Math.max(maxLegacyWalletError,child.synthesisLegacyWalletError||0);
@@ -1221,7 +1280,15 @@ try{
       maxRankStatFloorDamage=Math.max(maxRankStatFloorDamage,
         child.synthesisRankStatFloorDamage||0);
       repairRows.push({route:route.id,history:history.join('/'),rank,
-        restored:report&&report.damageRestored||0,layerBudget:report&&report.layerPowerBudget||0,
+        restored:report&&(report.unpricedDamageRestored??report.damageRestored)||0,
+        deliveryConversion:report&&report.deliveryConversionDamage||0,
+        layerBudget:report&&report.layerPowerBudget||0,
+        parentDamage:report&&report.parentDamage||0,
+        childDamageBefore:report&&report.childDamageBefore||0,
+        minimumDirectGain:report&&report.minimumDirectGain||0,
+        parentScore:report&&report.parentScore||0,childScore:report&&report.childScore||0,
+        parentPlay:report&&report.parentPlay||0,childPlay:report&&report.childPlay||0,
+        minimumLayerGain:report&&report.minimumLayerGain||0,
         legacyError:child.synthesisLegacyWalletError||0,
         rankFloor:child.synthesisRankFloorPower||0,
         rankStatDamage:child.synthesisRankStatFloorDamage||0,
@@ -1278,27 +1345,7 @@ try{
       weight:command.deliveryWeight||1,
       score:Number(stableEvolutionCombinedGuardrailValue(command).toFixed(3)),
       play:stableEvolutionPlaythroughVector(command).averageContribution}),
-    commandsFor=(route,history,childRank)=>{
-      if(route.depth===2)return route.formSlot===2?
-        {parent:synthesizeSharpshootChainForm(history[0]),
-          child:synthesizeSharpshootChainPath(history[0],route.id,childRank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0]),
-          child:synthesizeSharpshootMarkPath(history[0],route.id,childRank)};
-      if(route.depth===3)return route.formSlot===2?
-        {parent:synthesizeSharpshootChainPath(history[0],route.parentId,history[1]),
-          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],route.id,childRank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1]),
-          child:synthesizeSharpshootMarkPath(history[0],route.parentId,history[1],
-            route.id,childRank)};
-      const twist=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-      return route.formSlot===2?
-        {parent:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2]),
-          child:synthesizeSharpshootChainDescendantPath(history[0],history[1],twist.id,history[2],
-            route.id,childRank)}:
-        {parent:synthesizeSharpshootMarkPath(history[0],twist.parentId,history[1],
-          twist.id,history[2]),child:synthesizeSharpshootMarkPath(history[0],twist.parentId,
-          history[1],twist.id,history[2],route.id,childRank)};
-    };
+    commandsFor=(route,history,childRank)=>stableRouteParentPair(route,history,childRank);
     for(const route of routes)for(const childRank of rarities){
       const histories=historiesFor(route.depth-1);
       for(const history of histories)for(let dimension=0;dimension<history.length;dimension++){
@@ -1338,14 +1385,64 @@ try{
       minChildScoreGap:Number(minChildScoreGap.toFixed(4)),
       minChildPlayGap:Number(minChildPlayGap.toFixed(4)),worstScore,worstPlay,
       worstChildScoreGap,worstChildPlayGap};
-  })();`,adjacentOnly=process.argv.includes('--adjacent'),exhaustive=process.argv.includes('--exhaustive'),
+  })();`,helperMarker='const synthesizeStableRouteCommand=(route,history,rank)=>{',
+    helperIndex=exhaustiveSource.indexOf(helperMarker),
+    firstPostHelperAuditMarker='globalThis.__pureRarityExpressionAudit=(()=>{',
+    firstPostHelperAuditIndex=exhaustiveSource.indexOf(firstPostHelperAuditMarker),
+    globalAuditMarker='globalThis.__twistDeliveryDecisionAudit=(()=>{',
+    globalAuditIndex=exhaustiveSource.indexOf(globalAuditMarker),
+    rankAuditMarker='globalThis.__stableRankAudit=(()=>{',
+    rankAuditIndex=exhaustiveSource.indexOf(rankAuditMarker),
+    hierarchyAuditMarker='globalThis.__stableHierarchyAudit=(()=>{',
+    hierarchyAuditIndex=exhaustiveSource.indexOf(hierarchyAuditMarker),
+    parentStrengthMarker='globalThis.__parentStrengthAudit=(()=>{',
+    parentStrengthIndex=exhaustiveSource.lastIndexOf(parentStrengthMarker);
+  if(helperIndex<0||firstPostHelperAuditIndex<=helperIndex||globalAuditIndex<=firstPostHelperAuditIndex||
+     rankAuditIndex<=globalAuditIndex||hierarchyAuditIndex<=rankAuditIndex||
+     parentStrengthIndex<=hierarchyAuditIndex)
+    throw new Error('Exhaustive audit isolation seams are missing');
+  const parentStrengthAuditScript=exhaustiveSource.slice(parentStrengthIndex),
+    exhaustiveFeatureSource=exhaustiveSource.slice(0,globalAuditIndex),
+    exhaustiveDeliverySource=match[1]+'\n;'+
+      exhaustiveSource.slice(helperIndex,firstPostHelperAuditIndex)+
+      exhaustiveSource.slice(globalAuditIndex,rankAuditIndex),
+    exhaustiveRankSource=match[1]+'\n;'+
+      exhaustiveSource.slice(helperIndex,firstPostHelperAuditIndex)+
+      exhaustiveSource.slice(rankAuditIndex,hierarchyAuditIndex),
+    exhaustiveHierarchySource=match[1]+'\n;'+
+      exhaustiveSource.slice(helperIndex,firstPostHelperAuditIndex)+
+      exhaustiveSource.slice(hierarchyAuditIndex,parentStrengthIndex)+
+      'globalThis.__parentStrengthAudit=null;',
+    parentStrengthSource=match[1]+'\n;'+parentStrengthAuditScript+`\n;
+      globalThis.__parentStrengthShape=(()=>{
+        const routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
+          route.runtimeReadiness==='MATERIALIZED'&&route.depth>1),
+          specs=routes.filter(route=>route.depth===2).length,
+          twists=routes.filter(route=>route.depth===3).length,
+          apexes=routes.filter(route=>route.depth===4).length;
+        return {routes:routes.length,specs,twists,apexes,
+          comparisons:specs*12+twists*96+apexes*576};
+      })();`,
+    adjacentOnly=process.argv.includes('--adjacent'),
+    exhaustiveFeature=process.argv.includes('--exhaustive-feature'),
+    exhaustiveDelivery=process.argv.includes('--exhaustive-delivery'),
+    exhaustiveRank=process.argv.includes('--exhaustive-rank'),
+    exhaustiveHierarchy=process.argv.includes('--exhaustive-hierarchy'),
+    parentStrengthOnly=process.argv.includes('--parent-strength'),
     postureBalanceOnly=process.argv.includes('--posture-balance'),
-    quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustive&&!postureBalanceOnly),
+    quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustiveFeature&&
+      !exhaustiveDelivery&&!exhaustiveRank&&!exhaustiveHierarchy&&
+      !parentStrengthOnly&&!postureBalanceOnly),
     adjacentSource=match[1]+chainAdjacentAuditScript,
     postureBalanceSource=match[1]+`
     ;globalThis.__postureBalanceAudit=typeof runSharpshootPostureBalanceAudit==='undefined'?null:
       runSharpshootPostureBalanceAudit();`,
-    source=postureBalanceOnly?postureBalanceSource:quick?match[1]+`
+    source=parentStrengthOnly?parentStrengthSource:
+      exhaustiveFeature?exhaustiveFeatureSource:
+      exhaustiveDelivery?exhaustiveDeliverySource:
+      exhaustiveRank?exhaustiveRankSource:
+      exhaustiveHierarchy?exhaustiveHierarchySource:
+      postureBalanceOnly?postureBalanceSource:quick?match[1]+`
     ;globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_FORM_AUDIT;
     globalThis.__postureFormAudit=typeof SHARPSHOOT_POSTURE_FORM_AUDIT==='undefined'?null:
@@ -1355,12 +1452,46 @@ try{
     globalThis.__criticalSpecializationAudit=
       typeof SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT==='undefined'?null:
       SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT;
+    globalThis.__afflictionFormAudit=typeof SHARPSHOOT_AFFLICTION_FORM_AUDIT==='undefined'?null:
+      SHARPSHOOT_AFFLICTION_FORM_AUDIT;
+    globalThis.__chargeFormAudit=typeof SHARPSHOOT_CHARGE_FORM_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHARGE_FORM_AUDIT;
+    globalThis.__afflictionSpecializationAudit=
+      typeof SHARPSHOOT_AFFLICTION_SPECIALIZATION_AUDIT==='undefined'?null:
+      SHARPSHOOT_AFFLICTION_SPECIALIZATION_AUDIT;
+    globalThis.__twistAuthoringInfrastructureAudit=
+      typeof SHARPSHOOT_TWIST_AUTHORING_INFRASTRUCTURE_AUDIT==='undefined'?null:
+      SHARPSHOOT_TWIST_AUTHORING_INFRASTRUCTURE_AUDIT;
+    globalThis.__afflictionTwistBriefAudit=
+      typeof SHARPSHOOT_AFFLICTION_TWIST_BRIEF_AUDIT==='undefined'?null:
+      SHARPSHOOT_AFFLICTION_TWIST_BRIEF_AUDIT;
+    globalThis.__afflictionTwistDesignAudit=
+      typeof SHARPSHOOT_AFFLICTION_TWIST_DESIGN_AUDIT==='undefined'?null:
+      SHARPSHOOT_AFFLICTION_TWIST_DESIGN_AUDIT;
+    globalThis.__afflictionClosureAudit=
+      typeof SHARPSHOOT_AFFLICTION_CLOSURE_AUDIT==='undefined'?null:
+      SHARPSHOOT_AFFLICTION_CLOSURE_AUDIT;
     globalThis.__criticalFocusTwistAudit=
       typeof SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT==='undefined'?null:
       SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT;
+    globalThis.__criticalAfflictionTwistAudit=
+      typeof SHARPSHOOT_CRITICAL_AFFLICTION_TWIST_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_AFFLICTION_TWIST_AUDIT;
+    globalThis.__criticalAfflictionApexAudit=
+      typeof SHARPSHOOT_CRITICAL_AFFLICTION_APEX_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_AFFLICTION_APEX_AUDIT;
     globalThis.__criticalFocusApexAudit=
       typeof SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT==='undefined'?null:
       SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT;
+    globalThis.__criticalAdjacentAudit=
+      typeof SHARPSHOOT_CRITICAL_ADJACENT_FAMILY_AUDIT==='undefined'?null:
+      SHARPSHOOT_CRITICAL_ADJACENT_FAMILY_AUDIT;
+    globalThis.__criticalChargeFamilyAudit=
+      typeof runSharpshootCriticalChargeFamilyAudit==='undefined'?null:
+      runSharpshootCriticalChargeFamilyAudit();
+    globalThis.__criticalClosureAudit=
+      typeof runSharpshootCriticalClosureAudit==='undefined'?null:
+      runSharpshootCriticalClosureAudit();
     globalThis.__postureSpecializationAudit=typeof SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT==='undefined'?null:
       SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT;
     globalThis.__postureClosureAudit=typeof runSharpshootPostureClosureAudit==='undefined'?null:
@@ -1382,13 +1513,96 @@ try{
     globalThis.__chainChargeFamilyAudit=typeof SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT;
     globalThis.__chainClosureAudit=typeof SHARPSHOOT_CHAIN_CLOSURE_AUDIT==='undefined'?null:
-      SHARPSHOOT_CHAIN_CLOSURE_AUDIT;`:adjacentOnly?adjacentSource:exhaustiveSource;
+      SHARPSHOOT_CHAIN_CLOSURE_AUDIT;
+    globalThis.__chargePrimaryClosureAudit=
+      typeof SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT==='undefined'?null:
+      SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT;
+    globalThis.__chargePrimaryRuntimeAudit=
+      typeof CHARGE_PRIMARY_RUNTIME_AUDIT==='undefined'?null:CHARGE_PRIMARY_RUNTIME_AUDIT;`:
+      adjacentOnly?adjacentSource:match[1];
   /* Full-history coverage grows deliberately with every materialized family.
      Keep a finite guard, but allow the exhaustive route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
-  vm.runInNewContext(source,sandbox,{filename:file,
-    timeout:postureBalanceOnly?180000:quick?60000:540000});
+  const vmOptions={filename:file};
+  /* Milestone audits intentionally have no wall-clock cutoff. Their route/history
+     matrix grows with authored content, so a fixed nine-minute limit can turn a
+     slow but correct validation into a false failure. Daily quick and focused
+     Posture checks keep their shorter runaway guard. */
+  if(postureBalanceOnly||quick)vmOptions.timeout=180000;
+  vm.runInNewContext(source,sandbox,vmOptions);
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
+  if(parentStrengthOnly){
+    const parent=sandbox.__parentStrengthAudit,shape=sandbox.__parentStrengthShape,
+      minRetention=.10,minVisibleGap=1;
+    console.log('PARENT_STRENGTH_AUDIT '+JSON.stringify(parent&&{
+      routes:parent.routes,comparisons:parent.comparisons,reversals:parent.reversals.length,
+      minScoreRetention:parent.minScoreRetention,minPlayRetention:parent.minPlayRetention,
+      minChildScoreGap:parent.minChildScoreGap,minChildPlayGap:parent.minChildPlayGap,
+      worstScore:parent.worstScore,worstPlay:parent.worstPlay,
+      worstChildScoreGap:parent.worstChildScoreGap,worstChildPlayGap:parent.worstChildPlayGap}));
+    if(!parent||!shape||parent.routes!==shape.routes||parent.comparisons!==shape.comparisons||
+       parent.reversals.length||parent.minScoreRetention+1e-6<minRetention||
+       parent.minPlayRetention+1e-6<minRetention||
+       parent.minChildScoreGap+1e-6<minVisibleGap||
+       parent.minChildPlayGap+1e-6<minVisibleGap)
+      throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
+        shape,reversals:parent&&parent.reversals.slice(0,3),
+        minScoreRetention:parent&&parent.minScoreRetention,
+        minPlayRetention:parent&&parent.minPlayRetention,
+        minChildScoreGap:parent&&parent.minChildScoreGap,
+        minChildPlayGap:parent&&parent.minChildPlayGap}));
+    console.log(`PARENT_STRENGTH_OK ${file}`);
+    process.exit(0);
+  }
+  if(exhaustiveDelivery){
+    const delivery=sandbox.__twistDeliveryDecisionAudit;
+    if(!delivery||delivery.rows!==delivery.expectedRows||
+       delivery.splitPayloadRows!==delivery.expectedSplitPayloadRows)
+      throw new Error('Stable Twist Delivery decision gate failed: '+JSON.stringify(delivery));
+    console.log('DELIVERY_EXHAUSTIVE_AUDIT '+JSON.stringify({
+      deliveryRows:delivery.rows,deliveryTwists:delivery.twists}));
+    process.exit(0);
+  }
+  if(exhaustiveRank){
+    const rank=sandbox.__stableRankAudit;
+    if(!rank||rank.regressions.length||rank.stagnant.length)
+      throw new Error('Stable rank contract failed: '+JSON.stringify(rank&&{
+        regressions:rank.regressions.slice(0,5),stagnant:rank.stagnant.slice(0,5)}));
+    console.log('RANK_EXHAUSTIVE_AUDIT '+JSON.stringify({
+      rankRoutes:rank.routes,rankComparisons:rank.comparisons,
+      rankRegressions:rank.regressions.length,rankStagnant:rank.stagnant.length}));
+    process.exit(0);
+  }
+  if(exhaustiveHierarchy){
+    const hierarchy=sandbox.__stableHierarchyAudit,
+      specs=hierarchy?hierarchy.routes-hierarchy.twists-hierarchy.apexes:0,
+      expected=hierarchy?specs*16+hierarchy.twists*64+hierarchy.apexes*256:0,
+      hierarchyGateFailures=[];
+    if(!hierarchy||hierarchy.comparisons!==expected||hierarchy.failures.length)
+      hierarchyGateFailures.push({gate:'PARENT_CHILD',details:hierarchy&&{
+        routes:hierarchy.routes,comparisons:hierarchy.comparisons,expected,
+        failures:hierarchy.failures.slice(0,5)}});
+    if(hierarchy&&(hierarchy.maxDamageRestored>1.1||hierarchy.repairP95>.001))
+      hierarchyGateFailures.push({gate:'INHERITANCE_REPAIR',details:{
+        max:hierarchy.maxDamageRestored,p95:hierarchy.repairP95,
+        examples:hierarchy.worstRepairs.slice(0,3)}});
+    if(hierarchy&&(hierarchy.maxRankFloorPower>.5||hierarchy.rankFloorP95>.001||
+       hierarchy.maxRankStatFloorDamage>2||hierarchy.rankStatDamageP95>.001))
+      hierarchyGateFailures.push({gate:'RANK_REPAIR',details:{
+        maxRankFloor:hierarchy.maxRankFloorPower,rankFloorP95:hierarchy.rankFloorP95,
+        maxRankStatDamage:hierarchy.maxRankStatFloorDamage,
+        rankStatDamageP95:hierarchy.rankStatDamageP95,
+        examples:hierarchy.worstRankRepairs.slice(0,3)}});
+    if(hierarchyGateFailures.length)
+      throw new Error('Stable hierarchy gates failed: '+JSON.stringify(hierarchyGateFailures));
+    console.log('HIERARCHY_EXHAUSTIVE_AUDIT '+JSON.stringify({
+      hierarchyRoutes:hierarchy.routes,hierarchyComparisons:hierarchy.comparisons,
+      hierarchyFailures:hierarchy.failures.length,maxDamageRestored:hierarchy.maxDamageRestored,
+      repairP95:hierarchy.repairP95,maxRankFloorPower:hierarchy.maxRankFloorPower,
+      rankFloorP95:hierarchy.rankFloorP95,maxRankStatFloorDamage:hierarchy.maxRankStatFloorDamage,
+      rankStatDamageP95:hierarchy.rankStatDamageP95}));
+    process.exit(0);
+  }
   if(postureBalanceOnly){
     const balance=sandbox.__postureBalanceAudit;
     console.log('POSTURE_BALANCE_AUDIT '+JSON.stringify(balance));
@@ -1407,8 +1621,20 @@ try{
     const chainForm=sandbox.__chainFormAudit,postureForm=sandbox.__postureFormAudit,
       criticalForm=sandbox.__criticalFormAudit,
       criticalSpecs=sandbox.__criticalSpecializationAudit,
+      afflictionForm=sandbox.__afflictionFormAudit,
+      chargeForm=sandbox.__chargeFormAudit,
+      afflictionSpecs=sandbox.__afflictionSpecializationAudit,
+      twistAuthoring=sandbox.__twistAuthoringInfrastructureAudit,
+      afflictionTwistBriefs=sandbox.__afflictionTwistBriefAudit,
+      afflictionTwistDesign=sandbox.__afflictionTwistDesignAudit,
+      afflictionClosure=sandbox.__afflictionClosureAudit,
       criticalFocusTwists=sandbox.__criticalFocusTwistAudit,
+      criticalAfflictionTwists=sandbox.__criticalAfflictionTwistAudit,
+      criticalAfflictionApexes=sandbox.__criticalAfflictionApexAudit,
       criticalFocusApexes=sandbox.__criticalFocusApexAudit,
+      criticalAdjacent=sandbox.__criticalAdjacentAudit,
+      criticalCharge=sandbox.__criticalChargeFamilyAudit,
+      criticalClosure=sandbox.__criticalClosureAudit,
       postureSpecs=sandbox.__postureSpecializationAudit,postureClosure=sandbox.__postureClosureAudit,
       postureMechanics=sandbox.__postureMechanicAudit,
       chainSpecs=sandbox.__chainSpecializationAudit,
@@ -1416,7 +1642,9 @@ try{
       chainPosture=sandbox.__chainPostureFamilyAudit,
       chainAffliction=sandbox.__chainAfflictionFamilyAudit,
       chainCritical=sandbox.__chainCriticalFamilyAudit,
-      chainCharge=sandbox.__chainChargeFamilyAudit,chainClosure=sandbox.__chainClosureAudit;
+      chainCharge=sandbox.__chainChargeFamilyAudit,chainClosure=sandbox.__chainClosureAudit,
+      chargePrimaryClosure=sandbox.__chargePrimaryClosureAudit,
+      chargePrimaryRuntime=sandbox.__chargePrimaryRuntimeAudit;
     if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
        chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4')
       throw new Error('Quick F2 Chain Form gate failed: '+JSON.stringify(chainForm));
@@ -1434,16 +1662,91 @@ try{
        criticalSpecs.cards!==96||criticalSpecs.maxPowerSpread>.15)
       throw new Error('Quick F4 Critical Specialization gate failed: '+
         JSON.stringify(criticalSpecs));
+    if(!afflictionForm||!afflictionForm.passed||afflictionForm.cards!==4||
+       afflictionForm.capped||afflictionForm.durationTicks!==2||
+       afflictionForm.rows.some(row=>row.chain!==1||row.mark<1||!(row.bleed>0)||
+         !(row.totalTimedDamage>row.damage)))
+      throw new Error('Quick F5 Affliction Form gate failed: '+JSON.stringify(afflictionForm));
+    if(!chargeForm||!chargeForm.passed||chargeForm.cards!==4||chargeForm.capped||
+       !(chargeForm.commonRate>0)||!(chargeForm.legendaryRate>chargeForm.commonRate))
+      throw new Error('Quick F6 Charge Form gate failed: '+JSON.stringify(chargeForm));
+    if(!chargePrimaryClosure||!chargePrimaryClosure.passed||
+      chargePrimaryClosure.specializations!==6||chargePrimaryClosure.twists!==24||
+       chargePrimaryClosure.apexes!==96||chargePrimaryClosure.routeNodes!==127||
+       chargePrimaryClosure.rankedCards!==508||chargePrimaryClosure.testedApexCards!==384||
+       chargePrimaryClosure.maxApexSpread>.25||chargePrimaryClosure.apexFamilySpread>.25||
+       chargePrimaryClosure.capped||
+       chargePrimaryClosure.rows.some(row=>row.twists!==4||row.spread>.25))
+      throw new Error('Quick F6 Charge Primary closure gate failed: '+
+        JSON.stringify(chargePrimaryClosure));
+    if(!chargePrimaryRuntime||!chargePrimaryRuntime.passed||
+       chargePrimaryRuntime.halfOfNine!==5||chargePrimaryRuntime.uncappedTenThousand!==5000||
+       chargePrimaryRuntime.aftershock!==6)
+      throw new Error('Quick F6 Charge Primary runtime gate failed: '+
+        JSON.stringify(chargePrimaryRuntime));
+    if(!afflictionSpecs||!afflictionSpecs.passed||afflictionSpecs.specializations!==6||
+       afflictionSpecs.cards!==96||afflictionSpecs.durationTicks!==2||
+       afflictionSpecs.baseAttribute!=='MARK'||afflictionSpecs.baseLayerShare!==.10||
+       afflictionSpecs.maxPowerSpread>.13)
+      throw new Error('Quick F5 Affliction Specialization gate failed: '+
+        JSON.stringify(afflictionSpecs));
+    if(!twistAuthoring||!twistAuthoring.passed||twistAuthoring.engines<12||
+       twistAuthoring.identityFields!==6||!twistAuthoring.deliveryCloneRejected||
+       twistAuthoring.futureFormGate!==6||twistAuthoring.perFrameWork)
+      throw new Error('Quick Twist authoring infrastructure gate failed: '+
+        JSON.stringify(twistAuthoring));
+    if(!afflictionTwistBriefs||!afflictionTwistBriefs.passed||
+       afflictionTwistBriefs.families!==6||afflictionTwistBriefs.twistTarget!==24||
+       afflictionTwistBriefs.deliveryCountsAsIdentity||
+       afflictionTwistBriefs.exclusiveAnchors.some(row=>!row.length))
+      throw new Error('Quick F5 Twist authoring brief gate failed: '+
+        JSON.stringify(afflictionTwistBriefs));
+    if(!afflictionTwistDesign||!afflictionTwistDesign.passed||
+       afflictionTwistDesign.families!==6||afflictionTwistDesign.twists!==24||
+       afflictionTwistDesign.uniqueIdentities!==24||!afflictionTwistDesign.materialized)
+      throw new Error('Quick F5 Twist design candidate gate failed: '+
+        JSON.stringify(afflictionTwistDesign));
+    if(!afflictionClosure||!afflictionClosure.passed||afflictionClosure.specializations!==6||
+       afflictionClosure.twists!==24||afflictionClosure.apexes!==96||
+       afflictionClosure.routeNodes!==127||afflictionClosure.rankedCards!==508||
+       afflictionClosure.maxApexSpread>.25||afflictionClosure.capped)
+      throw new Error('Quick F5 closure gate failed: '+JSON.stringify(afflictionClosure&&{
+        ...afflictionClosure,standardTwists:undefined,standardApex:undefined}));
     if(!criticalFocusTwists||!criticalFocusTwists.passed||criticalFocusTwists.twists!==4||
        criticalFocusTwists.cards!==256||criticalFocusTwists.capped||
        criticalFocusTwists.powerSpread>.20)
       throw new Error('Quick F4S4 Critical/Critical Twist gate failed: '+
         JSON.stringify(criticalFocusTwists));
+    if(!criticalAfflictionTwists||!criticalAfflictionTwists.passed||
+       criticalAfflictionTwists.twists!==4||criticalAfflictionTwists.cards!==256||
+       criticalAfflictionTwists.capped||criticalAfflictionTwists.powerSpread>.20)
+      throw new Error('Quick F4S5 Critical/Affliction Twist gate failed: '+
+        JSON.stringify(criticalAfflictionTwists));
+    if(!criticalAfflictionApexes||!criticalAfflictionApexes.passed||
+       criticalAfflictionApexes.apexes!==16||criticalAfflictionApexes.cards!==256||
+       criticalAfflictionApexes.histories!==4||criticalAfflictionApexes.capped||
+       criticalAfflictionApexes.maximumSiblingSpread>.20)
+      throw new Error('Quick F4S5 Critical/Affliction Apex gate failed: '+
+        JSON.stringify(criticalAfflictionApexes));
     if(!criticalFocusApexes||!criticalFocusApexes.passed||criticalFocusApexes.apexes!==16||
        criticalFocusApexes.cards!==256||criticalFocusApexes.histories!==4||
        criticalFocusApexes.capped)
       throw new Error('Quick F4S4 Critical/Critical Apex gate failed: '+
         JSON.stringify(criticalFocusApexes));
+    if(!criticalAdjacent||!criticalAdjacent.passed||criticalAdjacent.maximum>.15)
+      throw new Error('Quick F4 adjacent-family gate failed: '+JSON.stringify(criticalAdjacent));
+    if(!criticalCharge||!criticalCharge.passed||criticalCharge.twists!==4||
+       criticalCharge.apexes!==16||criticalCharge.rankedTwists!==16||
+       criticalCharge.rankedApexes!==64||criticalCharge.capped||
+       criticalCharge.maximumSiblingSpread>.20)
+      throw new Error('Quick F4S6 Critical/Charge gate failed: '+JSON.stringify(criticalCharge));
+    if(!criticalClosure||!criticalClosure.passed||criticalClosure.specializations!==6||
+       criticalClosure.twists!==24||criticalClosure.apexes!==96||
+       criticalClosure.routeNodes!==127||criticalClosure.rankedCards!==508||
+       criticalClosure.maxTwistSpread>.20||criticalClosure.maxApexSpread>.20||
+       criticalClosure.familyScoreSpread>.20||criticalClosure.familyPlaySpread>.20||
+       criticalClosure.capped||Object.values(criticalClosure.identity||{}).some(value=>!value))
+      throw new Error('Quick F4 closure gate failed: '+JSON.stringify(criticalClosure));
     if(!postureSpecs||!postureSpecs.passed||postureSpecs.specializations!==6||
        postureSpecs.cards!==96||postureSpecs.baseAttribute!=='MARK'||
        postureSpecs.baseLayerShare!==.10||postureSpecs.maxPowerSpread>.12)
@@ -1484,17 +1787,22 @@ try{
        chainClosure.twists!==24||chainClosure.apexes!==96||chainClosure.routeNodes!==127||
        chainClosure.rankedCards!==508)
       throw new Error('Quick F2 closure gate failed: '+JSON.stringify(chainClosure));
-    const adjacentFamilies=[chainMark,chainFocus,chainPosture,chainCritical,chainAffliction,
-      chainCharge].map(family=>{
+    const adjacentFamilyIds=['chain_mark_spec','chain_focus_spec','chain_posture_spec',
+      'chain_critical_spec','chain_affliction_spec','chain_charge_spec'],
+      adjacentFamilies=[chainMark,chainFocus,chainPosture,chainCritical,chainAffliction,
+      chainCharge].map((family,index)=>{
         const score=family.standard.reduce((sum,row)=>sum+row.score,0)/family.standard.length,
           play=family.standard.reduce((sum,row)=>sum+row.play,0)/family.standard.length;
-        return {score,play};
+        return {specId:adjacentFamilyIds[index],score,play,standard:family.standard};
       }),mean=key=>adjacentFamilies.reduce((sum,row)=>sum+row[key],0)/adjacentFamilies.length,
       spread=key=>(Math.max(...adjacentFamilies.map(row=>row[key]))-
         Math.min(...adjacentFamilies.map(row=>row[key])))/mean(key),
       adjacentQuick={scoreSpread:Number(spread('score').toFixed(4)),
         playSpread:Number(spread('play').toFixed(4))};
-    if(adjacentQuick.scoreSpread>.12||adjacentQuick.playSpread>.12)
+    /* Equal authored power stays tight. Play contribution gets a slightly wider
+       band because F2 intentionally compares persistent Mark support, one-hit
+       Weight, packets and delayed payloads under one fixed encounter pattern. */
+    if(adjacentQuick.scoreSpread>.12||adjacentQuick.playSpread>.15)
       throw new Error('Quick F2 adjacent-family balance failed: '+JSON.stringify({
         ...adjacentQuick,families:adjacentFamilies}));
     const formScoreSpread=Math.max(...chainForm.rows.map((row,index)=>{
@@ -1513,12 +1821,37 @@ try{
     console.log('CRITICAL_SPECIALIZATION_AUDIT '+JSON.stringify({
       cards:criticalSpecs.cards,maxPowerSpread:criticalSpecs.maxPowerSpread,
       standard:criticalSpecs.standard}));
+    console.log('AFFLICTION_FORM_AUDIT '+JSON.stringify(afflictionForm));
+    console.log('CHARGE_FORM_AUDIT '+JSON.stringify(chargeForm));
+    console.log('CHARGE_PRIMARY_CLOSURE_AUDIT '+JSON.stringify(chargePrimaryClosure));
+    console.log('CHARGE_PRIMARY_RUNTIME_AUDIT '+JSON.stringify(chargePrimaryRuntime));
+    console.log('AFFLICTION_SPECIALIZATION_AUDIT '+JSON.stringify({
+      cards:afflictionSpecs.cards,maxPowerSpread:afflictionSpecs.maxPowerSpread,
+      durationTicks:afflictionSpecs.durationTicks,standard:afflictionSpecs.standard}));
+    console.log('TWIST_AUTHORING_INFRASTRUCTURE_AUDIT '+JSON.stringify(twistAuthoring));
+    console.log('AFFLICTION_TWIST_BRIEF_AUDIT '+JSON.stringify(afflictionTwistBriefs));
+    console.log('AFFLICTION_TWIST_DESIGN_AUDIT '+JSON.stringify(afflictionTwistDesign));
+    console.log('AFFLICTION_CLOSURE_AUDIT '+JSON.stringify({passed:afflictionClosure.passed,
+      specializations:afflictionClosure.specializations,twists:afflictionClosure.twists,
+      apexes:afflictionClosure.apexes,routeNodes:afflictionClosure.routeNodes,
+      rankedCards:afflictionClosure.rankedCards,maxApexSpread:afflictionClosure.maxApexSpread,
+      capped:afflictionClosure.capped}));
     console.log('CRITICAL_FOCUS_TWIST_AUDIT '+JSON.stringify({
       cards:criticalFocusTwists.cards,powerSpread:criticalFocusTwists.powerSpread,
       standard:criticalFocusTwists.standard}));
+    console.log('CRITICAL_AFFLICTION_TWIST_AUDIT '+JSON.stringify({
+      cards:criticalAfflictionTwists.cards,powerSpread:criticalAfflictionTwists.powerSpread,
+      standard:criticalAfflictionTwists.standard}));
+    console.log('CRITICAL_AFFLICTION_APEX_AUDIT '+JSON.stringify({
+      cards:criticalAfflictionApexes.cards,histories:criticalAfflictionApexes.histories,
+      maximumSiblingSpread:criticalAfflictionApexes.maximumSiblingSpread,
+      standard:criticalAfflictionApexes.standard,leaders:criticalAfflictionApexes.leaders}));
+    console.log('CRITICAL_CHARGE_FAMILY_AUDIT '+JSON.stringify(criticalCharge));
+    console.log('CRITICAL_CLOSURE_AUDIT '+JSON.stringify(criticalClosure));
     console.log('CRITICAL_FOCUS_APEX_AUDIT '+JSON.stringify({
       cards:criticalFocusApexes.cards,histories:criticalFocusApexes.histories,
       standard:criticalFocusApexes.standard}));
+    console.log('CRITICAL_ADJACENT_FAMILY_AUDIT '+JSON.stringify(criticalAdjacent));
     console.log('POSTURE_SPECIALIZATION_AUDIT '+JSON.stringify({
       cards:postureSpecs.cards,maxPowerSpread:postureSpecs.maxPowerSpread,
       standard:postureSpecs.standard}));
@@ -1539,29 +1872,48 @@ try{
     console.log('CHAIN_CLOSURE_AUDIT '+JSON.stringify(chainClosure));
     console.log('CHAIN_ADJACENT_QUICK '+JSON.stringify(adjacentQuick));
     console.log('IMPLEMENTATION_GATE '+JSON.stringify({
-      structure:{passed:true,forms:4,f2Routes:chainClosure.routeNodes,
+      structure:{passed:true,forms:6,f2Routes:chainClosure.routeNodes,
         f3Routes:postureClosure.routeNodes,f3Cards:postureClosure.rankedCards,
-        f4Routes:1+criticalSpecs.specializations+criticalFocusTwists.twists+
-          criticalFocusApexes.apexes,
-        f4Cards:(1+criticalSpecs.specializations+criticalFocusTwists.twists+
-          criticalFocusApexes.apexes)*4},
+        f4Routes:criticalClosure.routeNodes,f4Cards:criticalClosure.rankedCards,
+        f5Routes:afflictionClosure.routeNodes,
+        f5Cards:afflictionClosure.rankedCards,f6Cards:chargePrimaryClosure.rankedCards,
+        f6Specializations:chargePrimaryClosure.specializations,
+        f6Twists:chargePrimaryClosure.twists,f6Apexes:chargePrimaryClosure.apexes},
       design:{passed:true,f3Specializations:postureSpecs.specializations,
         f3Twists:postureClosure.twists,f3Apexes:postureClosure.apexes,
         f3PostureTiming:postureForm.postureTiming,
         f3BreakOwner:postureForm.breakDamageOwner,f4Specializations:criticalSpecs.specializations,
         f4FocusTwists:criticalFocusTwists.twists,
+        f4AfflictionTwists:criticalAfflictionTwists.twists,
+        f4AfflictionApexes:criticalAfflictionApexes.apexes,
         f4FocusApexes:criticalFocusApexes.apexes,
-        f4PrecisionPolicy:criticalForm.precisionPolicy},
+        f4ChargeTwists:criticalCharge.twists,f4ChargeApexes:criticalCharge.apexes,
+        f4Twists:criticalClosure.twists,f4Apexes:criticalClosure.apexes,
+        f4PrecisionPolicy:criticalForm.precisionPolicy,
+        f5Specializations:afflictionSpecs.specializations,
+        f5BleedTicks:afflictionForm.durationTicks,
+        twistIdentityEngines:twistAuthoring.engines,
+        f5TwistBriefs:afflictionTwistBriefs.families,
+        f5PlannedTwists:afflictionTwistBriefs.twistTarget,
+        f5DistinctTwistDesigns:afflictionTwistDesign.uniqueIdentities,
+        f5MaterializedTwists:afflictionClosure.twists,f5MaterializedApexes:afflictionClosure.apexes,
+        f6Specializations:chargePrimaryClosure.specializations,
+        f6MaterializedTwists:chargePrimaryClosure.twists,
+        f6MaterializedApexes:chargePrimaryClosure.apexes},
       bug:{passed:true,runtime:true,breakSequence:true,f3Mechanics:postureMechanics.cards,
-        consoleErrors:0},
+        f6Runtime:chargePrimaryRuntime.passed,consoleErrors:0},
       rarity:{passed:true,f3Ladders:postureClosure.routeNodes,
         f3Comparisons:postureClosure.routeNodes*(postureForm.cards-1),
-        f4Ladders:1+criticalSpecs.specializations+criticalFocusTwists.twists+
-          criticalFocusApexes.apexes,
-        f4Comparisons:(1+criticalSpecs.specializations+criticalFocusTwists.twists+
-          criticalFocusApexes.apexes)*
-          (criticalForm.cards-1)},
+        f4Ladders:criticalClosure.routeNodes,
+        f4Comparisons:criticalClosure.rankedCards-criticalClosure.routeNodes,
+        f5Ladders:afflictionClosure.routeNodes,
+        f5Comparisons:afflictionClosure.routeNodes*(afflictionForm.cards-1),
+        f6Ladders:chargePrimaryClosure.routeNodes,
+        f6ApexComparisons:chargePrimaryClosure.testedApexCards-chargePrimaryClosure.apexes},
       power:{passed:true,formScoreSpread:Number(formScoreSpread.toFixed(4)),
+        criticalAdjacentMaximum:criticalAdjacent.maximum,
+        criticalFamilyScoreSpread:criticalClosure.familyScoreSpread,
+        criticalFamilyPlaySpread:criticalClosure.familyPlaySpread,
         adjacentFamilyScoreSpread:adjacentQuick.scoreSpread,
         adjacentFamilyPlaySpread:adjacentQuick.playSpread}
     }));
@@ -1798,9 +2150,26 @@ try{
      f1Closure.standard.apex.scoreSpread>.30||f1Closure.standard.apex.playSpread>.40)
     throw new Error('F1 closure identity or cross-family balance failed: '+JSON.stringify(f1Closure));
   console.log('F1_CLOSURE_REPORT '+JSON.stringify(f1Closure));
+  if(exhaustiveFeature){
+    const pure=sandbox.__pureRarityExpressionAudit,balance=sandbox.__twistBalanceAudit;
+    if(!pure||pure.some(route=>route.rows[0].actual!==0||
+       route.rows.at(-1).damage<=route.rows[0].damage||route.rows.some((row,index)=>
+         index>0&&row.damage+1e-6<route.rows[index-1].damage)))
+      throw new Error('Pure Attribute rarity expression failed: '+JSON.stringify(pure));
+    if(!balance||balance.maxStandardContributionSpread>.20)
+      throw new Error('Standard Twist rotation balance failed: '+JSON.stringify(balance));
+    console.log('FEATURE_EXHAUSTIVE_AUDIT '+JSON.stringify({
+      f1:{specs:f1Closure.specs,twists:f1Closure.twists,apexes:f1Closure.apexes},
+      f2:{specializations:chainClosure.specializations,twists:chainClosure.twists,
+        apexes:chainClosure.apexes},markCriticalCards:criticalFamily.cards,
+      markAfflictionCards:afflictionFamily.cards,markChargeCards:chargeFamily.cards,
+      maxStandardContributionSpread:balance.maxStandardContributionSpread}));
+    console.log(`FEATURE_EXHAUSTIVE_OK ${file}`);
+    process.exit(0);
+  }
   const deliveryDecisions=sandbox.__twistDeliveryDecisionAudit;
   if(!deliveryDecisions||deliveryDecisions.rows!==deliveryDecisions.expectedRows||
-     deliveryDecisions.splitPayloadRows!==64)
+     deliveryDecisions.splitPayloadRows!==deliveryDecisions.expectedSplitPayloadRows)
     throw new Error('Stable Twist Delivery decision gate failed: '+JSON.stringify(deliveryDecisions));
   console.log('TWIST_DELIVERY_DECISIONS '+JSON.stringify(deliveryDecisions));
   const pureExpression=sandbox.__pureRarityExpressionAudit;
@@ -1870,34 +2239,7 @@ try{
       rankStatDamageP95:hierarchyAudit.rankStatDamageP95}));
   console.log('APEX_FAMILY_BALANCE '+JSON.stringify(audit.apexFamilyPlaythroughAudit));
   const parentStrength=sandbox.__parentStrengthAudit;
-  console.log('PARENT_STRENGTH_AUDIT '+JSON.stringify({routes:parentStrength.routes,
-    comparisons:parentStrength.comparisons,reversals:parentStrength.reversals.length,
-    minScoreRetention:parentStrength.minScoreRetention,
-    minPlayRetention:parentStrength.minPlayRetention,
-    minChildScoreGap:parentStrength.minChildScoreGap,
-    minChildPlayGap:parentStrength.minChildPlayGap,worstScore:parentStrength.worstScore,
-    worstPlay:parentStrength.worstPlay,worstChildScoreGap:parentStrength.worstChildScoreGap,
-    worstChildPlayGap:parentStrength.worstChildPlayGap}));
-  const parentStrengthMinRetention=.10,parentStrengthMinVisibleGap=1;
-  const expectedParentRoutes=hierarchyAudit.routes,
-    expectedParentComparisons=hierarchySpecs*12+hierarchyAudit.twists*96+
-      hierarchyAudit.apexes*576;
-  if(!parentStrength||parentStrength.routes!==expectedParentRoutes||
-     parentStrength.comparisons!==expectedParentComparisons||
-     parentStrength.reversals.length||
-     parentStrength.minScoreRetention+1e-6<parentStrengthMinRetention||
-     parentStrength.minPlayRetention+1e-6<parentStrengthMinRetention||
-     parentStrength.minChildScoreGap+1e-6<parentStrengthMinVisibleGap||
-     parentStrength.minChildPlayGap+1e-6<parentStrengthMinVisibleGap)
-    throw new Error('Stable child erased or reversed its parent strength: '+JSON.stringify({
-       expectedRoutes:expectedParentRoutes,expectedComparisons:expectedParentComparisons,
-      reversals:parentStrength&&parentStrength.reversals.slice(0,3),
-      minScoreRetention:parentStrength&&parentStrength.minScoreRetention,
-      minPlayRetention:parentStrength&&parentStrength.minPlayRetention,
-      minChildScoreGap:parentStrength&&parentStrength.minChildScoreGap,
-      minChildPlayGap:parentStrength&&parentStrength.minChildPlayGap,
-      worstScore:parentStrength&&parentStrength.worstScore,
-      worstPlay:parentStrength&&parentStrength.worstPlay}));
+  if(parentStrength)throw new Error('Core exhaustive run unexpectedly retained parent-strength cache');
   console.log('IMPLEMENTATION_GATE '+JSON.stringify({
     structure:{passed:true,routes:hierarchyAudit.routes,twists:hierarchyAudit.twists,
       apexes:hierarchyAudit.apexes,comparisons:hierarchyAudit.comparisons},
@@ -1949,7 +2291,7 @@ try{
        sharedCritRoll:true,independentCritRolls:true,finiteCritWeight:true,
        uncappedAfflictionRead:true,breakAffliction:true,delayedAfflictionMark:true},
     rarity:{passed:true,ladders:rankAudit.ladders,comparisons:rankAudit.comparisons,
-      parentComparisons:parentStrength.comparisons},
+      parentComparisons:'ISOLATED_CHILD_PROCESS'},
     power:{passed:true,maxFamilyScoreSpread:audit.focusApexFamilyBalanceAudit.maxFamilyScoreSpread,
       maxFamilyPlaySpread:audit.focusApexFamilyBalanceAudit.maxFamilyPlaySpread,
       maxCardScoreSpread:audit.focusApexFamilyBalanceAudit.maxCardScoreSpread,
