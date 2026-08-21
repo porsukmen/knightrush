@@ -9530,8 +9530,19 @@ const BASE_TURN_SKILLS=Object.freeze([
   Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
     damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,deliveryProfileId:'OWNER_BOW',
     bowAnimationRecipeId:'BOW_STANDARD',
+    baseAttributeId:'MARK',
     identityId:'MARK_BUILDER',
     tags:Object.freeze(['weapon','ranged','mark','setup'])}),
+  /* The second Bow skill is the payoff half of the starting weapon kit. Its clean
+     hit remains useful, but an existing Mark turns into an explicit Detonation
+     payload. It never creates Mark in Stable lineage. */
+  Object.freeze({id:'mark_burst',name:'MARK BURST',source:'WEAPON',skill:true,cost:1,
+    damage:20,hits:1,markGain:0,col:'#ff6b72',slash:-.82,deliveryProfileId:'OWNER_BOW',
+    bowAnimationRecipeId:'BOW_DETONATION',
+    markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,damagePerMark:10,
+      curve:'FULL',delivery:'LAST'}),markDetonation:true,
+    baseAttributeId:'DETONATION',identityId:'MARK_PAYOFF',
+    tags:Object.freeze(['weapon','ranged','detonation','payoff'])}),
 ]);
 /* Immutable definitions are read by synthesis, validators, labs and combat setup.
    Index once instead of rescanning the catalogue as weapon/skill content grows. */
@@ -9539,6 +9550,8 @@ const BASE_TURN_SKILL_BY_ID=(()=>{
   const index=Object.create(null);
   for(const definition of BASE_TURN_SKILLS){
     if(index[definition.id])throw new Error('Duplicate base skill id '+definition.id);
+    if(typeof definition.baseAttributeId!=='string'||!definition.baseAttributeId)
+      throw new Error('Base skill '+definition.id+' needs a Base Attribute identity');
     index[definition.id]=definition;
   }
   return Object.freeze(index);
@@ -10353,7 +10366,7 @@ const BOW_ANIMATION_LIMITS=Object.freeze({
    renderer performs no extra timing work per frame. */
 const BOW_MOTION_TIME_SCALE=1.35;
 const BOW_VISUAL_STYLES=Object.freeze(new Set([
-  'STANDARD','MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'
+  'STANDARD','MARK','DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'
 ]));
 const BOW_MECHANIC_CUES=Object.freeze(new Set([
   'NONE','POSTURE_IMPACT','MARK_CONVERGENCE','POSTURE_PRIMER','BREAK_FINISHER','BREAK_FINISHER_READY'
@@ -10383,6 +10396,11 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseTime:.07,recoveryTime:.28,arrowSpeed:1200,arrowArc:14,arrowScale:1.02,drawStrength:.78,
     releaseRecoil:.25,trailStrength:.38,impactScale:1.05,impactShake:1.7,hitStop:.03,
     shotInterval:.35,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_DETONATION',visualStyle:'DETONATION',raiseTime:.16,drawTime:.46,holdTime:.16,
+    releaseTime:.11,recoveryTime:.42,arrowSpeed:980,arrowArc:23,arrowScale:1.42,drawStrength:1,
+    releaseRecoil:.68,trailStrength:.84,impactScale:1.48,impactShake:4.8,hitStop:.075,
+    shotInterval:.54,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff6b72',glowColor:'#ffe37a',impactColor:'#ff334f'}),
   bowAnimationRecipe({id:'BOW_CHAIN',visualStyle:'CHAIN',raiseTime:.07,drawTime:.21,holdTime:.02,
     releaseTime:.05,recoveryTime:.18,arrowSpeed:1580,arrowArc:8,arrowScale:.88,drawStrength:.62,
     releaseRecoil:.16,trailStrength:.55,impactScale:.86,impactShake:1.1,hitStop:.015,
@@ -10716,6 +10734,7 @@ function buildBowActionTimeline(command,delivery,charge=0,distance=600,markAtSta
 const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
   const delivery=Object.freeze({family:'PROJECTILE',profileId:'OWNER_BOW',pattern:'SINGLE'}),
     standard=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_STANDARD'},delivery,0,600),
+    detonation=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_DETONATION'},delivery,0,600),
     heavy=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_POSTURE'},delivery,0,600),
     postureImpact=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_POSTURE_IMPACT'},delivery,0,600),
     postureRead=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_POSTURE_CONVERGENCE'},delivery,0,600,8),
@@ -10747,6 +10766,9 @@ const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
     bounded=resolveBowAnimationRecipe({bowAnimationRecipeId:'BOW_STANDARD',bowAnimationOverrides:{
       arrowSpeed:99999,holdTime:-5}},0);
   if(BOW_ANIMATION_RECIPES.list.length<20||!(standard.contacts[0]>standard.releases[0])||
+     detonation.recipe.visualStyle!=='DETONATION'||
+     !(detonation.firstRelease>standard.firstRelease)||
+     !(detonation.recipe.arrowScale>standard.recipe.arrowScale)||
      !(heavy.contacts[0]>standard.contacts[0])||!(charged.recipe.arrowScale>
        bowAnimationRecipeById('BOW_CHARGE').arrowScale)||echo.releases.length!==1||
      echo.contacts.length!==3||!(echo.contacts[2]>echo.contacts[0])||shotgun.releases.length!==3||
@@ -25558,9 +25580,21 @@ function runMarkSystemSelfTests(){
   if(separated.final!==25||separated.chain!==5)
     throw new Error('Mark payload must not be multiplied by Chain');
   passed++;
+  const detonation=BASE_TURN_SKILL_BY_ID.mark_burst,
+    emptyDetonation=commandMarkPlan(detonation,0),primedDetonation=commandMarkPlan(detonation,1),
+    emptyDamage=combatTurnHitDamageBreakdown(detonation.damage,
+      emptyDetonation.markDamageByHit[0],0,0,false,CFG.CHAIN_BONUS).final,
+    primedDamage=combatTurnHitDamageBreakdown(detonation.damage,
+      primedDetonation.markDamageByHit[0],0,0,false,CFG.CHAIN_BONUS).final;
+  if(detonation.baseAttributeId!=='DETONATION'||detonation.markGain!==0||
+     detonation.markDetonation!==true||emptyDetonation.consumedTotal!==0||emptyDamage!==20||
+     primedDetonation.consumedTotal!==1||primedDetonation.remaining!==0||primedDamage!==30)
+    throw new Error('Base Detonation skill must be 20 clean / 30 from one consumed Mark and never generate Mark');
+  passed++;
   return Object.freeze({passed,arrowConsumed:arrowPlan.consumedTotal,arrowRemaining:arrowPlan.remaining,
     saturated:Object.freeze(values),halfConversion:Object.freeze(halfPlans.map(plan=>plan.chainGain)),
-    echoFromFive:echoPlan.temporaryChain});
+    echoFromFive:echoPlan.temporaryChain,detonation:Object.freeze({clean:emptyDamage,
+      primed:primedDamage,consumed:primedDetonation.consumedTotal})});
 }
 const MARK_SYSTEM_AUDIT=runMarkSystemSelfTests();
 function runDecimalDamageSystemSelfTests(){
@@ -26591,6 +26625,16 @@ function emitBowRelease(action,index){
   if(recipe.visualStyle==='CHARGE'&&action.chargeSpent)
     spawnSlash(point.x,point.y,-Math.PI/2,recipe.glowColor);
 }
+/* Detonation reuses the existing short-lived impact systems: no new renderer,
+   timers or per-frame catalogue work. The cue appears only when a command has
+   actually converted stored Mark into damage. */
+function emitMarkDetonationImpact(x,y,markPayload){
+  if(!(markPayload>0))return;
+  spawnSlash(x-3,y-2,.78,'#ff334f');
+  spawnSlash(x+3,y+2,-.78,'#ffe37a');
+  burst(x,y,18,['#ff334f','#ff6b72','#ffe37a','#ffffff'],190,55,4.6,.48);
+  shake(3.4,.14);
+}
 function buildMarkPulseTimeline(command,lastContact){
   const pattern=command&&command.markPulsePattern;if(!pattern||!pattern.length)return null;
   const interval=Math.max(.08,Number(command.markPulseInterval)||.16);
@@ -26723,6 +26767,8 @@ function resolveTurnActionHit(action){
     if(bowRecipe.impactShake>0)shake(bowRecipe.impactShake,.16);
     if(bowRecipe.hitStop>0)stopTime(bowRecipe.hitStop);
   }
+  if(command.markDetonation===true&&markPayload>0)
+    emitMarkDetonationImpact(x,y,markPayload);
   if(critical)floater(x,y-70,'CRITICAL ×'+damagePart(critMultiplier),'#ffcc4d',17);
   if(critical){
     action.anyCritical=true;
@@ -31764,7 +31810,7 @@ function skillButtonSubtitle(skill){
       ?'1AP · '+skill.cost+'R · '+skill.hits+'×'+perHit+' · CHAIN +'+skill.hits
       :'1AP · '+skill.cost+'R · '+perHit+' DMG · MARK +1');
   }
-  if(skill.baseId==='sharpshoot'){
+  if(skill.source==='WEAPON'){
     const pending=pendingPrimaryChargeFor(skill);
     if(pending&&pending.status==='READY')return finish('RELEASE · 0AP · 0R · CHARGE ×'+pending.charge);
     if(commandChargeMode(skill)==='DELAYED_PRIMARY')
@@ -31774,7 +31820,8 @@ function skillButtonSubtitle(skill){
       posture=commandPostureDamage(skill),bleed=commandBleedAmount(skill),
       chargeRate=commandDefenseTemperRate(skill),charge=bossCharge(),
       markMode=commandMarkMode(skill),effects=[];
-    if(markMode==='CONSUME')effects.push('MARK CASH');
+    if(markMode==='CONSUME')effects.push(skill.markDetonation===true?
+      'DETONATE ×'+commandMarkPlan(skill,bossMark()).consumedTotal:'MARK CASH');
     else if(markMode==='READ')effects.push('MARK READ');
     else if(markMode==='READ_TEMP_CHAIN')effects.push('MARK ECHO');
     else if(markMode==='CONVERT_CHAIN')effects.push('MARK → CHAIN');

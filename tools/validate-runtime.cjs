@@ -1580,6 +1580,24 @@ try{
     globalThis.__bowRouteRecipeAudit=
       typeof SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT==='undefined'?null:
       SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT;
+    globalThis.__detonationBaseAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const run=mark=>{
+        applySkillLabPreset('clean',false);boss.mark=mark;
+        const command=runSkill('mark_burst'),hpBefore=boss.hp,markBefore=bossMark(),
+          started=performPlayerAction(command),actionCreated=boss.phase==='playerResolve'&&
+            !!boss.turnAction&&boss.turnAction.command.markDetonation===true&&
+            boss.turnAction.bowTimeline.recipe.id==='BOW_DETONATION';
+        let frames=0;
+        while(boss.phase==='playerResolve'&&frames++<240){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        return {started,actionCreated,frames,markBefore,markAfter:bossMark(),
+          damage:hpBefore-boss.hp,chain:chainStacks,returnedToPlayer:boss.phase==='player'};
+      };
+      return {clean:run(0),primed:run(1)};
+    })();
     globalThis.__combatInteractionAudit=(()=>{
       openSkillLab();startSkillLabCombat();
       const hpBefore=boss.hp,apBefore=boss.ap,resolveBefore=boss.resolve,
@@ -1733,10 +1751,18 @@ try{
       chargePrimaryClosure=sandbox.__chargePrimaryClosureAudit,
       chargePrimaryRuntime=sandbox.__chargePrimaryRuntimeAudit,
       bowRouteRecipe=sandbox.__bowRouteRecipeAudit,
+      detonationBase=sandbox.__detonationBaseAudit,
       combatInteraction=sandbox.__combatInteractionAudit;
     if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
        bowRouteRecipe.routeMappings<100)
       throw new Error('Quick Bow route recipe gate failed: '+JSON.stringify(bowRouteRecipe));
+    if(!detonationBase||!detonationBase.clean.started||!detonationBase.clean.actionCreated||
+       !detonationBase.clean.returnedToPlayer||detonationBase.clean.damage!==20||
+       detonationBase.clean.markAfter!==0||detonationBase.clean.chain!==1||
+       !detonationBase.primed.started||!detonationBase.primed.actionCreated||
+       !detonationBase.primed.returnedToPlayer||detonationBase.primed.damage!==30||
+       detonationBase.primed.markAfter!==0||detonationBase.primed.chain!==1)
+      throw new Error('Quick base Detonation combat gate failed: '+JSON.stringify(detonationBase));
     if(!combatInteraction||!combatInteraction.menuOpened||!combatInteraction.actionStarted||
        !combatInteraction.actionCreated||!combatInteraction.hitLogged||
        !(combatInteraction.hpAfter<combatInteraction.hpBefore)||
@@ -1914,6 +1940,7 @@ try{
         formScoreSpread,chain:chainForm.rows,posture:postureForm.rows,
         critical:criticalForm.rows}));
     console.log('BOW_ROUTE_RECIPES '+JSON.stringify(bowRouteRecipe));
+    console.log('DETONATION_BASE '+JSON.stringify(detonationBase));
     console.log('COMBAT_INTERACTION '+JSON.stringify(combatInteraction));
     console.log('QUICK_RUNTIME_OK '+file);
     console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
