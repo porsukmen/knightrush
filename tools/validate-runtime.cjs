@@ -1430,19 +1430,77 @@ try{
     exhaustiveHierarchy=process.argv.includes('--exhaustive-hierarchy'),
     parentStrengthOnly=process.argv.includes('--parent-strength'),
     postureBalanceOnly=process.argv.includes('--posture-balance'),
+    combatRoutesOnly=process.argv.includes('--combat-routes'),
     quick=process.argv.includes('--quick')||(!adjacentOnly&&!exhaustiveFeature&&
       !exhaustiveDelivery&&!exhaustiveRank&&!exhaustiveHierarchy&&
-      !parentStrengthOnly&&!postureBalanceOnly),
+      !parentStrengthOnly&&!postureBalanceOnly&&!combatRoutesOnly),
     adjacentSource=match[1]+chainAdjacentAuditScript,
     postureBalanceSource=match[1]+`
     ;globalThis.__postureBalanceAudit=typeof runSharpshootPostureBalanceAudit==='undefined'?null:
       runSharpshootPostureBalanceAudit();`,
+    combatRoutesSource=match[1]+String.raw`
+    ;globalThis.__combatRoutesAudit=(()=>{
+      openSkillLab();moveTreeSkillIndex=0;
+      for(let depth=1;depth<=4;depth++)moveTreeSynthesisRarityByDepth[depth]='COMMON';
+      const routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
+          route.runtimeReadiness==='MATERIALIZED'),failures=[],patterns=new Set(),recipes=new Set(),
+        forms=new Set(),mechanicFamilies=new Set();
+      let immediateRoutes=0,chargeRoutes=0,totalFrames=0,maxFrames=0;
+      for(const route of routes){
+        try{
+          const node=SHARPSHOOT_MARK_LAB_NODE_BY_ID[route.id],command=route.depth===1?
+            synthesizeSharpshootFormRoute(route,'COMMON'):
+            node&&moveTreeSynthesisPreviewCommand(node);
+          if(!command)throw new Error('route did not synthesize a command');
+          if(!BOW_ANIMATION_RECIPES.has(command.bowAnimationRecipeId))
+            throw new Error('unknown Bow recipe '+command.bowAnimationRecipeId);
+          startSkillLabCombat();applySkillLabPreset('combo',false);
+          boss.bleed=4;boss.charge=4;boss.posture=Math.min(20,boss.postureMax*.2);
+          skillLabSession.forceCritical=true;
+          const hpBefore=boss.hp,chargePrimary=commandChargeMode(command)==='DELAYED_PRIMARY';
+          let started=performPlayerAction(command);
+          if(chargePrimary){
+            const pending=pendingPrimaryChargeRelease();
+            if(!pending)throw new Error('Charge Primary did not arm');
+            pending.status='READY';pending.charge=4;pending.dodges=1;pending.parries=1;
+            pending.maxStreak=2;pending.actionSteps=1;
+            boss.phase='player';boss.state='idle';boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+            started=releasePrimaryCharge(false);chargeRoutes++;
+          }else immediateRoutes++;
+          if(started!==true)throw new Error('action did not start');
+          if(!boss.turnAction||boss.phase!=='playerResolve')
+            throw new Error('action did not create playerResolve state');
+          if(!boss.turnAction.bowTimeline)throw new Error('action has no Bow timeline');
+          let frames=0;
+          while(boss.phase==='playerResolve'&&frames++<600){
+            updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+            if(boss.playerActionTimer<=0)finishPlayerAction();
+          }
+          totalFrames+=frames;maxFrames=Math.max(maxFrames,frames);
+          const log=skillLabSession.lastLog;
+          if(frames>=600)throw new Error('action did not resolve within 600 frames');
+          if(boss.turnAction)throw new Error('turnAction survived its timeline');
+          if(!(boss.hp<hpBefore))throw new Error('action dealt no Health damage');
+          if(!log||!log.hits.length)throw new Error('action produced no hit log');
+          patterns.add(command.deliveryPattern);recipes.add(command.bowAnimationRecipeId);
+          forms.add(route.formSlot);mechanicFamilies.add(route.primaryAttributeId+'/' +
+            (route.secondaryAttributeId||route.primaryAttributeId));
+        }catch(error){
+          failures.push({routeId:route.id,depth:route.depth,formSlot:route.formSlot,
+            message:String(error&&error.message||error)});
+        }
+      }
+      return {passed:failures.length===0,routes:routes.length,immediateRoutes,chargeRoutes,
+        forms:[...forms].sort(),patterns:[...patterns].sort(),recipes:[...recipes].sort(),
+        mechanicFamilies:mechanicFamilies.size,totalFrames,maxFrames,failures};
+    })();`,
     source=parentStrengthOnly?parentStrengthSource:
       exhaustiveFeature?exhaustiveFeatureSource:
       exhaustiveDelivery?exhaustiveDeliverySource:
       exhaustiveRank?exhaustiveRankSource:
       exhaustiveHierarchy?exhaustiveHierarchySource:
-      postureBalanceOnly?postureBalanceSource:quick?match[1]+`
+      postureBalanceOnly?postureBalanceSource:
+      combatRoutesOnly?combatRoutesSource:quick?match[1]+`
     ;globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_FORM_AUDIT;
     globalThis.__postureFormAudit=typeof SHARPSHOOT_POSTURE_FORM_AUDIT==='undefined'?null:
@@ -1548,9 +1606,18 @@ try{
      matrix grows with authored content, so a fixed nine-minute limit can turn a
      slow but correct validation into a false failure. Daily quick and focused
      Posture checks keep their shorter runaway guard. */
-  if(postureBalanceOnly||quick)vmOptions.timeout=180000;
+  if(postureBalanceOnly||combatRoutesOnly||quick)vmOptions.timeout=180000;
   vm.runInNewContext(source,sandbox,vmOptions);
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
+  if(combatRoutesOnly){
+    const combat=sandbox.__combatRoutesAudit;
+    console.log('COMBAT_ROUTE_RUNTIME_AUDIT '+JSON.stringify(combat));
+    if(!combat||!combat.passed||combat.routes!==757||combat.immediateRoutes+combat.chargeRoutes!==
+       combat.routes||combat.forms.length!==6||combat.patterns.length<4||combat.recipes.length<20||
+       combat.failures.length)
+      throw new Error('Sharpshoot combat-route runtime failed: '+JSON.stringify(combat));
+    console.log(`COMBAT_ROUTES_OK ${file}`);process.exit(0);
+  }
   if(parentStrengthOnly){
     const parent=sandbox.__parentStrengthAudit,shape=sandbox.__parentStrengthShape,
       minRetention=.10,minVisibleGap=1;
