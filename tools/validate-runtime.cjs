@@ -1518,7 +1518,27 @@ try{
       typeof SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT==='undefined'?null:
       SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT;
     globalThis.__chargePrimaryRuntimeAudit=
-      typeof CHARGE_PRIMARY_RUNTIME_AUDIT==='undefined'?null:CHARGE_PRIMARY_RUNTIME_AUDIT;`:
+      typeof CHARGE_PRIMARY_RUNTIME_AUDIT==='undefined'?null:CHARGE_PRIMARY_RUNTIME_AUDIT;
+    globalThis.__bowRouteRecipeAudit=
+      typeof SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT==='undefined'?null:
+      SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT;
+    globalThis.__combatInteractionAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const hpBefore=boss.hp,apBefore=boss.ap,resolveBefore=boss.resolve,
+        menuOpened=handlePlayerTurnTap({x:350,y:650}),
+        actionStarted=handlePlayerTurnTap({x:120,y:618}),
+        actionCreated=boss.phase==='playerResolve'&&!!boss.turnAction&&
+          !!boss.turnAction.bowTimeline;
+      let frames=0;
+      while(boss.phase==='playerResolve'&&frames++<240){
+        updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+        if(boss.playerActionTimer<=0)finishPlayerAction();
+      }
+      return {menuOpened,actionStarted,actionCreated,frames,hpBefore,hpAfter:boss.hp,
+        apBefore,apAfter:boss.ap,resolveBefore,resolveAfter:boss.resolve,
+        returnedToPlayer:boss.phase==='player',hitLogged:!!(skillLabSession.lastLog&&
+          skillLabSession.lastLog.hits.length)};
+    })();`:
       adjacentOnly?adjacentSource:match[1];
   /* Full-history coverage grows deliberately with every materialized family.
      Keep a finite guard, but allow the exhaustive route matrix to finish on
@@ -1644,7 +1664,19 @@ try{
       chainCritical=sandbox.__chainCriticalFamilyAudit,
       chainCharge=sandbox.__chainChargeFamilyAudit,chainClosure=sandbox.__chainClosureAudit,
       chargePrimaryClosure=sandbox.__chargePrimaryClosureAudit,
-      chargePrimaryRuntime=sandbox.__chargePrimaryRuntimeAudit;
+      chargePrimaryRuntime=sandbox.__chargePrimaryRuntimeAudit,
+      bowRouteRecipe=sandbox.__bowRouteRecipeAudit,
+      combatInteraction=sandbox.__combatInteractionAudit;
+    if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
+       bowRouteRecipe.routeMappings<100)
+      throw new Error('Quick Bow route recipe gate failed: '+JSON.stringify(bowRouteRecipe));
+    if(!combatInteraction||!combatInteraction.menuOpened||!combatInteraction.actionStarted||
+       !combatInteraction.actionCreated||!combatInteraction.hitLogged||
+       !(combatInteraction.hpAfter<combatInteraction.hpBefore)||
+       !(combatInteraction.apAfter<combatInteraction.apBefore)||
+       !(combatInteraction.resolveAfter<combatInteraction.resolveBefore)||
+       !combatInteraction.returnedToPlayer)
+      throw new Error('Quick combat interaction gate failed: '+JSON.stringify(combatInteraction));
     if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
        chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4')
       throw new Error('Quick F2 Chain Form gate failed: '+JSON.stringify(chainForm));
@@ -1814,6 +1846,8 @@ try{
       throw new Error('Quick F2/F3/F4 Form power band failed: '+JSON.stringify({
         formScoreSpread,chain:chainForm.rows,posture:postureForm.rows,
         critical:criticalForm.rows}));
+    console.log('BOW_ROUTE_RECIPES '+JSON.stringify(bowRouteRecipe));
+    console.log('COMBAT_INTERACTION '+JSON.stringify(combatInteraction));
     console.log('QUICK_RUNTIME_OK '+file);
     console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
     console.log('POSTURE_FORM_AUDIT '+JSON.stringify(postureForm));

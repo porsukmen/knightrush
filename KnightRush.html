@@ -10494,6 +10494,11 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseTime:.07,recoveryTime:.34,arrowSpeed:1120,arrowArc:15,arrowScale:.78,drawStrength:.82,
     releaseRecoil:.48,trailStrength:.86,impactScale:.84,impactShake:2.3,hitStop:.028,
     shotInterval:.18,holdPerCharge:.018,scalePerCharge:.025,recoilPerCharge:.035}),
+  bowAnimationRecipe({id:'BOW_CHARGE_VOLLEY',visualStyle:'CHARGE',raiseTime:.08,drawTime:.26,holdTime:.06,
+    releaseTime:.06,recoveryTime:.28,arrowSpeed:1360,arrowArc:10,arrowScale:.86,drawStrength:.78,
+    releaseRecoil:.32,trailStrength:.86,impactScale:.98,impactShake:2.2,hitStop:.032,
+    shotInterval:.26,holdPerCharge:.015,scalePerCharge:.03,recoilPerCharge:.035,
+    trailColor:'#7fc9ff',glowColor:'#f2ddff',impactColor:'#ffcc4d'}),
   bowAnimationRecipe({id:'BOW_CHARGE_QUICK',visualStyle:'CHARGE',raiseTime:.08,drawTime:.22,holdTime:.04,
     releaseTime:.06,recoveryTime:.25,arrowSpeed:1240,arrowArc:12,arrowScale:.92,drawStrength:.70,
     releaseRecoil:.30,trailStrength:.72,impactScale:.96,impactShake:1.8,hitStop:.025,
@@ -10629,6 +10634,14 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_chain_shotgun_chain_apex:'BOW_SHOTGUN',
   mark_chain_shotgun_wave_apex:'BOW_SHOTGUN'
 });
+const SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT=(()=>{
+  const missing=Object.entries(SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID)
+    .filter(([,recipeId])=>!BOW_ANIMATION_RECIPES.has(recipeId));
+  if(missing.length)throw new Error('Sharpshoot routes reference unknown Bow recipes: '+
+    missing.map(([routeId,recipeId])=>routeId+' -> '+recipeId).join(', '));
+  return Object.freeze({passed:true,routeMappings:Object.keys(
+    SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID).length,recipes:BOW_ANIMATION_RECIPES.list.length});
+})();
 function sharpshootPostureRouteBowRecipe(route,specialization){
   const relationship=route&&route.mechanics&&route.mechanics.relationship,
     pattern=route&&route.delivery&&route.delivery.pattern;
@@ -27083,7 +27096,7 @@ function performPlayerAction(command,options=null){
     bleedAtStart:bossBleed(),breakAtStart:boss.playerTurnBreak===true,
     chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,chargeMarkBonus,chargeChainBonus,
     chargeRetained,chargeCriticalRetained,chargeCriticalRetentionApplied:false,
-    distributedChargeAction,primaryChargeRelease,spentChainForCharge,chargeNextMark,
+    distributedChargeAction,primaryChargeRelease:primaryRelease,spentChainForCharge,chargeNextMark,
     scheduleChargeAftershock,
     finishAfterRelease:primaryRelease&&!!options.finishAfterRelease,
     critPlan};
