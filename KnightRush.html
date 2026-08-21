@@ -536,7 +536,7 @@ function toGame(cx,cy){
 
 /* ============================== 4. AUDIO (synthesized) ============================== */
 const SFX=(()=>{
-  let ac=null, master=null, muted=false, vol=0.5;             // vol 0..1 (0.5 = old loudness)
+  let ac=null, master=null, muted=false, testMuted=false, vol=0.5; // vol 0..1 (0.5 = old loudness)
   try{ const s=parseFloat(localStorage.getItem('kr_vol')); if(!isNaN(s)) vol=clamp(s,0,1); }catch(e){}
   function init(){ if(ac) return; try{
     ac=new (window.AudioContext||window.webkitAudioContext)();
@@ -544,7 +544,7 @@ const SFX=(()=>{
   }catch(e){} }
   function unlock(){ init(); if(ac&&ac.state==='suspended') ac.resume(); }
   function tone(f0,f1,dur,type='square',vol=0.5,delay=0){
-    if(!ac||muted) return; const t=ac.currentTime+delay;
+    if(!ac||muted||testMuted) return; const t=ac.currentTime+delay;
     const o=ac.createOscillator(), gn=ac.createGain();
     o.type=type; o.frequency.setValueAtTime(f0,t);
     o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t+dur);
@@ -552,7 +552,7 @@ const SFX=(()=>{
     o.connect(gn); gn.connect(master); o.start(t); o.stop(t+dur+.02);
   }
   function noise(dur,vol=0.4,delay=0,lp=1200){
-    if(!ac||muted) return; const t=ac.currentTime+delay;
+    if(!ac||muted||testMuted) return; const t=ac.currentTime+delay;
     const len=(dur*ac.sampleRate)|0, buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
     for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
     const src=ac.createBufferSource(); src.buffer=buf;
@@ -561,7 +561,8 @@ const SFX=(()=>{
     src.connect(fl); fl.connect(gn); gn.connect(master); src.start(t);
   }
   return {
-    init, unlock, get muted(){return muted;}, toggle(){muted=!muted;},
+    init, unlock, get muted(){return muted||testMuted;},toggle(){if(!testMuted)muted=!muted;},
+    setTestMuted(value){testMuted=!!value;},
     get vol(){return vol;},
     setVol(v){ vol=clamp(v,0,1); if(master) master.gain.value=0.7*vol;
       try{ localStorage.setItem('kr_vol',vol); }catch(e){} },
@@ -10061,6 +10062,17 @@ const SKILL_MASTERIES=Object.freeze([
 ]);
 const SKILL_MUTATIONS=Object.freeze([...SKILL_EVOLUTIONS,...SPLIT_SIGHT_EVOLUTIONS,...SKILL_MASTERIES]);
 const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(m=>[m.id,m])));
+/* These cards were the first Sharpshoot prototype tree. They remain only as
+   immutable calibration fixtures for the old balance assertions while those
+   assertions are being replaced; no draft, catalogue, history lookup or Move
+   Tree surface may expose them as playable content. */
+const RETIRED_SHARPSHOOT_TREE_IDS=new Set([
+  ...SKILL_EVOLUTIONS,...SPLIT_SIGHT_EVOLUTIONS
+].map(mutation=>mutation.id));
+function retiredSkillMutation(mutationOrId){
+  const id=typeof mutationOrId==='string'?mutationOrId:mutationOrId&&mutationOrId.id;
+  return !!id&&RETIRED_SHARPSHOOT_TREE_IDS.has(id);
+}
 
 /* =========================== COMBAT ATTRIBUTE REGISTRY ===========================
    Attribute answers "what does this move build around?" Delivery answers "how do
@@ -17200,6 +17212,19 @@ function sharpshootRouteDeliveryIntent(route){
   }
   return 'PRESERVE THE AUTHORED ATTRIBUTE RELATIONSHIP';
 }
+const SHARPSHOOT_FORM_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
+  .filter(route=>route.depth===1).map(route=>Object.freeze({
+    id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:1,
+    type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',
+    name:route.name,col:COMBAT_ATTRIBUTE_UI_COLORS[route.primaryAttributeId],
+    buildAspect:route.primaryAttributeId+'_PRIMARY',secondaryId:null,
+    focusAxis:'PRIMARY_'+route.primaryAttributeId,summary:route.promise,
+    details:Object.freeze([
+      'Base: '+route.baseAttributeId+' · Primary: '+route.primaryAttributeId+'.',
+      'Delivery: '+route.delivery.pattern.replace(/_/g,' ')+' · '+
+        route.delivery.timing.replace(/_/g,' ')+'.',
+      'This Form establishes the route foundation; every descendant must preserve it.'
+    ]),prototypeContract:true})));
 const SHARPSHOOT_MARK_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRACTS
   .filter(route=>route.depth===2).map(route=>Object.freeze({
     id:route.id,routeId:route.id,skillId:'sharpshoot',kind:'EVOLUTION',depth:2,
@@ -17250,7 +17275,7 @@ const SHARPSHOOT_MARK_APEX_LAB_NODES=Object.freeze(SHARPSHOOT_MARK_ROUTE_CONTRAC
         route.delivery.timing.replace(/_/g,' ')+'.'
     ]),prototypeContract:true})));
 const SHARPSHOOT_MARK_ALL_LAB_NODES=Object.freeze([
-  ...SHARPSHOOT_MARK_LAB_NODES,...SHARPSHOOT_MARK_TWIST_LAB_NODES,
+  ...SHARPSHOOT_FORM_LAB_NODES,...SHARPSHOOT_MARK_LAB_NODES,...SHARPSHOOT_MARK_TWIST_LAB_NODES,
   ...SHARPSHOOT_MARK_APEX_LAB_NODES
 ]);
 const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
@@ -17337,7 +17362,11 @@ const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
     form4Children=sharpshootLabRouteChildren('critical_primary_form'),
     form5Children=sharpshootLabRouteChildren('affliction_primary_form'),
     form6Children=sharpshootLabRouteChildren('charge_primary_form');
-  if(SHARPSHOOT_MARK_LAB_NODES.length!==36||form1Specs.length!==6||form2Specs.length!==6||
+  if(SHARPSHOOT_FORM_LAB_NODES.length!==6||
+     SHARPSHOOT_MARK_ALL_LAB_NODES.length!==SHARPSHOOT_MARK_ROUTE_CONTRACTS.length||
+     SHARPSHOOT_FORM_LAB_NODES.some(node=>node.depth!==1||
+       !SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId]||SKILL_MUTATION_BY_ID[node.id])||
+     SHARPSHOOT_MARK_LAB_NODES.length!==36||form1Specs.length!==6||form2Specs.length!==6||
      form3Specs.length!==6||form4Specs.length!==6||form5Specs.length!==6||form6Specs.length!==6||form1Children.length!==6||
      form2Children.length!==6||form3Children.length!==6||form4Children.length!==6||
      form5Children.length!==6||form6Children.length!==6||
@@ -17354,7 +17383,8 @@ const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
      Object.keys(SHARPSHOOT_MARK_LAB_NODE_BY_ID).length!==SHARPSHOOT_MARK_ALL_LAB_NODES.length||
      SHARPSHOOT_MARK_ALL_LAB_NODES.some(node=>!node.prototypeContract||SKILL_MUTATION_BY_ID[node.id]))
     throw new Error('Sharpshoot Mark contract previews must stay complete and outside live mutations');
-  return Object.freeze({passed:true,nodes:SHARPSHOOT_MARK_LAB_NODES.length,
+  return Object.freeze({passed:true,forms:SHARPSHOOT_FORM_LAB_NODES.length,
+    nodes:SHARPSHOOT_MARK_LAB_NODES.length,
     twists:SHARPSHOOT_MARK_TWIST_LAB_NODES.length,
     apexes:SHARPSHOOT_MARK_APEX_LAB_NODES.length,liveMutations:0});
 })();
@@ -27317,6 +27347,16 @@ const SKILL_MUTATIONS_BY_SKILL=(()=>{
   for(const id of Object.keys(index))index[id]=Object.freeze(index[id]);
   return Object.freeze(index);
 })();
+const PLAYABLE_SKILL_MUTATIONS_BY_SKILL=Object.freeze(Object.fromEntries(
+  BASE_TURN_SKILLS.map(skill=>[skill.id,Object.freeze(
+    (SKILL_MUTATIONS_BY_SKILL[skill.id]||[]).filter(mutation=>!retiredSkillMutation(mutation)))])
+));
+const RETIRED_TREE_SURFACE_AUDIT=(()=>{
+  const exposed=Object.values(PLAYABLE_SKILL_MUTATIONS_BY_SKILL).flat()
+    .filter(retiredSkillMutation);
+  if(exposed.length)throw new Error('Retired Sharpshoot cards leaked into a playable mutation pool');
+  return Object.freeze({passed:true,retired:RETIRED_SHARPSHOOT_TREE_IDS.size,exposed:0});
+})();
 function stableStructuralDistance(leftState,rightState){
   const left=stableEvolutionStructuralProfile(leftState),right=stableEvolutionStructuralProfile(rightState),
     leftCapabilities=stableCapabilityProfile(leftState),rightCapabilities=stableCapabilityProfile(rightState),
@@ -27505,7 +27545,7 @@ function weightedEvolutionMutation(pool,rng){
 function rollSkillMutationChoices(count=3,rng=Math.random){
   const pools=Object.create(null),skillIds=[],choices=[];
   for(const skill of runSkills){
-    const pool=(SKILL_MUTATIONS_BY_SKILL[skill.baseId]||[]).filter(canApplySkillMutation);
+    const pool=(PLAYABLE_SKILL_MUTATIONS_BY_SKILL[skill.baseId]||[]).filter(canApplySkillMutation);
     if(pool.length){pools[skill.baseId]=pool;skillIds.push(skill.baseId);}
   }
   /* Every pool above was derived from the player's current card (nextPoolId,
@@ -32893,7 +32933,7 @@ function skillLabCurrentBaseId(){
   return BASE_TURN_SKILLS[skillLabSession.skillIndex%BASE_TURN_SKILLS.length].id;
 }
 function skillLabCurrentMutations(){
-  return SKILL_MUTATIONS_BY_SKILL[skillLabCurrentBaseId()]||[];
+  return PLAYABLE_SKILL_MUTATIONS_BY_SKILL[skillLabCurrentBaseId()]||[];
 }
 function skillLabMutationStatus(mutation){
   const skill=runSkill(mutation.skillId);
@@ -33126,7 +33166,13 @@ let bossKills=0, bossScoreRun=0, overkillRun=0, deathReason='';
 let bestScore=0, newBestThisRun=false, paused=false;
 let scoreShown=0;               // the HUD's racing counter chases the continuous score target
 let env='forest';               // 'forest' during the run · 'cave' for the bear's lair
-function setMode(m){ mode=m; modeT=0; }
+const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skilllab']);
+function setMode(m){
+  /* Automated and hands-on debug sessions are always silent. This overlay never
+     changes the player's own mute preference and is released on the normal menu. */
+  SFX.setTestMuted(SILENT_TEST_MODES.has(m)||(debugRun&&m!=='menu'));
+  mode=m;modeT=0;
+}
 function speed(){
   /* All three pools in a cycle share one pace. Clearing the final pool advances
      the world forever. Logarithmic growth keeps early acceleration noticeable,
@@ -34758,7 +34804,8 @@ function moveTreeNodeById(id){
      inside the selected skill before consulting the legacy global mutation map;
      otherwise an unrelated node with the same id silently severs its children. */
   const skillNodes=WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_SKILL_AND_ID[moveTreeSkillId()];
-  return skillNodes&&skillNodes[id]||SKILL_MUTATION_BY_ID[id]||
+  const legacy=SKILL_MUTATION_BY_ID[id];
+  return skillNodes&&skillNodes[id]||(!retiredSkillMutation(legacy)&&legacy)||
     WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID[id]||null;
 }
 const MOVE_TREE_SYNTHESIS_RARITY_RECTS=Object.freeze(SKILL_RARITY_ORDER.map((rarity,index)=>
@@ -34878,11 +34925,26 @@ function moveTreeSynthesisPreviewCommand(node){
   return recipe.depth===1?synthesizeF1StablePath(formRarity):
     synthesizeF1StablePath(formRarity,node.id,moveTreeSynthesisRarityByDepth[2]);
 }
+function moveTreeCatalogueForms(skillId){
+  const authored=WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_SKILL_AND_ID[skillId];
+  return authored?Object.values(authored).filter(node=>node.kind==='EVOLUTION'&&node.depth===1):[];
+}
+const MOVE_TREE_CATALOGUE_SOURCE_AUDIT=(()=>{
+  const forms=moveTreeCatalogueForms('sharpshoot'),expected=SHARPSHOOT_MARK_ROUTE_CONTRACTS
+      .filter(route=>route.depth===1).map(route=>route.id),actual=forms.map(node=>node.id),
+    legacyIds=new Set((SKILL_MUTATIONS_BY_SKILL.sharpshoot||[])
+      .filter(node=>node.kind==='EVOLUTION'&&node.depth===1).map(node=>node.id));
+  if(actual.length!==expected.length||expected.some(id=>!actual.includes(id))||
+     actual.some(id=>legacyIds.has(id)))
+    throw new Error('Sharpshoot Move Tree must use only the current route catalogue Forms');
+  return Object.freeze({passed:true,forms:actual.length,legacyFormsVisible:0});
+})();
 function moveTreeForms(){
-  const skillId=moveTreeSkillId(),forms=(SKILL_MUTATIONS_BY_SKILL[skillId]||[])
-    .filter(node=>node.kind==='EVOLUTION'&&node.depth===1),known=new Set(forms.map(node=>node.id));
-  for(const node of WEAPON_SKILL_PROTOTYPE_LAB_NODES)if(node.skillId===skillId&&node.depth===1&&
-    !known.has(node.id))forms.push(node);
+  const skillId=moveTreeSkillId(),catalogueForms=moveTreeCatalogueForms(skillId),
+    /* A route catalogue is authoritative. Mixing its nodes with the retired
+       mutation tree produces valid-looking but historically wrong branches. */
+    forms=catalogueForms.length?catalogueForms.slice():(SKILL_MUTATIONS_BY_SKILL[skillId]||[])
+      .filter(node=>node.kind==='EVOLUTION'&&node.depth===1);
   forms.sort((a,b)=>{
     const routeA=weaponSkillRouteFromNode(a),routeB=weaponSkillRouteFromNode(b);
     return (routeA?routeA.formSlot:Number.MAX_SAFE_INTEGER)-
@@ -35269,19 +35331,21 @@ function skillLabBuildLine(){
 function drawSkillLabDraft(){
   g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#e8e2d0';
   g.fillText(skillLabBuildLine(),VW/2,162);
-  const choices=skillLabSession.choices;
+  const choices=skillLabSession.choices,liveDraftReady=skillLabCurrentMutations().length>0;
   if(choices.length){
     for(let i=0;i<choices.length;i++)drawSkillMutationCard(choices[i],skillLabDraftCardRect(i),'APPLY IN LAB');
   }else{
     g.fillStyle='rgba(158,203,255,.07)';g.fillRect(36,190,408,340);
     g.strokeStyle='#33465d';g.lineWidth=2;g.strokeRect(36.5,190.5,407,339);
-    g.font='bold 23px monospace';g.fillStyle='#9ecbff';g.fillText('ROLL A REAL DRAFT',VW/2,315);
+    g.font='bold 23px monospace';g.fillStyle='#9ecbff';g.fillText(liveDraftReady?'ROLL A REAL DRAFT':'ROUTE DRAFT RETIRED',VW/2,315);
     g.font='12px monospace';g.fillStyle='#aeb2c2';
-    g.fillText('the live rarity weights and eligibility rules',VW/2,346);
-    g.fillText('produce the same three cards as a real run',VW/2,366);
+    g.fillText(liveDraftReady?'the live rarity weights and eligibility rules':
+      'the old Sharpshoot cards cannot enter the game',VW/2,346);
+    g.fillText(liveDraftReady?'produce the same three cards as a real run':
+      'use TREE while the four-skill kit is authored',VW/2,366);
   }
-  drawSkillLabButton({x:18,y:550,w:140,h:42},choices.length?'ROLL SAME':'ROLL 3','#9ecbff');
-  drawSkillLabButton({x:170,y:550,w:140,h:42},'NEW SEED','#c995ff');
+  drawSkillLabButton({x:18,y:550,w:140,h:42},choices.length?'ROLL SAME':'ROLL 3','#9ecbff',liveDraftReady);
+  drawSkillLabButton({x:170,y:550,w:140,h:42},'NEW SEED','#c995ff',liveDraftReady);
   drawSkillLabButton({x:322,y:550,w:140,h:42},'CLEAR BUILD','#ff7a82');
   drawSkillLabButton({x:100,y:610,w:280,h:48},'TEST CURRENT BUILD ▶','#c0f79a');
   g.font='bold 11px monospace';g.fillStyle='#8b8fa0';
@@ -35319,6 +35383,12 @@ function drawSkillLabCatalog(){
     const mutation=mutations[page*6+i];if(!mutation)continue;
     drawSkillLabCatalogCard(mutation,SKILL_LAB_CATALOG_RECTS[i],
       mutation.id===skillLabSession.selectedMutationId);
+  }
+  if(!mutations.length){
+    g.textAlign='center';g.font='bold 20px monospace';g.fillStyle='#9ecbff';
+    g.fillText('LEGACY CATALOG RETIRED',VW/2,350);
+    g.font='11px monospace';g.fillStyle='#8b8fa0';
+    g.fillText('the current authored routes live in MOVE TREE',VW/2,378);
   }
   drawSkillLabButton({x:126,y:548,w:48,h:32},'◀','#9ecbff',page>0);
   drawSkillLabButton({x:306,y:548,w:48,h:32},'▶','#9ecbff',page<pageCount-1);
