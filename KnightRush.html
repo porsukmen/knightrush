@@ -9621,6 +9621,8 @@ function createRunSkill(definition){
     synthesisProjectedResolveCost:definition.cost||0,synthesisRarityCounts:null,
     synthesisEffectiveQuality:0,synthesisDepthBonus:0,synthesisTargetPower:0,
     deliveryMagnitude:1,deliveryWeight:1,chainBonusWeight:1,
+    markDetonationEventMode:'CONTACT',markDetonationCapacity:1,markDetonationEchoRate:0,
+    markDetonationReservePressureRate:0,markDetonationFullCommit:false,
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
     startingChainHitRate:0,chainSecondWaveBonus:0,chainSecondWaveStartIndex:0,
     markPulsePattern:null,markPulseInterval:0,markPulsePreservesContactMark:false,
@@ -9766,6 +9768,8 @@ function transformSharpshoot(skill,patch){
     chainScalingTiming:'LIVE',realChainScalingMultiplier:1,apexRefinementId:null,
     addsChain:true,chainGainPerHit:1,chainGainPattern:null,deliveryMagnitude:1,deliveryWeight:1,
     chainBonusWeight:1,packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
+    markDetonationEventMode:'CONTACT',markDetonationCapacity:1,markDetonationEchoRate:0,
+    markDetonationReservePressureRate:0,markDetonationFullCommit:false,
     critChance:0,critChancePerStartingMark:0,critChancePerStartingChain:0,
     critChanceRampPerHit:0,critDamagePerStartingChain:0,critChainBonus:0,
     critMarkBonus:0,critRollMode:'PER_CONTACT',critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
@@ -10488,6 +10492,21 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseRecoil:.68,trailStrength:.84,impactScale:1.48,impactShake:4.8,hitStop:.075,
     shotInterval:.54,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
     trailColor:'#ff6b72',glowColor:'#ffe37a',impactColor:'#ff334f'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_PACKET',visualStyle:'DETONATION',raiseTime:.12,drawTime:.38,holdTime:.09,
+    releaseTime:.08,recoveryTime:.38,arrowSpeed:1120,arrowArc:17,arrowScale:1.02,drawStrength:.92,
+    releaseRecoil:.58,trailStrength:.90,impactScale:1.08,impactShake:3.5,hitStop:.045,
+    shotInterval:.20,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff6b72',glowColor:'#ffe37a',impactColor:'#ff334f'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_ECHO',visualStyle:'DETONATION',raiseTime:.16,drawTime:.48,holdTime:.18,
+    releaseTime:.11,recoveryTime:.56,arrowSpeed:940,arrowArc:25,arrowScale:1.36,drawStrength:1,
+    releaseRecoil:.66,trailStrength:.92,impactScale:1.42,impactShake:4.6,hitStop:.070,
+    shotInterval:.34,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff6b72',glowColor:'#fff0a1',impactColor:'#ff334f'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_TOTAL',visualStyle:'DETONATION',raiseTime:.21,drawTime:.64,holdTime:.30,
+    releaseTime:.14,recoveryTime:.62,arrowSpeed:820,arrowArc:34,arrowScale:1.78,drawStrength:1,
+    releaseRecoil:.86,trailStrength:1,impactScale:1.88,impactShake:7.2,hitStop:.11,
+    shotInterval:.62,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff596d',glowColor:'#ffffff',impactColor:'#ff1f45'}),
   bowAnimationRecipe({id:'BOW_CHAIN',visualStyle:'CHAIN',raiseTime:.07,drawTime:.21,holdTime:.02,
     releaseTime:.05,recoveryTime:.18,arrowSpeed:1580,arrowArc:8,arrowScale:.88,drawStrength:.62,
     releaseRecoil:.16,trailStrength:.55,impactScale:.86,impactShake:1.1,hitStop:.015,
@@ -11406,6 +11425,10 @@ const TWIST_MECHANIC_ENGINE_REGISTRY=Object.freeze(Object.fromEntries([
   ,{id:'CHARGE_CRITICAL_FOCUS',owners:['CHARGE','CRITICAL'],kind:'SIGNATURE',powerModel:'PAID_DEFENSE_TO_LOCAL_CRIT_OUTPUT'}
   ,{id:'CHARGE_WOUND_WEAVING',owners:['CHARGE','AFFLICTION'],kind:'SIGNATURE',powerModel:'PAID_CHARGE_WOUND_OUTPUT'}
   ,{id:'CHARGE_MASTERY',owners:['CHARGE'],kind:'SIGNATURE',powerModel:'PAID_PURE_CHARGE_OUTPUT'}
+  ,{id:'DETONATION_PACKET',owners:['DETONATION'],kind:'SIGNATURE',powerModel:'PAID_PER_MARK_PACKET_OUTPUT'}
+  ,{id:'DETONATION_COMPRESSION',owners:['DETONATION'],kind:'SIGNATURE',powerModel:'PAID_SINGLE_EVENT_DETONATION_OUTPUT'}
+  ,{id:'DETONATION_ECHO',owners:['DETONATION'],kind:'SIGNATURE',powerModel:'PAID_NON_CONTACT_AFTERSHOCK_OUTPUT'}
+  ,{id:'TOTAL_DETONATION',owners:['DETONATION'],kind:'SIGNATURE',powerModel:'FULL_RESERVE_COMMIT_OUTPUT'}
 ].map(engine=>[engine.id,Object.freeze({...engine,owners:Object.freeze(engine.owners.slice()),
   testPolicy:'RUNTIME_SEQUENCE_AND_POWER_LEDGER'})])));
 const TWIST_IDENTITY_ENUMS=Object.freeze({
@@ -15364,6 +15387,112 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ROUTE_CONTRACTS.map(route=>[route.id,route])));
+const MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'detonation_fragment_twist',slot:1,pattern:'SIMULTANEOUS_PACKET',
+    recipe:'BOW_DETONATION_PACKET',engine:'DETONATION_PACKET',
+    profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.35,DETONATION_CONSUMPTION:.50}),
+    promise:'Split the paid Detonation capacity into one simultaneous packet: each consumed Mark owns a visible full-value explosion event, while the packet creates only one natural Chain.',
+    relationship:'SIMULTANEOUS_PER_MARK_DETONATION',payloadPolicy:'SIMULTANEOUS_CONTACT_PACKET',
+    rejectedPattern:'SINGLE',resourceFlow:'ATTRIBUTE_NATIVE',playerDecision:'Spend the paid Mark capacity as many simultaneous Detonation events for event-trigger synergies.',
+    primaryOutcome:'Every consumed Mark remains a full-value Detonation payload.',secondaryOutcome:'The pure Detonation branch gains event density without Chain scaling.',
+    synergyHook:'On-detonation and packet-event artifacts.',identity:Object.freeze({version:1,input:'DETONATION',
+      trigger:'ON_ACTION_START',operation:'SPLIT',output:'APPLICATION_EVENTS',timing:'IMMEDIATE',
+      deliveryPurpose:'MECHANIC_REQUIRED',engineIds:['DETONATION_PACKET'],
+      deliveryReason:'A simultaneous packet makes every paid Mark explosion visible without creating an ordered Chain engine.'})}),
+  Object.freeze({id:'detonation_compression_twist',slot:2,pattern:'SINGLE',
+    recipe:'BOW_DETONATION',engine:'DETONATION_COMPRESSION',
+    profile:Object.freeze({DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.50,DETONATION_CONSUMPTION:.30}),
+    promise:'Compress every Mark inside the paid Detonation capacity into one heavy impact and one damage event.',
+    relationship:'COMPRESSED_SINGLE_DETONATION',payloadPolicy:'READ_ONCE_PER_ACTION',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'ATTRIBUTE_NATIVE',playerDecision:'Trade Detonation event count for one heavy Crit and Break friendly payoff.',
+    primaryOutcome:'All paid Mark payload remains full value inside one impact.',secondaryOutcome:'The pure branch concentrates rather than multiplying contacts.',
+    synergyHook:'Single-hit, Crit and Break damage artifacts.',identity:Object.freeze({version:1,input:'DETONATION',
+      trigger:'ON_CONTACT',operation:'AMPLIFY',output:'DETONATION',timing:'IMMEDIATE',
+      deliveryPurpose:'MECHANIC_REQUIRED',engineIds:['DETONATION_COMPRESSION'],
+      deliveryReason:'Single delivery is required because compression is one combined Detonation event, not a disguised volley.'})}),
+  Object.freeze({id:'detonation_echo_twist',slot:3,pattern:'IMPACT_ECHO',
+    recipe:'BOW_DETONATION_ECHO',engine:'DETONATION_ECHO',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,DETONATION_CONSUMPTION:.25,
+      DETONATION_EVENTS:.35}),
+    promise:'Detonate the paid Mark capacity on impact, then repeat a paid portion of that payload as a non-contact aftershock without consuming another Mark.',
+    relationship:'DETONATION_AFTERSHOCK',payloadPolicy:'IMPACT_WITH_ECHOES',
+    rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'COUPLED_LOOP',playerDecision:'Accept a slower payoff to gain a second Detonation event without spending the reserve twice.',
+    primaryOutcome:'The initial full-value Detonation remains unchanged.',secondaryOutcome:'A paid echo repeats part of the consumed payload later in the action.',
+    synergyHook:'Delayed-event and repeated-Detonation artifacts.',identity:Object.freeze({version:1,input:'DETONATION',
+      trigger:'ON_FINAL_CONTACT',operation:'RETRIGGER',output:'DETONATION',timing:'LATER_IN_ACTION',
+      deliveryPurpose:'MECHANIC_REQUIRED',engineIds:['DETONATION_ECHO'],
+      deliveryReason:'Impact Echo keeps one physical arrow while presenting the paid aftershock as a separate non-contact event.'})}),
+  Object.freeze({id:'detonation_total_twist',slot:4,pattern:'SINGLE',
+    recipe:'BOW_DETONATION_TOTAL',engine:'TOTAL_DETONATION',
+    profile:Object.freeze({DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.70}),
+    promise:'Commit the complete starting Mark reserve and detonate every stored Mark at full value in one decisive impact.',
+    relationship:'TOTAL_MARK_RESERVE_DETONATION',payloadPolicy:'READ_ONCE_PER_ACTION',
+    rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'PRIMARY_TO_SECONDARY',playerDecision:'Cash out the entire Mark reserve now instead of preserving setup for later actions.',
+    primaryOutcome:'Every starting Mark becomes full-value Detonation damage.',secondaryOutcome:'No Mark reserve survives the action.',
+    synergyHook:'Large Mark setup, all-in burst and boss Break windows.',identity:Object.freeze({version:1,input:'MARK',
+      trigger:'ON_ACTION_START',operation:'CONVERT',output:'DETONATION',timing:'IMMEDIATE',
+      deliveryPurpose:'MECHANIC_REQUIRED',engineIds:['TOTAL_DETONATION'],
+      deliveryReason:'One deliberate heavy arrow communicates that the complete Mark reserve is committed in a single all-in payoff.'})})
+]);
+const MARK_BURST_DETONATION_FOCUS_APEX_PROFILES=Object.freeze([
+  Object.freeze({key:'RELATIONSHIP',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,
+    DETONATION_CONSUMPTION:.60})}),
+  Object.freeze({key:'PAYLOAD',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.70,
+    DETONATION_CONSUMPTION:.20})}),
+  Object.freeze({key:'BALANCED',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.425,
+    DETONATION_CONSUMPTION:.425})}),
+  Object.freeze({key:'IMPACT',profile:Object.freeze({DIRECT_DAMAGE:.65,DETONATION_DAMAGE:.20,
+    DETONATION_CONSUMPTION:.15})})
+]);
+function buildMarkBurstDetonationFocusTwistContracts(){
+  const routes=[];
+  for(const twist of MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS){
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'detonation_focus_spec',formSlot:1,specializationSlot:1,slot:twist.slot,
+      primaryAttributeId:'DETONATION',secondaryAttributeId:'DETONATION',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling:{mode:'NONE'},qualityProfile:twist.profile,
+      deliveryDecision:{reason:twist.identity.deliveryReason,resourcePolicy:'ONE_CHAIN_TOTAL',
+        payloadPolicy:twist.payloadPolicy,rejectedPattern:twist.rejectedPattern},
+      twistDesign:{resourceFlow:twist.resourceFlow,pairSpecific:true,
+        playerDecision:twist.playerDecision,primaryOutcome:twist.primaryOutcome,
+        secondaryOutcome:twist.secondaryOutcome,synergyHook:twist.synergyHook},
+      twistIdentity:twist.identity,promise:twist.promise,
+      mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'MARK_DETONATION',
+        relationship:twist.relationship,detonationEngine:twist.engine,
+        echoContactPolicy:twist.pattern==='IMPACT_ECHO'?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    for(let index=0;index<4;index++){
+      const apex=MARK_BURST_DETONATION_FOCUS_APEX_PROFILES[index],profile={...apex.profile};
+      if(twist.engine==='DETONATION_ECHO'){
+        if(index===0)profile.DETONATION_EVENTS=(profile.DETONATION_CONSUMPTION||0),delete profile.DETONATION_CONSUMPTION;
+        else if(index===2){profile.DETONATION_EVENTS=.425;profile.DETONATION_CONSUMPTION=.20;
+          profile.DETONATION_DAMAGE=.275;profile.DIRECT_DAMAGE=.10;}
+      }else if(twist.engine==='TOTAL_DETONATION'){
+        delete profile.DETONATION_CONSUMPTION;
+        if(index===0){profile.DIRECT_DAMAGE=.10;profile.DETONATION_DAMAGE=.55;profile.DETONATION_EVENTS=.35;}
+        else if(index===1){profile.DIRECT_DAMAGE=.10;profile.DETONATION_DAMAGE=.90;}
+        else if(index===2){profile.DIRECT_DAMAGE=.20;profile.DETONATION_DAMAGE=.55;profile.DETONATION_EVENTS=.25;}
+        else {profile.DIRECT_DAMAGE=.70;profile.DETONATION_DAMAGE=.30;}
+      }
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),skillId:'mark_burst',
+        depth:4,parentId:twist.id,formSlot:1,specializationSlot:1,twistSlot:twist.slot,slot:index+1,
+        primaryAttributeId:'DETONATION',secondaryAttributeId:'DETONATION',powerBudget:1,
+        deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+        deliveryScaling:{mode:'NONE'},qualityProfile:profile,
+        promise:'Preserve '+twist.relationship+' and refine its '+apex.key.toLowerCase()+' output without changing the parent trigger, payment or Delivery.',
+        mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'MARK_DETONATION',
+          relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key,
+          echoContactPolicy:twist.pattern==='IMPACT_ECHO'?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
 /* Mark Burst starts as the payoff half of the Bow pair. This first Form is kept
    deliberately small: one real heavy arrow owns one contact, creates no Mark,
    and spends accumulated Mark for full-value Detonation. Quality may buy more
@@ -15448,6 +15577,80 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     baselineAttack:{hits:1,markGain:0,resolveCost:1,
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
         curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'detonation_focus_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:1,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'DETONATION',powerBudget:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.45,DETONATION_CONSUMPTION:.35},
+    promise:'Keep one heavy impact and concentrate the complete relationship packet into stronger, deeper Mark Detonation.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'MARK_DETONATION',
+      relationship:'PURE_DETONATION_FOCUS',detonationRule:'FULL_VALUE_CONTACT_CONSUME'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'detonation_chain_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:2,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.20,
+      CHAIN_SCALING:.25,DELIVERY_CONTACTS:.15},
+    promise:'Enter a shorter Quality-grown sequence: every arrow creates Chain and reads it live, while only the final arrow performs the inherited full Detonation.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'LIVE_CHAIN_CADENCE',
+      relationship:'SEQUENCE_INTO_FINAL_DETONATION',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_INHERITS_PARENT_CAP'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'detonation_posture_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:3,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
+      POSTURE_DAMAGE:.30},
+    promise:'Keep Detonation dominant and add conservative light-bow Posture impact to the same single contact.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'PARALLEL_DETONATION_POSTURE',postureRule:'LIGHT_WEAPON_SECONDARY_EXPRESSION'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'detonation_critical_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:4,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
+      CRIT_CHANCE:.30},
+    promise:'Add bounded local Crit chance to the direct arrow while keeping the inherited Detonation payload outside the Crit multiplier.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'LOCAL_CRITICAL',
+      relationship:'PARALLEL_DETONATION_CRITICAL',criticalRule:'DIRECT_CONTACT_ONLY_FLAT_CHANCE'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'detonation_affliction_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:5,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
+      AFFLICTION_APPLICATION:.20,AFFLICTION_POTENCY:.15},
+    promise:'Keep the Mark payoff intact and add one modest two-turn Bleed wound through the same physical arrow.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'BLEED_PAYLOAD',
+      relationship:'PARALLEL_DETONATION_BLEED',afflictionRule:'ONE_WOUND_TWO_TICKS'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'detonation_charge_spec',skillId:'mark_burst',depth:2,
+    parentId:'detonation_primary_form',formSlot:1,slot:6,
+    primaryAttributeId:'DETONATION',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
+      DEFENSE_TEMPER:.30},
+    promise:'Resolve immediately and spend the best banked defense score on direct impact while inherited Detonation resolves independently.',
+    mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'PARALLEL_DETONATION_CHARGE',chargeRule:'BEST_PHASE_BANK_CONSUME_ON_USE'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  ...buildMarkBurstDetonationFocusTwistContracts()
 ]);
 const MARK_BURST_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   MARK_BURST_ROUTE_CONTRACTS.map(route=>[route.id,route])));
@@ -16830,23 +17033,57 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   posture_primary_form:'Tek ağır ok. Weight yalnız bu rota bütçe ayırdığı için Quality ile büyür ve verdiği ek güç doğrudan Posture darbesine gider; 1 Mark patlatır.',
   critical_primary_form:'Tek hassas ok. Yerel Crit şansı, ıskalama sonrası Precision ve Crit hasarı gelişir; 1 Mark patlaması Crit çarpanından ayrı kalır.',
   affliction_primary_form:'Tek yaralayıcı ok. İki savunma turu vuran Bleed bırakır ve 1 Mark patlatır; shotgun bu Formda bedava verilmez.',
-  charge_primary_form:'Şimdi hazırlanır, bir savunma fazı boyunca Charge toplar ve sonraki oyuncu fazında bedelsiz tek ağır ok bırakır; temas 1 Mark patlatır.'
+  charge_primary_form:'Şimdi hazırlanır, bir savunma fazı boyunca Charge toplar ve sonraki oyuncu fazında bedelsiz tek ağır ok bırakır; temas 1 Mark patlatır.',
+  detonation_focus_spec:'Tek ağır okta Detonationa tamamen yoğunlaşır; Mark başına hasar ve tüketim kapasitesi parentın üstüne çıkar.',
+  detonation_chain_spec:'Kısa bir ok dizisi Chain kurar ve canlı okur; parenttan gelen bütün Mark tüketimi yalnız son okun Detonationında gerçekleşir.',
+  detonation_posture_spec:'Tek Detonation okuna light-bow seviyesinde ek Posture darbesi koyar; Mark tüketimi Posturea çevrilmez.',
+  detonation_critical_spec:'Doğrudan ok yerel Crit kazanır; Mark patlaması ayrı hasar kalır ve Crit çarpanını kullanmaz.',
+  detonation_affliction_spec:'Aynı tek temas küçük iki turluk Bleed bırakır; Detonation ve yara şimdilik paralel çalışır.',
+  detonation_charge_spec:'Tek ok bankadaki savunma Chargeını anında harcayıp doğrudan hasar kazanır; Detonation ayrı çözülür.',
+  detonation_fragment_twist:'Quality ile büyüyen tüketim kapasitesini eşzamanlı patlama paketine böler. Her tüketilen Mark ayrı olaydır; bütün paket yalnız 1 doğal Chain üretir.',
+  detonation_compression_twist:'Quality ile büyüyen tüketim kapasitesindeki bütün Markları tek ağır hasar olayında sıkıştırır.',
+  detonation_echo_twist:'Normal kapasitesi kadar Mark patlatır; aynı tüketilmiş payloadın Quality ile büyüyen bir kısmı Mark harcamadan aftershock olarak tekrar vurur.',
+  detonation_total_twist:'Başlangıçtaki bütün Mark rezervini tam değerle tek vuruşta patlatır. Mark sayısına yapay sınır veya diminishing uygulanmaz.'
 });
-const MARK_BURST_LAB_NODES=Object.freeze(MARK_BURST_ROUTE_CONTRACTS.map(route=>Object.freeze({
-  id:route.id,routeId:route.id,skillId:route.skillId,kind:'EVOLUTION',depth:route.depth,
-  type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',name:route.name,
-  col:COMBAT_ATTRIBUTE_UI_COLORS[route.primaryAttributeId],buildAspect:route.primaryAttributeId+'_PRIMARY',
-  secondaryId:route.secondaryAttributeId,focusAxis:'PRIMARY_'+route.primaryAttributeId,summary:route.promise,
-  details:Object.freeze(['Base: DETONATION · Primary: '+route.primaryAttributeId+'.',
-    'Delivery: '+route.delivery.pattern+' · '+route.delivery.timing+'.',
-    'Scaling: '+route.deliveryScaling.mode+(route.deliveryScaling.effectOwner?
-      ' → '+route.deliveryScaling.effectOwner:'; Delivery parametresi Quality’den bedava güç almaz')+'.']),
-  prototypeContract:true})));
+function markBurstRouteDebugSummaryTr(route){
+  const authored=route&&MARK_BURST_ROUTE_DEBUG_SUMMARY_TR[route.id];if(authored)return authored;
+  if(!route||route.depth!==4)return null;
+  const parent=MARK_BURST_ROUTE_BY_ID[route.parentId],role=route.mechanics.refinement,
+    roleText=role==='RELATIONSHIP'?'parent mekanizmasının ana çıktısını':
+      role==='PAYLOAD'?'Mark başına Detonation hasarını':role==='BALANCED'?
+      'mekanik, tüketim ve hasarı dengeli biçimde':'temiz ok darbesini';
+  return parent?MARK_BURST_ROUTE_DEBUG_SUMMARY_TR[parent.id]+' Bu Apex '+roleText+
+    ' büyütür; parentın tetikleme, ödeme ve Delivery kuralını değiştirmez.':null;
+}
+const MARK_BURST_LAB_NODES=Object.freeze(MARK_BURST_ROUTE_CONTRACTS.map(route=>{
+  const parent=route.parentId&&MARK_BURST_ROUTE_BY_ID[route.parentId],delivery=
+    route.delivery||(parent&&parent.delivery);
+  return Object.freeze({
+    id:route.id,routeId:route.id,skillId:route.skillId,kind:'EVOLUTION',depth:route.depth,
+    type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',name:route.name,
+    col:COMBAT_ATTRIBUTE_UI_COLORS[route.secondaryAttributeId||route.primaryAttributeId],
+    buildAspect:route.primaryAttributeId+'_PRIMARY',secondaryId:route.secondaryAttributeId,
+    focusAxis:route.secondaryAttributeId?'PRIMARY_SECONDARY_RELATIONSHIP':
+      'PRIMARY_'+route.primaryAttributeId,summary:route.promise,
+    details:Object.freeze(['Base: DETONATION · Primary: '+route.primaryAttributeId+
+      (route.secondaryAttributeId?' · Secondary: '+route.secondaryAttributeId:'')+'.',
+      'Delivery: '+delivery.pattern+' · '+delivery.timing+'.',
+      'Scaling: '+route.deliveryScaling.mode+(route.deliveryScaling.effectOwner?
+        ' → '+route.deliveryScaling.effectOwner:
+        '; Delivery parametresi Quality’den bedava güç almaz')+'.']),prototypeContract:true});
+}));
 const WEAPON_SKILL_PROTOTYPE_LAB_NODES=Object.freeze([
   ...SHARPSHOOT_MARK_ALL_LAB_NODES,...MARK_BURST_LAB_NODES
 ]);
 const WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   WEAPON_SKILL_PROTOTYPE_LAB_NODES.map(node=>[node.id,node])));
+const WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_SKILL_AND_ID=Object.freeze((()=>{
+  const index=WEAPON_SKILL_PROTOTYPE_LAB_NODES.reduce((result,node)=>{
+    (result[node.skillId]||(result[node.skillId]={}))[node.id]=node;return result;
+  },{});
+  for(const skillId of Object.keys(index))Object.freeze(index[skillId]);
+  return index;
+})());
 function sharpshootLabRouteChildren(parentRouteId){
   return SHARPSHOOT_MARK_ALL_LAB_NODES.filter(node=>{
     const route=SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId];
@@ -17432,10 +17669,11 @@ function skillDeliveryMagnitude(totalQuality){
   return Math.max(1,Math.floor(Math.sqrt(Math.max(0,Number(totalQuality)||0))));
 }
 /* Delivery is materialized from cumulative lineage Quality only when the route
-   explicitly owns and funds a Delivery axis. NONE is intentionally inert: a
-   Single attack does not gain free Weight merely because its Quality increased.
-   CONTACT_COUNT pays one normal resource event for every contact after the
-   first; unused integer remainder stays with the declared mechanic owner. */
+   explicitly owns and continuously funds a Delivery axis. NONE is intentionally
+   inert: a Single attack does not gain free Weight merely because Quality grew.
+   The paid axis is the opt-in/tax; cumulative lineage Quality sets the uncapped
+   parameter. This is what lets an early high-rarity foundation remain stronger
+   after a later card selects Sequential or Weight expression. */
 function materializeSkillDeliveryScaling(route,ledger){
   const scaling=route&&route.deliveryScaling||{mode:'NONE'},mode=scaling.mode,
     desired=skillDeliveryMagnitude(ledger&&ledger.totalQuality),axis=scaling.powerAxis,
@@ -17444,12 +17682,8 @@ function materializeSkillDeliveryScaling(route,ledger){
   if(mode==='NONE')return Object.freeze({mode,contacts:1,weight:1,magnitude:1,
     power:0,spent:0,reserve:0,capped:false});
   if(mode==='CONTACT_COUNT'){
-    const unit=scaling.effectOwner==='CHAIN'?SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN:1,
-      affordable=1+Math.floor((power+1e-9)/Math.max(Number.EPSILON,unit)),
-      contacts=Math.max(1,Math.min(desired,affordable)),spent=(contacts-1)*unit;
-    return Object.freeze({mode,contacts,weight:1,magnitude:contacts,power,
-      spent:Number(spent.toFixed(4)),reserve:Number(Math.max(0,power-spent).toFixed(4)),
-      capped:false});
+    return Object.freeze({mode,contacts:desired,weight:1,magnitude:desired,power,
+      spent:power,reserve:0,capped:false});
   }
   return Object.freeze({mode,contacts:1,weight:desired,magnitude:desired,power,
     spent:power,reserve:0,capped:false});
@@ -17704,17 +17938,15 @@ function skillLinearOutputProgress(power,powerPerUnit,precision=1){
   return Object.freeze({output,rank:output,credit:Number(credit.toFixed(4)),
     spent:Number(spent.toFixed(4)),reserve:Number(reserve.toFixed(4)),next:null,needed:null,progress:1});
 }
-/* A second consumed Mark is useful only when the first skill has prepared it.
-   Consumption is therefore priced by the final per-Mark payload and the 50%
-   ready-state used by the synthesis guardrail. The formula has no rank ceiling:
-   deeper lucky lineages may continue buying real consumed stacks forever. */
-const MARK_BURST_DETONATION_FORM_ENVELOPE=Object.freeze({readyStateShare:.50,
-  minimumMarginalConsumePower:6});
-function markBurstDetonationConsumptionProgress(power,damagePerMark){
-  const credit=Math.max(0,Number(power)||0),unitCost=Math.max(
-      MARK_BURST_DETONATION_FORM_ENVELOPE.minimumMarginalConsumePower,
-      Math.max(0,Number(damagePerMark)||0)*
-        MARK_BURST_DETONATION_FORM_ENVELOPE.readyStateShare),
+/* Consumption capacity and payload are independent paid axes. Pricing another
+   consumed Mark from the final per-Mark damage made a damage upgrade silently
+   remove capacity. A fixed reference cost keeps every parent/rank monotonic while
+   remaining uncapped: every complete block of paid consumption power buys one
+   additional real Mark forever. */
+const MARK_BURST_DETONATION_FORM_ENVELOPE=Object.freeze({marginalConsumePower:8});
+function markBurstDetonationConsumptionProgress(power){
+  const credit=Math.max(0,Number(power)||0),
+    unitCost=MARK_BURST_DETONATION_FORM_ENVELOPE.marginalConsumePower,
     rank=Math.floor((credit+1e-9)/unitCost),spent=rank*unitCost,reserve=Math.max(0,credit-spent);
   return Object.freeze({rank,credit:Number(credit.toFixed(4)),spent:Number(spent.toFixed(4)),
     reserve:Number(reserve.toFixed(4)),unitCost:Number(unitCost.toFixed(4)),
@@ -17739,24 +17971,52 @@ const MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE=Object.freeze({
   DETONATION:'BOW_DETONATION',CHAIN:'BOW_CHAIN',POSTURE:'BOW_POSTURE',
   CRITICAL:'BOW_CRITICAL',AFFLICTION:'BOW_AFFLICTION',CHARGE:'BOW_CHARGE_WEIGHT'
 });
+const MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID=Object.freeze({
+  detonation_focus_spec:'BOW_DETONATION',detonation_chain_spec:'BOW_CHAIN',
+  detonation_posture_spec:'BOW_POSTURE',detonation_critical_spec:'BOW_CRITICAL',
+  detonation_affliction_spec:'BOW_AFFLICTION',detonation_charge_spec:'BOW_CHARGE'
+});
+const MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID=Object.freeze(Object.fromEntries(
+  MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS.map(definition=>[definition.id,definition.recipe])));
 const MARK_BURST_SYNTHESIS_COMMAND_CACHE=new Map();
 /* All six Forms use one compiler. The route owns the budget and Delivery opt-in;
    this function only materializes that declaration. Consequently a future Form
    cannot accidentally receive free contacts/Weight or forget Mark Burst's
    protected Detonation Base Attribute. */
-function synthesizeMarkBurstFormRoute(route,rarity='COMMON'){
+function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
+    specializationRarity='COMMON',twist=null,twistRarity='COMMON',apex=null,
+    apexRarity='COMMON'){
   if(!route||route.skillId!=='mark_burst'||route.depth!==1||
      route.runtimeReadiness!=='MATERIALIZED'||!SKILL_RARITY_SYNTHESIS_ECONOMY[rarity])return null;
-  const cacheKey=route.id+'|'+rarity,cached=MARK_BURST_SYNTHESIS_COMMAND_CACHE.get(cacheKey);
+  if(specialization&&(!SKILL_RARITY_SYNTHESIS_ECONOMY[specializationRarity]||
+     specialization.skillId!=='mark_burst'||specialization.depth!==2||
+     specialization.parentId!==route.id||specialization.primaryAttributeId!==route.primaryAttributeId||
+     specialization.runtimeReadiness!=='MATERIALIZED'))return null;
+  if(twist&&(!specialization||!SKILL_RARITY_SYNTHESIS_ECONOMY[twistRarity]||
+     twist.skillId!=='mark_burst'||twist.depth!==3||twist.parentId!==specialization.id||
+     twist.runtimeReadiness!=='MATERIALIZED'))return null;
+  if(apex&&(!twist||!SKILL_RARITY_SYNTHESIS_ECONOMY[apexRarity]||apex.skillId!=='mark_burst'||
+     apex.depth!==4||apex.parentId!==twist.id||apex.runtimeReadiness!=='MATERIALIZED'))return null;
+  const routes=apex?[route,specialization,twist,apex]:twist?[route,specialization,twist]:
+      specialization?[route,specialization]:[route],
+    rarities=apex?[rarity,specializationRarity,twistRarity,apexRarity]:
+      twist?[rarity,specializationRarity,twistRarity]:[rarity,specializationRarity],
+    finalRoute=routes.at(-1),cacheKey=routes.map((entry,index)=>entry.id+'|'+
+      rarities[index]).join('>'),cached=MARK_BURST_SYNTHESIS_COMMAND_CACHE.get(cacheKey);
   if(cached)return cloneSharpshootSynthesisCommand(cached);
-  const path=[Object.freeze({routeId:route.id,rarity,depth:route.depth})],
+  const path=routes.map((entry,index)=>Object.freeze({routeId:entry.id,
+      rarity:rarities[index],depth:entry.depth})),
     ledger=compileSkillQualityLedger(path,MARK_BURST_ROUTE_BY_ID,{includeStructural:true}),
-    receipt=ledger.receipts[0],history=[weaponSkillSynthesisHistoryNode(route,rarity,receipt)],
+    history=routes.map((entry,index)=>weaponSkillSynthesisHistoryNode(entry,rarities[index],
+      ledger.receipts[index])),
     definition=BASE_TURN_SKILL_BY_ID.mark_burst,command=createRunSkill(definition),
     axes=ledger.axisPowerCredits,directPower=Math.max(0,axes.DIRECT_DAMAGE||0),
     detonationPower=Math.max(0,axes.DETONATION_DAMAGE||0),
-    delivery=materializeSkillDeliveryScaling(route,ledger),
-    primary=route.primaryAttributeId,reserve={};
+    deliveryOwner=[...routes].reverse().find(entry=>entry.delivery)||route,
+    deliveryContract=finalRoute.delivery||route.delivery,
+    delivery=materializeSkillDeliveryScaling(deliveryOwner,ledger),
+    primary=route.primaryAttributeId,secondary=finalRoute.secondaryAttributeId,reserve={},
+    twistRoute=routes.find(entry=>entry.depth===3)||null;
   command.damage=Number(((definition.damage||0)+directPower).toFixed(3));
   const detonation=materializeWeaponSkillBaseAttributePower(command,'mark_burst',detonationPower);
   reserve.DETONATION_DAMAGE=detonation.reservePower;
@@ -17766,14 +18026,15 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON'){
   command.hitDamages=delivery.contacts>1?
     f1SynthesisDistributedDamageVector(command.damage,delivery.contacts):null;
   command.addsChain=true;command.chainGainPerHit=1;command.chainGainPattern=null;
-  command.chainScalingTiming='LIVE';command.deliveryProfileId=route.delivery.profileId;
-  command.deliveryPattern=route.delivery.pattern;command.deliveryTiming=route.delivery.timing;
+  command.chainScalingTiming='LIVE';command.deliveryProfileId=deliveryContract.profileId;
+  command.deliveryPattern=deliveryContract.pattern;command.deliveryTiming=deliveryContract.timing;
   command.deliveryMagnitude=delivery.magnitude;command.deliveryWeight=delivery.weight;
   command.hitInterval=delivery.contacts>1?.42:0;
   if(primary==='DETONATION'){
     const consumption=markBurstDetonationConsumptionProgress(
       Math.max(0,axes.DETONATION_CONSUMPTION||0),command.markRule.damagePerMark);
-    command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1+consumption.rank});
+    command.markRule=markRule({...command.markRule,timing:specialization?'ACTION':'PER_HIT',
+      cap:1+consumption.rank});
     reserve.DETONATION_CONSUMPTION=consumption.reserve;
   }else if(primary==='CHAIN'){
     const chainPower=Math.max(0,axes.CHAIN_SCALING||0)+delivery.reserve;
@@ -17809,16 +18070,80 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON'){
       DEFENSE_CHARGE.expectedSpend).toFixed(6));
     command.chargeSplitAcrossContacts=false;reserve.CHARGE_RELEASE=0;
   }
-  const recipe=MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE[primary];
+  /* A depth-two route exposes a complete Secondary output, but does not yet
+     invent a cross-attribute converter. Those relationships belong to Twist. */
+  if(specialization&&secondary==='CHAIN'){
+    const chainPower=Math.max(0,axes.CHAIN_SCALING||0)+delivery.reserve;
+    command.extraChainBonus=Number((chainPower>0?
+      sharpshootChainScalingRate(chainPower,command.damage):0).toFixed(6));
+    command.synthesisRawChainScalingRate=command.extraChainBonus;
+    reserve.CHAIN_SCALING=0;reserve.DELIVERY_CONTACTS=0;
+  }else if(specialization&&secondary==='POSTURE'){
+    const expression=skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED'),
+      paid=Math.max(0,axes.POSTURE_DAMAGE||0),expressed=paid*expression;
+    command.posture=Number((expressed/SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE).toFixed(6));
+    /* A light Bow cannot express the full Posture wallet. Redirect the handling
+       remainder into Primary Detonation instead of deleting card power. */
+    command.markRule=markRule({...command.markRule,
+      damagePerMark:Number((command.markRule.damagePerMark+paid-expressed).toFixed(6))});
+    reserve.POSTURE_DAMAGE=0;
+  }else if(specialization&&secondary==='CRITICAL'){
+    const chance=skillLocalCritChanceProgress(Math.max(0,axes.CRIT_CHANCE||0),command.damage);
+    command.critChance=Number(chance.output.toFixed(6));reserve.CRIT_CHANCE=chance.reserve;
+  }else if(specialization&&secondary==='AFFLICTION'){
+    const afflictionPower=Math.max(0,axes.AFFLICTION_APPLICATION||0)+
+      Math.max(0,axes.AFFLICTION_POTENCY||0);
+    command.affliction=Object.freeze({id:BLEED_STATUS.id,
+      amount:Number((afflictionPower/BLEED_STATUS.totalDamageFactor).toFixed(6))});
+    reserve.AFFLICTION=0;
+  }else if(specialization&&secondary==='CHARGE'){
+    command.chargeMode='FULL_RELEASE';command.defenseTemperDamagePerCharge=Number((
+      Math.max(0,axes.DEFENSE_TEMPER||0)/SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge
+      ).toFixed(6));command.chargeSplitAcrossContacts=false;reserve.DEFENSE_TEMPER=0;
+  }
+  command.markDetonationCapacity=command.markRule.cap;
+  if(twistRoute){
+    const engine=twistRoute.mechanics.detonationEngine;
+    command.markDetonationEventMode=engine;
+    if(engine==='DETONATION_PACKET'){
+      const contacts=Math.max(1,Number(command.markRule.cap)||1);
+      command.markDetonationCapacity=contacts;
+      command.hits=contacts;command.hitDamages=contacts>1?
+        f1SynthesisDistributedDamageVector(command.damage,contacts):null;
+      command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1,delivery:'EVEN'});
+      command.chainGainPattern=Array.from({length:contacts},(_,index)=>index===0?1:0);
+      command.chainGainPerHit=0;command.hitInterval=.20;
+    }else if(engine==='DETONATION_COMPRESSION'){
+      command.hits=1;command.hitDamages=null;command.markRule=markRule({...command.markRule,
+        timing:'ACTION',delivery:'LAST'});command.chainGainPattern=null;command.chainGainPerHit=1;
+    }else if(engine==='DETONATION_ECHO'){
+      command.hits=1;command.hitDamages=null;command.markRule=markRule({...command.markRule,
+        timing:'ACTION',delivery:'LAST'});command.chainGainPattern=null;command.chainGainPerHit=1;
+      command.markDetonationEchoRate=Number((Math.max(0,axes.DETONATION_EVENTS||0)/8).toFixed(6));
+      reserve.DETONATION_EVENTS=0;
+    }else if(engine==='TOTAL_DETONATION'){
+      command.hits=1;command.hitDamages=null;command.markRule=markRule({...command.markRule,
+        timing:'ACTION',cap:MARK_ALL,curve:'FULL',delivery:'LAST'});
+      command.markDetonationCapacity=MARK_ALL;
+      command.chainGainPattern=null;command.chainGainPerHit=1;command.markDetonationFullCommit=true;
+      command.markDetonationReservePressureRate=Number((Math.max(0,
+        axes.DETONATION_EVENTS||0)/10).toFixed(6));reserve.DETONATION_EVENTS=0;
+    }
+  }
+  const recipe=twistRoute?MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID[twistRoute.id]:
+    specialization?MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID[specialization.id]:
+      MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE[primary];
   command.animationFamilyId='BOW';command.animationRecipeId=recipe;
-  command.bowAnimationRecipeId=recipe;command.name=route.name;
-  command.evolutionHistory=history;command.evolutionMutationIds=[route.id];
-  command.mutationIds=[route.id];command.synthesisHistory=history.slice();
-  command.evolutionDepth=1;command.evolutionRarity=rarity;
+  command.bowAnimationRecipeId=recipe;command.name=finalRoute.name;
+  command.evolutionHistory=history;command.evolutionMutationIds=routes.map(entry=>entry.id);
+  command.mutationIds=routes.map(entry=>entry.id);command.synthesisHistory=history.slice();
+  command.evolutionDepth=finalRoute.depth;command.evolutionRarity=rarities[routes.length-1];
   command.formAspectId=primary+'_PRIMARY';command.lineageAspect='STABLE';
-  command.nextPoolId=route.id+'_specialization';command.synthesisActive=true;
+  command.nextPoolId=finalRoute.depth===1?finalRoute.id+'_specialization':
+    finalRoute.depth===2?finalRoute.id+'_twist':finalRoute.depth===3?finalRoute.id+'_apex':null;
+  command.synthesisActive=true;
   command.synthesisEconomyApplied=true;
-  command.synthesisBaseResolveCost=route.baselineAttack.resolveCost;
+  command.synthesisBaseResolveCost=finalRoute.baselineAttack.resolveCost;
   refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;command.apCost=1;
   command.synthesisEffectiveQuality=ledger.effectiveQuality;
   command.synthesisDepthBonus=ledger.depthBonus;command.synthesisTargetPower=ledger.powerBudget;
@@ -17826,18 +18151,27 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON'){
   command.synthesisAxisReserve=Object.freeze(reserve);
   command.synthesisCompilerVersion=SKILL_QUALITY_COMPILER_VERSION;
   command.synthesisDeliveryScalingMode=delivery.mode;
-  command.synthesisDeliveryScalingAxis=route.deliveryScaling.powerAxis;
-  command.synthesisDeliveryScalingOwner=route.deliveryScaling.effectOwner;
+  command.synthesisDeliveryScalingAxis=deliveryOwner.deliveryScaling.powerAxis;
+  command.synthesisDeliveryScalingOwner=deliveryOwner.deliveryScaling.effectOwner;
   command.synthesisDeliveryScalingPower=delivery.power;
   command.synthesisDeliveryScalingReserve=delivery.reserve;
-  command.legendaryStampSlots=receipt.legendaryStampSlot?1:0;
-  command.evolutionText=[route.promise];
-  applyWeaponSkillRouteIdentity(command,route);refreshSkillRarityResonance(command);
+  command.legendaryStampSlots=ledger.receipts.filter(receipt=>receipt.legendaryStampSlot).length;
+  command.evolutionText=routes.map(entry=>entry.promise);
+  applyWeaponSkillRouteIdentity(command,finalRoute);refreshSkillRarityResonance(command);
   MARK_BURST_SYNTHESIS_COMMAND_CACHE.set(cacheKey,cloneSharpshootSynthesisCommand(command));
   return cloneSharpshootSynthesisCommand(command);
 }
 function synthesizeMarkBurstDetonationForm(rarity='COMMON'){
   return synthesizeMarkBurstFormRoute(MARK_BURST_ROUTE_BY_ID.detonation_primary_form,rarity);
+}
+function synthesizeMarkBurstDetonationPath(formRarity='COMMON',specializationId=null,
+    specializationRarity='COMMON',twistId=null,twistRarity='COMMON',apexId=null,
+    apexRarity='COMMON'){
+  const form=MARK_BURST_ROUTE_BY_ID.detonation_primary_form,
+    specialization=specializationId&&MARK_BURST_ROUTE_BY_ID[specializationId],
+    twist=twistId&&MARK_BURST_ROUTE_BY_ID[twistId],apex=apexId&&MARK_BURST_ROUTE_BY_ID[apexId];
+  return synthesizeMarkBurstFormRoute(form,formRarity,specialization,specializationRarity,
+    twist,twistRarity,apex,apexRarity);
 }
 const MARK_BURST_DETONATION_FORM_AUDIT=(()=>{
   const rows=SKILL_RARITY_ORDER.map(rarity=>{
@@ -17857,8 +18191,9 @@ const MARK_BURST_DETONATION_FORM_AUDIT=(()=>{
          row.consume<previous.consume||row.primed<previous.primed)))
       throw new Error('Detonation Form rarity synthesis broke at '+row.rarity);
   }
-  if(rows[0].consume!==1||rows[1].consume!==1||rows[2].consume!==2||rows[3].consume!==2)
-    throw new Error('Detonation Form consumption curve must currently resolve 1 / 1 / 2 / 2');
+  if(rows.some((row,index)=>index&&row.consume<rows[index-1].consume))
+    throw new Error('Detonation Form consumption curve cannot regress: '+
+      rows.map(row=>row.consume).join(' / '));
   return Object.freeze({passed:true,capped:false,rows:Object.freeze(rows)});
 })();
 let MARK_BURST_FORM_AUDIT=null;
@@ -25522,6 +25857,168 @@ function stableEvolutionScenarioVector(state){
   return Object.freeze({average:Number(average.toFixed(3)),scores:Object.freeze(scores),
     ratios:Object.freeze(ratios)});
 }
+const MARK_BURST_DETONATION_SPECIALIZATION_AUDIT=(()=>{
+  const form=MARK_BURST_ROUTE_BY_ID.detonation_primary_form,specs=
+    MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.parentId===form.id),
+    animationIds=MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID,rows=[];
+  const totalDamage=command=>Array.from({length:command.hits||1},(_,index)=>
+      commandHitBase(command,index)).reduce((sum,value)=>sum+value,0),
+    secondaryValue=command=>command.secondaryAttributeId==='DETONATION'?
+      command.markRule.damagePerMark+command.markRule.cap:
+      command.secondaryAttributeId==='CHAIN'?command.hits+(command.extraChainBonus||0):
+      command.secondaryAttributeId==='POSTURE'?command.posture||0:
+      command.secondaryAttributeId==='CRITICAL'?command.critChance||0:
+      command.secondaryAttributeId==='AFFLICTION'?commandBleedAmount(command):
+      commandDefenseTemperRate(command);
+  for(const formRarity of SKILL_RARITY_ORDER)for(const spec of specs){
+    const parent=synthesizeMarkBurstDetonationForm(formRarity),ladder=[];
+    for(const specRarity of SKILL_RARITY_ORDER){
+      const command=synthesizeMarkBurstDetonationPath(formRarity,spec.id,specRarity),
+        delivery=commandDeliveryContract(command),timeline=buildBowActionTimeline(command,
+          delivery,DEFENSE_CHARGE.expectedSpend,600,8),entry=Object.freeze({
+          formRarity,specRarity,specId:spec.id,secondary:spec.secondaryAttributeId,
+          damage:Number(totalDamage(command).toFixed(3)),perMark:command.markRule.damagePerMark,
+          consume:command.markRule.cap,hits:command.hits,chain:totalCommandChainGain(command),
+          chainRate:command.extraChainBonus||0,posture:command.posture||0,
+          crit:command.critChance||0,bleed:commandBleedAmount(command),
+          charge:commandDefenseTemperRate(command),recipe:timeline.recipe.id,
+          score:Number(stableEvolutionCombinedGuardrailValue(command).toFixed(3)),
+          secondaryValue:Number(secondaryValue(command).toFixed(6))});
+      const previous=ladder.at(-1);
+      if(!command||command.baseAttributeId!=='DETONATION'||
+         command.primaryAttributeId!=='DETONATION'||
+         command.secondaryAttributeId!==spec.secondaryAttributeId||command.markGain!==0||
+         entry.damage+1e-6<totalDamage(parent)||
+         command.markRule.damagePerMark+1e-6<parent.markRule.damagePerMark||
+         command.markRule.cap<parent.markRule.cap||timeline.contacts.length!==command.hits||
+         timeline.recipe.id!==animationIds[spec.id]||
+         (previous&&(entry.damage+1e-6<previous.damage||
+           entry.perMark+1e-6<previous.perMark||entry.consume<previous.consume||
+           entry.secondaryValue+1e-6<previous.secondaryValue)))
+        throw new Error(spec.id+' failed parent, rarity or animation inheritance at '+
+          formRarity+' / '+specRarity+': '+JSON.stringify({entry,previous,parent:{
+            damage:totalDamage(parent),perMark:parent.markRule.damagePerMark,
+            consume:parent.markRule.cap},timelineContacts:timeline.contacts.length,
+            expectedRecipe:animationIds[spec.id]}));
+      ladder.push(entry);rows.push(entry);
+    }
+  }
+  const standard=rows.filter(row=>row.formRarity==='COMMON'&&row.specRarity==='COMMON'),
+    minScore=Math.min(...standard.map(row=>row.score)),maxScore=Math.max(...standard.map(row=>row.score)),
+    siblingSpread=Number(((maxScore-minScore)/Math.max(1,maxScore)).toFixed(4)),
+    chain=standard.find(row=>row.specId==='detonation_chain_spec'),
+    nonChain=standard.filter(row=>row.specId!=='detonation_chain_spec'),
+    foundationChecks=specs.map(spec=>{
+      const strongForm=synthesizeMarkBurstDetonationPath('LEGENDARY',spec.id,'COMMON'),
+        strongSpec=synthesizeMarkBurstDetonationPath('COMMON',spec.id,'LEGENDARY');
+      return Object.freeze({specId:spec.id,
+        strongForm:Number(stableEvolutionCombinedGuardrailValue(strongForm).toFixed(3)),
+        strongSpec:Number(stableEvolutionCombinedGuardrailValue(strongSpec).toFixed(3)),
+        strongFormPower:strongForm.synthesisTargetPower,
+        strongSpecPower:strongSpec.synthesisTargetPower});
+    });
+  if(specs.length!==6||rows.length!==96||!chain||chain.hits<2||chain.chain!==chain.hits||
+     nonChain.some(row=>row.hits!==1)||siblingSpread>.25||
+     foundationChecks.some(row=>row.strongFormPower+1e-6<row.strongSpecPower||
+       row.strongForm/Math.max(1,row.strongSpec)<.97))
+    throw new Error('Detonation specialization structure/power contract drifted: '+
+      JSON.stringify({siblingSpread,standard,foundationChecks}));
+  return Object.freeze({passed:true,capped:false,specializations:specs.length,cards:rows.length,
+    siblingSpread,standard:Object.freeze(standard),foundationChecks:Object.freeze(foundationChecks),
+    rows:Object.freeze(rows)});
+})();
+const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
+  const specId='detonation_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
+    apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&twistIds.includes(route.parentId)),
+    recipeByTwist=MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID,
+    expectedModes=Object.freeze({detonation_fragment_twist:'DETONATION_PACKET',
+      detonation_compression_twist:'DETONATION_COMPRESSION',
+      detonation_echo_twist:'DETONATION_ECHO',detonation_total_twist:'TOTAL_DETONATION'}),
+    brief=Object.freeze({specId,twistTarget:4,minSignatureTwists:4,maxGenericBridges:0,
+      maxSiblingSimilarity:.82,signatureEngineIds:Object.freeze(Object.values(expectedModes))}),
+    identityAudit=auditTwistIdentitySet(twists.map(route=>Object.freeze({id:route.id,
+      deliveryPattern:route.delivery.pattern,identity:route.twistIdentity})),brief),
+    rows=[],apexRows=[],score=(command,marks=2)=>Number(
+      stableEvolutionGuardrailValue(command,marks,0).toFixed(3)),
+    capacity=command=>command.markDetonationCapacity===MARK_ALL?MARK_ALL:
+      Math.max(1,Number(command.markDetonationCapacity)||0),
+    capacityAtLeast=(child,parent)=>child===MARK_ALL||parent!==MARK_ALL&&child>=parent;
+  if(twists.length!==4||apexes.length!==16||twists.some(route=>route.apexTarget!==4)||
+     !identityAudit.passed)throw new Error('Detonation/Detonation Twist identity closure failed: '+
+       JSON.stringify({twists:twists.length,apexes:apexes.length,identityAudit}));
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
+    const parent=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity);
+    for(const twist of twists){
+      let previous=null;
+      for(const twistRarity of SKILL_RARITY_ORDER){
+        const command=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity,
+            twist.id,twistRarity),plan=commandMarkPlan(command,8),delivery=commandDeliveryContract(command),
+          timeline=buildBowActionTimeline(command,delivery,0,600,8),entry=Object.freeze({formRarity,
+            specRarity,twistRarity,twistId:twist.id,damage:commandDirectDamageTotal(command),
+            perMark:command.markRule.damagePerMark,capacity:capacity(command),hits:command.hits,
+            chain:totalCommandChainGain(command),echo:Number((plan.echoDamageTotal||0).toFixed(3)),
+            consumed:plan.consumedTotal,remaining:plan.remaining,mode:command.markDetonationEventMode,
+            recipe:timeline.recipe.id,score:score(command)});
+        if(!command||command.baseAttributeId!=='DETONATION'||command.primaryAttributeId!=='DETONATION'||
+           command.secondaryAttributeId!=='DETONATION'||command.markGain!==0||
+           entry.damage+1e-6<commandDirectDamageTotal(parent)||
+           entry.perMark+1e-6<parent.markRule.damagePerMark||
+           !capacityAtLeast(entry.capacity,capacity(parent))||entry.mode!==expectedModes[twist.id]||
+           entry.recipe!==recipeByTwist[twist.id]||timeline.contacts.length!==command.hits||
+           (previous&&(entry.damage+1e-6<previous.damage||entry.perMark+1e-6<previous.perMark||
+             !capacityAtLeast(entry.capacity,previous.capacity)||entry.score+1e-6<previous.score)))
+          throw new Error(twist.id+' failed parent/rank/runtime inheritance: '+JSON.stringify({entry,
+            previous,parent:{damage:commandDirectDamageTotal(parent),perMark:parent.markRule.damagePerMark,
+              capacity:capacity(parent)}}));
+        if(twist.id==='detonation_fragment_twist'&&(entry.hits!==entry.capacity||
+           entry.consumed!==entry.hits||entry.chain!==1||
+           plan.consumedByHit.some(value=>value!==1)))throw new Error(twist.id+' packet truth failed');
+        if(twist.id==='detonation_compression_twist'&&(entry.hits!==1||entry.consumed<1))
+          throw new Error(twist.id+' compression truth failed');
+        if(twist.id==='detonation_echo_twist'&&(entry.consumed<1||
+           !(command.markDetonationEchoRate>0)||!(entry.echo>0)))
+          throw new Error(twist.id+' aftershock truth failed');
+        if(twist.id==='detonation_total_twist'&&(command.markRule.cap!==MARK_ALL||
+           entry.consumed!==8||entry.remaining!==0))throw new Error(twist.id+' full reserve truth failed');
+        previous=entry;rows.push(entry);
+        const children=apexes.filter(route=>route.parentId===twist.id);
+        for(const apex of children){
+          let previousApex=null;
+          for(const apexRarity of SKILL_RARITY_ORDER){
+            const child=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity,twist.id,
+                twistRarity,apex.id,apexRarity),childPlan=commandMarkPlan(child,8),childEntry=Object.freeze({
+                formRarity,specRarity,twistRarity,apexRarity,twistId:twist.id,apexId:apex.id,
+                damage:commandDirectDamageTotal(child),perMark:child.markRule.damagePerMark,
+                capacity:capacity(child),hits:child.hits,echo:Number((childPlan.echoDamageTotal||0).toFixed(3)),
+                pressure:Number((childPlan.reservePressureDamage||0).toFixed(3)),score:score(child)});
+            if(child.activeAttributeRouteId!==apex.id||child.markDetonationEventMode!==entry.mode||
+               child.animationRecipeId!==entry.recipe||childEntry.damage+1e-6<entry.damage||
+               childEntry.perMark+1e-6<entry.perMark||!capacityAtLeast(childEntry.capacity,entry.capacity)||
+               childEntry.score+1e-6<entry.score||(previousApex&&(
+                 childEntry.damage+1e-6<previousApex.damage||
+                 childEntry.perMark+1e-6<previousApex.perMark||
+                 !capacityAtLeast(childEntry.capacity,previousApex.capacity)||
+                 childEntry.score+1e-6<previousApex.score)))
+              throw new Error(apex.id+' failed Apex parent/rank inheritance: '+
+                JSON.stringify({childEntry,previousApex,parent:entry}));
+            previousApex=childEntry;apexRows.push(childEntry);
+          }
+        }
+      }
+    }
+  }
+  const standard=rows.filter(row=>row.formRarity==='COMMON'&&row.specRarity==='COMMON'&&
+      row.twistRarity==='COMMON'),standardScores=standard.map(row=>row.score),
+    siblingSpread=Number(((Math.max(...standardScores)-Math.min(...standardScores))/
+      Math.max(1,standardScores.reduce((sum,value)=>sum+value,0)/standardScores.length)).toFixed(4));
+  if(rows.length!==256||apexRows.length!==4096||siblingSpread>.40)
+    throw new Error('Detonation/Detonation closure size or sibling power drifted: '+
+      JSON.stringify({twistCards:rows.length,apexCards:apexRows.length,siblingSpread,standard}));
+  return Object.freeze({passed:true,capped:false,twists:twists.length,apexes:apexes.length,
+    twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
+    standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
+})();
 function stableEvolutionPlaythroughVector(state,defenseChainPattern=STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN){
   let mark=0,totalDamage=0,totalContribution=0,totalConsumedMark=0;
   const phases=[];
@@ -26835,6 +27332,27 @@ function distributeMarkPayload(total,hits,delivery){
   else values[hits-1]=total;
   return values;
 }
+function finalizeCommandMarkPlan(command,plan){
+  plan.echoDamageByHit=Array.from({length:plan.markDamageByHit.length},()=>0);
+  const echoRate=Math.max(0,Number(command&&command.markDetonationEchoRate)||0),
+    pressureRate=Math.max(0,Number(command&&command.markDetonationReservePressureRate)||0);
+  if(pressureRate>0&&plan.effectiveMarks>1){
+    const pressure=plan.effectiveMarks*(plan.effectiveMarks-1)*pressureRate,
+      spread=distributeMarkPayload(pressure,plan.markDamageByHit.length,
+        command&&command.markRule&&command.markRule.delivery||'LAST');
+    for(let index=0;index<spread.length;index++)plan.markDamageByHit[index]+=spread[index];
+    plan.reservePressureDamage=pressure;
+  }else plan.reservePressureDamage=0;
+  if(echoRate>0&&plan.consumedTotal>0){
+    const base=plan.markDamageByHit.reduce((sum,value)=>sum+value,0),echo=base*echoRate,
+      spread=distributeMarkPayload(echo,plan.markDamageByHit.length,'LAST');
+    for(let index=0;index<spread.length;index++){
+      plan.echoDamageByHit[index]=spread[index];plan.markDamageByHit[index]+=spread[index];
+    }
+    plan.echoDamageTotal=echo;
+  }else plan.echoDamageTotal=0;
+  return plan;
+}
 /* Pure O(hits) planning runs once when an action begins. Visible command previews
    reuse the same bounded hit plan; work depends on that move's few hits, never on
    the number of authored cards or the size of the evolution graph. */
@@ -26843,6 +27361,7 @@ function commandMarkPlan(command,stacks){
     markAtStart=Math.max(0,Math.min(MARK_TECHNICAL_CAP,stacks||0)),
     empty={mode:'NONE',markAtStart,consumedAtStart:0,consumedTotal:0,remaining:markAtStart,
       consumedByHit:Array.from({length:hits},()=>0),markDamageByHit:Array.from({length:hits},()=>0),
+      echoDamageByHit:Array.from({length:hits},()=>0),echoDamageTotal:0,reservePressureDamage:0,
       effectiveMarks:0,readMarks:0,chainGain:0,temporaryChain:0};
   if(!rule)return empty;
   const cap=available=>rule.fraction!==null&&rule.fraction!==undefined?
@@ -26855,22 +27374,23 @@ function commandMarkPlan(command,stacks){
       plan.consumedByHit[i]=consumed;plan.markDamageByHit[i]=effective*rule.damagePerMark;
       plan.consumedTotal+=consumed;plan.effectiveMarks+=effective;available-=consumed;
     }
-    plan.remaining=available;return plan;
+    plan.remaining=available;return finalizeCommandMarkPlan(command,plan);
   }
   const affected=cap(markAtStart),effective=markEffectiveCount(affected,rule.curve);
   plan.effectiveMarks=effective;
   if(rule.mode==='READ'){
     plan.readMarks=affected;plan.markDamageByHit=distributeMarkPayload(
-      effective*rule.damagePerMark,hits,rule.delivery);return plan;
+      effective*rule.damagePerMark,hits,rule.delivery);return finalizeCommandMarkPlan(command,plan);
   }
   if(rule.mode==='READ_TEMP_CHAIN'){
-    plan.readMarks=affected;plan.temporaryChain=effective*rule.temporaryChainPerMark;return plan;
+    plan.readMarks=affected;plan.temporaryChain=effective*rule.temporaryChainPerMark;
+    return finalizeCommandMarkPlan(command,plan);
   }
   plan.consumedAtStart=affected;plan.consumedTotal=affected;plan.remaining=markAtStart-affected;
   if(rule.mode==='CONSUME')plan.markDamageByHit=distributeMarkPayload(
     effective*rule.damagePerMark,hits,rule.delivery);
   else if(rule.mode==='CONVERT_CHAIN')plan.chainGain=Math.floor(effective*rule.chainPerMark);
-  return plan;
+  return finalizeCommandMarkPlan(command,plan);
 }
 function commandMarkDamage(command,stacks){
   return commandMarkPlan(command,stacks).markDamageByHit.reduce((sum,value)=>sum+value,0);
@@ -27444,11 +27964,13 @@ function resolveTurnActionHit(action){
       Number(command.chargeCriticalDamageBonus)||0):0,
     base=stableDamage(commandHitBase(command,index)+chargeContactBonus+chargeCriticalBonus),
     markPayload=action.markPlan.markDamageByHit[index]||0,
+    echoPayload=action.markPlan.echoDamageByHit[index]||0,
+    contactDetonationPayload=Math.max(0,markPayload-echoPayload),
     damageChain=commandChainDamageStacks(command,action.chainAtStart,chainStacks,index)+
       action.markPlan.temporaryChain,
     contextChainBonus=commandContextChainBonus(command,action.postureAtStart,
       action.postureMaxAtStart,action.bleedAtStart),
-    damageResult=combatTurnHitDamageBreakdown(base,markPayload,
+    damageResult=combatTurnHitDamageBreakdown(base,contactDetonationPayload,
       commandHitExtraChainBonus(command,index)+contextChainBonus,
       damageChain,boss.playerTurnBreak===true,chainBonus(),critical,critMultiplier),damage=damageResult.final,
     p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
@@ -27476,8 +27998,10 @@ function resolveTurnActionHit(action){
     if(bowRecipe.impactShake>0)shake(bowRecipe.impactShake,.16);
     if(bowRecipe.hitStop>0)stopTime(bowRecipe.hitStop);
   }
-  if(command.markDetonation===true&&markPayload>0)
-    emitMarkDetonationImpact(x,y,markPayload);
+  if(command.markDetonation===true&&contactDetonationPayload>0){
+    emitMarkDetonationImpact(x,y,contactDetonationPayload);
+    action.detonationEventCount=(action.detonationEventCount||0)+1;
+  }
   if(critical)floater(x,y-70,'CRITICAL ×'+damagePart(critMultiplier),'#ffcc4d',17);
   if(critical){
     action.anyCritical=true;
@@ -27488,7 +28012,8 @@ function resolveTurnActionHit(action){
     }
   }
   if(markConsumed)floater(x,y-42,'MARK -'+markConsumed,'#ff4d5f',13);
-  logSkillLabActionHit(action,index,damage,damageChain,markPayload,critical,critContact&&critContact.chance);
+  logSkillLabActionHit(action,index,damage,damageChain,contactDetonationPayload,critical,
+    critContact&&critContact.chance);
   const defeated=hurtBoss(damage,false,'turn_attack',critical);
   if(command.resolvePerHit)grantCommandResolve(command,command.resolvePerHit,x,y);
   if(defeated){
@@ -27641,6 +28166,22 @@ function resolveTurnActionHit(action){
   }
   return true;
 }
+function resolveTurnActionDetonationEcho(action){
+  if(!action||action.detonationEchoResolved||!boss)return false;
+  action.detonationEchoResolved=true;
+  const payload=Math.max(0,Number(action.markPlan&&action.markPlan.echoDamageTotal)||0);
+  if(!(payload>0))return true;
+  const result=combatTurnHitDamageBreakdown(0,payload,0,0,boss.playerTurnBreak===true,
+      chainBonus(),false,CFG.CRIT_DAMAGE_MULT),damage=result.final,p=proj(boss.z),
+    x=laneX(boss.x,p.t),y=p.y-70*p.s;
+  emitMarkDetonationImpact(x+rnd(-8,8),y+rnd(-6,6),payload);
+  action.detonationEventCount=(action.detonationEventCount||0)+1;
+  floater(x,y-96,'DETONATION ECHO '+damagePart(payload),'#ffe37a',14);
+  if(skillLabSession&&skillLabSession.pendingLog)skillLabSession.pendingLog.hits.push({
+    index:action.hits,damage,chain:0,mark:payload,critical:false,chance:0,echo:true});
+  hurtBoss(damage,false,'turn_attack',false);
+  return true;
+}
 function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
   boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
@@ -27658,6 +28199,8 @@ function updateTurnAction(dt){
   while(action.postureWaveTimeline&&action.postureWaveIndex<action.postureWaveTimeline.times.length&&
       action.t+1e-6>=action.postureWaveTimeline.times[action.postureWaveIndex])
     resolveTurnActionPostureWave(action);
+  if(action.detonationEchoTime!==null&&!action.detonationEchoResolved&&
+     action.t+1e-6>=action.detonationEchoTime)resolveTurnActionDetonationEcho(action);
 }
 function performPlayerAction(command,options=null){
   if(!isPlayerTurn()||!command) return false;
@@ -27829,9 +28372,11 @@ function performPlayerAction(command,options=null){
     lastContact=bowTimeline?bowTimeline.contacts.at(-1):impactDelay+(hits-1)*hitInterval,
     markPulseTimeline=buildMarkPulseTimeline(command,lastContact),
     postureWaveTimeline=buildPostureWaveTimeline(command,lastContact),
+    detonationEchoTime=markPlan.echoDamageTotal>0?lastContact+.24:null,
     duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,bowTimeline?bowTimeline.recoveryEnd:
       lastContact+.34,markPulseTimeline?markPulseTimeline.times.at(-1)+.32:0,
-      postureWaveTimeline?postureWaveTimeline.times.at(-1)+.32:0);
+      postureWaveTimeline?postureWaveTimeline.times.at(-1)+.32:0,
+      detonationEchoTime!==null?detonationEchoTime+.34:0);
   if(markPlan.consumedAtStart){
     boss.mark=markPlan.remaining;
     floater(VW/2,300,'MARK ×'+markPlan.consumedAtStart+
@@ -27845,6 +28390,7 @@ function performPlayerAction(command,options=null){
   boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,impactDelay,
     bowTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
     postureWaveTimeline,postureWaveIndex:postureWaveTimeline?1:0,postureWaveTotal:0,
+    detonationEchoTime,detonationEchoResolved:false,detonationEventCount:0,
     postureApplied:0,causedBreak:false,
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
     postureAtStart:boss.posture||0,postureMaxAtStart:boss.postureMax||CFG.BOSS_POSTURE_MAX,
@@ -33790,8 +34336,14 @@ function drawMoveSelectionFrame(rect,col='#ffe37a'){
   g.save();g.fillStyle=col;g.translate(x,y);g.rotate(Math.PI/4);g.fillRect(-3,-3,6,6);g.restore();
 }
 function moveTreeSkillId(){return BASE_TURN_SKILLS[moveTreeSkillIndex].id;}
-function moveTreeNodeById(id){return SKILL_MUTATION_BY_ID[id]||
-  WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID[id]||null;}
+function moveTreeNodeById(id){
+  /* Route ids may intentionally repeat between weapon skills. Resolve the node
+     inside the selected skill before consulting the legacy global mutation map;
+     otherwise an unrelated node with the same id silently severs its children. */
+  const skillNodes=WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_SKILL_AND_ID[moveTreeSkillId()];
+  return skillNodes&&skillNodes[id]||SKILL_MUTATION_BY_ID[id]||
+    WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID[id]||null;
+}
 const MOVE_TREE_SYNTHESIS_RARITY_RECTS=Object.freeze(SKILL_RARITY_ORDER.map((rarity,index)=>
   Object.freeze({x:24+index*108,y:532,w:96,h:28,rarity})));
 const MOVE_TREE_TWIST_LAYOUT=Object.freeze({apexTop:366,apexBottom:498,
@@ -33820,8 +34372,8 @@ function moveTreeSynthesisDisplayNode(node){
   if(route){
     const materialized=route.runtimeReadiness==='MATERIALIZED';
     return {...node,name:route.name,summary:route.promise,rarity:moveTreeSynthesisRarityByDepth[route.depth],
-      debugSummaryTr:(route.skillId==='sharpshoot'?SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR:
-        MARK_BURST_ROUTE_DEBUG_SUMMARY_TR)[route.id]||null,
+      debugSummaryTr:route.skillId==='sharpshoot'?SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]||null:
+        markBurstRouteDebugSummaryTr(route),
       type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
       contractPreview:!materialized,synthesisPreview:materialized};
   }
@@ -33838,8 +34390,22 @@ function moveTreeSynthesisSelectedNode(){
 function moveTreeSynthesisPreviewCommand(node){
   const route=weaponSkillRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
-    if(route.skillId==='mark_burst')return route.depth===1?
-      synthesizeMarkBurstFormRoute(route,formRarity):null;
+    if(route.skillId==='mark_burst'){
+      if(route.depth===1)return synthesizeMarkBurstFormRoute(route,formRarity);
+      if(route.depth===2&&route.parentId==='detonation_primary_form')return synthesizeMarkBurstDetonationPath(formRarity,route.id,
+          moveTreeSynthesisRarityByDepth[2]);
+      if(route.depth===3&&route.parentId==='detonation_focus_spec')return (
+        synthesizeMarkBurstDetonationPath(formRarity,'detonation_focus_spec',
+          moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]));
+      if(route.depth===4){
+        const twist=MARK_BURST_ROUTE_BY_ID[route.parentId];
+        if(twist&&twist.parentId==='detonation_focus_spec')return (
+          synthesizeMarkBurstDetonationPath(formRarity,'detonation_focus_spec',
+            moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],
+            route.id,moveTreeSynthesisRarityByDepth[4]));
+      }
+      return null;
+    }
     if(route.depth===1)return synthesizeSharpshootFormRoute(route,formRarity);
     if(route.depth===2)return route.formSlot===2?
       synthesizeSharpshootChainPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
@@ -34706,16 +35272,33 @@ function moveTreeSynthesisRaritySnapshot(command){
     trail:command.phaseMarkTrailPerContact||0,
     detonationPerMark:command.markDetonation&&command.markRule?
       Number((command.markRule.damagePerMark||0).toFixed(1)):0,
-    detonationCap:command.markDetonation&&command.markRule&&Number.isFinite(command.markRule.cap)?
-      command.markRule.cap:0,cost:command.cost||0});
+    detonationCap:command.markDetonation&&command.markRule?
+      (command.markDetonationCapacity===MARK_ALL?'ALL':Number(command.markDetonationCapacity)||
+        (Number.isFinite(command.markRule.cap)?command.markRule.cap:0)):0,cost:command.cost||0});
 }
 function moveTreeSynthesisRarityLadder(node){
   const route=weaponSkillRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
-    if(route.skillId==='mark_burst'&&route.depth===1)return SKILL_RARITY_ORDER.map(rarity=>{
-      const command=synthesizeMarkBurstFormRoute(route,rarity);
-      return Object.freeze({rarity,command,stats:moveTreeSynthesisRaritySnapshot(command)});
-    });
+    if(route.skillId==='mark_burst'){
+      const formRarity=moveTreeSynthesisRarityByDepth[1],
+        specRarity=moveTreeSynthesisRarityByDepth[2],twistRarity=moveTreeSynthesisRarityByDepth[3];
+      return SKILL_RARITY_ORDER.map(rarity=>{
+        let command=null;
+        if(route.depth===1)command=synthesizeMarkBurstFormRoute(route,rarity);
+        else if(route.depth===2&&route.parentId==='detonation_primary_form')
+          command=synthesizeMarkBurstDetonationPath(formRarity,route.id,rarity);
+        else if(route.depth===3&&route.parentId==='detonation_focus_spec')
+          command=synthesizeMarkBurstDetonationPath(formRarity,'detonation_focus_spec',specRarity,
+            route.id,rarity);
+        else if(route.depth===4){
+          const twist=MARK_BURST_ROUTE_BY_ID[route.parentId];
+          if(twist&&twist.parentId==='detonation_focus_spec')command=
+            synthesizeMarkBurstDetonationPath(formRarity,'detonation_focus_spec',specRarity,
+              twist.id,twistRarity,route.id,rarity);
+        }
+        return command&&Object.freeze({rarity,command,stats:moveTreeSynthesisRaritySnapshot(command)});
+      }).filter(Boolean);
+    }
     const formRarity=moveTreeSynthesisRarityByDepth[1],
       specRarity=moveTreeSynthesisRarityByDepth[2],
       twistRarity=moveTreeSynthesisRarityByDepth[3];

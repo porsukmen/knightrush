@@ -1590,6 +1590,12 @@ try{
       MARK_BURST_DETONATION_FORM_AUDIT;
     globalThis.__markBurstFormAudit=typeof MARK_BURST_FORM_AUDIT==='undefined'?null:
       MARK_BURST_FORM_AUDIT;
+    globalThis.__detonationSpecializationAudit=
+      typeof MARK_BURST_DETONATION_SPECIALIZATION_AUDIT==='undefined'?null:
+      MARK_BURST_DETONATION_SPECIALIZATION_AUDIT;
+    globalThis.__detonationFocusClosureAudit=
+      typeof MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT==='undefined'?null:
+      MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT;
     globalThis.__weaponSkillHierarchyAudit=(()=>{
       const catalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId.sharpshoot,
         detonationCatalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId.mark_burst,
@@ -1684,8 +1690,73 @@ try{
             hits:entry.stats.hits,weight:entry.stats.weight,
             detonation:entry.stats.detonationPerMark,consume:entry.stats.detonationCap}))};
       });
-      return {passed:forms.length===6&&previews.every(entry=>entry.passed),
-        forms:forms.map(entry=>entry.id),previews};
+      const specs=weaponSkillLabRouteChildren('mark_burst','detonation_primary_form'),
+        specPreviews=specs.map(node=>{
+          const route=weaponSkillRouteFromNode(node),preview=moveTreeSynthesisPreviewCommand(node),
+            ladder=moveTreeSynthesisRarityLadder(node);
+          return {id:node.id,passed:route&&route.depth===2&&preview&&
+            preview.activeAttributeRouteId===route.id&&ladder.length===4&&
+            ladder.every(entry=>entry.command&&entry.command.secondaryAttributeId===
+              route.secondaryAttributeId),ladder:ladder.length};
+        }),twists=weaponSkillLabRouteChildren('mark_burst','detonation_focus_spec'),
+        twistPreviews=twists.map(node=>{
+          const route=weaponSkillRouteFromNode(node),preview=moveTreeSynthesisPreviewCommand(node),
+            ladder=moveTreeSynthesisRarityLadder(node),apexNodes=weaponSkillLabRouteChildren(
+              'mark_burst',node.id),apexPreviews=apexNodes.map(apexNode=>({
+                preview:moveTreeSynthesisPreviewCommand(apexNode),
+                ladder:moveTreeSynthesisRarityLadder(apexNode)}));
+          return {id:node.id,passed:route&&route.depth===3&&preview&&
+            preview.activeAttributeRouteId===route.id&&ladder.length===4&&apexNodes.length===4&&
+            apexPreviews.every(entry=>entry.preview&&entry.ladder.length===4),
+            ladder:ladder.length,apexes:apexNodes.length};
+        });
+      return {passed:forms.length===6&&previews.every(entry=>entry.passed)&&
+          specs.length===6&&specPreviews.every(entry=>entry.passed)&&twists.length===4&&
+          twistPreviews.every(entry=>entry.passed),forms:forms.map(entry=>entry.id),previews,
+        specs:specs.map(entry=>entry.id),specPreviews,twists:twists.map(entry=>entry.id),twistPreviews};
+    })();
+    globalThis.__detonationSpecializationCombatAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const ids=['detonation_focus_spec','detonation_chain_spec','detonation_posture_spec',
+        'detonation_critical_spec','detonation_affliction_spec','detonation_charge_spec'];
+      return ids.map(id=>{
+        applySkillLabPreset('clean',false);boss.hp=boss.maxHp=9999;boss.mark=8;
+        boss.chargeEnabled=true;boss.charge=2;skillLabSession.forceCritical=true;
+        const command=synthesizeMarkBurstDetonationPath('COMMON',id,'COMMON');
+        replaceRunSkill('mark_burst',command);const hpBefore=boss.hp,started=performPlayerAction(command),
+          action=boss.turnAction,recipe=action&&action.bowTimeline&&action.bowTimeline.recipe.id;
+        let frames=0;while(boss.phase==='playerResolve'&&frames++<420){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        skillLabSession.forceCritical=false;
+        return {id,started,recipe,frames,hits:command.hits,damage:Number((hpBefore-boss.hp).toFixed(3)),
+          markAfter:bossMark(),chain:chainStacks,posture:boss.posture||0,bleed:bossBleed(),
+          chargeAfter:bossCharge(),returnedToPlayer:boss.phase==='player'};
+      });
+    })();
+    globalThis.__detonationFocusCombatAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+        route.parentId==='detonation_focus_spec'),routes=twists.flatMap(twist=>[twist,
+          ...MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&route.parentId===twist.id)]);
+      return routes.map(route=>{
+        applySkillLabPreset('clean',false);boss.hp=boss.maxHp=9999;boss.mark=8;
+        const twist=route.depth===3?route:MARK_BURST_ROUTE_BY_ID[route.parentId],command=
+          synthesizeMarkBurstDetonationPath('COMMON','detonation_focus_spec','COMMON',twist.id,
+            'COMMON',route.depth===4?route.id:null,'COMMON'),plan=commandMarkPlan(command,8);
+        replaceRunSkill('mark_burst',command);const hpBefore=boss.hp,started=performPlayerAction(command),
+          action=boss.turnAction,recipe=action&&action.bowTimeline&&action.bowTimeline.recipe.id;
+        let frames=0;while(boss.phase==='playerResolve'&&frames++<480){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        return {id:route.id,depth:route.depth,twistId:twist.id,started,recipe,frames,
+          hits:command.hits,damage:Number((hpBefore-boss.hp).toFixed(3)),markAfter:bossMark(),
+          consumed:plan.consumedTotal,echo:Number((plan.echoDamageTotal||0).toFixed(3)),
+          events:action&&action.detonationEventCount||0,chain:chainStacks,
+          returnedToPlayer:boss.phase==='player'};
+      });
     })();
     globalThis.__combatInteractionAudit=(()=>{
       openSkillLab();startSkillLabCombat();
@@ -1844,11 +1915,15 @@ try{
       detonationBaseAttributeRoute=sandbox.__detonationBaseAttributeRouteAudit,
       detonationForm=sandbox.__detonationFormAudit,
       markBurstForms=sandbox.__markBurstFormAudit,
+      detonationSpecializations=sandbox.__detonationSpecializationAudit,
+      detonationFocusClosure=sandbox.__detonationFocusClosureAudit,
       weaponSkillHierarchy=sandbox.__weaponSkillHierarchyAudit,
       detonationBase=sandbox.__detonationBaseAudit,
       detonationFormCombat=sandbox.__detonationFormCombatAudit,
       markBurstSiblingCombat=sandbox.__markBurstSiblingCombatAudit,
       detonationFormUi=sandbox.__detonationFormUiAudit,
+      detonationSpecializationCombat=sandbox.__detonationSpecializationCombatAudit,
+      detonationFocusCombat=sandbox.__detonationFocusCombatAudit,
       combatInteraction=sandbox.__combatInteractionAudit;
     if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
        bowRouteRecipe.routeMappings<100)
@@ -1868,9 +1943,10 @@ try{
       throw new Error('Quick Detonation base-attribute route gate failed: '+
         JSON.stringify(detonationBaseAttributeRoute));
     if(!detonationForm||!detonationForm.passed||detonationForm.capped||
-       detonationForm.rows.map(row=>row.consume).join('|')!=='1|1|2|2'||
+       detonationForm.rows[0].consume!==1||
        detonationForm.rows.some((row,index,rows)=>index&&(row.damage<rows[index-1].damage||
-         row.damagePerMark<rows[index-1].damagePerMark||row.primed<rows[index-1].primed)))
+         row.damagePerMark<rows[index-1].damagePerMark||row.consume<rows[index-1].consume||
+         row.primed<rows[index-1].primed)))
       throw new Error('Quick Detonation Form synthesis gate failed: '+JSON.stringify(detonationForm));
     if(!markBurstForms||!markBurstForms.passed||markBurstForms.capped||
        markBurstForms.forms!==6||markBurstForms.rankedCards!==24||
@@ -1879,8 +1955,19 @@ try{
        markBurstForms.rows.find(row=>row.routeId==='posture_primary_form').weights.join('|')!==
          '1|2|3|4')
       throw new Error('Quick Mark Burst six-Form gate failed: '+JSON.stringify(markBurstForms));
+    if(!detonationSpecializations||!detonationSpecializations.passed||
+       detonationSpecializations.capped||detonationSpecializations.specializations!==6||
+       detonationSpecializations.cards!==96||detonationSpecializations.siblingSpread>.25)
+      throw new Error('Quick Detonation specialization gate failed: '+
+        JSON.stringify(detonationSpecializations));
+    if(!detonationFocusClosure||!detonationFocusClosure.passed||detonationFocusClosure.capped||
+       detonationFocusClosure.twists!==4||detonationFocusClosure.apexes!==16||
+       detonationFocusClosure.twistCards!==256||detonationFocusClosure.apexCards!==4096||
+       detonationFocusClosure.siblingSpread>.40||!detonationFocusClosure.identityAudit.passed)
+      throw new Error('Quick Detonation/Detonation Twist+Apex closure gate failed: '+
+        JSON.stringify(detonationFocusClosure));
     if(!weaponSkillHierarchy||!weaponSkillHierarchy.passed||weaponSkillHierarchy.catalogues!==2||
-       weaponSkillHierarchy.routes!==757||weaponSkillHierarchy.detonationRoutes!==6||
+       weaponSkillHierarchy.routes!==757||weaponSkillHierarchy.detonationRoutes!==32||
        weaponSkillHierarchy.detonationCoverage!=='IN_PROGRESS'||
        weaponSkillHierarchy.base.base!=='DETONATION'||
        weaponSkillHierarchy.base.primary!==null||weaponSkillHierarchy.base.secondary!==null||
@@ -1922,8 +2009,32 @@ try{
         JSON.stringify(markBurstSiblingCombat));
     if(!detonationFormUi||!detonationFormUi.passed||detonationFormUi.forms.length!==6||
        detonationFormUi.previews.length!==6||
-       detonationFormUi.previews.some(entry=>entry.ladder.length!==4))
+       detonationFormUi.previews.some(entry=>entry.ladder.length!==4)||
+       detonationFormUi.specs.length!==6||detonationFormUi.specPreviews.some(entry=>!entry.passed))
       throw new Error('Quick Detonation Form Skill Lab gate failed: '+JSON.stringify(detonationFormUi));
+    if(!detonationSpecializationCombat||detonationSpecializationCombat.length!==6||
+       detonationSpecializationCombat.some(entry=>!entry.started||!entry.returnedToPlayer||
+         !(entry.damage>0)||entry.markAfter>=8)||
+       detonationSpecializationCombat.find(entry=>entry.id==='detonation_chain_spec').hits<2||
+       !(detonationSpecializationCombat.find(entry=>entry.id==='detonation_posture_spec').posture>0)||
+       !(detonationSpecializationCombat.find(entry=>entry.id==='detonation_affliction_spec').bleed>0)||
+       detonationSpecializationCombat.find(entry=>entry.id==='detonation_charge_spec').chargeAfter!==0)
+      throw new Error('Quick Detonation specialization combat gate failed: '+
+        JSON.stringify(detonationSpecializationCombat));
+    if(!detonationFocusCombat||detonationFocusCombat.length!==20||
+       detonationFocusCombat.some(entry=>!entry.started||!entry.returnedToPlayer||
+         !(entry.damage>0)||entry.markAfter!==8-entry.consumed)||
+       detonationFocusCombat.filter(entry=>entry.twistId==='detonation_fragment_twist')
+         .some(entry=>entry.hits<2||entry.consumed!==entry.hits||entry.chain!==1||
+           entry.events!==entry.hits)||
+       detonationFocusCombat.filter(entry=>entry.twistId==='detonation_compression_twist')
+         .some(entry=>entry.hits!==1||entry.events!==1)||
+       detonationFocusCombat.filter(entry=>entry.twistId==='detonation_echo_twist')
+         .some(entry=>entry.hits!==1||entry.consumed<1||!(entry.echo>0)||entry.events!==2)||
+       detonationFocusCombat.filter(entry=>entry.twistId==='detonation_total_twist')
+         .some(entry=>entry.hits!==1||entry.consumed!==8||entry.markAfter!==0||entry.events!==1))
+      throw new Error('Quick Detonation/Detonation real combat gate failed: '+
+        JSON.stringify(detonationFocusCombat));
     if(!combatInteraction||!combatInteraction.menuOpened||!combatInteraction.actionStarted||
        !combatInteraction.actionCreated||!combatInteraction.hitLogged||
        !(combatInteraction.hpAfter<combatInteraction.hpBefore)||
