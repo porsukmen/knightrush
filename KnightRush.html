@@ -9498,16 +9498,69 @@ function markRule(data){
   return Object.freeze({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:0,
     curve:'FULL',delivery:'LAST',chainPerMark:0,temporaryChainPerMark:0,fraction:null,...data});
 }
-/* Runtime weapon state is intentionally separate from its immutable definition:
-   later RNG upgrades will append rule-changing modifiers without mutating base data. */
-const WEAPON_DEFS=Object.freeze({
-  longbow:Object.freeze({id:'longbow',name:'LONGBOW',baseDamage:12,levelDamage:4,
-    markDamage:8,markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,
-      damagePerMark:8,curve:'FULL'}),col:'#c0f79a'})
-});
+/* ======================= WEAPON / SKILL OWNERSHIP =======================
+   Immutable definitions form one ownership tree:
+   Weapon -> Weapon Skill -> Base Attribute -> Primary -> Secondary.
+   Form/Twist/Apex routes refer back to the skill definition; they do not keep
+   parallel copies of its palette, delivery owner or Base Attribute contract. */
+class WeaponDefinition{
+  constructor(data){
+    if(!data||typeof data.id!=='string'||!data.id||typeof data.name!=='string'||!data.name||
+       typeof data.deliveryProfileId!=='string'||!data.deliveryProfileId||
+       typeof data.animationFamilyId!=='string'||!data.animationFamilyId||
+       typeof data.defaultAnimationRecipeId!=='string'||!data.defaultAnimationRecipeId)
+      throw new Error('WeaponDefinition needs id, name, Delivery and Animation ownership');
+    const skillIds=Object.freeze((data.skillIds||[]).slice());
+    if(!skillIds.length||new Set(skillIds).size!==skillIds.length)
+      throw new Error(data.id+' needs unique owned skill ids');
+    Object.assign(this,data,{skillIds});Object.freeze(this);
+  }
+}
+class WeaponSkillDefinition{
+  constructor(data,weapon){
+    if(!data||!weapon||typeof data.id!=='string'||!data.id||data.weaponId!==weapon.id||
+       typeof data.name!=='string'||!data.name||!data.baseAttribute)
+      throw new Error('WeaponSkillDefinition needs id, weapon owner, name and Base Attribute');
+    const baseAttribute=Object.freeze({...data.baseAttribute,skillId:data.id}),
+      attributeIds=Object.freeze((data.attributeIds||[]).slice()),
+      animationRecipeId=data.animationRecipeId||weapon.defaultAnimationRecipeId,
+      tags=Object.freeze((data.command&&data.command.tags||[]).slice());
+    if(typeof baseAttribute.attributeId!=='string'||!baseAttribute.attributeId||
+       typeof baseAttribute.outputAxis!=='string'||!baseAttribute.outputAxis||
+       !(baseAttribute.stableLayerShare>0&&baseAttribute.stableLayerShare<1)||
+       attributeIds.length!==6||new Set(attributeIds).size!==attributeIds.length||
+       attributeIds[0]!==baseAttribute.attributeId)
+      throw new Error(data.id+' needs one Base-first six-Attribute skill palette');
+    this.id=data.id;this.weaponId=weapon.id;this.name=data.name;
+    this.routeSchemaVersion=Math.max(1,Math.floor(Number(data.routeSchemaVersion)||1));
+    this.baseAttribute=baseAttribute;this.attributeIds=attributeIds;
+    this.attributeHierarchy=Object.freeze({baseAttributeId:baseAttribute.attributeId,
+      primaryChoices:attributeIds,secondaryChoices:attributeIds});
+    this.animationFamilyId=weapon.animationFamilyId;
+    this.animationRecipeId=animationRecipeId;
+    this.command=Object.freeze({...data.command,id:data.id,name:data.name,source:'WEAPON',skill:true,
+      weaponId:weapon.id,deliveryProfileId:weapon.deliveryProfileId,
+      animationFamilyId:weapon.animationFamilyId,animationRecipeId,
+      /* Compatibility field until Bow rendering is moved behind the generic
+         Animation Family dispatcher below. New content authors only animationRecipeId. */
+      bowAnimationRecipeId:animationRecipeId,baseAttributeId:baseAttribute.attributeId,
+      primaryAttributeId:null,secondaryAttributeId:null,identityId:data.identityId,tags});
+    Object.freeze(this);
+  }
+}
+const WEAPONS=new DefinitionRegistry('weapon');
+WEAPONS.register(new WeaponDefinition({id:'longbow',name:'LONGBOW',baseDamage:12,levelDamage:4,
+  markDamage:8,markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,
+    damagePerMark:8,curve:'FULL'}),col:'#c0f79a',deliveryProfileId:'OWNER_BOW',
+  animationFamilyId:'BOW',defaultAnimationRecipeId:'BOW_STANDARD',
+  skillIds:['sharpshoot','mark_burst']}));
+Object.freeze(WEAPONS.ids);Object.freeze(WEAPONS.list);Object.freeze(WEAPONS.byId);Object.freeze(WEAPONS);
+/* Compatibility alias for the existing Fight command; definitions now live in
+   the indexed Weapon registry rather than a second object literal. */
+const WEAPON_DEFS=WEAPONS.byId;
 function createRunWeapon(id='longbow'){return {id,level:0,upgrades:[]};}
 let runWeapon=createRunWeapon();
-function activeWeapon(){return WEAPON_DEFS[runWeapon.id]||WEAPON_DEFS.longbow;}
+function activeWeapon(){return WEAPONS.byId[runWeapon.id]||WEAPONS.get('longbow');}
 function weaponBaseDamage(){const w=activeWeapon();return w.baseDamage+runWeapon.level*w.levelDamage;}
 
 /* AP limits command count; persistent Resolve pays skill costs. Effects remain
@@ -9526,38 +9579,39 @@ const SKILL_IDENTITIES=Object.freeze({
   CHAIN_FINISHER:Object.freeze({id:'CHAIN_FINISHER',name:'CHAIN FINISHER',description:'Spends Chain instead of generating it.',
     accepts:skill=>skill.consumeChain===true&&skill.addsChain===false}),
 });
-const BASE_TURN_SKILLS=Object.freeze([
-  Object.freeze({id:'sharpshoot',name:'SHARPSHOOT',source:'WEAPON',skill:true,cost:1,
-    damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,deliveryProfileId:'OWNER_BOW',
-    bowAnimationRecipeId:'BOW_STANDARD',
-    baseAttributeId:'MARK',
-    identityId:'MARK_BUILDER',
-    tags:Object.freeze(['weapon','ranged','mark','setup'])}),
+const WEAPON_SKILLS=new DefinitionRegistry('weapon skill');
+[
+  new WeaponSkillDefinition({id:'sharpshoot',weaponId:'longbow',name:'SHARPSHOOT',
+    identityId:'MARK_BUILDER',animationRecipeId:'BOW_STANDARD',
+    baseAttribute:{id:'SHARPSHOOT_MARK_SOURCE',attributeId:'MARK',outputAxis:'MARK_GAIN',
+      stableLayerShare:.10,promise:'Every Stable Sharpshoot layer pays toward uncapped Mark generation.'},
+    attributeIds:['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'],
+    command:{cost:1,damage:16,hits:1,markGain:1,col:'#c0f79a',slash:-.72,
+      tags:['weapon','ranged','mark','setup']}},WEAPONS.get('longbow')),
   /* The second Bow skill is the payoff half of the starting weapon kit. Its clean
      hit remains useful, but an existing Mark turns into an explicit Detonation
      payload. It never creates Mark in Stable lineage. */
-  Object.freeze({id:'mark_burst',name:'MARK BURST',source:'WEAPON',skill:true,cost:1,
-    damage:20,hits:1,markGain:0,col:'#ff6b72',slash:-.82,deliveryProfileId:'OWNER_BOW',
-    bowAnimationRecipeId:'BOW_DETONATION',
-    markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,damagePerMark:10,
-      curve:'FULL',delivery:'LAST'}),markDetonation:true,
-    baseAttributeId:'DETONATION',identityId:'MARK_PAYOFF',
-    tags:Object.freeze(['weapon','ranged','detonation','payoff'])}),
-]);
-/* Immutable definitions are read by synthesis, validators, labs and combat setup.
-   Index once instead of rescanning the catalogue as weapon/skill content grows. */
-const BASE_TURN_SKILL_BY_ID=(()=>{
-  const index=Object.create(null);
-  for(const definition of BASE_TURN_SKILLS){
-    if(index[definition.id])throw new Error('Duplicate base skill id '+definition.id);
-    if(typeof definition.baseAttributeId!=='string'||!definition.baseAttributeId)
-      throw new Error('Base skill '+definition.id+' needs a Base Attribute identity');
-    index[definition.id]=definition;
-  }
-  return Object.freeze(index);
-})();
+  new WeaponSkillDefinition({id:'mark_burst',weaponId:'longbow',name:'MARK BURST',routeSchemaVersion:2,
+    identityId:'MARK_PAYOFF',animationRecipeId:'BOW_DETONATION',
+    baseAttribute:{id:'MARK_BURST_DETONATION_PAYOFF',attributeId:'DETONATION',
+      outputAxis:'DETONATION_DAMAGE',stableLayerShare:.10,
+      promise:'Every Stable Mark Burst layer pays toward contact-bound Mark detonation damage.'},
+    attributeIds:['DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'],
+    command:{cost:1,damage:20,hits:1,markGain:0,col:'#ff6b72',slash:-.82,
+      markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true,
+      tags:['weapon','ranged','detonation','payoff']}},WEAPONS.get('longbow'))
+].forEach(definition=>WEAPON_SKILLS.register(definition));
+Object.freeze(WEAPON_SKILLS.ids);Object.freeze(WEAPON_SKILLS.list);
+Object.freeze(WEAPON_SKILLS.byId);Object.freeze(WEAPON_SKILLS);
+const BASE_TURN_SKILLS=Object.freeze(WEAPON_SKILLS.list.map(definition=>definition.command)),
+  BASE_TURN_SKILL_BY_ID=Object.freeze(Object.fromEntries(BASE_TURN_SKILLS.map(definition=>
+    [definition.id,definition]))),
+  BASE_TURN_SKILL_SLOT_BY_ID=Object.freeze(Object.fromEntries(BASE_TURN_SKILLS.map(
+    (definition,index)=>[definition.id,index])));
 function createRunSkill(definition){
   return {...definition,baseId:definition.id,tags:Array.from(definition.tags||[]),
+    activeAttributeRouteId:null,
     lineageAspect:'STABLE',lineageIdentity:definition.identityId,formAspectId:null,aspectLevel:0,
     frameMutation:null,
     mutationIds:[],mutationGroups:[],evolutionMutationIds:[],evolutionHistory:[],
@@ -9628,7 +9682,15 @@ function createRunSkill(definition){
 }
 let runSkills=[];
 function resetRunSkills(){runSkills=BASE_TURN_SKILLS.map(createRunSkill);}
-function runSkill(baseId){return runSkills.find(skill=>skill.baseId===baseId)||null;}
+function runSkill(baseId){
+  const index=BASE_TURN_SKILL_SLOT_BY_ID[baseId];
+  return index===undefined?null:(runSkills[index]||null);
+}
+function replaceRunSkill(baseId,command){
+  const index=BASE_TURN_SKILL_SLOT_BY_ID[baseId];
+  if(index===undefined||!command||command.baseId!==baseId)return false;
+  runSkills[index]=command;return true;
+}
 resetRunSkills();
 function skillMutation(data){
   const mutation={kind:'EVOLUTION',depth:1,type:'STABLE',weight:1,loopRisk:'none',maxRank:1,...data};
@@ -9786,7 +9848,7 @@ function activeSkillEvolutionRules(){
 }
 /* A form mutation replaces Sharpshoot's combat role in one decisive step. */
 const SKILL_EVOLUTIONS=Object.freeze([
-  skillMutation({id:'split_sight',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'split_sight',routeId:'chain_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'SPLIT SIGHT',rarity:'COMMON',weight:22,buildAspect:'SPLIT_VOLLEY',expectedChildren:6,col:'#c0f79a',
     grantsTags:['multihit','chain','engine'],
     summary:'Two arrows build Chain rapidly.',details:[
@@ -9795,7 +9857,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
       'Costs 1 AP and 1 Resolve.'
     ],apply:skill=>transformSharpshoot(skill,{name:'SPLIT SIGHT',damage:8,hits:2,
       hitInterval:.42,duration:1.02,markGain:1,cost:1,addsChain:true})}),
-  skillMutation({id:'blood_mark',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'blood_mark',routeId:'mark_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'BLOOD MARK',rarity:'COMMON',weight:20,buildAspect:'MARK_SATURATION',col:'#ff596d',
     grantsTags:['mark','setup'],
     summary:'Sacrifice impact and Chain to build a persistent Mark reserve.',details:[
@@ -9804,7 +9866,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
       'Costs 1 AP and 1 Resolve.'
     ],apply:skill=>transformSharpshoot(skill,{name:'BLOOD MARK',damage:16,hits:1,
       markGain:2,cost:1,addsChain:false,col:'#ff596d'})}),
-  skillMutation({id:'pinning_shot',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'pinning_shot',routeId:'posture_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'PINNING SHOT',rarity:'UNCOMMON',weight:14,buildAspect:'BREAK_ARCHERY',col:'#9ecbff',
     grantsTags:['posture','break','setup'],
     summary:'Turn the bow into a Break setup.',details:[
@@ -9813,7 +9875,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
       'Costs 1 AP and 2 Resolve.'
     ],apply:skill=>transformSharpshoot(skill,{name:'PINNING SHOT',damage:12,hits:1,
       markGain:1,posture:45,cost:2,col:'#9ecbff',addsChain:true})}),
-  skillMutation({id:'deadeye',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'deadeye',routeId:'critical_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'DEADEYE',rarity:'UNCOMMON',weight:12,buildAspect:'MARK_READER',col:'#c995ff',
     grantsTags:['mark','read','precision'],
     summary:'Read accumulated Mark without spending the setup.',details:[
@@ -9823,7 +9885,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'DEADEYE',damage:18,hits:1,
       markGain:1,markRule:markRule({mode:'READ',timing:'ACTION',cap:MARK_ALL,
         damagePerMark:6,curve:'SATURATED',delivery:'LAST'}),cost:3,col:'#c995ff',addsChain:false})}),
-  skillMutation({id:'echo_barrage',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'echo_barrage',routeId:'affliction_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'RED EXCHANGE',rarity:'LEGENDARY',weight:3,buildAspect:'MARK_CONVERSION',col:'#ff9a3a',
     grantsTags:['mark','chain','conversion','engine'],
     summary:'Cycle this move\'s own Mark into Chain without relying on a sibling Form.',details:[
@@ -9833,7 +9895,7 @@ const SKILL_EVOLUTIONS=Object.freeze([
     ],apply:skill=>transformSharpshoot(skill,{name:'RED EXCHANGE',damage:30,hits:1,
       markGain:2,markRule:markRule({mode:'CONVERT_CHAIN',timing:'ACTION',cap:2,
         chainPerMark:2,curve:'FULL'}),cost:2,col:'#ff9a3a',addsChain:false})}),
-  skillMutation({id:'war_draw',skillId:'sharpshoot',group:'sharpshoot_form',
+  skillMutation({id:'war_draw',routeId:'charge_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'F6 · CHARGE',rarity:'RARE',weight:7,buildAspect:'CHARGE_RELEASE',col:'#7fc9ff',
     grantsTags:['charge','defense','mark','delayed'],
     summary:'Commit now, defend once and release the earned Charge as one free heavy arrow next phase.',details:[
@@ -9999,9 +10061,16 @@ const SKILL_MUTATION_BY_ID=Object.freeze(Object.fromEntries(SKILL_MUTATIONS.map(
    Specialization adds Secondary, and neither is allowed to erase that Base output.
    Twist may rebalance Primary/Secondary and choose a compatible Delivery; Apex
    refines the result. Rarity and Quality buy power, never a different identity. */
-const COMBAT_ATTRIBUTE_IDS=Object.freeze(['MARK','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE']);
+/* This is the global mechanic vocabulary, not one skill's draft palette. Each
+   weapon skill selects six compatible Attributes from it below. */
+const COMBAT_ATTRIBUTE_IDS=Object.freeze([
+  'MARK','DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'
+]);
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
-  'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH','CHAIN_SCALING','CHAIN_MANAGEMENT',
+  'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH',
+  'DETONATION_DAMAGE','DETONATION_CONSUMPTION','DETONATION_EVENTS',
+  'DELIVERY_CONTACTS','DELIVERY_WEIGHT',
+  'CHAIN_SCALING','CHAIN_MANAGEMENT',
   'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','CHAIN_POSTURE_READ','POSTURE_CHAIN_READ','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','BREAK_MARK_REWARD','POSTURE_MARK_TRAIL','BREAK_CHAIN_REWARD','CRIT_POSTURE_ECHO','BLEED_POSTURE_READ','CHARGE_POSTURE_RELATION','CHARGE_POSTURE_CONTROL','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD','CHAIN_CRIT_READ','CHAIN_CRIT_POWER','CRIT_CHAIN_REWARD',
   'AFFLICTION_APPLICATION','AFFLICTION_POTENCY','AFFLICTION_DURATION','CHAIN_AFFLICTION_READ','AFFLICTION_CHAIN_REWARD','AFFLICTION_CHAIN_READ',
   'MARK_AFFLICTION_READ','AFFLICTION_MARK_REWARD','AFFLICTION_FINAL_MARK','AFFLICTION_APPLICATION_EVENTS',
@@ -10032,6 +10101,7 @@ const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
 const COMBAT_ATTRIBUTE_SCALING_AXIS_SET=new Set(COMBAT_ATTRIBUTE_SCALING_AXES);
 const COMBAT_ATTRIBUTE_CAPABILITIES=Object.freeze([
   'MARK_GENERATE','MARK_CONTROL','MARK_SUPPORT',
+  'DETONATE_MARK','DETONATION_CONTROL','DETONATION_SUPPORT',
   'CHAIN_SCALE','CHAIN_MANAGE','CHAIN_SUPPORT','SEQUENTIAL_WEIGHT',
   'POSTURE_GENERATE','BREAK_PRESSURE','POSTURE_SUPPORT',
   'CRIT_LOCAL','CRIT_PRECISION','CRIT_SUPPORT',
@@ -10074,7 +10144,7 @@ function combatAttributeRole(data){
 }
 function combatAttributeDefinition(data){
   if(!data||!COMBAT_ATTRIBUTE_IDS.includes(data.id)||typeof data.name!=='string'||!data.name)
-    throw new Error('Combat Attribute needs one of the six locked ids and a name');
+    throw new Error('Combat Attribute needs a registered global id and a name');
   const primary=combatAttributeRole({...data.primary,role:'PRIMARY'}),
     secondary=combatAttributeRole({...data.secondary,role:'SECONDARY'}),
     primaryOnlyCapabilities=Object.freeze((data.primaryOnlyCapabilities||[]).slice());
@@ -10093,6 +10163,19 @@ const COMBAT_ATTRIBUTES=new DefinitionRegistry('combat attribute');
       identityShare:PRIMARY_ATTRIBUTE_SHARE},
     secondary:{promise:'Add a bounded amount of Mark support without replacing the Primary engine.',
       capabilities:['MARK_GENERATE','MARK_SUPPORT'],scalingAxes:['MARK_GAIN','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH'],
+      deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
+      deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
+  combatAttributeDefinition({id:'DETONATION',name:'DETONATION',
+    summary:'Turn existing target Marks into explicit contact-bound payoff damage.',
+    contactPolicy:'CONSUME_ON_DIRECT_CONTACT',primaryOnlyCapabilities:['DETONATION_CONTROL'],
+    primary:{promise:'Mark consumption and Detonation payload are the move\'s dominant payoff and strongest scaling route.',
+      capabilities:['DETONATE_MARK','DETONATION_CONTROL'],
+      scalingAxes:['DETONATION_DAMAGE','DETONATION_CONSUMPTION','DETONATION_EVENTS'],
+      deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],deliveryTimings:['IMMEDIATE'],
+      identityShare:PRIMARY_ATTRIBUTE_SHARE},
+    secondary:{promise:'Add bounded Mark detonation support without replacing the Primary engine.',
+      capabilities:['DETONATE_MARK','DETONATION_SUPPORT'],
+      scalingAxes:['DETONATION_DAMAGE','DETONATION_CONSUMPTION','DETONATION_EVENTS'],
       deliveryPatterns:['SINGLE','SEQUENTIAL','SIMULTANEOUS_PACKET'],
       deliveryTimings:['IMMEDIATE','DELAYED_RELEASE'],identityShare:SECONDARY_ATTRIBUTE_SHARE}}),
   combatAttributeDefinition({id:'CHAIN',name:'CHAIN',
@@ -10229,9 +10312,10 @@ function combatAttributeIdFromLegacy(id){
 
 function runCombatAttributeRegistrySelfTests(){
   const fail=message=>{throw new Error('Combat Attribute Registry audit: '+message);};
-  if(COMBAT_ATTRIBUTES.list.length!==6||COMBAT_ATTRIBUTE_IDS.some(id=>!COMBAT_ATTRIBUTES.has(id)))
-    fail('the locked six-attribute palette is incomplete');
-  if(Object.keys(COMBAT_ATTRIBUTE_PAIR_CONTRACTS).length!==36)
+  if(COMBAT_ATTRIBUTES.list.length!==COMBAT_ATTRIBUTE_IDS.length||
+     COMBAT_ATTRIBUTE_IDS.some(id=>!COMBAT_ATTRIBUTES.has(id)))
+    fail('the global Attribute vocabulary is incomplete');
+  if(Object.keys(COMBAT_ATTRIBUTE_PAIR_CONTRACTS).length!==COMBAT_ATTRIBUTE_IDS.length**2)
     fail('all Primary/Secondary pair contracts must be derivable');
   for(const attribute of COMBAT_ATTRIBUTES.list){
     if(!Object.isFrozen(attribute)||!Object.isFrozen(attribute.primary)||!Object.isFrozen(attribute.secondary))
@@ -10267,6 +10351,9 @@ function runCombatAttributeRegistrySelfTests(){
     fail('Affliction role split changed');
   if(combatAttribute('CHAIN').contactPolicy!=='NATURAL_FROM_DELIVERY')
     fail('Chain must remain visible-contact driven');
+  if(!combatAttribute('DETONATION').primary.capabilities.includes('DETONATION_CONTROL')||
+     combatAttribute('DETONATION').secondary.capabilities.includes('DETONATION_CONTROL'))
+    fail('Detonation control ownership changed');
   if(combatAttributeIdFromLegacy('SPLIT_VOLLEY')!=='CHAIN'||
      combatAttributeIdFromLegacy('MARK_SATURATION')!=='MARK'||
      combatAttributeIdFromLegacy('BREAK_ARCHERY')!=='POSTURE'||
@@ -10524,6 +10611,43 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
 ].forEach(recipe=>BOW_ANIMATION_RECIPES.register(recipe));
 Object.freeze(BOW_ANIMATION_RECIPES.ids);Object.freeze(BOW_ANIMATION_RECIPES.list);
 Object.freeze(BOW_ANIMATION_RECIPES.byId);Object.freeze(BOW_ANIMATION_RECIPES);
+class WeaponAnimationFamilyDefinition{
+  constructor(data){
+    if(!data||typeof data.id!=='string'||!data.id||!data.recipeRegistry||
+       typeof data.defaultRecipeId!=='string'||!data.recipeRegistry.has(data.defaultRecipeId))
+      throw new Error('Weapon Animation Family needs an id, recipe registry and valid default');
+    const weaponIds=Object.freeze((data.weaponIds||[]).slice());
+    if(!weaponIds.length||weaponIds.some(id=>!WEAPONS.has(id)||
+       WEAPONS.get(id).animationFamilyId!==data.id))
+      throw new Error(data.id+' Animation Family has invalid Weapon ownership');
+    this.id=data.id;this.weaponIds=weaponIds;this.defaultRecipeId=data.defaultRecipeId;
+    this.legacyRecipeField=data.legacyRecipeField||null;
+    this.recipeRegistry=data.recipeRegistry;Object.freeze(this);
+  }
+  commandRecipeId(command){
+    return command&&(this.legacyRecipeField&&command[this.legacyRecipeField]||
+      command.animationRecipeId)||this.defaultRecipeId;
+  }
+  recipe(recipeId){return this.recipeRegistry.get(recipeId||this.defaultRecipeId);}
+}
+const WEAPON_ANIMATION_FAMILIES=new DefinitionRegistry('weapon animation family');
+WEAPON_ANIMATION_FAMILIES.register(new WeaponAnimationFamilyDefinition({id:'BOW',
+  weaponIds:['longbow'],defaultRecipeId:'BOW_STANDARD',legacyRecipeField:'bowAnimationRecipeId',
+  recipeRegistry:BOW_ANIMATION_RECIPES}));
+Object.freeze(WEAPON_ANIMATION_FAMILIES.ids);Object.freeze(WEAPON_ANIMATION_FAMILIES.list);
+Object.freeze(WEAPON_ANIMATION_FAMILIES.byId);Object.freeze(WEAPON_ANIMATION_FAMILIES);
+function weaponAnimationFamilyForCommand(command){
+  const familyId=command&&command.animationFamilyId||
+    (command&&command.weaponId&&WEAPONS.byId[command.weaponId]&&
+      WEAPONS.byId[command.weaponId].animationFamilyId)||
+    (command&&command.bowAnimationRecipeId?'BOW':null);
+  return familyId?WEAPON_ANIMATION_FAMILIES.get(familyId):null;
+}
+function weaponAnimationRecipe(command,recipeIdOverride=null){
+  const family=weaponAnimationFamilyForCommand(command);
+  if(!family)throw new Error('Weapon command has no Animation Family');
+  return family.recipe(recipeIdOverride||family.commandRecipeId(command));
+}
 const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_primary_form:'BOW_STANDARD',chain_primary_form:'BOW_CHAIN',
   posture_primary_form:'BOW_POSTURE',critical_primary_form:'BOW_CRITICAL',
@@ -10682,9 +10806,11 @@ function sharpshootPostureRouteBowRecipe(route,specialization){
   return SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[route&&route.id]||
     SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID[specialization&&specialization.id]||'BOW_POSTURE';
 }
-function bowAnimationRecipeById(id){return BOW_ANIMATION_RECIPES.get(id||'BOW_STANDARD');}
+function bowAnimationRecipeById(id){return WEAPON_ANIMATION_FAMILIES.get('BOW').recipe(id);}
 function resolveBowAnimationRecipe(command,charge=0,recipeIdOverride=null){
-  const base=bowAnimationRecipeById(recipeIdOverride||command&&command.bowAnimationRecipeId||'BOW_STANDARD'),
+  const familyCommand=command&&weaponAnimationFamilyForCommand(command)?command:
+      {...command,animationFamilyId:'BOW'},
+    base=weaponAnimationRecipe(familyCommand,recipeIdOverride),
     overrides=command&&command.bowAnimationOverrides||null,result={...base};
   if(overrides)for(const [key,value] of Object.entries(overrides)){
     const range=BOW_ANIMATION_LIMITS[key];
@@ -10703,7 +10829,7 @@ function resolveBowAnimationRecipe(command,charge=0,recipeIdOverride=null){
 function buildBowActionTimeline(command,delivery,charge=0,distance=600,markAtStart=0,
     postureAtStart=0,postureMax=CFG.BOSS_POSTURE_MAX){
   if(!delivery||delivery.family!=='PROJECTILE'||delivery.profileId!=='OWNER_BOW')return null;
-  const requestedRecipeId=command&&command.bowAnimationRecipeId||'BOW_STANDARD',
+  const requestedRecipeId=WEAPON_ANIMATION_FAMILIES.get('BOW').commandRecipeId(command),
     finisherReady=requestedRecipeId==='BOW_POSTURE_FINISHER'&&
       postureAtStart>=Math.max(1,postureMax)*(command.postureThresholdRatio||.5),
     recipe=resolveBowAnimationRecipe(command,charge,
@@ -11141,11 +11267,10 @@ const SHARPSHOOT_MARK_ECONOMY_CONTRACT=Object.freeze({
    New weapon skills must register here before their authored routes compile.
    This keeps the rule generic without pretending every weapon's base identity
    is Mark generation. Distorted/Corrupted may later author an explicit break. */
-const WEAPON_SKILL_BASE_ATTRIBUTE_CONTRACTS=Object.freeze({
-  sharpshoot:Object.freeze({id:'SHARPSHOOT_MARK_SOURCE',skillId:'sharpshoot',
-    attributeId:'MARK',outputAxis:'MARK_GAIN',stableLayerShare:.10,
-    promise:'Every Stable Sharpshoot layer pays toward uncapped Mark generation.'})
-});
+/* Compatibility indexes are derived from WeaponSkillDefinition. They are views,
+   never parallel authoring surfaces. */
+const WEAPON_SKILL_BASE_ATTRIBUTE_CONTRACTS=Object.freeze(Object.fromEntries(
+  WEAPON_SKILLS.list.map(definition=>[definition.id,definition.baseAttribute])));
 function weaponSkillBaseAttributeContract(skillId){
   const contract=WEAPON_SKILL_BASE_ATTRIBUTE_CONTRACTS[skillId];
   if(!contract||!COMBAT_ATTRIBUTES.has(contract.attributeId)||
@@ -11171,6 +11296,83 @@ function normalizeStableBaseAttributeQualityProfile(profile,baseContract,routeId
   }
   return Object.freeze(normalized);
 }
+/* Global Attributes are reusable vocabulary; a weapon skill exposes exactly six
+   of them to its own Form/Specialization tree. This lets Mark Burst replace the
+   builder-only Mark route with Detonation without changing Sharpshoot's tree. */
+const WEAPON_SKILL_ATTRIBUTE_PALETTES=Object.freeze(Object.fromEntries(
+  WEAPON_SKILLS.list.map(definition=>[definition.id,definition.attributeIds])));
+function weaponSkillAttributePalette(skillId){
+  const palette=WEAPON_SKILL_ATTRIBUTE_PALETTES[skillId];
+  if(!palette||palette.length!==6||new Set(palette).size!==palette.length||
+     palette.some(id=>!COMBAT_ATTRIBUTES.has(id)))
+    throw new Error(skillId+' needs six unique registered weapon Attributes');
+  return palette;
+}
+/* Base output handlers are the compiler seam. Route generation pays protected
+   power into the declared output axis; the materializer reads/writes the actual
+   command field through this table rather than assuming every skill creates Mark. */
+const WEAPON_SKILL_BASE_OUTPUT_HANDLERS=Object.freeze({
+  MARK_GAIN:Object.freeze({
+    powerPerUnit:6,precision:0,
+    read:command=>Math.max(0,Number(command&&command.markGain)||0),
+    write:(command,value)=>{command.markGain=Math.max(0,Math.floor(Number(value)||0));return command;},
+    accepts:command=>Number.isInteger(command&&command.markGain)&&command.markGain>0
+  }),
+  DETONATION_DAMAGE:Object.freeze({
+    powerPerUnit:1,precision:3,
+    read:command=>Math.max(0,Number(command&&command.markRule&&command.markRule.damagePerMark)||0),
+    write:(command,value)=>{command.markRule=markRule({...command.markRule,
+      damagePerMark:Math.max(0,Number(value)||0)});command.markDetonation=true;return command;},
+    accepts:command=>command&&command.markDetonation===true&&command.markRule&&
+      command.markRule.mode==='CONSUME'&&command.markRule.damagePerMark>0
+  })
+});
+function weaponSkillBaseOutputHandler(skillId){
+  const contract=weaponSkillBaseAttributeContract(skillId),
+    handler=WEAPON_SKILL_BASE_OUTPUT_HANDLERS[contract.outputAxis];
+  if(!handler)throw new Error(skillId+' Base Attribute has no compiler output handler');
+  return handler;
+}
+function materializeWeaponSkillBaseAttributePower(command,skillId,paidPower){
+  const contract=weaponSkillBaseAttributeContract(skillId),handler=weaponSkillBaseOutputHandler(skillId),
+    credit=Math.max(0,Number(paidPower)||0),scale=10**handler.precision,
+    added=Math.floor((credit/handler.powerPerUnit+1e-9)*scale)/scale,
+    spent=added*handler.powerPerUnit,reserve=Math.max(0,credit-spent),before=handler.read(command);
+  if(!command||command.baseAttributeId!==contract.attributeId)
+    throw new Error(skillId+' command cannot materialize another skill Base Attribute');
+  handler.write(command,before+added);
+  return Object.freeze({skillId,attributeId:contract.attributeId,axis:contract.outputAxis,
+    before:Number(before.toFixed(4)),added:Number(added.toFixed(4)),after:Number(handler.read(command).toFixed(4)),
+    paidPower:Number(credit.toFixed(4)),spentPower:Number(spent.toFixed(4)),
+    reservePower:Number(reserve.toFixed(4))});
+}
+const WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT=(()=>{
+  for(const skillDefinition of WEAPON_SKILLS.list){
+    const definition=skillDefinition.command,weapon=WEAPONS.get(skillDefinition.weaponId),
+      family=WEAPON_ANIMATION_FAMILIES.get(skillDefinition.animationFamilyId),
+      contract=weaponSkillBaseAttributeContract(definition.id),
+      palette=weaponSkillAttributePalette(definition.id),handler=weaponSkillBaseOutputHandler(definition.id);
+    if(!weapon.skillIds.includes(definition.id)||definition.weaponId!==weapon.id||
+       definition.deliveryProfileId!==weapon.deliveryProfileId||
+       definition.animationFamilyId!==family.id||!family.recipeRegistry.has(definition.animationRecipeId)||
+       definition.baseAttributeId!==contract.attributeId||contract!==skillDefinition.baseAttribute||
+       palette!==skillDefinition.attributeIds||palette[0]!==contract.attributeId||
+       contract.stableLayerShare!==.10||definition.primaryAttributeId!==null||
+       definition.secondaryAttributeId!==null||!handler.accepts(definition)||!(handler.read(definition)>0))
+      throw new Error(definition.id+' does not honor its Weapon Skill hierarchy');
+  }
+  for(const weapon of WEAPONS.list)if(weapon.skillIds.some(id=>!WEAPON_SKILLS.has(id)||
+      WEAPON_SKILLS.get(id).weaponId!==weapon.id))
+    throw new Error(weapon.id+' has a broken Weapon -> Skill ownership edge');
+  const shared=weaponSkillAttributePalette('sharpshoot').filter(id=>
+    weaponSkillAttributePalette('mark_burst').includes(id));
+  if(shared.length!==5||shared.includes('MARK')||shared.includes('DETONATION'))
+    throw new Error('Weapon skill palettes must share five combat Attributes and keep distinct Base identities');
+  return Object.freeze({passed:true,weapons:WEAPONS.list.length,skills:BASE_TURN_SKILLS.length,
+    animationFamilies:WEAPON_ANIMATION_FAMILIES.list.length,
+    globalAttributes:COMBAT_ATTRIBUTE_IDS.length,attributesPerSkill:6,
+    sharedAttributes:shared.length});
+})();
 /* Twist variety is an executable content contract, not a prompt convention.
    A Twist identity describes the combat verb before Delivery or numbers are
    selected. F5 and every later Form must provide this V1 identity explicitly;
@@ -11207,7 +11409,7 @@ const TWIST_MECHANIC_ENGINE_REGISTRY=Object.freeze(Object.fromEntries([
 ].map(engine=>[engine.id,Object.freeze({...engine,owners:Object.freeze(engine.owners.slice()),
   testPolicy:'RUNTIME_SEQUENCE_AND_POWER_LEDGER'})])));
 const TWIST_IDENTITY_ENUMS=Object.freeze({
-  inputs:Object.freeze(['NONE','MARK','CHAIN','POSTURE','CRITICAL','BLEED','CHARGE','BREAK',
+  inputs:Object.freeze(['NONE','MARK','DETONATION','CHAIN','POSTURE','CRITICAL','BLEED','CHARGE','BREAK',
     'PRECISION','CONTACT_COUNT','PARENT_OUTPUT']),
   triggers:Object.freeze(['ON_ACTION_START','ON_CONTACT','ON_FINAL_CONTACT','ON_BLEED_APPLY',
     'ON_BLEED_TICK','ON_CRIT','ON_NON_CRIT','ON_BREAK','ON_PARRY','ON_PERFECT_DODGE',
@@ -11215,7 +11417,7 @@ const TWIST_IDENTITY_ENUMS=Object.freeze({
     'ON_NEXT_ACTION','WHILE_TARGET_BLEEDING']),
   operations:Object.freeze(['GENERATE','READ','CONVERT','AMPLIFY','RETRIGGER','SPLIT',
     'PRESERVE','METER','SHIFT_TIMING','CASCADE','LAYER']),
-  outputs:Object.freeze(['MARK','CHAIN','POSTURE','DIRECT_DAMAGE','BLEED','BLEED_POWER','CHARGE',
+  outputs:Object.freeze(['MARK','DETONATION','CHAIN','POSTURE','DIRECT_DAMAGE','BLEED','BLEED_POWER','CHARGE',
     'CRIT_CHANCE','CRIT_POWER','APPLICATION_EVENTS']),
   timings:Object.freeze(['IMMEDIATE','LATER_IN_ACTION','DEFENSE_PHASE','NEXT_ACTION','MULTI_TURN']),
   deliveryPurposes:Object.freeze(['INHERITED','MECHANIC_SUPPORT','MECHANIC_REQUIRED'])
@@ -11279,6 +11481,38 @@ function auditTwistIdentitySet(entries,brief,globalEntries=[]){
     signatureTwists,genericBridges,maximumSimilarity,deliveryOnlyClones:Object.freeze(deliveryOnlyClones),
     pairs:Object.freeze(pairs),closestExternal:Object.freeze(closestExternal)});
 }
+/* Delivery V2 separates topology from power. Pattern says how contacts arrive;
+   scaling says whether cumulative Quality is allowed to grow that pattern.
+   NONE redistributes the whole card packet to authored mechanics. CONTACT_COUNT
+   and WEIGHT must own a paid semantic axis, so neither can become free power. */
+const SKILL_DELIVERY_SCALING_MODES=Object.freeze(['NONE','CONTACT_COUNT','WEIGHT']);
+function skillDeliveryScalingContract(data,delivery,routeId,qualityProfile,strict=false){
+  const source=data||{mode:'NONE'},mode=String(source.mode||'NONE').toUpperCase(),
+    powerAxis=source.powerAxis||null,effectOwner=source.effectOwner||null,
+    expectedAxis=mode==='CONTACT_COUNT'?'DELIVERY_CONTACTS':mode==='WEIGHT'?
+      'DELIVERY_WEIGHT':null,deliveryAxes=['DELIVERY_CONTACTS','DELIVERY_WEIGHT'];
+  if(!SKILL_DELIVERY_SCALING_MODES.includes(mode))
+    throw new Error(routeId+' has an invalid Delivery scaling mode');
+  if(mode==='CONTACT_COUNT'&&(!delivery||
+     !['SEQUENTIAL','SIMULTANEOUS_PACKET'].includes(delivery.pattern)))
+    throw new Error(routeId+' can grow contacts only through Sequential or Shotgun Delivery');
+  if(mode==='WEIGHT'&&(!delivery||delivery.pattern!=='SINGLE'))
+    throw new Error(routeId+' can grow Weight only behind Single Delivery');
+  if(mode==='NONE'&&(powerAxis||effectOwner))
+    throw new Error(routeId+' cannot reserve Delivery power while scaling is disabled');
+  if(strict&&mode==='NONE'&&deliveryAxes.some(axis=>(Number(qualityProfile&&qualityProfile[axis])||0)>0))
+    throw new Error(routeId+' must redistribute unused Delivery Quality to real outputs');
+  if(strict&&mode!=='NONE'&&powerAxis!==expectedAxis)
+    throw new Error(routeId+' cannot fund '+mode+' through another mechanic axis');
+  if(strict&&mode!=='NONE'&&deliveryAxes.some(axis=>axis!==expectedAxis&&
+      (Number(qualityProfile&&qualityProfile[axis])||0)>0))
+    throw new Error(routeId+' cannot reserve two Delivery channels at once');
+  if(mode!=='NONE'&&(!powerAxis||!COMBAT_ATTRIBUTE_SCALING_AXIS_SET.has(powerAxis)||
+     !(Number(qualityProfile&&qualityProfile[powerAxis])>0)||!effectOwner))
+    throw new Error(routeId+' needs a paid Delivery axis and an explicit effect owner');
+  return Object.freeze({version:2,mode,powerAxis,effectOwner,
+    qualitySource:'CUMULATIVE_TOTAL',capped:false});
+}
 function skillAttributeRouteContract(data){
   if(!data||typeof data.id!=='string'||!data.id||![1,2,3,4].includes(data.depth)||
      typeof data.promise!=='string'||!data.promise||!(data.powerBudget>0))
@@ -11299,11 +11533,13 @@ function skillAttributeRouteContract(data){
     throw new Error(data.id+' needs a registered Base Attribute');
   if(baseAttributeId!==baseContract.attributeId)
     throw new Error(data.id+' contradicts '+skillId+' Base Attribute contract');
-  if(!COMBAT_ATTRIBUTES.has(data.primaryAttributeId))
+  const attributePalette=weaponSkillAttributePalette(skillId);
+  if(!COMBAT_ATTRIBUTES.has(data.primaryAttributeId)||!attributePalette.includes(data.primaryAttributeId))
     throw new Error(data.id+' needs a registered Primary Attribute');
   if(data.depth===1&&data.secondaryAttributeId!==null)
     throw new Error(data.id+' Form cannot own a Secondary Attribute');
-  if(data.depth>1&&!COMBAT_ATTRIBUTES.has(data.secondaryAttributeId))
+  if(data.depth>1&&(!COMBAT_ATTRIBUTES.has(data.secondaryAttributeId)||
+     !attributePalette.includes(data.secondaryAttributeId)))
     throw new Error(data.id+' Specialization/Twist/Apex needs a registered Secondary Attribute');
   const hasDelivery=!!(data.deliveryProfileId||data.deliveryPattern||data.deliveryTiming||data.contacts);
   if(hasDelivery&&(!data.deliveryProfileId||!data.deliveryPattern||!data.deliveryTiming||
@@ -11371,6 +11607,10 @@ function skillAttributeRouteContract(data){
     qualityProfile=normalizeStableBaseAttributeQualityProfile(
       authoredQualityProfile,baseContract,data.id),
     qualityAxes=Object.freeze(Object.keys(qualityProfile));
+  if(WEAPON_SKILLS.byId[skillId].routeSchemaVersion>=2&&!data.deliveryScaling)
+    throw new Error(data.id+' needs an explicit Delivery V2 scaling decision');
+  const deliveryScaling=skillDeliveryScalingContract(data.deliveryScaling,delivery,data.id,
+      qualityProfile,WEAPON_SKILLS.byId[skillId].routeSchemaVersion>=2);
   if(data.depth===3&&data.runtimeReadiness==='MATERIALIZED'&&delivery.pattern==='IMPACT_ECHO'&&
      !IMPACT_ECHO_CONTACT_POLICY_SET.has(mechanics.echoContactPolicy))
     throw new Error(data.id+' IMPACT_ECHO needs an explicit physical-contact or non-contact-payload policy');
@@ -11399,16 +11639,46 @@ function skillAttributeRouteContract(data){
       (delivery?'SPECIALIZATION_SELECTS_COMPATIBLE_DELIVERY':'INHERIT_FORM_UNTIL_TWIST'):
       data.depth===3?'TWIST_SELECTS_COMPATIBLE_DELIVERY':'APEX_PRESERVES_TWIST_DELIVERY';
   if(data.runtimeReadiness==='MATERIALIZED'&&(!baselineAttack||!Number.isInteger(baselineAttack.hits)||
-     baselineAttack.hits<1||!Number.isInteger(baselineAttack.markGain)||baselineAttack.markGain<1||
-     !Number.isInteger(baselineAttack.resolveCost)||baselineAttack.resolveCost<0))
-    throw new Error(data.id+' materialized baseline needs hits, positive Mark and Resolve cost');
+     baselineAttack.hits<1||!Number.isInteger(baselineAttack.resolveCost)||baselineAttack.resolveCost<0||
+     !weaponSkillBaseOutputHandler(skillId).accepts(baselineAttack)))
+    throw new Error(data.id+' materialized baseline violates its weapon Base Attribute');
   return Object.freeze({...data,skillId,baseAttributeId,baseAttributeContract:baseContract,
     baseAttributeAxis:baseContract.outputAxis,baseAttributeShare:baseContract.stableLayerShare,
+    attributePalette,
     address,semanticLabel,name,identityBudget,mechanics,authoredQualityProfile,
     qualityProfile,qualityAxes,baselineAttack,delivery,
     deliveryDecision:deliveryDecision?Object.freeze({...deliveryDecision}):null,twistDesign,
-    twistIdentity,deliveryPolicy});
+    twistIdentity,deliveryPolicy,deliveryScaling});
 }
+const DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT=(()=>{
+  const route=skillAttributeRouteContract({id:'audit_mark_burst_detonation_form',skillId:'mark_burst',
+    depth:1,formSlot:1,primaryAttributeId:'DETONATION',secondaryAttributeId:null,powerBudget:1,
+    promise:'Preserve contact-bound Detonation as both Base and Primary output.',
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:1},mechanics:{detonationRule:'CONTACT_CONSUME'},
+    runtimeReadiness:'MATERIALIZED',baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true}}),
+    handler=weaponSkillBaseOutputHandler('mark_burst'),sample=createRunSkill(
+      BASE_TURN_SKILL_BY_ID.mark_burst),detonationMaterialization=
+      materializeWeaponSkillBaseAttributePower(sample,'mark_burst',3.5),
+    markSample=createRunSkill(BASE_TURN_SKILL_BY_ID.sharpshoot),markMaterialization=
+      materializeWeaponSkillBaseAttributePower(markSample,'sharpshoot',6);
+  let rejectedMarkPrimary=false;
+  try{skillAttributeRouteContract({...route,id:'audit_mark_burst_wrong_form',
+    primaryAttributeId:'MARK',qualityProfile:{DIRECT_DAMAGE:1}});}
+  catch(error){rejectedMarkPrimary=true;}
+  if(route.baseAttributeId!=='DETONATION'||route.baseAttributeAxis!=='DETONATION_DAMAGE'||
+     route.qualityProfile.DIRECT_DAMAGE!==.90||route.qualityProfile.DETONATION_DAMAGE!==.10||
+     handler.read(sample)!==13.5||detonationMaterialization.added!==3.5||
+     markMaterialization.before!==1||markMaterialization.after!==2||!rejectedMarkPrimary)
+    throw new Error('Mark Burst Detonation Base Attribute route seam is incomplete');
+  return Object.freeze({passed:true,skillId:route.skillId,baseAttribute:route.baseAttributeId,
+    baseAxis:route.baseAttributeAxis,baseShare:route.baseAttributeShare,
+    paletteFirst:route.attributePalette[0],palette:Object.freeze(route.attributePalette.slice()),
+    sampleDamagePerMark:handler.read(sample),detonationMaterialization,markMaterialization});
+})();
 /* A complete family is authored as four tactical identities and four Apex
    refinements, then expanded into route contracts. This is the preferred
    content-authoring seam for future weapons: mechanics stay explicit while
@@ -15094,6 +15364,158 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
 ]);
 const SHARPSHOOT_MARK_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ROUTE_CONTRACTS.map(route=>[route.id,route])));
+/* Mark Burst starts as the payoff half of the Bow pair. This first Form is kept
+   deliberately small: one real heavy arrow owns one contact, creates no Mark,
+   and spends accumulated Mark for full-value Detonation. Quality may buy more
+   consumed stacks, but there is no authored gameplay ceiling on that output. */
+const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
+  skillAttributeRouteContract({id:'detonation_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:1,slot:1,primaryAttributeId:'DETONATION',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.35,DETONATION_CONSUMPTION:.35},
+    promise:'Fire one heavy arrow that never creates Mark and converts an uncapped Quality-paid number of existing Marks into full-value contact damage.',
+    mechanics:{primaryOutput:'MARK_DETONATION',relationship:'PURE_DETONATION',
+      detonationRule:'CONTACT_CONSUME',consumptionRule:'QUALITY_SCALED_UNCAPPED',
+      deliveryIntent:'ONE_HEAVY_ARROW_ONE_VISIBLE_CONTACT'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'PER_HIT',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'chain_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:2,slot:1,primaryAttributeId:'CHAIN',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,
+      DELIVERY_CONTACTS:.30},
+    promise:'Grow one sequential Bow cadence organically from cumulative Quality; every visible arrow creates Chain, later arrows read it, and only the final arrow detonates one Mark.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',relationship:'PURE_CHAIN',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',chainRule:'ONE_PER_VISIBLE_CONTACT',
+      deliveryIntent:'QUALITY_GROWN_SEQUENTIAL_CONTACTS'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'posture_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:3,slot:1,primaryAttributeId:'POSTURE',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'WEIGHT',powerAxis:'DELIVERY_WEIGHT',effectOwner:'POSTURE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,POSTURE_DAMAGE:.55,
+      DELIVERY_WEIGHT:.15},
+    promise:'Keep one heavy Bow contact and spend a paid Weight channel on additional Posture impact without copying Detonation or inventing extra hits.',
+    mechanics:{primaryOutput:'BREAK_PRESSURE',relationship:'PURE_POSTURE',
+      detonationRule:'ONE_MARK_ON_CONTACT',postureRule:'PAID_WEIGHT_TO_POSTURE',
+      deliveryIntent:'ONE_WEIGHTED_POSTURE_ARROW'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'critical_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:4,slot:1,primaryAttributeId:'CRITICAL',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.10,CRIT_CHANCE:.30,
+      CRIT_PRECISION:.20,CRIT_POWER:.15},
+    promise:'Keep one precision arrow whose local Crit chance, miss-fed Precision and Crit power grow while the separate Detonation payload remains outside the Crit multiplier.',
+    mechanics:{primaryOutput:'LOCAL_CRITICAL',relationship:'PURE_CRITICAL',
+      detonationRule:'ONE_MARK_SEPARATE_FROM_CRIT',critRule:'CHANCE_PRECISION_AND_POWER',
+      deliveryIntent:'ONE_PRECISION_ARROW'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'affliction_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:5,slot:1,primaryAttributeId:'AFFLICTION',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'IMMEDIATE',contacts:1,deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,AFFLICTION_APPLICATION:.45,
+      AFFLICTION_POTENCY:.25},
+    promise:'Apply one two-turn Bleed wound through one real arrow; shotgun remains a possible Twist rather than a free Form-level Delivery change.',
+    mechanics:{primaryOutput:'BLEED_ENGINE',relationship:'PURE_AFFLICTION',
+      detonationRule:'ONE_MARK_ON_CONTACT',afflictionRule:'ONE_WOUND_TWO_TICKS',
+      deliveryIntent:'ONE_BLEED_ARROW'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
+  skillAttributeRouteContract({id:'charge_primary_form',skillId:'mark_burst',depth:1,
+    parentId:null,formSlot:6,slot:1,primaryAttributeId:'CHARGE',secondaryAttributeId:null,
+    powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
+    deliveryTiming:'DELAYED_RELEASE',contacts:1,deliveryScaling:{mode:'NONE'},
+    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,CHARGE_RELEASE:.70},
+    promise:'Commit now, defend once, then release one free heavy arrow whose Charge damage and one-Mark Detonation resolve on the real delayed contact.',
+    mechanics:{primaryOutput:'DELAYED_CHARGE_RELEASE',relationship:'PURE_CHARGE',
+      detonationRule:'ONE_MARK_ON_RELEASE',chargeRule:'COMMIT_DEFEND_FREE_RELEASE',
+      deliveryIntent:'ONE_DELAYED_HEAVY_ARROW'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+]);
+const MARK_BURST_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
+  MARK_BURST_ROUTE_CONTRACTS.map(route=>[route.id,route])));
+class WeaponSkillRouteCatalog{
+  constructor(skillId,routes,options=null){
+    const definition=WEAPON_SKILLS.byId[skillId],list=Object.freeze(Array.from(routes||[])),
+      byId=Object.freeze(Object.fromEntries(list.map(route=>[route.id,route]))),
+      coverage=options&&options.coverage||'COMPLETE';
+    if(!['IN_PROGRESS','COMPLETE'].includes(coverage))
+      throw new Error(skillId+' route catalogue needs a valid coverage state');
+    if(!definition||!list.length||Object.keys(byId).length!==list.length||
+       list.some(route=>route.skillId!==skillId||route.baseAttributeId!==
+         definition.baseAttribute.attributeId))
+      throw new Error(skillId+' needs one coherent Weapon Skill route catalogue');
+    for(const route of list){
+      const parent=route.parentId?byId[route.parentId]:null;
+      if(route.baseAttributeAxis!==definition.baseAttribute.outputAxis||
+         route.baseAttributeShare!==definition.baseAttribute.stableLayerShare||
+         route.attributePalette!==definition.attributeIds||
+         !definition.attributeIds.includes(route.primaryAttributeId)||
+         (route.depth===1&&(parent||route.secondaryAttributeId!==null))||
+         (route.depth>1&&(!parent||parent.depth!==route.depth-1||
+           route.primaryAttributeId!==parent.primaryAttributeId||
+           !definition.attributeIds.includes(route.secondaryAttributeId)))||
+         (route.depth>2&&route.secondaryAttributeId!==parent.secondaryAttributeId))
+        throw new Error(route.id+' breaks Base -> Primary -> Secondary route inheritance');
+    }
+    const forms=list.filter(route=>route.depth===1),formPrimaries=new Set(forms.map(route=>
+      route.primaryAttributeId));
+    if(forms.length!==formPrimaries.size)
+      throw new Error(skillId+' route catalogue repeats a Primary Form');
+    if(coverage==='COMPLETE'&&(forms.length!==definition.attributeIds.length||
+       formPrimaries.size!==definition.attributeIds.length||
+       definition.attributeIds.some(id=>!formPrimaries.has(id))))
+      throw new Error(skillId+' route catalogue needs one Form for every Primary choice');
+    for(const form of forms){
+      const specs=list.filter(route=>route.depth===2&&route.parentId===form.id),
+        secondaries=new Set(specs.map(route=>route.secondaryAttributeId));
+      if(specs.length!==secondaries.size)
+        throw new Error(form.id+' repeats a Secondary Specialization');
+      if(coverage==='COMPLETE'&&(specs.length!==definition.attributeIds.length||
+         secondaries.size!==definition.attributeIds.length||
+         definition.attributeIds.some(id=>!secondaries.has(id))))
+        throw new Error(form.id+' needs one Specialization for every Secondary choice');
+    }
+    this.id=skillId;this.skillId=skillId;this.coverage=coverage;
+    this.routes=list;this.byId=byId;Object.freeze(this);
+  }
+  get(routeId){return this.byId[routeId]||null;}
+}
+const WEAPON_SKILL_ROUTE_CATALOGS=new DefinitionRegistry('weapon skill route catalogue');
+WEAPON_SKILL_ROUTE_CATALOGS.register(new WeaponSkillRouteCatalog('sharpshoot',
+  SHARPSHOOT_MARK_ROUTE_CONTRACTS));
+WEAPON_SKILL_ROUTE_CATALOGS.register(new WeaponSkillRouteCatalog('mark_burst',
+  MARK_BURST_ROUTE_CONTRACTS,{coverage:'IN_PROGRESS'}));
+function weaponSkillRoute(skillId,routeId){
+  const catalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId[skillId];
+  return catalogue?catalogue.get(routeId):null;
+}
+function applyWeaponSkillRouteIdentity(command,route){
+  if(!command||!route||command.baseId!==route.skillId||
+     command.baseAttributeId!==route.baseAttributeId)
+    throw new Error('Weapon Skill command and Attribute route ownership diverged');
+  command.activeAttributeRouteId=route.id;
+  command.primaryAttributeId=route.primaryAttributeId;
+  command.secondaryAttributeId=route.secondaryAttributeId;
+  return command;
+}
 function twistFamilyAuthoringBrief(data){
   const spec=SHARPSHOOT_MARK_ROUTE_BY_ID[data&&data.specId],signatureEngineIds=
       Array.isArray(data&&data.signatureEngineIds)?Array.from(new Set(data.signatureEngineIds)):[],
@@ -15400,7 +15822,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&route.formSlot===1),
     apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&route.formSlot===1),
     markRoutes=[form,...specs,...twists,...apexes],
-    expectedSecondaries=new Set(COMBAT_ATTRIBUTE_IDS),actualSecondaries=new Set(specs.map(route=>route.secondaryAttributeId));
+    sharpshootPalette=weaponSkillAttributePalette('sharpshoot'),
+    expectedSecondaries=new Set(sharpshootPalette),actualSecondaries=new Set(specs.map(route=>route.secondaryAttributeId));
   if(!form||form.primaryAttributeId!=='MARK'||specs.length!==6||
      expectedSecondaries.size!==actualSecondaries.size||
      [...expectedSecondaries].some(id=>!actualSecondaries.has(id)))
@@ -15465,8 +15888,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
      chargeForm.qualityProfile.CHARGE_RELEASE!==.65)
     throw new Error('F6 Charge Form must commit now and release the uncapped defense result next phase');
   const chainSecondaries=new Set(chainSpecs.map(route=>route.secondaryAttributeId));
-  if(chainSpecs.length!==6||chainSecondaries.size!==COMBAT_ATTRIBUTE_IDS.length||
-     COMBAT_ATTRIBUTE_IDS.some(id=>!chainSecondaries.has(id))||
+  if(chainSpecs.length!==6||chainSecondaries.size!==sharpshootPalette.length||
+     sharpshootPalette.some(id=>!chainSecondaries.has(id))||
      new Set(chainSpecs.map(route=>route.slot)).size!==6)
     throw new Error('F2 Chain slice needs all six unique Secondary routes');
   for(const route of chainSpecs){
@@ -15487,8 +15910,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     }
   }
   const postureSecondaries=new Set(postureSpecs.map(route=>route.secondaryAttributeId));
-  if(postureSpecs.length!==6||postureSecondaries.size!==COMBAT_ATTRIBUTE_IDS.length||
-     COMBAT_ATTRIBUTE_IDS.some(id=>!postureSecondaries.has(id))||
+  if(postureSpecs.length!==6||postureSecondaries.size!==sharpshootPalette.length||
+     sharpshootPalette.some(id=>!postureSecondaries.has(id))||
      new Set(postureSpecs.map(route=>route.slot)).size!==6)
     throw new Error('F3 Posture slice needs all six unique Secondary routes');
   for(const route of postureSpecs){
@@ -15511,8 +15934,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     }
   }
   const criticalSecondaries=new Set(criticalSpecs.map(route=>route.secondaryAttributeId));
-  if(criticalSpecs.length!==6||criticalSecondaries.size!==COMBAT_ATTRIBUTE_IDS.length||
-     COMBAT_ATTRIBUTE_IDS.some(id=>!criticalSecondaries.has(id))||
+  if(criticalSpecs.length!==6||criticalSecondaries.size!==sharpshootPalette.length||
+     sharpshootPalette.some(id=>!criticalSecondaries.has(id))||
      new Set(criticalSpecs.map(route=>route.slot)).size!==6)
     throw new Error('F4 Critical slice needs all six unique Secondary routes');
   for(const route of criticalSpecs){
@@ -15540,8 +15963,8 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
     }
   }
   const afflictionSecondaries=new Set(afflictionSpecs.map(route=>route.secondaryAttributeId));
-  if(afflictionSpecs.length!==6||afflictionSecondaries.size!==COMBAT_ATTRIBUTE_IDS.length||
-     COMBAT_ATTRIBUTE_IDS.some(id=>!afflictionSecondaries.has(id))||
+  if(afflictionSpecs.length!==6||afflictionSecondaries.size!==sharpshootPalette.length||
+     sharpshootPalette.some(id=>!afflictionSecondaries.has(id))||
      new Set(afflictionSpecs.map(route=>route.slot)).size!==6)
     throw new Error('F5 Affliction slice needs all six unique Secondary routes');
   for(const route of afflictionSpecs){
@@ -16401,6 +16824,29 @@ const SHARPSHOOT_MARK_ALL_LAB_NODES=Object.freeze([
 ]);
 const SHARPSHOOT_MARK_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   SHARPSHOOT_MARK_ALL_LAB_NODES.map(node=>[node.id,node])));
+const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
+  detonation_primary_form:'Tek ağır ok. Mark üretmez; Quality ile büyüyen sayıda Markı tam değerle patlatır.',
+  chain_primary_form:'Quality ile 1/2/3/4... oka büyüyen art arda atış. Her görünen ok 1 Chain üretir, sonraki ok canlı Chaini okur; yalnız son ok 1 Mark patlatır.',
+  posture_primary_form:'Tek ağır ok. Weight yalnız bu rota bütçe ayırdığı için Quality ile büyür ve verdiği ek güç doğrudan Posture darbesine gider; 1 Mark patlatır.',
+  critical_primary_form:'Tek hassas ok. Yerel Crit şansı, ıskalama sonrası Precision ve Crit hasarı gelişir; 1 Mark patlaması Crit çarpanından ayrı kalır.',
+  affliction_primary_form:'Tek yaralayıcı ok. İki savunma turu vuran Bleed bırakır ve 1 Mark patlatır; shotgun bu Formda bedava verilmez.',
+  charge_primary_form:'Şimdi hazırlanır, bir savunma fazı boyunca Charge toplar ve sonraki oyuncu fazında bedelsiz tek ağır ok bırakır; temas 1 Mark patlatır.'
+});
+const MARK_BURST_LAB_NODES=Object.freeze(MARK_BURST_ROUTE_CONTRACTS.map(route=>Object.freeze({
+  id:route.id,routeId:route.id,skillId:route.skillId,kind:'EVOLUTION',depth:route.depth,
+  type:'STABLE',variant:'STABLE',resultAspect:'STABLE',rarity:'COMMON',name:route.name,
+  col:COMBAT_ATTRIBUTE_UI_COLORS[route.primaryAttributeId],buildAspect:route.primaryAttributeId+'_PRIMARY',
+  secondaryId:route.secondaryAttributeId,focusAxis:'PRIMARY_'+route.primaryAttributeId,summary:route.promise,
+  details:Object.freeze(['Base: DETONATION · Primary: '+route.primaryAttributeId+'.',
+    'Delivery: '+route.delivery.pattern+' · '+route.delivery.timing+'.',
+    'Scaling: '+route.deliveryScaling.mode+(route.deliveryScaling.effectOwner?
+      ' → '+route.deliveryScaling.effectOwner:'; Delivery parametresi Quality’den bedava güç almaz')+'.']),
+  prototypeContract:true})));
+const WEAPON_SKILL_PROTOTYPE_LAB_NODES=Object.freeze([
+  ...SHARPSHOOT_MARK_ALL_LAB_NODES,...MARK_BURST_LAB_NODES
+]);
+const WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
+  WEAPON_SKILL_PROTOTYPE_LAB_NODES.map(node=>[node.id,node])));
 function sharpshootLabRouteChildren(parentRouteId){
   return SHARPSHOOT_MARK_ALL_LAB_NODES.filter(node=>{
     const route=SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId];
@@ -16455,6 +16901,20 @@ function sharpshootMarkRouteFromNode(node){
   if(node&&node.id==='echo_barrage')return SHARPSHOOT_MARK_ROUTE_BY_ID.affliction_primary_form;
   if(node&&node.id==='war_draw')return SHARPSHOOT_MARK_ROUTE_BY_ID.charge_primary_form;
   return node&&node.prototypeContract?SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId]||null:null;
+}
+function weaponSkillRouteFromNode(node){
+  if(!node||!node.prototypeContract)return null;
+  /* Route ids are local to a Weapon Skill catalogue. Resolve the explicit owner
+     first; otherwise a future skill reusing an address such as
+     chain_primary_form can silently open Sharpshoot's route. */
+  if(node.skillId){const owned=weaponSkillRoute(node.skillId,node.routeId);if(owned)return owned;}
+  return sharpshootMarkRouteFromNode(node);
+}
+function weaponSkillLabRouteChildren(skillId,parentRouteId){
+  return WEAPON_SKILL_PROTOTYPE_LAB_NODES.filter(node=>{
+    const route=weaponSkillRoute(skillId,node.routeId);
+    return route&&route.parentId===parentRouteId;
+  });
 }
 /* Authoring and runtime tree traversal share one parent->children index. This keeps
    validation linear as the catalogue grows into hundreds of handcrafted cards. */
@@ -16971,12 +17431,59 @@ const SHARPSHOOT_MARK_PULSE_EVENT_POWER=2,
 function skillDeliveryMagnitude(totalQuality){
   return Math.max(1,Math.floor(Math.sqrt(Math.max(0,Number(totalQuality)||0))));
 }
+/* Delivery is materialized from cumulative lineage Quality only when the route
+   explicitly owns and funds a Delivery axis. NONE is intentionally inert: a
+   Single attack does not gain free Weight merely because its Quality increased.
+   CONTACT_COUNT pays one normal resource event for every contact after the
+   first; unused integer remainder stays with the declared mechanic owner. */
+function materializeSkillDeliveryScaling(route,ledger){
+  const scaling=route&&route.deliveryScaling||{mode:'NONE'},mode=scaling.mode,
+    desired=skillDeliveryMagnitude(ledger&&ledger.totalQuality),axis=scaling.powerAxis,
+    power=axis?Math.max(0,Number(ledger&&ledger.axisPowerCredits&&
+      ledger.axisPowerCredits[axis])||0):0;
+  if(mode==='NONE')return Object.freeze({mode,contacts:1,weight:1,magnitude:1,
+    power:0,spent:0,reserve:0,capped:false});
+  if(mode==='CONTACT_COUNT'){
+    const unit=scaling.effectOwner==='CHAIN'?SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN:1,
+      affordable=1+Math.floor((power+1e-9)/Math.max(Number.EPSILON,unit)),
+      contacts=Math.max(1,Math.min(desired,affordable)),spent=(contacts-1)*unit;
+    return Object.freeze({mode,contacts,weight:1,magnitude:contacts,power,
+      spent:Number(spent.toFixed(4)),reserve:Number(Math.max(0,power-spent).toFixed(4)),
+      capped:false});
+  }
+  return Object.freeze({mode,contacts:1,weight:desired,magnitude:desired,power,
+    spent:power,reserve:0,capped:false});
+}
 const SKILL_DELIVERY_MAGNITUDE_AUDIT=(()=>{
   const samples=Object.freeze({0:1,3:1,4:2,6:2,9:3,10:3,16:4,25:5,49:7,10000:100});
   for(const [quality,expected] of Object.entries(samples))
     if(skillDeliveryMagnitude(Number(quality))!==expected)
       throw new Error('Delivery magnitude curve failed at Quality '+quality);
   return Object.freeze({passed:true,formula:'FLOOR_SQRT_TOTAL_QUALITY',capped:false,samples});
+})();
+const SKILL_DELIVERY_SCALING_AUDIT=(()=>{
+  const mock=(quality,power)=>({totalQuality:quality,
+      axisPowerCredits:{DELIVERY_CONTACTS:power,DELIVERY_WEIGHT:power}}),
+    qualities=[3,6,10,16],contacts=qualities.map(quality=>{
+      return materializeSkillDeliveryScaling(MARK_BURST_ROUTE_BY_ID.chain_primary_form,
+        mock(quality,quality*SKILL_QUALITY_POWER_UNIT*.30)).contacts;
+    }),weights=qualities.map(quality=>materializeSkillDeliveryScaling(
+      MARK_BURST_ROUTE_BY_ID.posture_primary_form,mock(quality,1)).weight),
+    none=materializeSkillDeliveryScaling(MARK_BURST_ROUTE_BY_ID.detonation_primary_form,
+      mock(10000,10000));
+  let unusedAxisRejected=false,wrongAxisRejected=false;
+  try{skillDeliveryScalingContract({mode:'NONE'},
+    MARK_BURST_ROUTE_BY_ID.detonation_primary_form.delivery,'audit_unused_delivery',
+    {DELIVERY_WEIGHT:1},true);}catch(error){unusedAxisRejected=true;}
+  try{skillDeliveryScalingContract({mode:'WEIGHT',powerAxis:'DELIVERY_CONTACTS',
+    effectOwner:'POSTURE'},MARK_BURST_ROUTE_BY_ID.posture_primary_form.delivery,
+    'audit_wrong_delivery_axis',{DELIVERY_CONTACTS:1},true);}catch(error){wrongAxisRejected=true;}
+  if(contacts.join(',')!=='1,2,3,4'||weights.join(',')!=='1,2,3,4'||
+     none.contacts!==1||none.weight!==1||skillDeliveryMagnitude(10000)!==100||
+     !unusedAxisRejected||!wrongAxisRejected)
+    throw new Error('Delivery V2 paid scaling contract drifted');
+  return Object.freeze({passed:true,capped:false,contacts:Object.freeze(contacts),
+    weights:Object.freeze(weights),none,unusedAxisRejected,wrongAxisRejected});
 })();
 /* Mark output has no authored gameplay ceiling. Every full MARK_GAIN power step
    buys another visible Mark and the remainder stays reserved for the next one. */
@@ -17197,6 +17704,199 @@ function skillLinearOutputProgress(power,powerPerUnit,precision=1){
   return Object.freeze({output,rank:output,credit:Number(credit.toFixed(4)),
     spent:Number(spent.toFixed(4)),reserve:Number(reserve.toFixed(4)),next:null,needed:null,progress:1});
 }
+/* A second consumed Mark is useful only when the first skill has prepared it.
+   Consumption is therefore priced by the final per-Mark payload and the 50%
+   ready-state used by the synthesis guardrail. The formula has no rank ceiling:
+   deeper lucky lineages may continue buying real consumed stacks forever. */
+const MARK_BURST_DETONATION_FORM_ENVELOPE=Object.freeze({readyStateShare:.50,
+  minimumMarginalConsumePower:6});
+function markBurstDetonationConsumptionProgress(power,damagePerMark){
+  const credit=Math.max(0,Number(power)||0),unitCost=Math.max(
+      MARK_BURST_DETONATION_FORM_ENVELOPE.minimumMarginalConsumePower,
+      Math.max(0,Number(damagePerMark)||0)*
+        MARK_BURST_DETONATION_FORM_ENVELOPE.readyStateShare),
+    rank=Math.floor((credit+1e-9)/unitCost),spent=rank*unitCost,reserve=Math.max(0,credit-spent);
+  return Object.freeze({rank,credit:Number(credit.toFixed(4)),spent:Number(spent.toFixed(4)),
+    reserve:Number(reserve.toFixed(4)),unitCost:Number(unitCost.toFixed(4)),
+    next:Number(((rank+1)*unitCost).toFixed(4)),needed:Number((unitCost-reserve).toFixed(4))});
+}
+function weaponSkillSynthesisHistoryNode(route,rarity,receipt){
+  const economy=SKILL_RARITY_SYNTHESIS_ECONOMY[rarity],structuralPower=
+      receipt.structuralEffectiveQuality*SKILL_QUALITY_POWER_UNIT,
+    rarityPower=receipt.rarityEffectiveQuality*SKILL_QUALITY_POWER_UNIT;
+  return Object.freeze({mutationId:route.id,routeId:route.id,familyId:route.id,
+    kind:'EVOLUTION',variant:'STABLE',type:'STABLE',resultAspect:'STABLE',rarity,
+    depth:route.depth,name:route.name,buildAspect:route.primaryAttributeId+'_PRIMARY',
+    qualityContribution:receipt.quality,rarityQualityContribution:economy.quality,
+    structuralQualityContribution:receipt.structuralQuality,
+    resolvePressureContribution:economy.resolvePressure,depthLeverage:receipt.depthLeverage,
+    effectiveQualityContribution:receipt.effectiveQuality,qualityAllocation:receipt.allocation,
+    powerAllocation:receipt.powerAllocation,structuralPower:Number(structuralPower.toFixed(3)),
+    rarityPower:Number(rarityPower.toFixed(3)),totalPower:receipt.powerBudget,
+    legendaryStampSlot:receipt.legendaryStampSlot,legendaryStampId:null,synthesized:true});
+}
+const MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE=Object.freeze({
+  DETONATION:'BOW_DETONATION',CHAIN:'BOW_CHAIN',POSTURE:'BOW_POSTURE',
+  CRITICAL:'BOW_CRITICAL',AFFLICTION:'BOW_AFFLICTION',CHARGE:'BOW_CHARGE_WEIGHT'
+});
+const MARK_BURST_SYNTHESIS_COMMAND_CACHE=new Map();
+/* All six Forms use one compiler. The route owns the budget and Delivery opt-in;
+   this function only materializes that declaration. Consequently a future Form
+   cannot accidentally receive free contacts/Weight or forget Mark Burst's
+   protected Detonation Base Attribute. */
+function synthesizeMarkBurstFormRoute(route,rarity='COMMON'){
+  if(!route||route.skillId!=='mark_burst'||route.depth!==1||
+     route.runtimeReadiness!=='MATERIALIZED'||!SKILL_RARITY_SYNTHESIS_ECONOMY[rarity])return null;
+  const cacheKey=route.id+'|'+rarity,cached=MARK_BURST_SYNTHESIS_COMMAND_CACHE.get(cacheKey);
+  if(cached)return cloneSharpshootSynthesisCommand(cached);
+  const path=[Object.freeze({routeId:route.id,rarity,depth:route.depth})],
+    ledger=compileSkillQualityLedger(path,MARK_BURST_ROUTE_BY_ID,{includeStructural:true}),
+    receipt=ledger.receipts[0],history=[weaponSkillSynthesisHistoryNode(route,rarity,receipt)],
+    definition=BASE_TURN_SKILL_BY_ID.mark_burst,command=createRunSkill(definition),
+    axes=ledger.axisPowerCredits,directPower=Math.max(0,axes.DIRECT_DAMAGE||0),
+    detonationPower=Math.max(0,axes.DETONATION_DAMAGE||0),
+    delivery=materializeSkillDeliveryScaling(route,ledger),
+    primary=route.primaryAttributeId,reserve={};
+  command.damage=Number(((definition.damage||0)+directPower).toFixed(3));
+  const detonation=materializeWeaponSkillBaseAttributePower(command,'mark_burst',detonationPower);
+  reserve.DETONATION_DAMAGE=detonation.reservePower;
+  command.markRule=markRule({...command.markRule,mode:'CONSUME',timing:'ACTION',cap:1,
+    curve:'FULL',delivery:'LAST'});
+  command.markDetonation=true;command.markGain=0;command.hits=delivery.contacts;
+  command.hitDamages=delivery.contacts>1?
+    f1SynthesisDistributedDamageVector(command.damage,delivery.contacts):null;
+  command.addsChain=true;command.chainGainPerHit=1;command.chainGainPattern=null;
+  command.chainScalingTiming='LIVE';command.deliveryProfileId=route.delivery.profileId;
+  command.deliveryPattern=route.delivery.pattern;command.deliveryTiming=route.delivery.timing;
+  command.deliveryMagnitude=delivery.magnitude;command.deliveryWeight=delivery.weight;
+  command.hitInterval=delivery.contacts>1?.42:0;
+  if(primary==='DETONATION'){
+    const consumption=markBurstDetonationConsumptionProgress(
+      Math.max(0,axes.DETONATION_CONSUMPTION||0),command.markRule.damagePerMark);
+    command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1+consumption.rank});
+    reserve.DETONATION_CONSUMPTION=consumption.reserve;
+  }else if(primary==='CHAIN'){
+    const chainPower=Math.max(0,axes.CHAIN_SCALING||0)+delivery.reserve;
+    command.extraChainBonus=Number((chainPower>0?
+      sharpshootChainScalingRate(chainPower,command.damage):0).toFixed(6));
+    command.synthesisRawChainScalingRate=command.extraChainBonus;
+    reserve.CHAIN_SCALING=0;reserve.DELIVERY_CONTACTS=0;
+  }else if(primary==='POSTURE'){
+    const posturePower=Math.max(0,axes.POSTURE_DAMAGE||0)+delivery.power;
+    command.posture=Number((posturePower/SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE).toFixed(6));
+    reserve.POSTURE_DAMAGE=0;reserve.DELIVERY_WEIGHT=0;
+  }else if(primary==='CRITICAL'){
+    const chance=skillLocalCritChanceProgress(Math.max(0,axes.CRIT_CHANCE||0),command.damage),
+      precision=skillLocalCritPrecisionProgress(Math.max(0,axes.CRIT_PRECISION||0),
+        command.damage,chance.output),effective=skillPersistentPrecisionCritRate(
+        chance.output,precision.output),multiplier=skillLocalCritMultiplierProgress(
+        Math.max(0,axes.CRIT_POWER||0)+chance.reserve+precision.reserve,
+        command.damage,effective);
+    command.critChance=Number(chance.output.toFixed(6));
+    command.critPrecisionGain=Number(precision.output.toFixed(6));
+    command.critDamageMultiplier=multiplier.output;
+    command.synthesisCritExpectedRate=effective;
+    reserve.CRITICAL=0;
+  }else if(primary==='AFFLICTION'){
+    const afflictionPower=Math.max(0,axes.AFFLICTION_APPLICATION||0)+
+      Math.max(0,axes.AFFLICTION_POTENCY||0);
+    command.affliction=Object.freeze({id:BLEED_STATUS.id,
+      amount:Number((afflictionPower/BLEED_STATUS.totalDamageFactor).toFixed(6))});
+    reserve.AFFLICTION=0;
+  }else if(primary==='CHARGE'){
+    command.chargeMode='DELAYED_PRIMARY';
+    command.defenseTemperDamagePerCharge=Number((Math.max(0,axes.CHARGE_RELEASE||0)/
+      DEFENSE_CHARGE.expectedSpend).toFixed(6));
+    command.chargeSplitAcrossContacts=false;reserve.CHARGE_RELEASE=0;
+  }
+  const recipe=MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE[primary];
+  command.animationFamilyId='BOW';command.animationRecipeId=recipe;
+  command.bowAnimationRecipeId=recipe;command.name=route.name;
+  command.evolutionHistory=history;command.evolutionMutationIds=[route.id];
+  command.mutationIds=[route.id];command.synthesisHistory=history.slice();
+  command.evolutionDepth=1;command.evolutionRarity=rarity;
+  command.formAspectId=primary+'_PRIMARY';command.lineageAspect='STABLE';
+  command.nextPoolId=route.id+'_specialization';command.synthesisActive=true;
+  command.synthesisEconomyApplied=true;
+  command.synthesisBaseResolveCost=route.baselineAttack.resolveCost;
+  refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;command.apCost=1;
+  command.synthesisEffectiveQuality=ledger.effectiveQuality;
+  command.synthesisDepthBonus=ledger.depthBonus;command.synthesisTargetPower=ledger.powerBudget;
+  command.synthesisAxisCredits=axes;command.synthesisQualityReceipts=ledger.receipts;
+  command.synthesisAxisReserve=Object.freeze(reserve);
+  command.synthesisCompilerVersion=SKILL_QUALITY_COMPILER_VERSION;
+  command.synthesisDeliveryScalingMode=delivery.mode;
+  command.synthesisDeliveryScalingAxis=route.deliveryScaling.powerAxis;
+  command.synthesisDeliveryScalingOwner=route.deliveryScaling.effectOwner;
+  command.synthesisDeliveryScalingPower=delivery.power;
+  command.synthesisDeliveryScalingReserve=delivery.reserve;
+  command.legendaryStampSlots=receipt.legendaryStampSlot?1:0;
+  command.evolutionText=[route.promise];
+  applyWeaponSkillRouteIdentity(command,route);refreshSkillRarityResonance(command);
+  MARK_BURST_SYNTHESIS_COMMAND_CACHE.set(cacheKey,cloneSharpshootSynthesisCommand(command));
+  return cloneSharpshootSynthesisCommand(command);
+}
+function synthesizeMarkBurstDetonationForm(rarity='COMMON'){
+  return synthesizeMarkBurstFormRoute(MARK_BURST_ROUTE_BY_ID.detonation_primary_form,rarity);
+}
+const MARK_BURST_DETONATION_FORM_AUDIT=(()=>{
+  const rows=SKILL_RARITY_ORDER.map(rarity=>{
+    const command=synthesizeMarkBurstDetonationForm(rarity),plan=commandMarkPlan(command,8);
+    return Object.freeze({rarity,damage:command.damage,damagePerMark:command.markRule.damagePerMark,
+      consume:command.markRule.cap,primed:Number((command.damage+
+        plan.markDamageByHit.reduce((sum,value)=>sum+value,0)).toFixed(3)),cost:command.cost,
+      routeId:command.activeAttributeRouteId});
+  });
+  for(let index=0;index<rows.length;index++){
+    const row=rows[index],previous=rows[index-1],command=
+      synthesizeMarkBurstDetonationForm(row.rarity);
+    if(command.baseAttributeId!=='DETONATION'||command.primaryAttributeId!=='DETONATION'||
+       command.secondaryAttributeId!==null||command.markGain!==0||command.hits!==1||
+       command.markRule.curve!=='FULL'||command.animationRecipeId!=='BOW_DETONATION'||
+       (previous&&(row.damage<previous.damage||row.damagePerMark<previous.damagePerMark||
+         row.consume<previous.consume||row.primed<previous.primed)))
+      throw new Error('Detonation Form rarity synthesis broke at '+row.rarity);
+  }
+  if(rows[0].consume!==1||rows[1].consume!==1||rows[2].consume!==2||rows[3].consume!==2)
+    throw new Error('Detonation Form consumption curve must currently resolve 1 / 1 / 2 / 2');
+  return Object.freeze({passed:true,capped:false,rows:Object.freeze(rows)});
+})();
+let MARK_BURST_FORM_AUDIT=null;
+function auditMarkBurstForms(){
+  const forms=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===1),rows=forms.map(route=>{
+    const ladder=SKILL_RARITY_ORDER.map(rarity=>synthesizeMarkBurstFormRoute(route,rarity));
+    for(let index=0;index<ladder.length;index++){
+      const command=ladder[index],previous=ladder[index-1];
+      if(!command||command.baseAttributeId!=='DETONATION'||command.primaryAttributeId!==
+         route.primaryAttributeId||command.secondaryAttributeId!==null||command.markGain!==0||
+         command.markRule.mode!=='CONSUME'||command.markRule.damagePerMark<10||
+         (previous&&(command.damage<previous.damage||command.markRule.damagePerMark<
+           previous.markRule.damagePerMark)))
+        throw new Error(route.id+' broke Mark Burst Form inheritance');
+    }
+    return Object.freeze({routeId:route.id,primary:route.primaryAttributeId,
+      hits:Object.freeze(ladder.map(command=>command.hits)),
+      weights:Object.freeze(ladder.map(command=>command.deliveryWeight)),
+      damage:Object.freeze(ladder.map(command=>command.damage)),
+      detonation:Object.freeze(ladder.map(command=>command.markRule.damagePerMark)),
+      posture:Object.freeze(ladder.map(command=>command.posture||0)),
+      crit:Object.freeze(ladder.map(command=>command.critChance||0)),
+      bleed:Object.freeze(ladder.map(command=>commandBleedAmount(command))),
+      charge:Object.freeze(ladder.map(command=>commandDefenseTemperRate(command)))});
+  });
+  const byId=Object.fromEntries(rows.map(row=>[row.routeId,row]));
+  if(forms.length!==6||byId.chain_primary_form.hits.join(',')!=='1,2,3,4'||
+     byId.posture_primary_form.weights.join(',')!=='1,2,3,4'||
+     rows.some(row=>row.routeId!=='chain_primary_form'&&row.hits.some(value=>value!==1))||
+     rows.some(row=>row.routeId!=='posture_primary_form'&&row.weights.some(value=>value!==1))||
+     !byId.posture_primary_form.posture.every((value,index,array)=>index===0||value>=array[index-1])||
+     !byId.critical_primary_form.crit.every((value,index,array)=>index===0||value>=array[index-1])||
+     !byId.affliction_primary_form.bleed.every((value,index,array)=>index===0||value>=array[index-1])||
+     !byId.charge_primary_form.charge.every((value,index,array)=>index===0||value>=array[index-1]))
+    throw new Error('Mark Burst six-Form synthesis contract drifted');
+  return Object.freeze({passed:true,capped:false,forms:forms.length,
+    rankedCards:forms.length*SKILL_RARITY_ORDER.length,rows:Object.freeze(rows)});
+}
 /* Local Crit is priced by expected direct Health damage. A 10% chance on a 40
    damage arrow therefore costs twice as much as the same chance on a 20 damage
    arrow. Precision and global Crit are deliberately outside this wallet. */
@@ -17283,6 +17983,7 @@ function skillLocalCritMultiplierProgress(power,directDamage,effectiveCritRate,
     credit:Number(credit.toFixed(4)),spent:Number(credit.toFixed(4)),reserve:0,
     next:null,needed:null,progress:1});
 }
+MARK_BURST_FORM_AUDIT=auditMarkBurstForms();
 /* Form power is immutable foundation. A mixed Specialization may distribute only
    its own Attribute packet, but it observes the complete foundation and spends
    that new packet toward the authored whole-card Primary/Secondary target. */
@@ -17725,12 +18426,14 @@ function compileSharpshootCriticalIdentityAllocation(routes,ledger){
       Math.max(0,specialization.qualityProfile[axis]||0),0),
     secondaryAxes=Object.keys(specialization.qualityProfile).filter(axis=>
       axis!=='DIRECT_DAMAGE'&&
-      (axis!==specialization.baseAttributeAxis||specialization.secondaryAttributeId==='MARK')&&
+      (axis!==specialization.baseAttributeAxis||
+        specialization.secondaryAttributeId===specialization.baseAttributeId)&&
       !criticalAxes.includes(axis)),
     secondaryWeight=secondaryAxes.reduce((sum,axis)=>sum+
       Math.max(0,(specialization.qualityProfile[axis]||0)-
         (axis===specialization.baseAttributeAxis?specialization.baseAttributeShare:0)),0),
-    rewritten={DIRECT_DAMAGE:directPower,MARK_GAIN:baseAttributePower};
+    rewritten={DIRECT_DAMAGE:directPower,
+      [specialization.baseAttributeAxis]:baseAttributePower};
   if(!(authoredPrimaryWeight>0))throw new Error(specialization.id+' needs paid Critical Primary axes');
   if(sameAttribute){
     for(const axis of criticalAxes){
@@ -17831,11 +18534,12 @@ function compileSharpshootAfflictionIdentityAllocation(routes,ledger){
     handlingRedirectPower=desiredSecondaryPower-secondaryPower,
     primaryPower=relationshipPower-secondaryPower,secondaryAxes=Object.keys(
       specialization.qualityProfile).filter(axis=>axis!=='DIRECT_DAMAGE'&&
-      (axis!==specialization.baseAttributeAxis||specialization.secondaryAttributeId==='MARK')&&
+      (axis!==specialization.baseAttributeAxis||
+        specialization.secondaryAttributeId===specialization.baseAttributeId)&&
       axis!=='AFFLICTION_APPLICATION'),secondaryWeight=secondaryAxes.reduce((sum,axis)=>sum+
       Math.max(0,(specialization.qualityProfile[axis]||0)-
         (axis===specialization.baseAttributeAxis?specialization.baseAttributeShare:0)),0),
-    rewritten={DIRECT_DAMAGE:directPower,MARK_GAIN:baseAttributePower,
+    rewritten={DIRECT_DAMAGE:directPower,[specialization.baseAttributeAxis]:baseAttributePower,
       AFFLICTION_APPLICATION:primaryPower};
   if(sameAttribute){
     rewritten.AFFLICTION_APPLICATION=Math.max(0,
@@ -19445,11 +20149,12 @@ function compileSharpshootPostureIdentityAllocation(routes,ledger){
     primaryPower=relationshipPower-secondaryPower,
     secondaryAxes=Object.keys(specialization.qualityProfile).filter(axis=>
       axis!=='DIRECT_DAMAGE'&&axis!=='POSTURE_DAMAGE'&&
-      (axis!==specialization.baseAttributeAxis||specialization.secondaryAttributeId==='MARK')),
+      (axis!==specialization.baseAttributeAxis||
+        specialization.secondaryAttributeId===specialization.baseAttributeId)),
     secondaryWeight=secondaryAxes.reduce((sum,axis)=>sum+
       Math.max(0,(specialization.qualityProfile[axis]||0)-
         (axis===specialization.baseAttributeAxis?specialization.baseAttributeShare:0)),0),
-    rewritten={DIRECT_DAMAGE:directPower,MARK_GAIN:baseAttributePower,
+    rewritten={DIRECT_DAMAGE:directPower,[specialization.baseAttributeAxis]:baseAttributePower,
       POSTURE_DAMAGE:primaryPower};
   if(!sameAttribute){
     if(!secondaryAxes.length||!(secondaryWeight>0))
@@ -19818,11 +20523,12 @@ function compileSharpshootChainIdentityAllocation(routes,ledger){
     primaryPower=attributePower-secondaryPower,
     secondaryAxes=Object.keys(specialization.qualityProfile).filter(axis=>
       axis!=='DIRECT_DAMAGE'&&axis!=='CHAIN_SCALING'&&
-      (axis!==specialization.baseAttributeAxis||specialization.secondaryAttributeId==='MARK')),
+      (axis!==specialization.baseAttributeAxis||
+        specialization.secondaryAttributeId===specialization.baseAttributeId)),
     secondaryWeight=secondaryAxes.reduce((sum,axis)=>sum+
       Math.max(0,(specialization.qualityProfile[axis]||0)-
         (axis===specialization.baseAttributeAxis?specialization.baseAttributeShare:0)),0),
-    rewritten={DIRECT_DAMAGE:directPower,MARK_GAIN:baseAttributePower,
+    rewritten={DIRECT_DAMAGE:directPower,[specialization.baseAttributeAxis]:baseAttributePower,
       CHAIN_SCALING:primaryPower};
   if(!sameAttribute){
     if(!secondaryAxes.length||!(secondaryWeight>0))
@@ -25957,6 +26663,9 @@ function applyMutationLayer(skill,mutation){
     rarityEconomy=SKILL_RARITY_SYNTHESIS_ECONOMY[mutation.rarity]||
       SKILL_RARITY_SYNTHESIS_ECONOMY.COMMON;
   mutation.apply(skill);
+  const attributeRoute=mutation.kind==='EVOLUTION'?
+    weaponSkillRoute(mutation.skillId,mutation.routeId||mutation.id):null;
+  if(attributeRoute)applyWeaponSkillRouteIdentity(skill,attributeRoute);
   skill.mutationIds.push(mutation.id);
   if(mutation.removesTags.length)
     skill.tags=skill.tags.filter(tag=>!mutation.removesTags.includes(tag));
@@ -25975,6 +26684,8 @@ function applyMutationLayer(skill,mutation){
     previousAspect,previousIdentity,resultAspect:mutation.resultAspect,
     aspectIdentity:mutation.aspectIdentity,buildAspect:mutation.buildAspect,aspectLevel:skill.aspectLevel,
     synthesized,synthesisParentId,synthesisOriginMutationId:skill.synthesisOriginMutationId,
+    baseAttributeId:skill.baseAttributeId,primaryAttributeId:skill.primaryAttributeId,
+    secondaryAttributeId:skill.secondaryAttributeId,attributeRouteId:skill.activeAttributeRouteId,
     qualityContribution:rarityEconomy.quality,resolvePressureContribution:rarityEconomy.resolvePressure};
   if(mutation.kind==='MASTERY'){
     skill.masteryIds.push(mutation.id);skill.masteryLevel++;
@@ -26009,13 +26720,11 @@ function rebuildRunSkill(baseId,evolutionIds,masteryIds=[]){
 }
 function applySkillMutation(id){
   const mutation=SKILL_MUTATION_BY_ID[id];if(!canApplySkillMutation(mutation))return false;
-  const current=runSkill(mutation.skillId),index=runSkills.indexOf(current),
+  const current=runSkill(mutation.skillId),
     evolutionIds=current.evolutionMutationIds.concat(mutation.kind==='EVOLUTION'?[mutation.id]:[]),
     masteryIds=current.masteryIds.concat(mutation.kind==='MASTERY'?[mutation.id]:[]),
     rebuilt=rebuildRunSkill(current.baseId,evolutionIds,masteryIds);
-  if(!rebuilt||index<0)return false;
-  runSkills[index]=rebuilt;
-  return true;
+  return !!rebuilt&&replaceRunSkill(current.baseId,rebuilt);
 }
 function companionCombatProfile(id,name,fightName,markName,doubleName,col){
   return Object.freeze({id,name,fightName,col,skills:Object.freeze([
@@ -31232,10 +31941,8 @@ function skillLabMutationStatus(mutation){
   return 'LOCKED';
 }
 function resetRunSkill(baseId){
-  const definition=BASE_TURN_SKILL_BY_ID[baseId],
-    index=runSkills.findIndex(skill=>skill.baseId===baseId);
-  if(!definition||index<0)return false;
-  runSkills[index]=createRunSkill(definition);return true;
+  const definition=BASE_TURN_SKILL_BY_ID[baseId];
+  return !!definition&&replaceRunSkill(baseId,createRunSkill(definition));
 }
 function openSkillLab(){
   resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;skillLabTooltipMutationId=null;
@@ -33083,7 +33790,8 @@ function drawMoveSelectionFrame(rect,col='#ffe37a'){
   g.save();g.fillStyle=col;g.translate(x,y);g.rotate(Math.PI/4);g.fillRect(-3,-3,6,6);g.restore();
 }
 function moveTreeSkillId(){return BASE_TURN_SKILLS[moveTreeSkillIndex].id;}
-function moveTreeNodeById(id){return SKILL_MUTATION_BY_ID[id]||SHARPSHOOT_MARK_LAB_NODE_BY_ID[id]||null;}
+function moveTreeNodeById(id){return SKILL_MUTATION_BY_ID[id]||
+  WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID[id]||null;}
 const MOVE_TREE_SYNTHESIS_RARITY_RECTS=Object.freeze(SKILL_RARITY_ORDER.map((rarity,index)=>
   Object.freeze({x:24+index*108,y:532,w:96,h:28,rarity})));
 const MOVE_TREE_TWIST_LAYOUT=Object.freeze({apexTop:366,apexBottom:498,
@@ -33103,16 +33811,17 @@ function moveTreeSynthesisRecipe(node){
   return node&&moveTreeSkillId()==='sharpshoot'?F1_SYNTHESIS_ROUTE_RECIPE_BY_ID[node.id]||null:null;
 }
 function moveTreeSynthesisRarity(node){
-  const route=sharpshootMarkRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
+  const route=weaponSkillRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
   return route?moveTreeSynthesisRarityByDepth[route.depth]:
     recipe?moveTreeSynthesisRarityByDepth[recipe.depth]:'COMMON';
 }
 function moveTreeSynthesisDisplayNode(node){
-  const route=sharpshootMarkRouteFromNode(node);
+  const route=weaponSkillRouteFromNode(node);
   if(route){
     const materialized=route.runtimeReadiness==='MATERIALIZED';
     return {...node,name:route.name,summary:route.promise,rarity:moveTreeSynthesisRarityByDepth[route.depth],
-      debugSummaryTr:SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[route.id]||null,
+      debugSummaryTr:(route.skillId==='sharpshoot'?SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR:
+        MARK_BURST_ROUTE_DEBUG_SUMMARY_TR)[route.id]||null,
       type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
       contractPreview:!materialized,synthesisPreview:materialized};
   }
@@ -33122,13 +33831,15 @@ function moveTreeSynthesisDisplayNode(node){
 }
 function moveTreeSynthesisSelectedNode(){
   const selected=moveTreeNodeById(moveTreeSelectedId);
-  const route=sharpshootMarkRouteFromNode(selected);
+  const route=weaponSkillRouteFromNode(selected);
   if(route&&route.runtimeReadiness==='MATERIALIZED')return selected;
   return moveTreeSynthesisRecipe(selected)&&selected.depth<=2?selected:null;
 }
 function moveTreeSynthesisPreviewCommand(node){
-  const route=sharpshootMarkRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
+  const route=weaponSkillRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
+    if(route.skillId==='mark_burst')return route.depth===1?
+      synthesizeMarkBurstFormRoute(route,formRarity):null;
     if(route.depth===1)return synthesizeSharpshootFormRoute(route,formRarity);
     if(route.depth===2)return route.formSlot===2?
       synthesizeSharpshootChainPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
@@ -33181,10 +33892,12 @@ function moveTreeSynthesisPreviewCommand(node){
     synthesizeF1StablePath(formRarity,node.id,moveTreeSynthesisRarityByDepth[2]);
 }
 function moveTreeForms(){
-  const forms=(SKILL_MUTATIONS_BY_SKILL[moveTreeSkillId()]||[])
-    .filter(node=>node.kind==='EVOLUTION'&&node.depth===1);
-  if(moveTreeSkillId()==='sharpshoot')forms.sort((a,b)=>{
-    const routeA=sharpshootMarkRouteFromNode(a),routeB=sharpshootMarkRouteFromNode(b);
+  const skillId=moveTreeSkillId(),forms=(SKILL_MUTATIONS_BY_SKILL[skillId]||[])
+    .filter(node=>node.kind==='EVOLUTION'&&node.depth===1),known=new Set(forms.map(node=>node.id));
+  for(const node of WEAPON_SKILL_PROTOTYPE_LAB_NODES)if(node.skillId===skillId&&node.depth===1&&
+    !known.has(node.id))forms.push(node);
+  forms.sort((a,b)=>{
+    const routeA=weaponSkillRouteFromNode(a),routeB=weaponSkillRouteFromNode(b);
     return (routeA?routeA.formSlot:Number.MAX_SAFE_INTEGER)-
       (routeB?routeB.formSlot:Number.MAX_SAFE_INTEGER);
   });
@@ -33192,10 +33905,8 @@ function moveTreeForms(){
 }
 function moveTreeChildren(parent){
   if(!parent)return [];
-  if(moveTreeSkillId()==='sharpshoot'){
-    const route=sharpshootMarkRouteFromNode(parent);
-    if(route)return sharpshootLabRouteChildren(route.id);
-  }
+  const route=weaponSkillRouteFromNode(parent);
+  if(route)return weaponSkillLabRouteChildren(route.skillId,route.id);
   if(!parent.childPoolId)return [];
   const rarityOrder={COMMON:0,UNCOMMON:1,RARE:2,LEGENDARY:3};
   return skillMutationChildren(parent.id).filter(node=>node.kind==='EVOLUTION'&&
@@ -33235,9 +33946,10 @@ function closeMoveTree(){moveTreeOpen=false;moveTreeHitNodes.length=0;moveTreePa
 function equipMoveTreeSynthesisPreview(){
   if(!skillLabSession||mode!=='skilllab')return false;
   const node=moveTreeSynthesisSelectedNode(),command=moveTreeSynthesisPreviewCommand(node),
-    index=command&&runSkills.findIndex(skill=>skill.baseId===command.baseId);
-  if(!command||index<0)return false;
-  runSkills[index]=command;skillLabSession.selectedMutationId=node.id;
+    route=weaponSkillRouteFromNode(node);
+  if(command&&route)applyWeaponSkillRouteIdentity(command,route);
+  if(!command||!replaceRunSkill(command.baseId,command))return false;
+  skillLabSession.selectedMutationId=node.id;
   closeMoveTree();SFX.relic();return true;
 }
 function cycleMoveTreeForm(delta){
@@ -33358,7 +34070,7 @@ function drawMoveTree(){
       drawMoveTreeConnection(specRect,twistRect,'#ffe37a',2.5);
       moveTreeHitNodes.push({node:twist,rect:twistRect});
       drawMoveTreeNode(twist,twistRect,twist.id===moveTreeSelectedId,runPath.has(twist.id));
-      const authoredTwistRoute=sharpshootMarkRouteFromNode(twist);
+      const authoredTwistRoute=weaponSkillRouteFromNode(twist);
       visibleNodes=apexes;expected=authoredTwistRoute&&authoredTwistRoute.apexTarget||
         SKILL_EVOLUTION_DEPTHS[4].poolFamilies;childLabel='APEX';
       /* Six Apex slots need three rows. Keep their grid entirely above the
@@ -33991,11 +34703,19 @@ function moveTreeSynthesisRaritySnapshot(command){
     chargeFinal:command.chargeFinalDamagePerCharge||0,
     mark:command.markGain||0,pulses:(command.markPulsePattern||[]).length,
     bloomRate:Number(((command.markBloomRate||0)*100).toFixed(1)),
-    trail:command.phaseMarkTrailPerContact||0,cost:command.cost||0});
+    trail:command.phaseMarkTrailPerContact||0,
+    detonationPerMark:command.markDetonation&&command.markRule?
+      Number((command.markRule.damagePerMark||0).toFixed(1)):0,
+    detonationCap:command.markDetonation&&command.markRule&&Number.isFinite(command.markRule.cap)?
+      command.markRule.cap:0,cost:command.cost||0});
 }
 function moveTreeSynthesisRarityLadder(node){
-  const route=sharpshootMarkRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
+  const route=weaponSkillRouteFromNode(node),recipe=moveTreeSynthesisRecipe(node);
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
+    if(route.skillId==='mark_burst'&&route.depth===1)return SKILL_RARITY_ORDER.map(rarity=>{
+      const command=synthesizeMarkBurstFormRoute(route,rarity);
+      return Object.freeze({rarity,command,stats:moveTreeSynthesisRaritySnapshot(command)});
+    });
     const formRarity=moveTreeSynthesisRarityByDepth[1],
       specRarity=moveTreeSynthesisRarityByDepth[2],
       twistRarity=moveTreeSynthesisRarityByDepth[3];
@@ -34068,9 +34788,24 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle=col;
     g.fillText((active?'◆ ':'')+entry.rarity,x+cellW/2,cell.y+16);
     if(active){
-      lines.push(entry.stats.critPrecision?
+      if(entry.command.baseId==='mark_burst'){
+        lines.push(entry.stats.damage+' DMG · '+entry.stats.hits+' HIT');
+        lines.push(entry.stats.chargeRate?('CHARGE +'+entry.stats.chargeRate+'/DEF'):
+          entry.stats.bleed?(entry.stats.bleed+' BLEED · 2 TURN'):
+          entry.stats.posture?(entry.stats.posture+' POST · WGT '+entry.stats.weight):
+          entry.stats.critChance?(entry.stats.critChance+'% CRIT · x'+entry.stats.critMultiplier):
+          entry.stats.ownsChainScaling?(entry.stats.chain+' CHN · +'+
+            entry.stats.chainDamagePerStack+'/STACK'):
+          (entry.stats.detonationCap+' MARK CONSUME'));
+        lines.push('DET +'+entry.stats.detonationPerMark+' · '+entry.stats.cost+' COST');
+      }else{
+      lines.push(entry.stats.detonationPerMark?
+        (entry.stats.damage+' DMG · '+entry.stats.detonationCap+' DET'):
+        entry.stats.critPrecision?
         (entry.stats.damage+' DMG · '+entry.stats.mark+' MRK'):entry.stats.damage+' DMG');
-      lines.push(entry.stats.critPrecision?
+      lines.push(entry.stats.detonationPerMark?
+        ('+'+entry.stats.detonationPerMark+' / MARK'):
+        entry.stats.critPrecision?
         (entry.stats.critChance+'% C · +'+entry.stats.critPrecision+'% PRE'):
         entry.stats.pulses?(entry.stats.pulses+' PULSE · '+entry.stats.chain+' CHN'):
         entry.stats.bloomRate?('BLOOM '+entry.stats.bloomRate+'% · '+entry.stats.chain+' CHN'):
@@ -34091,7 +34826,9 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         (entry.stats.hits+' HIT · '+entry.stats.chain+' CHN'));
       lines.push(entry.stats.critPrecision?
         ('x'+entry.stats.critMultiplier+' · '+entry.stats.critExpected+'% AVG'):
+        entry.stats.detonationPerMark?(entry.stats.cost+' COST'):
         (entry.stats.mark+' MRK · '+entry.stats.cost+' COST'));
+      }
     }else{
       const metrics=[
         ['DMG',entry.stats.damage-selected.stats.damage],
@@ -34121,6 +34858,8 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         ['PLS',entry.stats.pulses-selected.stats.pulses],
         ['BLM%',entry.stats.bloomRate-selected.stats.bloomRate],
         ['TRL',entry.stats.trail-selected.stats.trail],
+        ['DET',entry.stats.detonationPerMark-selected.stats.detonationPerMark],
+        ['D.CAP',entry.stats.detonationCap-selected.stats.detonationCap],
         ['MRK',entry.stats.mark-selected.stats.mark],
         ['COST',entry.stats.cost-selected.stats.cost]
       ].filter(([,value])=>Math.abs(value)>.04).map(([name,value])=>name+' '+skillRarityDeltaText(value));
@@ -34188,7 +34927,7 @@ function drawSkillAttributeRouteTooltip(node,route){
 }
 function drawSkillLabMutationTooltip(){
   const sourceMutation=moveTreeNodeById(skillLabTooltipMutationId),
-    attributeRoute=sharpshootMarkRouteFromNode(sourceMutation);
+    attributeRoute=weaponSkillRouteFromNode(sourceMutation);
   if(attributeRoute&&attributeRoute.runtimeReadiness!=='MATERIALIZED'){
     drawSkillAttributeRouteTooltip(sourceMutation,attributeRoute);return;
   }

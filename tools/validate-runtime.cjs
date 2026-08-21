@@ -1580,6 +1580,32 @@ try{
     globalThis.__bowRouteRecipeAudit=
       typeof SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT==='undefined'?null:
       SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT;
+    globalThis.__weaponBaseAttributeAudit=
+      typeof WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT==='undefined'?null:
+      WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT;
+    globalThis.__detonationBaseAttributeRouteAudit=
+      typeof DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT==='undefined'?null:
+      DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT;
+    globalThis.__detonationFormAudit=typeof MARK_BURST_DETONATION_FORM_AUDIT==='undefined'?null:
+      MARK_BURST_DETONATION_FORM_AUDIT;
+    globalThis.__markBurstFormAudit=typeof MARK_BURST_FORM_AUDIT==='undefined'?null:
+      MARK_BURST_FORM_AUDIT;
+    globalThis.__weaponSkillHierarchyAudit=(()=>{
+      const catalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId.sharpshoot,
+        detonationCatalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId.mark_burst,
+        base=createRunSkill(BASE_TURN_SKILL_BY_ID.mark_burst),
+        form=rebuildRunSkill('sharpshoot',['blood_mark']),
+        bowFamily=weaponAnimationFamilyForCommand(base),recipe=weaponAnimationRecipe(base);
+      return {passed:!!catalogue&&!!detonationCatalogue&&!!form&&!!bowFamily&&!!recipe,
+        catalogues:WEAPON_SKILL_ROUTE_CATALOGS.list.length,routes:catalogue&&catalogue.routes.length,
+        detonationRoutes:detonationCatalogue&&detonationCatalogue.routes.length,
+        detonationCoverage:detonationCatalogue&&detonationCatalogue.coverage,
+        base:Object.freeze({base:base.baseAttributeId,primary:base.primaryAttributeId,
+          secondary:base.secondaryAttributeId}),
+        form:Object.freeze({route:form&&form.activeAttributeRouteId,base:form&&form.baseAttributeId,
+          primary:form&&form.primaryAttributeId,secondary:form&&form.secondaryAttributeId}),
+        animationFamily:bowFamily&&bowFamily.id,animationRecipe:recipe&&recipe.id};
+    })();
     globalThis.__detonationBaseAudit=(()=>{
       openSkillLab();startSkillLabCombat();
       const run=mark=>{
@@ -1597,6 +1623,69 @@ try{
           damage:hpBefore-boss.hp,chain:chainStacks,returnedToPlayer:boss.phase==='player'};
       };
       return {clean:run(0),primed:run(1)};
+    })();
+    globalThis.__detonationFormCombatAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const run=rarity=>{
+        applySkillLabPreset('clean',false);boss.hp=boss.maxHp=9999;boss.mark=8;
+        const command=synthesizeMarkBurstDetonationForm(rarity);
+        replaceRunSkill('mark_burst',command);
+        const hpBefore=boss.hp,started=performPlayerAction(command),
+          actionCreated=boss.phase==='playerResolve'&&!!boss.turnAction&&
+            boss.turnAction.bowTimeline.recipe.id==='BOW_DETONATION';
+        let frames=0;
+        while(boss.phase==='playerResolve'&&frames++<300){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        return {rarity,started,actionCreated,frames,damage:Number((hpBefore-boss.hp).toFixed(3)),
+          markAfter:bossMark(),consume:command.markRule.cap,chain:chainStacks,
+          returnedToPlayer:boss.phase==='player'};
+      };
+      return {common:run('COMMON'),rare:run('RARE')};
+    })();
+    globalThis.__markBurstSiblingCombatAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const run=routeId=>{
+        applySkillLabPreset('clean',false);boss.hp=boss.maxHp=9999;boss.mark=5;
+        const route=MARK_BURST_ROUTE_BY_ID[routeId],command=
+          synthesizeMarkBurstFormRoute(route,'RARE');
+        replaceRunSkill('mark_burst',command);skillLabSession.forceCritical=true;
+        const hpBefore=boss.hp,started=performPlayerAction(command),recipe=boss.turnAction&&
+          boss.turnAction.bowTimeline&&boss.turnAction.bowTimeline.recipe.id;
+        let frames=0;
+        while(boss.phase==='playerResolve'&&frames++<420){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        skillLabSession.forceCritical=false;
+        return {routeId,started,recipe,frames,hits:command.hits,weight:command.deliveryWeight,
+          damage:Number((hpBefore-boss.hp).toFixed(3)),markAfter:bossMark(),chain:chainStacks,
+          posture:boss.posture||0,bleed:bossBleed(),returnedToPlayer:boss.phase==='player'};
+      };
+      return {chain:run('chain_primary_form'),posture:run('posture_primary_form'),
+        critical:run('critical_primary_form'),affliction:run('affliction_primary_form'),
+        chargeCommand:(()=>{const command=synthesizeMarkBurstFormRoute(
+          MARK_BURST_ROUTE_BY_ID.charge_primary_form,'RARE');return {
+          mode:commandChargeMode(command),timing:command.deliveryTiming,
+          rate:commandDefenseTemperRate(command),hits:command.hits,weight:command.deliveryWeight,
+          recipe:command.bowAnimationRecipeId};})()};
+    })();
+    globalThis.__detonationFormUiAudit=(()=>{
+      moveTreeSkillIndex=BASE_TURN_SKILL_SLOT_BY_ID.mark_burst;moveTreeFormIndex=0;
+      const forms=moveTreeForms(),previews=forms.map(node=>{
+        const route=weaponSkillRouteFromNode(node),preview=moveTreeSynthesisPreviewCommand(node),
+          ladder=moveTreeSynthesisRarityLadder(node);
+        return {id:node.id,route:route&&route.id,primary:route&&route.primaryAttributeId,
+          passed:route&&route.skillId==='mark_burst'&&preview&&preview.baseId==='mark_burst'&&
+            preview.primaryAttributeId===route.primaryAttributeId&&ladder.length===4&&
+            ladder.every(entry=>entry.command&&entry.stats.detonationPerMark>0),
+          ladder:ladder.map(entry=>({rarity:entry.rarity,damage:entry.stats.damage,
+            hits:entry.stats.hits,weight:entry.stats.weight,
+            detonation:entry.stats.detonationPerMark,consume:entry.stats.detonationCap}))};
+      });
+      return {passed:forms.length===6&&previews.every(entry=>entry.passed),
+        forms:forms.map(entry=>entry.id),previews};
     })();
     globalThis.__combatInteractionAudit=(()=>{
       openSkillLab();startSkillLabCombat();
@@ -1751,11 +1840,56 @@ try{
       chargePrimaryClosure=sandbox.__chargePrimaryClosureAudit,
       chargePrimaryRuntime=sandbox.__chargePrimaryRuntimeAudit,
       bowRouteRecipe=sandbox.__bowRouteRecipeAudit,
+      weaponBaseAttribute=sandbox.__weaponBaseAttributeAudit,
+      detonationBaseAttributeRoute=sandbox.__detonationBaseAttributeRouteAudit,
+      detonationForm=sandbox.__detonationFormAudit,
+      markBurstForms=sandbox.__markBurstFormAudit,
+      weaponSkillHierarchy=sandbox.__weaponSkillHierarchyAudit,
       detonationBase=sandbox.__detonationBaseAudit,
+      detonationFormCombat=sandbox.__detonationFormCombatAudit,
+      markBurstSiblingCombat=sandbox.__markBurstSiblingCombatAudit,
+      detonationFormUi=sandbox.__detonationFormUiAudit,
       combatInteraction=sandbox.__combatInteractionAudit;
     if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
        bowRouteRecipe.routeMappings<100)
       throw new Error('Quick Bow route recipe gate failed: '+JSON.stringify(bowRouteRecipe));
+    if(!weaponBaseAttribute||!weaponBaseAttribute.passed||weaponBaseAttribute.skills!==2||
+       weaponBaseAttribute.weapons!==1||weaponBaseAttribute.animationFamilies!==1||
+       weaponBaseAttribute.globalAttributes!==7||weaponBaseAttribute.attributesPerSkill!==6||
+       weaponBaseAttribute.sharedAttributes!==5)
+      throw new Error('Quick weapon base-attribute registry gate failed: '+
+        JSON.stringify(weaponBaseAttribute));
+    if(!detonationBaseAttributeRoute||!detonationBaseAttributeRoute.passed||
+       detonationBaseAttributeRoute.baseAttribute!=='DETONATION'||
+       detonationBaseAttributeRoute.baseAxis!=='DETONATION_DAMAGE'||
+       detonationBaseAttributeRoute.baseShare!==.10||
+       detonationBaseAttributeRoute.paletteFirst!=='DETONATION'||
+       detonationBaseAttributeRoute.sampleDamagePerMark!==13.5)
+      throw new Error('Quick Detonation base-attribute route gate failed: '+
+        JSON.stringify(detonationBaseAttributeRoute));
+    if(!detonationForm||!detonationForm.passed||detonationForm.capped||
+       detonationForm.rows.map(row=>row.consume).join('|')!=='1|1|2|2'||
+       detonationForm.rows.some((row,index,rows)=>index&&(row.damage<rows[index-1].damage||
+         row.damagePerMark<rows[index-1].damagePerMark||row.primed<rows[index-1].primed)))
+      throw new Error('Quick Detonation Form synthesis gate failed: '+JSON.stringify(detonationForm));
+    if(!markBurstForms||!markBurstForms.passed||markBurstForms.capped||
+       markBurstForms.forms!==6||markBurstForms.rankedCards!==24||
+       markBurstForms.rows.find(row=>row.routeId==='chain_primary_form').hits.join('|')!==
+         '1|2|3|4'||
+       markBurstForms.rows.find(row=>row.routeId==='posture_primary_form').weights.join('|')!==
+         '1|2|3|4')
+      throw new Error('Quick Mark Burst six-Form gate failed: '+JSON.stringify(markBurstForms));
+    if(!weaponSkillHierarchy||!weaponSkillHierarchy.passed||weaponSkillHierarchy.catalogues!==2||
+       weaponSkillHierarchy.routes!==757||weaponSkillHierarchy.detonationRoutes!==6||
+       weaponSkillHierarchy.detonationCoverage!=='IN_PROGRESS'||
+       weaponSkillHierarchy.base.base!=='DETONATION'||
+       weaponSkillHierarchy.base.primary!==null||weaponSkillHierarchy.base.secondary!==null||
+       weaponSkillHierarchy.form.route!=='mark_primary_form'||
+       weaponSkillHierarchy.form.base!=='MARK'||weaponSkillHierarchy.form.primary!=='MARK'||
+       weaponSkillHierarchy.form.secondary!==null||weaponSkillHierarchy.animationFamily!=='BOW'||
+       weaponSkillHierarchy.animationRecipe!=='BOW_DETONATION')
+      throw new Error('Quick Weapon -> Skill -> Attribute -> Animation hierarchy gate failed: '+
+        JSON.stringify(weaponSkillHierarchy));
     if(!detonationBase||!detonationBase.clean.started||!detonationBase.clean.actionCreated||
        !detonationBase.clean.returnedToPlayer||detonationBase.clean.damage!==20||
        detonationBase.clean.markAfter!==0||detonationBase.clean.chain!==1||
@@ -1763,6 +1897,33 @@ try{
        !detonationBase.primed.returnedToPlayer||detonationBase.primed.damage!==30||
        detonationBase.primed.markAfter!==0||detonationBase.primed.chain!==1)
       throw new Error('Quick base Detonation combat gate failed: '+JSON.stringify(detonationBase));
+    if(!detonationFormCombat||!detonationFormCombat.common.started||
+       !detonationFormCombat.common.actionCreated||!detonationFormCombat.common.returnedToPlayer||
+       detonationFormCombat.common.markAfter!==7||detonationFormCombat.common.consume!==1||
+       Math.abs(detonationFormCombat.common.damage-36.435)>.001||
+       !detonationFormCombat.rare.started||!detonationFormCombat.rare.actionCreated||
+       !detonationFormCombat.rare.returnedToPlayer||detonationFormCombat.rare.markAfter!==6||
+       detonationFormCombat.rare.consume!==2||Math.abs(detonationFormCombat.rare.damage-73)>.001)
+      throw new Error('Quick Detonation Form combat gate failed: '+
+        JSON.stringify(detonationFormCombat));
+    if(!markBurstSiblingCombat||!markBurstSiblingCombat.chain.started||
+       !markBurstSiblingCombat.chain.returnedToPlayer||markBurstSiblingCombat.chain.hits!==3||
+       markBurstSiblingCombat.chain.chain!==3||markBurstSiblingCombat.chain.markAfter!==4||
+       !markBurstSiblingCombat.posture.started||!markBurstSiblingCombat.posture.returnedToPlayer||
+       !(markBurstSiblingCombat.posture.posture>0)||markBurstSiblingCombat.posture.weight!==3||
+       !markBurstSiblingCombat.critical.started||!markBurstSiblingCombat.critical.returnedToPlayer||
+       !markBurstSiblingCombat.affliction.started||!markBurstSiblingCombat.affliction.returnedToPlayer||
+       !(markBurstSiblingCombat.affliction.bleed>0)||
+       markBurstSiblingCombat.chargeCommand.mode!=='DELAYED_PRIMARY'||
+       markBurstSiblingCombat.chargeCommand.timing!=='DELAYED_RELEASE'||
+       !(markBurstSiblingCombat.chargeCommand.rate>0)||
+       markBurstSiblingCombat.chargeCommand.recipe!=='BOW_CHARGE_WEIGHT')
+      throw new Error('Quick Mark Burst sibling combat gate failed: '+
+        JSON.stringify(markBurstSiblingCombat));
+    if(!detonationFormUi||!detonationFormUi.passed||detonationFormUi.forms.length!==6||
+       detonationFormUi.previews.length!==6||
+       detonationFormUi.previews.some(entry=>entry.ladder.length!==4))
+      throw new Error('Quick Detonation Form Skill Lab gate failed: '+JSON.stringify(detonationFormUi));
     if(!combatInteraction||!combatInteraction.menuOpened||!combatInteraction.actionStarted||
        !combatInteraction.actionCreated||!combatInteraction.hitLogged||
        !(combatInteraction.hpAfter<combatInteraction.hpBefore)||
@@ -1940,6 +2101,9 @@ try{
         formScoreSpread,chain:chainForm.rows,posture:postureForm.rows,
         critical:criticalForm.rows}));
     console.log('BOW_ROUTE_RECIPES '+JSON.stringify(bowRouteRecipe));
+    console.log('BASE_ATTRIBUTE '+JSON.stringify({
+      registry:weaponBaseAttribute,detonationRoute:detonationBaseAttributeRoute}));
+    console.log('SKILL_HIERARCHY '+JSON.stringify(weaponSkillHierarchy));
     console.log('DETONATION_BASE '+JSON.stringify(detonationBase));
     console.log('COMBAT_INTERACTION '+JSON.stringify(combatInteraction));
     console.log('QUICK_RUNTIME_OK '+file);
