@@ -5,6 +5,13 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 
 ## 0. Tasarim sozlesmesi
 
+- F5 ve sonrasi icin dort Twist birlikte tasarlanir; her biri complete Twist Identity V1 tasir.
+- Core fingerprintler farklidir; delivery-only veya number-only kardes bulunmaz.
+- Family brief signature-engine ve generic reader/converter kotalari gecer.
+- Her delivery'nin mekanik sebebi yazilidir; delivery kimlik yerine kullanilmaz.
+- En yakin catalog hareketleri kontrol edilir; ters Primary/Secondary agaci kopyalanmaz.
+- Her yeni mechanic engine ownership, power model ve runtime test kaydina sahiptir.
+
 - Parent hareketin kimligi tek cumleyle yazilir.
 - Cocuklarin parenttan koruyacagi hasar, Primary, Secondary, Delivery ve kaynak davranisi yazilir.
 - Her kardesin oynanista lider oldugu tek bir alan belirlenir. Iki kardes yalniz sayi farkiyla ayni isi yapamaz.
@@ -23,6 +30,10 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
   degistirilerek kopyalanamaz; kaynak yonu ve oyuncu karari yeniden tasarlanir.
 - Apex, parent Twist'in Delivery topology ve timing sozlesmesini aynen korur. Sadece o sozlesmenin
   parametresini veya sunumunu guclendirebilir.
+- Yeni Apex ailesi `Apex Design V2` kullanir. Dort kart benzersiz `decisionKey` ve runtime kaniti
+  tasir; en az ikisi oyuncu planini degistirir ve bu ikisi en az iki ayri karar sinifindadir.
+- Ayni toplami ilk/son temas veya ilk/ikinci tick arasinda bolmek tek basina karar degisikligi
+  sayilmaz. Yalniz sayisal varyantlardan olusan aile tasarim kapisinda reddedilir.
 
 ## 1. Yapi kapisi
 
@@ -376,7 +387,35 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] Mark parenttan gorunur fazla Mark; Chain action-start scaling; Posture Critlenen direct Posture; Affliction iki tick Bleed; Charge pre-Crit banka release uretir.
 - [ ] Chance/Precision dogal tavana ulasinca odenmis Quality kaybolmaz; local Crit carpanina Reserve/overflow olarak akar ve runtime stat clip uygulanmaz.
 - [ ] Skill Lab rarity kartlari Chance, Precision, uzun-vadeli Crit orani ve carpani ayri gosterir.
-- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` F4 Form, F4 Specialization, runtime Precision ve rarity ladder auditlerini gecirir.
+- [ ] F4 tam sayimi `1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route / 508 rarity card`tir.
+- [ ] F4S1-S3 ailelerinin her biri 4 Twist ve Twist basina 4 Apex tasir; F4S4-S6 ile ayni closure'a dahildir.
+- [ ] Sequential gercek temas basina Chain, simultaneous packet toplam bir Chain uretir; yeni rota authored gameplay cap veya diminishing eklemez.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` F4 Form, Specialization, tam closure, parent, rarity, kimlik ve guc bantlarini gecirir.
+
+## F4S1-F4S3 Critical foundation kabul listesi
+
+- [ ] Critical/Mark Aim Marki tuketmeden okur; Bounty yalniz gercek Critten Mark uretir; Tracking
+  bagimsiz temas Critleri sonrasi tek toplam Mark birakir; Packet tek ortak Crit ve tek toplam Chain kullanir.
+- [ ] Critical/Chain Crescendo canli Chain okur; Weight baslangic Chainini Crit carpanina; Feedback
+  gercek Criti ek Chain odulune; Lock baslangic Chainini Crit sansina cevirir. Mark veya Chain tuketilmez.
+- [ ] Critical/Posture Verdict Health/Posture'u ayni Critle carpar; Volley toplam Posture'u gercek
+  temaslara boler; Fracture Critten hasarsiz/Chainsiz Posture echo; Packet ortak Crit sonucu uretir.
+- [ ] Her foundation Twist tam dort Apex cocuguna sahiptir. A1 iliski, A2 Crit guvenilirligi,
+  A3 Secondary, A4 temiz impact lideridir ve parent mekanigi korunur.
+- [ ] Rank artarken damage, Mark, delivery, Chain, Posture, Crit, Precision, Crit carpani veya diger
+  sahip olunan output gerilemez; all-Common child kendi parentindan zayif olamaz.
+
+## F5 Affliction Form ve Specialization kabul listesi
+
+- [ ] Form tek `SINGLE` ok, Base Mark, tek doğal Chain, `1 AP / 1 Resolve` ve iki tick Bleed taşır.
+- [ ] Formun direct damage'i F1-F4 Common karşılıklarının altındadır; iki tick toplamıyla anlamlı payoff üretir.
+- [ ] Altı rota Affliction/Mark, /Chain, /Posture, /Critical, /Affliction ve /Charge olarak materializedir.
+- [ ] Her çocuk parent damage, Mark ve Bleed paketini korur; yalnız kendi yeni paketini dağıtır.
+- [ ] Yalnız Chain Secondary sıralı delivery'ye geçer. Her gerçek ok `+1 Chain` ve tek toplam Bleed'den pozitif pay taşır; temas Bleedi çoğaltmaz.
+- [ ] Critical yalnız direct Health/Posture'u etkileyen local Chance'tır; Precision açmaz ve Bleed Crit atmaz.
+- [ ] Affliction/Affliction kardeşler arasında en yüksek Bleed'i taşır; Charge bankayı bir actionda bir kez kullanır.
+- [ ] Stable Bleed süresi bütün raritylerde iki tick kalır; potency, damage, Mark ve delivery rank yükselirken gerilemez.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` 4 Form kartı, 96 Spec historysi ve `%13` sibling bandını geçirir.
 
 ## F4S4 Critical/Critical Twist kabul listesi
 
@@ -397,3 +436,64 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] A3 move-local Crit carpani, A4 temiz direct damage lideridir; hicbir Apex Chain scaling kazanmaz.
 - [ ] Parent damage, Mark, Chance, Precision, stored-Precision read ve Crit carpani gerilemez; rarity ranki sahip olunan stati dusurmez.
 - [ ] `CCC/LCC/LLC/LLL` gecmisleri x 4 Apex rarity x 16 Apex = `256` boot-safe kart matrisi gecer.
+
+## F4S5 Critical/Affliction Twist kabul listesi
+
+- [ ] Tam sayım `4 Twist / 256 rarity kombinasyonu`dur; bütün route'lar gerçek runtime command üretir.
+- [ ] T1 bağımsız temas Critleri, canlı Precision ve temaslara bölünmüş tek toplam Bleed taşır; her gerçek ok `+1 Chain` üretir.
+- [ ] T2 normalde Base Bleed uygular ve yalnız doğrudan Crit gerçekleşirse ücretli ek Bleed ekler; Bleed ticki Critlenmez.
+- [ ] T3 mevcut Bleedi tüketmeden action başında okur; yeni Bleed kendi Crit bonusunu geriye dönük büyütemez.
+- [ ] T4 tek ortak Crit rollu packet, tek Precision update, temaslara bölünmüş toplam Bleed ve toplam `+1 Chain` kullanır.
+- [ ] Parent damage/Mark/Chance/Precision/Crit multiplier/Bleed ve rarity statları gerilemez; rota Chain scaling çalmaz.
+- [ ] Common kardeş power spread `%20`yi aşmaz; authored gameplay cap veya diminishing yoktur.
+
+## F4S5 Critical/Affliction Apex kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`tir; her Twist tam dört materialized Apex çocuğu taşır.
+- [ ] A1 parent ilişkisinin, A2 Crit güvenilirliğinin, A3 toplam Bleed paketinin, A4 temiz direct impactın lideridir.
+- [ ] Apex parent delivery, Crit roll, Precision update, yara sırası ve doğal Chain kuralını değiştirmez.
+- [ ] Volley her temas için Chain; packet toplam bir Chain üretmeye devam eder. Rupture yalnız direct Critte ek Bleed, Bloodsight yalnız action-start Bleed okuması kullanır.
+- [ ] Parent/rank damage, Mark, Chance, Precision, Crit multiplier, Bleed ve ilişki katsayıları gerilemez; Chain scaling eklenmez.
+- [ ] `CCC/LCC/LLC/LLL × 4 Apex rarity × 16 Apex = 256` kart matrisi ve `%20` sibling spread kapısı geçer.
+
+## F4S6 Critical/Charge Twist ve Apex kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`tir; her Twist tam dört materialized Apex taşır.
+- [ ] T1 tek full-bank ağır darbe; T2 tek toplam Charge salımını bölen bağımsız-Crit volley; T3
+  Charge→local Crit focus; T4 ilk Critte duran ücretli arama kimliğini korur.
+- [ ] Charge hasarı bir actionda yalnız bir kez ödenir. Volley bunu temaslara böler, kopyalamaz.
+- [ ] Hunt ilk oku garanti eder; ek ok sayısı başlangıç bankasını aşmaz, ilk Critte durur ve iadesi
+  harcanmış Chargeı aşamaz.
+- [ ] Her görünen sequential ok gerçek `+1 Chain` üretir; single rota toplam bir Chain üretir.
+- [ ] A1 ilişki, A2 Crit güvenilirliği, A3 Charge salımı, A4 temiz impact lideridir.
+- [ ] Parent/rank damage, Mark, Crit, Precision ve Charge payı gerilemez; kardeş spread `%20`yi aşmaz.
+- [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` F4S6 closure, rarity, rol ve runtime
+  denetimlerini geçirir; ağır matris oyun bootuna eklenmez.
+
+## Mark Burst F1S5 Detonation/Affliction kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Apex `Apex Design V2` taşır.
+- [ ] Mark Burst hiçbir rotada Mark üretmez. Detonation Primary, iki tick Bleed Secondary kalır.
+- [ ] T1 tüketilen Markla yarayı büyütür; T2 yalnız action-start yarayı rupture eder; T3 finite iki
+  faz yankısı taşır; T4 tek toplam yarayı packet temaslarına pozitif böler ve toplam 1 Chain üretir.
+- [ ] T3A2 ilk yankıyı ilk boss moveundan önce çözer. T3A3 yalnız sonradan eklenmiş gerçek Markı
+  ikinci tickte tüketir. T3A4 her ayrı boss move başlangıcında bir pulse üretir; damage hitleri pulse
+  sayılmaz ve Break erken kullanılırsa kalan move pulseları doğal olarak kaybolur.
+- [ ] Stored/delayed alanlar kendi çıktılarını okuyamaz, kendilerini dolduramaz ve projectile/Chain
+  uyduramaz. Quality büyümesi için authored gameplay cap veya diminishing yoktur.
+- [ ] Dört Apex ailesinin her birinde en az iki farklı gerçek karar sınıfı ve en az üç ayrı runtime
+  kanıt imzası bulunur; yalnız tick/vuruş sırası değiştiren yüzeysel aile reddedilir.
+
+## Mark Burst F1S6 Detonation/Charge kabul listesi
+
+- [ ] Tam sayım `4 Twist / 16 Apex`; her Apex `Apex Design V2` taşır.
+- [ ] Mark Burst hiçbir rotada Mark üretmez ve sıfır Charge ile parent Detonation çalışmaya devam eder.
+- [ ] T1 bütün bankayı harcar; T2 yalnız eşleşen Chargeı harcar; T3 yalnız gerçekten harcanmış
+  bankadan iade yapar; T4 bankayı finite bir sonraki-savunma füzesine çevirir.
+- [ ] T2 yankıları, T4 savunma pulseları fiziksel temas değildir; Chain/Crit/Mark üretmez ve recursion açmaz.
+- [ ] T4 Perfect Dodge başına 1, Parry başına en fazla 2 fuse Charge harcar. Başarısız savunma
+  yalnız streaki sıfırlar; Break iadesi kalan fuse Chargeı aşamaz.
+- [ ] Quality büyümesi Mark, Charge, eşleşme veya retention üzerine authored gameplay cap ve
+  diminishing koymaz; yalnız mevcut finite kaynaklar doğal sınırdır.
+- [ ] Dört Apex ailesi benzersiz karar anahtarları, en az iki gerçek karar sınıfı ve en az üç runtime
+  kanıt imzası taşır; aynı hasarın dört dağılımı reddedilir.

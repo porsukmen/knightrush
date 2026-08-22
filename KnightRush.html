@@ -7886,6 +7886,7 @@ function damagePlayer(reason,unstoppable=false){
   if(chargedDefense&&chargedDefense.status==='DEFENDING')chargedDefense.streakBroken=true;
   if(activeSkillLabCombat()){
     if(!unstoppable&&player.invuln>0)return;
+    resetDetonationDefenseFuseStreak();
     chainStacks=0;player.invuln=.45;
     if(skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
     SFX.hit();flash('#ff4d3a',.32);shake(8,.28);stopTime(.08);
@@ -7893,9 +7894,10 @@ function damagePlayer(reason,unstoppable=false){
     floater(laneX(player.x,1),PLAYER_Y-96,'LAB HIT · CHAIN LOST','#ff7a82',17);
     return;
   }
-  if(godMode){ flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
+  if(godMode){ resetDetonationDefenseFuseStreak(); flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
     hazards=[]; return; }
   if(!unstoppable&&player.invuln>0) return;
+  resetDetonationDefenseFuseStreak();
   if(!unstoppable&&consumeShield()){         // execution finishers bypass shields
     player.invuln=1.2; SFX.shield(); flash('#9ecbff',.5); shake(8,.3); stopTime(.09);
     burst(laneX(player.x,1),PLAYER_Y-40,22,['#9ecbff','#ffffff'],220,120,4,.8);
@@ -9346,6 +9348,30 @@ function addBossBleed(amount,markPerTick=0,finalMark=0,chainPerTick=0,effects=nu
     addPair('bleedDefenseFeedRate',effects.defenseFeedRate);
     addPair('bleedChargeMeterRate',effects.chargeMeterRate);
     addPair('bleedDefenseRuptureRate',effects.defenseRuptureRate);
+    const echo=Math.max(0,Number(effects.detonationEcho)||0),openingBonus=
+      Math.max(0,Number(effects.detonationOpeningBonus)||0);
+    if(echo>0||openingBonus>0){
+      if(effects.detonationOpeningTiming){
+        boss.pendingDefenseOpeningDetonation=stableCombatNumber(Math.max(0,
+          Number(boss.pendingDefenseOpeningDetonation)||0)+echo+openingBonus);
+        boss.bleedDetonationEchoLater=stableCombatNumber(Math.max(0,
+          Number(boss.bleedDetonationEchoLater)||0)+echo);
+      }else{
+        boss.bleedDetonationEcho=stableCombatNumber(Math.max(0,
+          Number(boss.bleedDetonationEcho)||0)+echo+openingBonus);
+        boss.bleedDetonationEchoLater=stableCombatNumber(Math.max(0,
+          Number(boss.bleedDetonationEchoLater)||0)+echo);
+      }
+    }
+    const reloadCapacity=Math.max(0,Number(effects.detonationReloadCapacity)||0),
+      reloadDamage=reloadCapacity*Math.max(0,Number(effects.detonationReloadDamagePerMark)||0);
+    if(reloadCapacity>0){
+      boss.bleedDetonationReloadCapacityLater=stableCombatNumber(Math.max(0,
+        Number(boss.bleedDetonationReloadCapacityLater)||0)+reloadCapacity);
+      boss.bleedDetonationReloadDamageLater=stableCombatNumber(Math.max(0,
+        Number(boss.bleedDetonationReloadDamageLater)||0)+reloadDamage);
+    }
+    addPair('bleedMoveDetonationPulse',effects.detonationMovePulse);
     boss.afflictionNextActionMark=stableCombatNumber(Math.max(0,
       Number(boss.afflictionNextActionMark)||0)+Math.max(0,Number(effects.nextActionMark)||0));
   }
@@ -9363,6 +9389,11 @@ function resolveBossPhaseBleed(fromBreak=false){
     chainPrimerTick=Math.max(0,Number(boss.bleedChainPrimer)||0),
     meterRate=Math.max(0,Number(boss.bleedChargeMeterRate)||0),
     ruptureRate=Math.max(0,Number(boss.bleedDefenseRuptureRate)||0),
+    detonationEcho=Math.max(0,Number(boss.bleedDetonationEcho)||0),reloadCapacity=
+      Math.max(0,Number(boss.bleedDetonationReloadCapacity)||0),reloadPool=
+      Math.max(0,Number(boss.bleedDetonationReloadDamage)||0),reloadConsumed=
+      Math.min(bossMark(),Math.floor(reloadCapacity+1e-9)),reloadDamage=reloadCapacity>0?
+        reloadPool*reloadConsumed/reloadCapacity:0,
     meterCharge=meterRate>0?consumeBossCharge()+consumeDefenseChargeProgress():0,
     ruptureCharge=ruptureRate>0?consumeDefenseChargeProgress():0,
     extraDamage=meterCharge*meterRate+ruptureCharge*ruptureRate,
@@ -9370,12 +9401,17 @@ function resolveBossPhaseBleed(fromBreak=false){
   boss.bleed=tick.next<BLEED_STATUS.displayFloor?0:tick.next;boss.bleedLater=0;
   boss.bleedMark=nextMark;boss.bleedMarkLater=0;
   boss.bleedChain=nextChain;boss.bleedChainLater=0;
+  if(reloadConsumed>0)boss.mark=Math.max(0,bossMark()-reloadConsumed);
   for(const key of ['bleedPosture','bleedChainPrimer','bleedBreakRetrigger','bleedDefenseFeedRate',
-    'bleedChargeMeterRate','bleedDefenseRuptureRate']){
+    'bleedChargeMeterRate','bleedDefenseRuptureRate','bleedDetonationEcho',
+    'bleedDetonationReloadCapacity','bleedDetonationReloadDamage','bleedMoveDetonationPulse']){
     boss[key]=Math.max(0,Number(boss[key+'Later'])||0);boss[key+'Later']=0;
   }
-  const totalDamage=stableDamage(tick.damage+extraDamage),defeated=totalDamage>0?
-    hurtBoss(totalDamage,false,fromBreak?'bleed_break':'bleed',false):false;
+  const totalDamage=stableDamage(tick.damage+extraDamage+detonationEcho+reloadDamage),defeated=
+    totalDamage>0?hurtBoss(totalDamage,false,fromBreak?'bleed_break':'bleed',false):false;
+  if(!defeated&&detonationEcho+reloadDamage>0)floater(VW/2,322,
+    'WOUND DETONATION +'+damagePart(detonationEcho+reloadDamage)+
+    (reloadConsumed?' · MARK -'+reloadConsumed:''),'#ffe37a',14);
   if(!defeated&&markTick>0){
     const gained=applyBossMarkEvent(markTick,'BLEED_MARK_REWARD');
     if(gained)floater(VW/2,286,'BLOOD TRAIL MARK +'+damagePart(gained),'#d9788b',14);
@@ -9392,6 +9428,21 @@ function resolveBossPhaseBleed(fromBreak=false){
   if(!defeated&&postureTick>0)applyBossPosture(postureTick,'bleed');
   if(!defeated&&extraDamage>0)floater(VW/2,340,'DEFENSE WOUND +'+damagePart(extraDamage),'#7fc9ff',13);
   return defeated;
+}
+function resolveBossDetonationWoundDefenseOpening(){
+  if(!boss||boss.phase!=='dodge'||boss.state==='dying'||boss.state==='finisher')return false;
+  const payload=Math.max(0,Number(boss.pendingDefenseOpeningDetonation)||0);
+  boss.pendingDefenseOpeningDetonation=0;
+  if(!(payload>0))return false;
+  floater(VW/2,304,'AMBUSH DETONATION +'+damagePart(payload),'#ffe37a',15);
+  return hurtBoss(payload,false,'wound_detonation',false);
+}
+function resolveBossWoundMovePulse(){
+  if(!boss||boss.phase!=='dodge'||boss.state==='dying'||boss.state==='finisher')return false;
+  const payload=Math.max(0,Number(boss.bleedMoveDetonationPulse)||0);
+  if(!(payload>0))return false;
+  floater(VW/2,286,'DANGEROUS FUSE +'+damagePart(payload),'#ffe37a',13);
+  return hurtBoss(payload,false,'wound_detonation',false);
 }
 /* Charge Secondary banks the best single defense-phase performance until used.
    There is no authored gameplay ceiling: the finite boss phase is the natural
@@ -9443,6 +9494,7 @@ function recordDefenseChargeSuccess(amount,kind='DEFENSE'){
     boss.bleed=stableCombatNumber(Math.min(BLEED_STATUS.technicalCap,bossBleed()+woundFeed));
     floater(VW/2,322,'LIVE WOUND +'+damagePart(woundFeed),'#d9788b',13);
   }
+  resolveDetonationDefenseFuseSuccess(kind);
   return boss.defenseChargeProgress-before;
 }
 function defenseChargeBankResult(stored,progress){
@@ -9468,6 +9520,63 @@ function consumeDefenseChargeProgress(amount=Number.MAX_SAFE_INTEGER){
 function restoreBossCharge(amount){
   if(!boss)return 0;const before=bossCharge();boss.charge=safeDefenseCharge(before+amount);
   return boss.charge-before;
+}
+/* The defense fuse is one finite O(1) pool. Re-arming adds paid Charge and paid
+   damage to that pool; it never schedules per-card/per-frame objects. A visible
+   Perfect Dodge spends one unit, a Parry spends two, and neither pulse creates
+   Chain, Crit, Mark or another fuse trigger. */
+function armDetonationDefenseFuse(command,charge){
+  const paid=safeDefenseCharge(charge);if(!boss||!paid)return 0;
+  const previous=boss.pendingDetonationDefenseFuse||{charge:0,damagePool:0,
+      parryWeighted:0,streakWeighted:0,returnWeighted:0,streak:0},
+    perCharge=commandDefenseTemperRate(command)+Math.max(0,
+      Number(command.detonationDefenseFuseDamage)||0),total=previous.charge+paid;
+  boss.pendingDetonationDefenseFuse={charge:total,
+    damagePool:stableCombatNumber(previous.damagePool+paid*perCharge),
+    parryWeighted:previous.parryWeighted+paid*Math.max(1,
+      Number(command.detonationDefenseParryMultiplier)||1),
+    streakWeighted:previous.streakWeighted+paid*Math.max(0,
+      Number(command.detonationDefenseStreakRate)||0),
+    returnWeighted:previous.returnWeighted+paid*clamp(Math.max(0,
+      Number(command.detonationDefenseBreakReturnRate)||0),0,1),streak:previous.streak||0};
+  return paid;
+}
+function resolveDetonationDefenseFuseSuccess(kind){
+  const fuse=boss&&boss.pendingDetonationDefenseFuse;if(!fuse||!(fuse.charge>0)||
+     !['DODGE','PARRY'].includes(kind))return 0;
+  const before=safeDefenseCharge(fuse.charge),spent=Math.min(before,kind==='PARRY'?2:1),
+    base=fuse.damagePool*(spent/before),parryMultiplier=kind==='PARRY'?
+      Math.max(1,fuse.parryWeighted/before):1,streakRate=Math.max(0,
+      fuse.streakWeighted/before);
+  fuse.streak=safeDefenseCharge((fuse.streak||0)+1);
+  const payload=stableCombatNumber(base*parryMultiplier*
+    (1+Math.max(0,fuse.streak-1)*streakRate));
+  fuse.charge=before-spent;fuse.damagePool=stableCombatNumber(Math.max(0,
+    fuse.damagePool-base));
+  const weight=fuse.charge/before;
+  fuse.parryWeighted*=weight;fuse.streakWeighted*=weight;fuse.returnWeighted*=weight;
+  const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s;
+  emitMarkDetonationImpact(x,y,payload);
+  floater(x,y-104,(kind==='PARRY'?'PARRY':'DODGE')+' FUSE · '+damagePart(payload),
+    kind==='PARRY'?'#b56cff':'#7fc9ff',14);
+  const defeated=hurtBoss(payload,false,'defense_fuse',false);
+  if(!fuse.charge||defeated)boss.pendingDetonationDefenseFuse=null;
+  return payload;
+}
+function resetDetonationDefenseFuseStreak(){
+  const fuse=boss&&boss.pendingDetonationDefenseFuse;if(fuse)fuse.streak=0;
+}
+function finalizeDetonationDefenseFuse(fromBreak=false){
+  const fuse=boss&&boss.pendingDetonationDefenseFuse;if(!fuse)return 0;
+  let returned=0;
+  if(fromBreak&&fuse.charge>0){
+    const rate=clamp(fuse.returnWeighted/Math.max(1,fuse.charge),0,1);
+    returned=Math.min(fuse.charge,Math.floor(fuse.charge*rate+1e-9));
+  }
+  boss.pendingDetonationDefenseFuse=null;
+  if(returned){restoreBossCharge(returned);
+    floater(VW/2-112,254,'BREAK · FUSE RETURN ×'+returned,'#7fc9ff',14);}
+  return returned;
 }
 function pendingPrimaryChargeRelease(){
   const pending=boss&&boss.pendingChargeRelease;
@@ -9639,6 +9748,19 @@ function createRunSkill(definition){
     detonationCritOverflowMultiplierPerChance:0,
     detonationCriticalPayloadRate:0,detonationCriticalBreakPayloadRate:0,
     detonationNonCritPayloadRate:0,
+    afflictionPerConsumedMark:0,afflictionOpeningWound:0,afflictionPerExistingBleed:0,
+    afflictionPerUnspentContact:0,bleedRuptureBreakRate:0,detonationDamagePerExistingBleed:0,
+    detonationWoundEchoPerConsumedMark:0,detonationWoundOpeningBonus:0,
+    detonationWoundOpeningTiming:false,
+    detonationWoundReloadCapacity:0,detonationWoundReloadDamagePerMark:0,
+    detonationWoundMovePulse:0,detonationFullPacketBonus:0,
+    detonationChargeProductDamage:0,detonationChargeBreakRate:0,
+    detonationChargeSurplusDamage:0,detonationMarkSurplusRate:0,
+    detonationChargeEchoPerPair:0,detonationChargeMarkSurplusEcho:0,
+    detonationChargeRetentionPerMark:0,detonationChargeBreakRetentionPerMark:0,
+    detonationChargeEmptySeedPerMark:0,detonationDefenseFuseDamage:0,
+    detonationDefenseParryMultiplier:1,detonationDefenseStreakRate:0,
+    detonationDefenseBreakReturnRate:0,
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
     startingChainHitRate:0,chainSecondWaveBonus:0,chainSecondWaveStartIndex:0,
     markPulsePattern:null,markPulseInterval:0,markPulsePreservesContactMark:false,
@@ -9801,6 +9923,19 @@ function transformSharpshoot(skill,patch){
     detonationCritOverflowMultiplierPerChance:0,
     detonationCriticalPayloadRate:0,detonationCriticalBreakPayloadRate:0,
     detonationNonCritPayloadRate:0,
+    afflictionPerConsumedMark:0,afflictionOpeningWound:0,afflictionPerExistingBleed:0,
+    afflictionPerUnspentContact:0,bleedRuptureBreakRate:0,detonationDamagePerExistingBleed:0,
+    detonationWoundEchoPerConsumedMark:0,detonationWoundOpeningBonus:0,
+    detonationWoundOpeningTiming:false,
+    detonationWoundReloadCapacity:0,detonationWoundReloadDamagePerMark:0,
+    detonationWoundMovePulse:0,detonationFullPacketBonus:0,
+    detonationChargeProductDamage:0,detonationChargeBreakRate:0,
+    detonationChargeSurplusDamage:0,detonationMarkSurplusRate:0,
+    detonationChargeEchoPerPair:0,detonationChargeMarkSurplusEcho:0,
+    detonationChargeRetentionPerMark:0,detonationChargeBreakRetentionPerMark:0,
+    detonationChargeEmptySeedPerMark:0,detonationDefenseFuseDamage:0,
+    detonationDefenseParryMultiplier:1,detonationDefenseStreakRate:0,
+    detonationDefenseBreakReturnRate:0,
     critChance:0,critChancePerStartingMark:0,critChancePerStartingChain:0,
     critChanceRampPerHit:0,critDamagePerStartingChain:0,critChainBonus:0,
     critMarkBonus:0,critRollMode:'PER_CONTACT',critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
@@ -10125,6 +10260,18 @@ const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DETONATION_POSTURE_SEAL_LAYERS','DETONATION_POSTURE_SEAL_MEASURED',
   'DETONATION_CRIT_AIM','DETONATION_CRIT_OVERFLOW','DETONATION_CRIT_PAYLOAD','DETONATION_CRIT_BREAK',
   'DETONATION_NONCRIT_PAYLOAD',
+  'DETONATION_BLEED_PER_MARK','DETONATION_BLEED_OPENING','DETONATION_BLEED_BREAK',
+  'DETONATION_BLEED_RUPTURE','DETONATION_BLEED_READ','DETONATION_BLEED_REOPEN',
+  'DETONATION_WOUND_ECHO','DETONATION_WOUND_OPENING','DETONATION_WOUND_RELOAD',
+  'DETONATION_WOUND_MOVE_PULSE','DETONATION_PACKET_LOW_MARK','DETONATION_PACKET_FULL_MARK',
+  /* Mark Burst F1S6: banked defense Charge changes when and how paid
+     Detonation is released. Every axis is consumed by one explicit runtime
+     field; no Charge/Mark product or delayed pulse is granted for free. */
+  'DETONATION_CHARGE_PRODUCT','DETONATION_CHARGE_BREAK','DETONATION_CHARGE_SURPLUS',
+  'DETONATION_MARK_SURPLUS','DETONATION_CHARGE_PAIR_ECHO','DETONATION_CHARGE_RETENTION',
+  'DETONATION_CHARGE_BREAK_RETENTION','DETONATION_CHARGE_EMPTY_SEED',
+  'DETONATION_DEFENSE_FUSE','DETONATION_DEFENSE_PARRY','DETONATION_DEFENSE_STREAK',
+  'DETONATION_DEFENSE_BREAK_RETURN',
   'DELIVERY_CONTACTS','DELIVERY_WEIGHT',
   'CHAIN_SCALING','CHAIN_MANAGEMENT',
   'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','CHAIN_POSTURE_READ','POSTURE_CHAIN_READ','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','BREAK_MARK_REWARD','POSTURE_MARK_TRAIL','BREAK_CHAIN_REWARD','CRIT_POSTURE_ECHO','BLEED_POSTURE_READ','CHARGE_POSTURE_RELATION','CHARGE_POSTURE_CONTROL','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD','CHAIN_CRIT_READ','CHAIN_CRIT_POWER','CRIT_CHAIN_REWARD',
@@ -11541,6 +11688,14 @@ const TWIST_MECHANIC_ENGINE_REGISTRY=Object.freeze(Object.fromEntries([
   ,{id:'DETONATION_CRIT_IGNITION',owners:['DETONATION','CRITICAL'],kind:'SIGNATURE',powerModel:'EXPECTED_CRIT_TO_DETONATION_PAYLOAD'}
   ,{id:'DETONATION_CRIT_FAILSAFE',owners:['DETONATION','CRITICAL'],kind:'SIGNATURE',powerModel:'EXPECTED_NON_CRIT_TO_DETONATION_PAYLOAD'}
   ,{id:'DETONATION_CRIT_PACKET',owners:['DETONATION','CRITICAL'],kind:'SIGNATURE',powerModel:'SHARED_CRIT_SIMULTANEOUS_DETONATION_PACKET'}
+  ,{id:'DETONATION_BLEED_FUSE',owners:['DETONATION','AFFLICTION'],kind:'SIGNATURE',powerModel:'CONSUMED_MARK_TO_TWO_TICK_WOUND'}
+  ,{id:'DETONATION_BLEED_RUPTURE',owners:['DETONATION','AFFLICTION'],kind:'SIGNATURE',powerModel:'ACTION_START_WOUND_TO_IMMEDIATE_DAMAGE'}
+  ,{id:'DETONATION_WOUND_FUSE',owners:['DETONATION','AFFLICTION'],kind:'SIGNATURE',powerModel:'FINITE_TWO_PHASE_DETONATION_WOUND'}
+  ,{id:'DETONATION_BLEED_PACKET',owners:['DETONATION','AFFLICTION'],kind:'SIGNATURE',powerModel:'SIMULTANEOUS_MARK_DETONATION_WOUND_PACKET'}
+  ,{id:'DETONATION_CHARGE_DISCHARGE',owners:['DETONATION','CHARGE'],kind:'SIGNATURE',powerModel:'PAID_CHARGE_MARK_PRODUCT_RELEASE'}
+  ,{id:'DETONATION_CHARGE_PAIR',owners:['DETONATION','CHARGE'],kind:'SIGNATURE',powerModel:'MATCHED_MARK_CHARGE_ECHO_WITH_SURPLUS_PRESERVATION'}
+  ,{id:'DETONATION_CHARGE_CAPACITOR',owners:['DETONATION','CHARGE'],kind:'SIGNATURE',powerModel:'SPENT_CHARGE_RETENTION_FROM_DETONATED_MARK'}
+  ,{id:'DETONATION_CHARGE_DEFENSE_FUSE',owners:['DETONATION','CHARGE'],kind:'SIGNATURE',powerModel:'FINITE_NEXT_DEFENSE_SUCCESS_PULSES'}
 ].map(engine=>[engine.id,Object.freeze({...engine,owners:Object.freeze(engine.owners.slice()),
   testPolicy:'RUNTIME_SEQUENCE_AND_POWER_LEDGER'})])));
 const TWIST_IDENTITY_ENUMS=Object.freeze({
@@ -11666,6 +11821,45 @@ function stableTwistCausalityContract(data,routeId,primaryAttributeId,secondaryA
     throw new Error(routeId+' violates Stable Primary-first Twist causality');
   return Object.freeze({...data});
 }
+const APEX_DECISION_CLASSES=Object.freeze([
+  'OUTPUT_MASTERY','STATE_RESPONSE','TIMING_WINDOW','ROTATION_CHANGE',
+  'RISK_REWARD','TARGETING_CHANGE','RESOURCE_WINDOW','RELIABILITY'
+]);
+const APEX_MEANINGFUL_DECISION_CLASSES=new Set([
+  'STATE_RESPONSE','TIMING_WINDOW','ROTATION_CHANGE','RISK_REWARD',
+  'TARGETING_CHANGE','RESOURCE_WINDOW'
+]);
+/* Apex Design V2 turns the authoring promise into executable metadata. Merely
+   moving the same payload between the first/last hit or first/second tick is
+   OUTPUT_MASTERY, not a new decision. A meaningful Apex must change what state
+   the player reads, when they act, what they risk, or how they order skills. */
+function apexDesignContract(data,routeId){
+  if(!data)return null;
+  const kinds=new Set(['NUMERIC_MASTERY','RESOURCE_EXPRESSION','BEHAVIORAL_CAPSTONE',
+      'RELIABILITY']),version=Number(data.version)||1;
+  if(!kinds.has(data.kind)||typeof data.playerDecision!=='string'||
+     !data.playerDecision||typeof data.guaranteedProgress!=='string'||
+     !data.guaranteedProgress||typeof data.parentBoundary!=='string'||
+     !data.parentBoundary||typeof data.siblingBoundary!=='string'||
+     !data.siblingBoundary)
+    throw new Error(routeId+' needs a complete Apex expression decision');
+  if(version>=2){
+    const evidence=Array.isArray(data.runtimeEvidence)?
+      Array.from(new Set(data.runtimeEvidence.filter(value=>typeof value==='string'&&value))):[];
+    if(version!==2||!APEX_DECISION_CLASSES.includes(data.decisionClass)||
+       typeof data.decisionKey!=='string'||data.decisionKey.length<8||
+       typeof data.gameplayDelta!=='string'||data.gameplayDelta.length<24||
+       typeof data.changesPlayerPlan!=='boolean'||!evidence.length)
+      throw new Error(routeId+' needs a complete Apex Design V2 decision contract');
+    const meaningful=APEX_MEANINGFUL_DECISION_CLASSES.has(data.decisionClass);
+    if(data.changesPlayerPlan!==meaningful)
+      throw new Error(routeId+' Apex decision class contradicts changesPlayerPlan');
+    return Object.freeze({...data,version,effectiveDecision:meaningful,
+      runtimeEvidence:Object.freeze(evidence)});
+  }
+  return Object.freeze({...data,version:1,effectiveDecision:false,
+    runtimeEvidence:Object.freeze([])});
+}
 function skillAttributeRouteContract(data){
   if(!data||typeof data.id!=='string'||!data.id||![1,2,3,4].includes(data.depth)||
      typeof data.promise!=='string'||!data.promise||!(data.powerBudget>0))
@@ -11704,7 +11898,7 @@ function skillAttributeRouteContract(data){
      deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
      deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
   const twistDesign=data.depth===3&&data.twistDesign?Object.freeze({...data.twistDesign}):null,
-    apexDesign=data.depth===4&&data.apexDesign?Object.freeze({...data.apexDesign}):null,
+    apexDesign=data.depth===4&&data.apexDesign?apexDesignContract(data.apexDesign,data.id):null,
     stableCausality=data.depth===3&&data.stableCausality?
       stableTwistCausalityContract(data.stableCausality,data.id,data.primaryAttributeId,
         data.secondaryAttributeId):null,
@@ -11719,16 +11913,6 @@ function skillAttributeRouteContract(data){
        typeof twistDesign.synergyHook!=='string'||!twistDesign.synergyHook||
        !flowIds.has(twistDesign.resourceFlow)||typeof twistDesign.pairSpecific!=='boolean')
       throw new Error(data.id+' needs an explicit flexible Twist design decision');
-  }
-  if(apexDesign){
-    const kinds=new Set(['NUMERIC_MASTERY','RESOURCE_EXPRESSION','BEHAVIORAL_CAPSTONE',
-      'RELIABILITY']);
-    if(!kinds.has(apexDesign.kind)||typeof apexDesign.playerDecision!=='string'||
-       !apexDesign.playerDecision||typeof apexDesign.guaranteedProgress!=='string'||
-       !apexDesign.guaranteedProgress||typeof apexDesign.parentBoundary!=='string'||
-       !apexDesign.parentBoundary||typeof apexDesign.siblingBoundary!=='string'||
-       !apexDesign.siblingBoundary)
-      throw new Error(data.id+' needs a complete pilot Apex expression decision');
   }
   if(data.depth===3&&data.formSlot>=5&&data.runtimeReadiness==='MATERIALIZED'&&!twistIdentity)
     throw new Error(data.id+' cannot materialize without Twist Identity V1');
@@ -11749,7 +11933,9 @@ function skillAttributeRouteContract(data){
         'DELAYED_NON_CONTACT_EVENTS','PHASE_FOLLOW_UP_EVENTS','PER_CONTACT_LIVE_READ',
         'IMPACT_WITH_ECHOES','SIMULTANEOUS_CONTACT_PACKET','PER_CONTACT_INDEPENDENT_ROLLS',
         'SHARED_ACTION_ROLL','SPLIT_TOTAL_ACROSS_CONTACTS','VISIBLE_PAYLOAD_PER_CONTACT',
-        'READ_PAID_CONSUMPTION','CRIT_CONDITIONAL_PAYLOAD','OUTCOME_FORK']);
+        'READ_PAID_CONSUMPTION','CRIT_CONDITIONAL_PAYLOAD','OUTCOME_FORK',
+        'SPEND_ALL_CHARGE_ON_CONTACT','SPEND_MATCHED_CHARGE_ONLY',
+        'SPEND_THEN_RETAIN_PAID_SHARE','FINITE_SUCCESS_TRIGGERED_PULSES']);
     if(!deliveryDecision||typeof deliveryDecision.reason!=='string'||!deliveryDecision.reason||
        !allowedResourcePolicies.has(deliveryDecision.resourcePolicy)||
        !allowedPayloadPolicies.has(deliveryDecision.payloadPolicy)||
@@ -11794,7 +11980,8 @@ function skillAttributeRouteContract(data){
     throw new Error(data.id+' IMPACT_ECHO needs an explicit physical-contact or non-contact-payload policy');
   if(data.depth===3&&delivery.pattern!=='IMPACT_ECHO'&&mechanics.echoContactPolicy!==undefined)
     throw new Error(data.id+' cannot declare an echo contact policy outside IMPACT_ECHO');
-  if(data.runtimeReadiness==='MATERIALIZED'&&delivery&&delivery.pattern!=='SINGLE'&&
+  if(data.runtimeReadiness==='MATERIALIZED'&&delivery&&
+     !['SINGLE','IMPACT_ECHO'].includes(delivery.pattern)&&
      data.secondaryAttributeId==='AFFLICTION'){
     const afflictionRule=String(mechanics.afflictionRule||''),visibleRule=
       mechanics.visibleEffectRule==='EVERY_VISIBLE_CONTACT_CONTRIBUTES';
@@ -16163,6 +16350,405 @@ function buildMarkBurstDetonationCriticalTwistContracts(){
   }
   return Object.freeze(routes);
 }
+const MARK_BURST_DETONATION_AFFLICTION_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'detonation_bleed_fuse_twist',slot:1,pattern:'SINGLE',
+    recipe:'BOW_AFFLICTION_WEIGHT',engine:'DETONATION_BLEED_FUSE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.20,
+      AFFLICTION_APPLICATION:.15,AFFLICTION_POTENCY:.10,DETONATION_BLEED_PER_MARK:.20}),
+    relationship:'CONSUMED_MARK_DEEPENS_WOUND',payloadPolicy:'PER_ACTION',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    promise:'Detonate the paid Mark capacity, then let every consumed Mark deepen the same two-tick wound without creating extra contacts.',
+    playerDecision:'Build a deep Mark reserve before firing to buy both immediate Detonation and a larger delayed wound.',
+    primaryOutcome:'Consumed Marks keep their full Detonation payload.',
+    secondaryOutcome:'The consumed count adds a paid amount to one two-tick Bleed wound.',
+    synergyHook:'Large Mark setup, wound potency and delayed-damage artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'CONVERT',
+      output:'BLEED',timing:'IMMEDIATE',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_BLEED_FUSE'],
+      deliveryReason:'One heavy arrow keeps the Mark explosion and the wound it opens readable as one committed contact.'})}),
+  Object.freeze({id:'detonation_bleed_rupture_twist',slot:2,pattern:'SINGLE',
+    recipe:'BOW_AFFLICTION_WEIGHT',engine:'DETONATION_BLEED_RUPTURE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.20,
+      AFFLICTION_APPLICATION:.15,AFFLICTION_POTENCY:.10,DETONATION_BLEED_RUPTURE:.20}),
+    relationship:'EXISTING_WOUND_RUPTURE',payloadPolicy:'READ_ONCE_PER_ACTION',
+    rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'PARALLEL',
+    promise:'Detonate Mark and immediately rupture a paid share of the wound that existed at action start without consuming that wound.',
+    playerDecision:'Reopen a target that is already bleeding instead of waiting for the next normal tick.',
+    primaryOutcome:'The inherited Mark Detonation works even when the target has no wound.',
+    secondaryOutcome:'Only action-start Bleed is read into one immediate non-Crit rupture.',
+    synergyHook:'Wound setup, immediate payoff and Bleed-state artifacts.',
+    identity:Object.freeze({version:1,input:'BLEED',trigger:'ON_CONTACT',operation:'RETRIGGER',
+      output:'DIRECT_DAMAGE',timing:'IMMEDIATE',deliveryPurpose:'INHERITED',
+      engineIds:['DETONATION_BLEED_RUPTURE'],
+      deliveryReason:'The inherited single arrow is sufficient because the existing wound is read once at impact and is never multiplied by contacts.'})}),
+  Object.freeze({id:'detonation_wound_fuse_twist',slot:3,pattern:'IMPACT_ECHO',
+    recipe:'BOW_DETONATION_ECHO',engine:'DETONATION_WOUND_FUSE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.20,
+      AFFLICTION_APPLICATION:.15,AFFLICTION_POTENCY:.10,DETONATION_WOUND_ECHO:.20}),
+    relationship:'TWO_PHASE_DETONATION_WOUND',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    promise:'Detonate Mark on impact and bind a finite paid share of the consumed payload to the wound as one Detonation echo on each of its two ticks.',
+    playerDecision:'Accept delayed damage to create a two-defense-phase Detonation plan around the active wound.',
+    primaryOutcome:'The physical arrow keeps the inherited immediate Detonation.',
+    secondaryOutcome:'The same consumed count authors two finite non-contact Detonation echoes.',
+    synergyHook:'Two-turn wound timing, defense-phase risk and cross-skill Mark setup.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_BLEED_TICK',operation:'PRESERVE',
+      output:'DETONATION',timing:'MULTI_TURN',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_WOUND_FUSE'],
+      deliveryReason:'Impact Echo shows one physical arrow followed by finite boss-side Detonation pulses tied to the two wound ticks.'})}),
+  Object.freeze({id:'detonation_bleed_packet_twist',slot:4,pattern:'SIMULTANEOUS_PACKET',
+    recipe:'BOW_AFFLICTION_PACKET',engine:'DETONATION_BLEED_PACKET',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,AFFLICTION_APPLICATION:.15,
+      AFFLICTION_POTENCY:.10,DELIVERY_CONTACTS:.40}),
+    relationship:'SIMULTANEOUS_DETONATION_WOUND_PACKET',payloadPolicy:'SPLIT_TOTAL_ACROSS_CONTACTS',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    promise:'Release a simultaneous packet: every eligible contact detonates at most one Mark, every contact carries a positive share of one total wound, and the packet creates one Chain.',
+    playerDecision:'Trade one concentrated arrow for a broad event package that spends several Marks at the same instant.',
+    primaryOutcome:'Each eligible packet contact performs one full-value one-Mark Detonation.',
+    secondaryOutcome:'One paid Bleed package is distributed across all visible contacts without multiplication.',
+    synergyHook:'Packet contacts, per-Detonation events and wound-application artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_ACTION_START',operation:'SPLIT',
+      output:'BLEED',timing:'IMMEDIATE',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_BLEED_PACKET'],
+      deliveryReason:'A simultaneous packet is required so several visible one-Mark explosions share one wound package and one natural Chain.'})})
+]);
+const MARK_BURST_DETONATION_AFFLICTION_APEX_DEFINITIONS=Object.freeze({
+  DETONATION_BLEED_FUSE:Object.freeze([
+    Object.freeze({key:'DEEP_WOUND',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['afflictionPerConsumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,DETONATION_BLEED_PER_MARK:.35}),
+      decision:'Choose the strongest reliable wound gain per consumed Mark.',delta:'The same Mark setup and timing produces a larger two-tick wound without changing the rotation.'}),
+    Object.freeze({key:'FIRST_CUT',kind:'RELIABILITY',decisionClass:'TARGETING_CHANGE',changes:true,
+      evidence:['afflictionOpeningWound','bleedAtStart'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,
+        DETONATION_BLEED_PER_MARK:.15,DETONATION_BLEED_OPENING:.20}),
+      decision:'Open on a clean target to receive the strongest first wound.',delta:'Target state matters: using the move before another wound exists gains a paid opening package.'}),
+    Object.freeze({key:'WIDE_FUSE',kind:'RESOURCE_EXPRESSION',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['markDetonationCapacity','consumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.35,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,DETONATION_BLEED_PER_MARK:.15}),
+      decision:'Hoard more Mark so one use processes a wider reserve into both payoffs.',delta:'The optimal cash-out window moves later because Quality buys uncapped additional Mark consumption capacity.'}),
+    Object.freeze({key:'BREAK_SCAR',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['afflictionBreakApplicationBonus','playerTurnBreak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_BLEED_PER_MARK:.15,DETONATION_BLEED_BREAK:.20}),
+      decision:'Hold the attack for Break to open the largest wound.',delta:'Attack timing changes because the same wound package gains a paid bonus only inside the Break attack phase.'})]),
+  DETONATION_BLEED_RUPTURE:Object.freeze([
+    Object.freeze({key:'DEEP_RUPTURE',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['bleedRetriggerPerExistingBleed'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,DETONATION_BLEED_RUPTURE:.35}),
+      decision:'Maximize the immediate rupture of an existing wound.',delta:'The inherited action-start wound read remains unchanged and simply produces more rupture damage.'}),
+    Object.freeze({key:'BLOOD_READ',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'STATE_RESPONSE',changes:true,
+      evidence:['detonationDamagePerExistingBleed','bleedAtStart'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_BLEED_RUPTURE:.10,DETONATION_BLEED_READ:.25}),
+      decision:'Aim at the boss while its stored wound is high to strengthen the Detonation impact.',delta:'The action-start wound now affects immediate Detonation as well as rupture, changing which boss state is worth cashing out.'}),
+    Object.freeze({key:'REOPENING_EDGE',kind:'RESOURCE_EXPRESSION',decisionClass:'TARGETING_CHANGE',changes:true,
+      evidence:['afflictionPerExistingBleed','bleedAtStart'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_BLEED_RUPTURE:.10,DETONATION_BLEED_REOPEN:.25}),
+      decision:'Keep attacking the already-wounded target to replace the ruptured pressure with a deeper new wound.',delta:'The best target changes from any marked enemy to one already carrying Bleed because reopening strengthens the next two ticks.'}),
+    Object.freeze({key:'BREAK_RUPTURE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['bleedRuptureBreakRate','playerTurnBreak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_BLEED_RUPTURE:.15,DETONATION_BLEED_BREAK:.20}),
+      decision:'Delay the reopening shot until Break for the strongest immediate rupture.',delta:'The player chooses between rupturing now or preserving the wound until the Break attack phase.'})]),
+  DETONATION_WOUND_FUSE:Object.freeze([
+    Object.freeze({key:'DEEP_FUSE',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['detonationWoundEchoPerConsumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_WOUND_ECHO:.35}),
+      decision:'Keep the normal two-tick timing and maximize both Detonation echoes.',delta:'Both inherited wound ticks carry a larger finite echo while the player rotation remains unchanged.'}),
+    Object.freeze({key:'AMBUSH_FUSE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['pendingDefenseOpeningDetonation','resolveBossDetonationWoundDefenseOpening'],
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,DETONATION_WOUND_ECHO:.15,
+        DETONATION_WOUND_OPENING:.20}),decision:'End the turn knowing the first echo will strike before the boss begins its first move.',
+      delta:'The first echo leaves the normal phase-end tick and becomes a pre-move kill window at the opening of defense.'}),
+    Object.freeze({key:'RELOADED_FUSE',kind:'RESOURCE_EXPRESSION',decisionClass:'ROTATION_CHANGE',changes:true,
+      evidence:['bleedDetonationReloadDamage','bossMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_WOUND_ECHO:.15,DETONATION_WOUND_RELOAD:.20}),
+      decision:'Use Sharpshoot between wound ticks so the second tick can consume and detonate newly added Marks.',
+      delta:'The optimal order becomes Mark Burst, defend, Sharpshoot, then let the second wound tick cash out the rebuilt Mark reserve.'}),
+    Object.freeze({key:'DANGEROUS_FUSE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'RISK_REWARD',changes:true,
+      evidence:['bleedMoveDetonationPulse','cueBossMove'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,AFFLICTION_APPLICATION:.10,
+        AFFLICTION_POTENCY:.10,DETONATION_WOUND_ECHO:.15,DETONATION_WOUND_MOVE_PULSE:.20}),
+      decision:'Allow more distinct boss moves while the wound is active to earn more Detonation pulses.',
+      delta:'Break becomes a real tradeoff: end the dangerous enemy sequence for safety or let it continue for uncapped move-triggered pulses.'})]),
+  DETONATION_BLEED_PACKET:Object.freeze([
+    Object.freeze({key:'WIDE_PACKET',kind:'RESOURCE_EXPRESSION',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['hits','markDetonationCapacity'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.15,
+        AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,DELIVERY_CONTACTS:.55}),
+      decision:'Build a larger Mark reserve before firing so more simultaneous contacts can detonate.',delta:'Quality grows the uncapped packet width and moves the ideal use toward a deeper stored-Mark window.'}),
+    Object.freeze({key:'EMPTY_BARBS',kind:'RELIABILITY',decisionClass:'STATE_RESPONSE',changes:true,
+      evidence:['afflictionPerUnspentContact','consumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.15,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,
+        DELIVERY_CONTACTS:.30,DETONATION_PACKET_LOW_MARK:.25}),
+      decision:'Fire even with too few Marks because contacts that cannot detonate instead deepen the wound.',
+      delta:'Low-Mark target state no longer wastes the packet; empty contacts are redirected into a paid wound fallback.'}),
+    Object.freeze({key:'FULL_BARB',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['detonationFullPacketBonus','consumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.15,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,
+        DELIVERY_CONTACTS:.30,DETONATION_PACKET_FULL_MARK:.25}),
+      decision:'Wait until every packet contact can consume a Mark to trigger the full-reserve Detonation bonus.',
+      delta:'The attack gains an all-contacts-funded cash-out condition, rewarding exact Mark preparation instead of early firing.'}),
+    Object.freeze({key:'BREAK_BARBS',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['afflictionBreakApplicationBonus','playerTurnBreak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,AFFLICTION_APPLICATION:.10,AFFLICTION_POTENCY:.10,
+        DELIVERY_CONTACTS:.30,DETONATION_BLEED_BREAK:.20}),
+      decision:'Reserve the packet for Break when its shared wound can be opened most deeply.',delta:'The player weighs broad packet utility now against a paid wound premium in the Break attack phase.'})])
+});
+function buildMarkBurstDetonationAfflictionTwistContracts(){
+  const routes=[];
+  for(const twist of MARK_BURST_DETONATION_AFFLICTION_TWIST_DEFINITIONS){
+    const packet=twist.engine==='DETONATION_BLEED_PACKET',echo=twist.pattern==='IMPACT_ECHO';
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'detonation_affliction_spec',formSlot:1,specializationSlot:5,slot:twist.slot,
+      primaryAttributeId:'DETONATION',secondaryAttributeId:'AFFLICTION',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling:packet?{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'DETONATION'}:
+        {mode:'NONE'},qualityProfile:twist.profile,
+      deliveryDecision:{reason:twist.identity.deliveryReason,resourcePolicy:'ONE_CHAIN_TOTAL',
+        payloadPolicy:twist.payloadPolicy,rejectedPattern:twist.rejectedPattern},
+      twistDesign:{resourceFlow:twist.resourceFlow,pairSpecific:true,
+        playerDecision:twist.playerDecision,primaryOutcome:twist.primaryOutcome,
+        secondaryOutcome:twist.secondaryOutcome,synergyHook:twist.synergyHook},
+      stableCausality:MARK_BURST_STABLE_PRIMARY_TO_FUTURE_CHAIN_CAUSALITY,
+      twistIdentity:twist.identity,promise:twist.promise,
+      mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'BLEED_PAYLOAD',
+        relationship:twist.relationship,detonationEngine:twist.engine,
+        afflictionRule:packet?'ONE_WOUND_SPLIT_PER_CONTACT':'ONE_WOUND_TWO_TICKS',
+        visibleEffectRule:packet?'EVERY_VISIBLE_CONTACT_CONTRIBUTES':undefined,
+        echoContactPolicy:echo?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    const apexes=MARK_BURST_DETONATION_AFFLICTION_APEX_DEFINITIONS[twist.engine];
+    for(let index=0;index<apexes.length;index++){
+      const apex=apexes[index],apexScales=packet&&apex.profile.DELIVERY_CONTACTS;
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),skillId:'mark_burst',
+        depth:4,parentId:twist.id,formSlot:1,specializationSlot:5,twistSlot:twist.slot,slot:index+1,
+        primaryAttributeId:'DETONATION',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+        deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+        deliveryScaling:apexScales?{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'DETONATION'}:
+          {mode:'NONE'},qualityProfile:apex.profile,
+        promise:'Preserve '+twist.relationship+' and complete it through '+apex.key+'.',
+        apexDesign:{version:2,kind:apex.kind,decisionClass:apex.decisionClass,
+          decisionKey:twist.engine+'_'+apex.key,changesPlayerPlan:apex.changes,
+          playerDecision:apex.decision,gameplayDelta:apex.delta,
+          guaranteedProgress:'Every rank advances an output already owned by the parent.',
+          parentBoundary:'Preserve Detonation payment, two-tick wound, Delivery topology and one natural Chain.',
+          siblingBoundary:'This decision and runtime evidence are unique inside the inherited Twist.',
+          runtimeEvidence:apex.evidence},
+        mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'BLEED_PAYLOAD',
+          relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key,
+          afflictionRule:packet?'ONE_WOUND_SPLIT_PER_CONTACT':'ONE_WOUND_TWO_TICKS',
+          visibleEffectRule:packet?'EVERY_VISIBLE_CONTACT_CONTRIBUTES':undefined,
+          echoContactPolicy:echo?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
+const MARK_BURST_DETONATION_CHARGE_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'detonation_charge_discharge_twist',slot:1,pattern:'SINGLE',
+    recipe:'BOW_CHARGE_WEIGHT',engine:'DETONATION_CHARGE_DISCHARGE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.20,
+      DEFENSE_TEMPER:.15,DETONATION_CHARGE_PRODUCT:.35}),
+    relationship:'FULL_CHARGE_MARK_DISCHARGE',payloadPolicy:'SPEND_ALL_CHARGE_ON_CONTACT',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'COUPLED_LOOP',
+    promise:'Fire one heavy arrow, spend the complete Charge bank, and let every paid Detonation/Charge pair deepen the immediate impact without weakening inherited Detonation.',
+    playerDecision:'Hoard both Mark and Charge, then commit both reserves to the strongest immediate cash-out.',
+    primaryOutcome:'The paid Mark capacity detonates at full inherited value even with zero Charge.',
+    secondaryOutcome:'The whole Charge bank is spent once and matched Detonation/Charge pairs add paid impact damage.',
+    synergyHook:'Large two-resource reserves, Break windows and all-in impact artifacts.',
+    identity:Object.freeze({version:1,input:'CHARGE',trigger:'ON_CONTACT',operation:'AMPLIFY',
+      output:'DIRECT_DAMAGE',timing:'IMMEDIATE',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_CHARGE_DISCHARGE'],
+      deliveryReason:'One slow heavy arrow makes the complete defense bank and the Mark explosion read as one irreversible release.'})}),
+  Object.freeze({id:'detonation_charge_pair_twist',slot:2,pattern:'IMPACT_ECHO',
+    recipe:'BOW_DETONATION_ECHO',engine:'DETONATION_CHARGE_PAIR',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.20,
+      DEFENSE_TEMPER:.15,DETONATION_CHARGE_PAIR_ECHO:.35}),
+    relationship:'MATCHED_CHARGE_MARK_ECHO',payloadPolicy:'SPEND_MATCHED_CHARGE_ONLY',
+    rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'COUPLED_LOOP',
+    promise:'Detonate the inherited paid Mark count, pair as many of those Marks as possible with banked Charge, spend only the matched Charge, and echo each paid pair once.',
+    playerDecision:'Align the two reserves precisely; unmatched Charge survives for another move while matched pairs buy efficient echoes.',
+    primaryOutcome:'Unpaired paid Marks still perform their inherited Detonation and never require Charge to function.',
+    secondaryOutcome:'Only Charge matched to a detonated Mark is spent and creates a finite non-contact echo.',
+    synergyHook:'Exact resource preparation, partial bank preservation and Detonation-event artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'LAYER',
+      output:'DIRECT_DAMAGE',timing:'LATER_IN_ACTION',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_CHARGE_PAIR'],
+      deliveryReason:'Impact Echo preserves one physical arrow while showing the matched Charge/Mark payoff as a finite non-contact pulse.'})}),
+  Object.freeze({id:'detonation_charge_capacitor_twist',slot:3,pattern:'SINGLE',
+    recipe:'BOW_CHARGE',engine:'DETONATION_CHARGE_CAPACITOR',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.20,
+      DEFENSE_TEMPER:.20,DETONATION_CHARGE_RETENTION:.30}),
+    relationship:'DETONATION_RETURNS_SPENT_CHARGE',payloadPolicy:'SPEND_THEN_RETAIN_PAID_SHARE',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'COUPLED_LOOP',
+    promise:'Spend the Charge bank on one normal release, then let actually detonated Marks retain a paid portion of that spent bank for the next rotation.',
+    playerDecision:'Trade maximum immediate conversion for a sustained Mark-to-Charge loop across several player turns.',
+    primaryOutcome:'Inherited Mark Detonation remains functional and full value without an existing Charge bank.',
+    secondaryOutcome:'Detonated Marks return only a paid portion of Charge that was actually spent; retention cannot duplicate the bank.',
+    synergyHook:'Repeated rotations, steady Mark generation and Charge-preservation artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'PRESERVE',
+      output:'CHARGE',timing:'NEXT_ACTION',deliveryPurpose:'INHERITED',
+      engineIds:['DETONATION_CHARGE_CAPACITOR'],
+      deliveryReason:'The inherited single Charge arrow already communicates one bank spend followed by a visible return to the same meter.'})}),
+  Object.freeze({id:'detonation_charge_defense_fuse_twist',slot:4,pattern:'SINGLE',
+    recipe:'BOW_CHARGE_QUICK',engine:'DETONATION_CHARGE_DEFENSE_FUSE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.20,
+      DEFENSE_TEMPER:.15,DETONATION_DEFENSE_FUSE:.35}),
+    relationship:'CHARGE_ARMS_NEXT_DEFENSE_FUSE',payloadPolicy:'FINITE_SUCCESS_TRIGGERED_PULSES',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    promise:'Detonate Mark on one real arrow and convert the spent Charge bank into a finite fuse whose next-defense Perfect Dodges and Parries trigger non-contact pulses.',
+    playerDecision:'Invest the bank into the next dangerous defense phase and earn its damage only by succeeding under pressure.',
+    primaryOutcome:'The physical arrow performs inherited Detonation even when no Charge is available.',
+    secondaryOutcome:'Spent Charge becomes a finite pulse pool; Perfect Dodge spends one and Parry spends two.',
+    synergyHook:'Parry mastery, Perfect Dodge consistency and defense-trigger artifacts.',
+    identity:Object.freeze({version:1,input:'CHARGE',trigger:'ON_DEFENSE_RESPONSE',operation:'METER',
+      output:'DIRECT_DAMAGE',timing:'DEFENSE_PHASE',deliveryPurpose:'INHERITED',
+      engineIds:['DETONATION_CHARGE_DEFENSE_FUSE'],
+      deliveryReason:'One seal arrow is sufficient because the later violet/white boss-side pulses are defense results rather than extra projectiles.'})})
+]);
+const MARK_BURST_DETONATION_CHARGE_APEX_DEFINITIONS=Object.freeze({
+  DETONATION_CHARGE_DISCHARGE:Object.freeze([
+    Object.freeze({key:'DEEP_DISCHARGE',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['detonationChargeProductDamage'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,DETONATION_CHARGE_PRODUCT:.45}),
+      decision:'Keep the all-in rotation and maximize damage from every matched Charge/Mark pair.',delta:'The same two-resource cash-out produces a larger immediate impact without changing its timing or spend rule.'}),
+    Object.freeze({key:'BREAK_DISCHARGE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['detonationChargeBreakRate','playerTurnBreak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PRODUCT:.20,DETONATION_CHARGE_BREAK:.25}),
+      decision:'Hold both reserves for a Break attack phase before committing the full discharge.',delta:'Attack timing changes because the Charge/Mark product receives a paid premium only while Break damage is active.'}),
+    Object.freeze({key:'CHARGE_OVERFLOW',kind:'RELIABILITY',decisionClass:'STATE_RESPONSE',changes:true,
+      evidence:['detonationChargeSurplusDamage','chargeSpent','consumedMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PRODUCT:.20,DETONATION_CHARGE_SURPLUS:.25}),
+      decision:'Fire with more Charge than detonated Marks and convert the unmatched defense bank into clean impact.',delta:'An uneven Charge-heavy reserve stops wasting part of the all-in spend, changing which resource imbalance is acceptable.'}),
+    Object.freeze({key:'MARK_OVERFLOW',kind:'RESOURCE_EXPRESSION',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['detonationMarkSurplusRate','consumedMark','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PRODUCT:.20,DETONATION_MARK_SURPLUS:.25}),
+      decision:'Build more detonatable Marks than Charge so the unmatched Mark side strengthens the explosion.',delta:'The ideal cash-out window moves toward a Mark-heavy reserve because paid unmatched Marks now retain additional value.'})]),
+  DETONATION_CHARGE_PAIR:Object.freeze([
+    Object.freeze({key:'DEEP_PAIR',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['detonationChargeEchoPerPair'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,DETONATION_CHARGE_PAIR_ECHO:.45}),
+      decision:'Keep exact pairing and maximize the finite echo generated by each matched pair.',delta:'The same paired-resource rotation produces a larger delayed echo without changing which Charge is preserved.'}),
+    Object.freeze({key:'WIDE_PAIR',kind:'RESOURCE_EXPRESSION',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['markDetonationCapacity','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.40,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PAIR_ECHO:.20}),
+      decision:'Wait for a deeper Mark reserve so one shot can form more real Charge/Mark pairs.',delta:'Paid Detonation capacity widens the uncapped pairing window and rewards a later, larger two-resource cash-out.'}),
+    Object.freeze({key:'MARK_REMAINDER',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'STATE_RESPONSE',changes:true,
+      evidence:['detonationChargeMarkSurplusEcho','consumedMark','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PAIR_ECHO:.20,DETONATION_MARK_SURPLUS:.25}),
+      decision:'Fire when detonated Marks outnumber Charge so the Mark remainder reinforces the final echo.',delta:'A Mark-heavy mismatch becomes a deliberate state instead of dead setup while unmatched Charge preservation remains unchanged.'}),
+    Object.freeze({key:'CHARGE_REMAINDER',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'STATE_RESPONSE',changes:true,
+      evidence:['detonationChargeSurplusDamage','bossCharge','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_PAIR_ECHO:.20,DETONATION_CHARGE_SURPLUS:.25}),
+      decision:'Keep surplus Charge in the bank but let its visible reserve add clean impact to this arrow.',delta:'A Charge-heavy mismatch now offers immediate damage without spending the unmatched bank, changing the preferred resource balance.'})]),
+  DETONATION_CHARGE_CAPACITOR:Object.freeze([
+    Object.freeze({key:'DEEP_CAPACITOR',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['detonationChargeRetentionPerMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,DETONATION_CHARGE_RETENTION:.45}),
+      decision:'Keep the sustained rotation and retain more actually spent Charge per detonated Mark.',delta:'The same spend-and-return loop preserves more of its bank without changing the action order or trigger.'}),
+    Object.freeze({key:'HOT_CAPACITOR',kind:'RESOURCE_EXPRESSION',decisionClass:'RISK_REWARD',changes:true,
+      evidence:['defenseTemperDamagePerCharge','detonationChargeRetentionPerMark'],profile:Object.freeze({DIRECT_DAMAGE:.25,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.30,
+        DETONATION_CHARGE_RETENTION:.10}),
+      decision:'Accept weak retention to turn most paid power into immediate Charge impact.',delta:'The player chooses a burstier rotation now instead of preserving the strongest possible bank for a later action.'}),
+    Object.freeze({key:'BREAK_CAPACITOR',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TIMING_WINDOW',changes:true,
+      evidence:['detonationChargeBreakRetentionPerMark','playerTurnBreak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_RETENTION:.20,DETONATION_CHARGE_BREAK_RETENTION:.25}),
+      decision:'Release during Break so detonated Marks retain an additional paid share of the spent bank.',delta:'The best retention window moves into Break, creating a timing choice between spending now and preserving more later.'}),
+    Object.freeze({key:'COLD_START',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'ROTATION_CHANGE',changes:true,
+      evidence:['detonationChargeEmptySeedPerMark','bossCharge'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_CHARGE_RETENTION:.20,DETONATION_CHARGE_EMPTY_SEED:.25}),
+      decision:'Detonate Marks with an empty bank to seed the next Charge rotation instead of waiting for defense setup.',delta:'The move can begin a new Charge cycle from zero, changing the rotation opener while the seed remains paid by consumed Marks.'})]),
+  DETONATION_CHARGE_DEFENSE_FUSE:Object.freeze([
+    Object.freeze({key:'DEEP_FUSE',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
+      evidence:['detonationDefenseFuseDamage'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
+        DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,DETONATION_DEFENSE_FUSE:.45}),
+      decision:'Keep the next-defense challenge and maximize damage per consumed fuse Charge.',delta:'The same Perfect Dodge and Parry success pattern produces stronger finite pulses without changing its risks.'}),
+    Object.freeze({key:'ROYAL_FUSE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'TARGETING_CHANGE',changes:true,
+      evidence:['detonationDefenseParryMultiplier','PARRY'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_DEFENSE_FUSE:.20,DETONATION_DEFENSE_PARRY:.25}),
+      decision:'Seek riskier Parries instead of Perfect Dodges to extract more damage from each two-Charge response.',delta:'Defense input choice changes because Parry gains a paid pulse multiplier beyond merely spending two fuse Charge.'}),
+    Object.freeze({key:'STREAK_FUSE',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'RISK_REWARD',changes:true,
+      evidence:['detonationDefenseStreakRate','pendingDetonationDefenseFuse.streak'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_DEFENSE_FUSE:.20,DETONATION_DEFENSE_STREAK:.25}),
+      decision:'Maintain an uninterrupted defense streak so every later fuse pulse escalates.',delta:'A failed defense resets the paid escalation, creating a growing risk/reward sequence inside the boss phase.'}),
+    Object.freeze({key:'BREAK_RECOVERY',kind:'RELIABILITY',decisionClass:'RESOURCE_WINDOW',changes:true,
+      evidence:['detonationDefenseBreakReturnRate','beginPlayerTurn'],profile:Object.freeze({DIRECT_DAMAGE:.10,
+        DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
+        DETONATION_DEFENSE_FUSE:.20,DETONATION_DEFENSE_BREAK_RETURN:.25}),
+      decision:'Break the boss early for safety and recover a paid share of fuse Charge that had no chance to trigger.',delta:'Early Break no longer discards the entire unused fuse, changing the tradeoff between safe interruption and more defense pulses.'})])
+});
+function buildMarkBurstDetonationChargeTwistContracts(){
+  const routes=[];
+  for(const twist of MARK_BURST_DETONATION_CHARGE_TWIST_DEFINITIONS){
+    const echo=twist.pattern==='IMPACT_ECHO';
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'detonation_charge_spec',formSlot:1,specializationSlot:6,slot:twist.slot,
+      primaryAttributeId:'DETONATION',secondaryAttributeId:'CHARGE',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling:{mode:'NONE'},qualityProfile:twist.profile,
+      deliveryDecision:{reason:twist.identity.deliveryReason,resourcePolicy:'ONE_CHAIN_TOTAL',
+        payloadPolicy:twist.payloadPolicy,rejectedPattern:twist.rejectedPattern},
+      twistDesign:{resourceFlow:twist.resourceFlow,pairSpecific:true,
+        playerDecision:twist.playerDecision,primaryOutcome:twist.primaryOutcome,
+        secondaryOutcome:twist.secondaryOutcome,synergyHook:twist.synergyHook},
+      stableCausality:twist.resourceFlow==='COUPLED_LOOP'?
+        MARK_BURST_STABLE_PRIMARY_TO_CHAIN_CAUSALITY:
+        MARK_BURST_STABLE_PRIMARY_TO_FUTURE_CHAIN_CAUSALITY,
+      twistIdentity:twist.identity,promise:twist.promise,
+      mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'DEFENSE_TEMPER',
+        relationship:twist.relationship,detonationEngine:twist.engine,
+        chargeRule:twist.payloadPolicy,
+        echoContactPolicy:echo?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    const apexes=MARK_BURST_DETONATION_CHARGE_APEX_DEFINITIONS[twist.engine];
+    for(let index=0;index<apexes.length;index++){
+      const apex=apexes[index];
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),skillId:'mark_burst',
+        depth:4,parentId:twist.id,formSlot:1,specializationSlot:6,twistSlot:twist.slot,slot:index+1,
+        primaryAttributeId:'DETONATION',secondaryAttributeId:'CHARGE',powerBudget:1,
+        deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+        deliveryScaling:{mode:'NONE'},qualityProfile:apex.profile,
+        promise:'Preserve '+twist.relationship+' and complete it through '+apex.key+'.',
+        apexDesign:{version:2,kind:apex.kind,decisionClass:apex.decisionClass,
+          decisionKey:twist.engine+'_'+apex.key,changesPlayerPlan:apex.changes,
+          playerDecision:apex.decision,gameplayDelta:apex.delta,
+          guaranteedProgress:'Every rank advances an output already owned by the parent.',
+          parentBoundary:'Preserve inherited Detonation, one physical arrow, one natural Chain and finite Charge payment.',
+          siblingBoundary:'This decision and runtime evidence are unique inside the inherited Twist.',
+          runtimeEvidence:apex.evidence},
+        mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'DEFENSE_TEMPER',
+          relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key,
+          chargeRule:twist.payloadPolicy,
+          echoContactPolicy:echo?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
 /* Mark Burst starts as the payoff half of the Bow pair. This first Form is kept
    deliberately small: one real heavy arrow owns one contact, creates no Mark,
    and spends accumulated Mark for full-value Detonation. Quality may buy more
@@ -16304,7 +16890,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
       AFFLICTION_APPLICATION:.20,AFFLICTION_POTENCY:.15},
     promise:'Keep the Mark payoff intact and add one modest two-turn Bleed wound through the same physical arrow.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'BLEED_PAYLOAD',
-      relationship:'PARALLEL_DETONATION_BLEED',afflictionRule:'ONE_WOUND_TWO_TICKS'},
+      relationship:'PARALLEL_DETONATION_BLEED',afflictionRule:'ONE_WOUND_TWO_TICKS',
+      apexContractVersion:2},
     baselineAttack:{hits:1,markGain:0,resolveCost:1,
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
         curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
@@ -16316,17 +16903,83 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
       DEFENSE_TEMPER:.30},
     promise:'Resolve immediately and spend the best banked defense score on direct impact while inherited Detonation resolves independently.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'DEFENSE_TEMPER',
-      relationship:'PARALLEL_DETONATION_CHARGE',chargeRule:'BEST_PHASE_BANK_CONSUME_ON_USE'},
+      relationship:'PARALLEL_DETONATION_CHARGE',chargeRule:'BEST_PHASE_BANK_CONSUME_ON_USE',
+      apexContractVersion:2},
     baselineAttack:{hits:1,markGain:0,resolveCost:1,
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
         curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
   ...buildMarkBurstDetonationFocusTwistContracts(),
   ...buildMarkBurstDetonationChainTwistContracts(),
   ...buildMarkBurstDetonationPostureTwistContracts(),
-  ...buildMarkBurstDetonationCriticalTwistContracts()
+  ...buildMarkBurstDetonationCriticalTwistContracts(),
+  ...buildMarkBurstDetonationAfflictionTwistContracts(),
+  ...buildMarkBurstDetonationChargeTwistContracts()
 ]);
 const MARK_BURST_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   MARK_BURST_ROUTE_CONTRACTS.map(route=>[route.id,route])));
+function auditVersionedApexDecisionFamilies(routes){
+  const audited=[];
+  for(const specialization of routes.filter(route=>route.depth===2&&
+      Number(route.mechanics&&route.mechanics.apexContractVersion)>=2)){
+    const twists=routes.filter(route=>route.depth===3&&route.parentId===specialization.id);
+    for(const twist of twists){
+      const apexes=routes.filter(route=>route.depth===4&&route.parentId===twist.id);
+      if(!twist.apexTarget&&!apexes.length)continue;
+      if(twist.apexTarget!==4||apexes.length!==4||
+         apexes.some(apex=>!apex.apexDesign||apex.apexDesign.version!==2))
+        throw new Error(twist.id+' needs four Apex Design V2 children');
+      const keys=new Set(apexes.map(apex=>apex.apexDesign.decisionKey)),meaningful=
+          apexes.filter(apex=>apex.apexDesign.effectiveDecision),meaningfulClasses=
+          new Set(meaningful.map(apex=>apex.apexDesign.decisionClass)),evidence=
+          new Set(apexes.map(apex=>apex.apexDesign.runtimeEvidence.slice().sort().join('|')));
+      if(keys.size!==4||meaningful.length<2||meaningfulClasses.size<2||evidence.size<3)
+        throw new Error(twist.id+' Apex family is numerically repetitive or decision-shallow');
+      audited.push(Object.freeze({twistId:twist.id,apexes:4,
+        meaningfulDecisions:meaningful.length,decisionClasses:meaningfulClasses.size}));
+    }
+  }
+  return Object.freeze({version:2,families:Object.freeze(audited),passed:true});
+}
+const APEX_DECISION_DEPTH_REJECTION_SELF_TEST=(()=>{
+  const spec={id:'apex_v2_rejection_spec',depth:2,mechanics:{apexContractVersion:2}},
+    twist={id:'apex_v2_rejection_twist',depth:3,parentId:spec.id,apexTarget:4},
+    shallow=Array.from({length:4},(_,index)=>({id:'shallow_'+index,depth:4,parentId:twist.id,
+      apexDesign:{version:2,decisionKey:'SHALLOW_'+index,decisionClass:'OUTPUT_MASTERY',
+        effectiveDecision:false,runtimeEvidence:Object.freeze(['damage'])}}));
+  let rejected=false;
+  try{auditVersionedApexDecisionFamilies([spec,twist,...shallow]);}
+  catch(error){rejected=/decision-shallow/.test(String(error&&error.message));}
+  if(!rejected)throw new Error('Apex Design V2 must reject a four-way numeric-only family');
+  return Object.freeze({passed:true,rejectsNumericOnlyFamily:true});
+})();
+const MARK_BURST_APEX_DECISION_DEPTH_AUDIT=
+  auditVersionedApexDecisionFamilies(MARK_BURST_ROUTE_CONTRACTS);
+const MARK_BURST_DETONATION_AFFLICTION_STRUCTURE_AUDIT=(()=>{
+  const specId='detonation_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),ids=twists.map(route=>route.id),apexes=
+      MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.includes(route.parentId)),
+    engines=new Set(twists.map(route=>route.mechanics.detonationEngine));
+  if(twists.length!==4||apexes.length!==16||engines.size!==4||
+     twists.some(twist=>twist.apexTarget!==4||!twist.twistIdentity||!twist.twistDesign)||
+     twists.some(twist=>apexes.filter(apex=>apex.parentId===twist.id).length!==4)||
+     apexes.some(apex=>!apex.apexDesign||apex.apexDesign.version!==2||
+       apex.baselineAttack.markGain!==0))
+    throw new Error('Detonation/Affliction needs 4 distinct Twists and 4 Apex Design V2 children each');
+  return Object.freeze({passed:true,twists:4,apexes:16,engines:4});
+})();
+const MARK_BURST_DETONATION_CHARGE_STRUCTURE_AUDIT=(()=>{
+  const specId='detonation_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),ids=twists.map(route=>route.id),apexes=
+      MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.includes(route.parentId)),
+    engines=new Set(twists.map(route=>route.mechanics.detonationEngine));
+  if(twists.length!==4||apexes.length!==16||engines.size!==4||
+     twists.some(twist=>twist.apexTarget!==4||!twist.twistIdentity||!twist.twistDesign)||
+     twists.some(twist=>apexes.filter(apex=>apex.parentId===twist.id).length!==4)||
+     apexes.some(apex=>!apex.apexDesign||apex.apexDesign.version!==2||
+       apex.baselineAttack.markGain!==0))
+    throw new Error('Detonation/Charge needs 4 distinct Twists and 4 Apex Design V2 children each');
+  return Object.freeze({passed:true,twists:4,apexes:16,engines:4});
+})();
 const MARK_BURST_DETONATION_CRITICAL_STRUCTURE_AUDIT=(()=>{
   const specId='detonation_critical_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
@@ -17771,7 +18424,15 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   detonation_critical_aim_twist:'Tek ağır ok, gerçekten patlatacağı Mark sayısını yerel Crit şansına çevirir. Kapasite ve dolu Mark rezervi birlikte değerlidir; harcanmayacak Mark okunmaz.',
   detonation_critical_ignition_twist:'Tek ağır okun doğrudan darbesi Crit atarsa ayrı Detonation paketi de ücretli ek güç kazanır. Crit gelmezse normal Detonation yine eksiksiz çalışır.',
   detonation_critical_failsafe_twist:'Tek ok Crit dener. Crit kaçarsa Detonation ücretli sigorta hasarı kazanır ve kaçan atış move-local Precision biriktirir.',
-  detonation_critical_packet_twist:'Tüketim kapasitesini eşzamanlı oklara böler. Her uygun ok 1 Mark patlatır; bütün paket tek ortak Crit sonucu ve toplam 1 doğal Chain kullanır.'
+  detonation_critical_packet_twist:'Tüketim kapasitesini eşzamanlı oklara böler. Her uygun ok 1 Mark patlatır; bütün paket tek ortak Crit sonucu ve toplam 1 doğal Chain kullanır.',
+  detonation_bleed_fuse_twist:'Tek ağır ok Markları patlatır; gerçekten tüketilen her Mark aynı iki ticklik yarayı ayrıca derinleştirir.',
+  detonation_bleed_rupture_twist:'Tek ok yalnız saldırı başında var olan yarayı tüketmeden anında yeniden açar; yeni uyguladığı Bleedi geriye dönük okuyamaz.',
+  detonation_wound_fuse_twist:'Marklar temasta patlar; tüketilen payloadın ücretli bir kısmı yaranın iki savunma tickine finite Detonation yankısı olarak bağlanır.',
+  detonation_bleed_packet_twist:'Eşzamanlı packetin her uygun teması 1 Mark patlatır ve tek toplam Bleed paketinden pozitif pay taşır; bütün paket 1 Chain üretir.',
+  detonation_charge_discharge_twist:'Tek ağır ok bütün Charge bankasını harcar. Parent Detonation eksiksiz kalır; harcanan Charge ile gerçekten patlatılan Markların çarpımı anlık darbeyi büyütür.',
+  detonation_charge_pair_twist:'Parent kapasitesi kadar Mark patlar; yalnız bu Markslarla eşleşen Charge harcanır ve eşleşmeler temassız bir Detonation yankısı üretir. Eşleşmeyen Charge korunur.',
+  detonation_charge_capacitor_twist:'Bütün Charge tek oka gider; gerçekten patlatılan Marklar harcanmış bankanın ücretli bir bölümünü geri yükler. Ana amaç tek jackpot yerine sürdürülebilir rotasyondur.',
+  detonation_charge_defense_fuse_twist:'Ok Markları şimdi patlatır ve harcanan Chargeı sonraki savunmaya finite füze olarak kurar. Perfect Dodge 1, Parry 2 füze Chargeı harcayıp temassız pulse üretir.'
 });
 const MARK_BURST_CRITICAL_APEX_DEBUG_SUMMARY_TR=Object.freeze({
   detonation_critical_aim_twist_apex_1:'Patlatılan her Markın verdiği nişan bonusunu büyütür.',
@@ -17959,6 +18620,11 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'detonationCritMode','detonationCritChancePerConsumedMark',
   'detonationCritOverflowMultiplierPerChance','detonationCriticalPayloadRate',
   'detonationCriticalBreakPayloadRate','detonationNonCritPayloadRate',
+  'afflictionPerConsumedMark','afflictionOpeningWound','afflictionPerExistingBleed',
+  'afflictionPerUnspentContact','bleedRuptureBreakRate','detonationDamagePerExistingBleed',
+  'detonationWoundEchoPerConsumedMark','detonationWoundOpeningBonus','detonationWoundOpeningTiming',
+  'detonationWoundReloadCapacity','detonationWoundReloadDamagePerMark',
+  'detonationWoundMovePulse','detonationFullPacketBonus',
   'critChance','critChancePerStartingMark','critChancePerStartingChain','critChanceRampPerHit',
   'critDamagePerStartingChain','critChainBonus','critMarkBonus','critRollMode',
   'critDamageMultiplier','critPrecisionGain','critDamagePerStoredPrecision',
@@ -18745,7 +19411,9 @@ const MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID=Object.freeze(Object.fromEntri
   [...MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS,
     ...MARK_BURST_DETONATION_CHAIN_TWIST_DEFINITIONS,
     ...MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS,
-    ...MARK_BURST_DETONATION_CRITICAL_TWIST_DEFINITIONS].map(definition=>
+    ...MARK_BURST_DETONATION_CRITICAL_TWIST_DEFINITIONS,
+    ...MARK_BURST_DETONATION_AFFLICTION_TWIST_DEFINITIONS,
+    ...MARK_BURST_DETONATION_CHARGE_TWIST_DEFINITIONS].map(definition=>
       [definition.id,definition.recipe])));
 const MARK_BURST_SYNTHESIS_COMMAND_CACHE=new Map();
 function markBurstSecondaryPostureOutput(power,reference=1){
@@ -19048,6 +19716,122 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       command.chainGainPattern=Array.from({length:contacts},(_,index)=>index===0?1:0);
       command.chainGainPerHit=0;command.hitInterval=.20;
       reserve.DELIVERY_CONTACTS=delivery.reserve;
+    }else if(engine==='DETONATION_BLEED_FUSE'){
+      const reference=SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.markReadReference,
+        totalFactor=BLEED_STATUS.totalDamageFactor,baseTotal=Math.max(1,
+          commandBleedAmount(command)*totalFactor),breakPower=Math.max(0,
+          axes.DETONATION_BLEED_BREAK||0);
+      command.afflictionPerConsumedMark=Number((Math.max(0,
+        axes.DETONATION_BLEED_PER_MARK||0)/(reference*totalFactor)).toFixed(6));
+      command.afflictionOpeningWound=Number((Math.max(0,
+        axes.DETONATION_BLEED_OPENING||0)/totalFactor).toFixed(6));
+      command.afflictionBreakApplicationBonus=Number((breakPower/
+        (baseTotal*Math.max(.01,SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakActiveShare))).toFixed(6));
+      reserve.DETONATION_BLEED_PER_MARK=0;reserve.DETONATION_BLEED_OPENING=0;
+      reserve.DETONATION_BLEED_BREAK=0;
+    }else if(engine==='DETONATION_BLEED_RUPTURE'){
+      const envelope=SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE,
+        existing=Math.max(1,envelope.existingBleedReference),totalFactor=BLEED_STATUS.totalDamageFactor;
+      command.bleedRetriggerPerExistingBleed=Number((Math.max(0,
+        axes.DETONATION_BLEED_RUPTURE||0)/(existing*Math.max(.01,
+          envelope.reopenActiveShare))).toFixed(6));
+      command.detonationDamagePerExistingBleed=Number((Math.max(0,
+        axes.DETONATION_BLEED_READ||0)/existing).toFixed(6));
+      command.afflictionPerExistingBleed=Number((Math.max(0,
+        axes.DETONATION_BLEED_REOPEN||0)/(existing*totalFactor)).toFixed(6));
+      command.bleedRuptureBreakRate=Number((Math.max(0,
+        axes.DETONATION_BLEED_BREAK||0)/(existing*Math.max(.01,
+          envelope.breakActiveShare))).toFixed(6));
+      reserve.DETONATION_BLEED_RUPTURE=0;reserve.DETONATION_BLEED_READ=0;
+      reserve.DETONATION_BLEED_REOPEN=0;reserve.DETONATION_BLEED_BREAK=0;
+    }else if(engine==='DETONATION_WOUND_FUSE'){
+      const reference=SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.markReadReference,
+        reloadPower=Math.max(0,axes.DETONATION_WOUND_RELOAD||0),reload=
+          markBurstDetonationConsumptionProgress(reloadPower,command.markRule.damagePerMark);
+      command.detonationWoundEchoPerConsumedMark=Number((Math.max(0,
+        axes.DETONATION_WOUND_ECHO||0)/(reference*BLEED_STATUS.durationTicks)).toFixed(6));
+      command.detonationWoundOpeningBonus=Number((Math.max(0,
+        axes.DETONATION_WOUND_OPENING||0)/reference).toFixed(6));
+      command.detonationWoundReloadCapacity=reloadPower>0?1+reload.rank:0;
+      command.detonationWoundReloadDamagePerMark=reloadPower>0?command.markRule.damagePerMark:0;
+      command.detonationWoundMovePulse=Number((Math.max(0,
+        axes.DETONATION_WOUND_MOVE_PULSE||0)/3).toFixed(6));
+      command.detonationWoundOpeningTiming=!!(apex&&apex.mechanics.refinement==='AMBUSH_FUSE');
+      reserve.DETONATION_WOUND_ECHO=0;reserve.DETONATION_WOUND_OPENING=0;
+      reserve.DETONATION_WOUND_RELOAD=reload.reserve;reserve.DETONATION_WOUND_MOVE_PULSE=0;
+    }else if(engine==='DETONATION_BLEED_PACKET'){
+      const contacts=Math.max(1,delivery.contacts),baseTotal=Math.max(1,
+        commandBleedAmount(command)*BLEED_STATUS.totalDamageFactor);
+      command.hits=contacts;command.hitDamages=contacts>1?
+        f1SynthesisDistributedDamageVector(command.damage,contacts):null;
+      command.markDetonationCapacity=contacts;
+      command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1,delivery:'EVEN'});
+      command.chainGainPattern=Array.from({length:contacts},(_,index)=>index===0?1:0);
+      command.chainGainPerHit=0;command.hitInterval=.20;command.afflictionSplitPerContact=true;
+      command.afflictionPerUnspentContact=Number((Math.max(0,
+        axes.DETONATION_PACKET_LOW_MARK||0)/(Math.max(1,contacts-1)*
+          BLEED_STATUS.totalDamageFactor)).toFixed(6));
+      command.detonationFullPacketBonus=Number(Math.max(0,
+        axes.DETONATION_PACKET_FULL_MARK||0).toFixed(6));
+      command.afflictionBreakApplicationBonus=Number((Math.max(0,
+        axes.DETONATION_BLEED_BREAK||0)/(baseTotal*Math.max(.01,
+          SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakActiveShare))).toFixed(6));
+      reserve.DELIVERY_CONTACTS=delivery.reserve;reserve.DETONATION_PACKET_LOW_MARK=0;
+      reserve.DETONATION_PACKET_FULL_MARK=0;reserve.DETONATION_BLEED_BREAK=0;
+    }else if(engine==='DETONATION_CHARGE_DISCHARGE'){
+      const chargeRef=Math.max(1,SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),
+        markRef=Math.max(1,SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference),
+        productRef=chargeRef*markRef;
+      command.chargeMode='DETONATION_FULL_DISCHARGE';
+      command.detonationChargeProductDamage=Number((Math.max(0,
+        axes.DETONATION_CHARGE_PRODUCT||0)/productRef).toFixed(6));
+      command.detonationChargeBreakRate=Number((Math.max(0,
+        axes.DETONATION_CHARGE_BREAK||0)/Math.max(1,productRef*.35)).toFixed(6));
+      command.detonationChargeSurplusDamage=Number((Math.max(0,
+        axes.DETONATION_CHARGE_SURPLUS||0)/chargeRef).toFixed(6));
+      command.detonationMarkSurplusRate=Number((Math.max(0,
+        axes.DETONATION_MARK_SURPLUS||0)/markRef).toFixed(6));
+      reserve.DETONATION_CHARGE_PRODUCT=0;reserve.DETONATION_CHARGE_BREAK=0;
+      reserve.DETONATION_CHARGE_SURPLUS=0;reserve.DETONATION_MARK_SURPLUS=0;
+    }else if(engine==='DETONATION_CHARGE_PAIR'){
+      const chargeRef=Math.max(1,SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),
+        markRef=Math.max(1,SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference);
+      command.chargeMode='DETONATION_PAIRED_ECHO';
+      command.detonationChargeEchoPerPair=Number((Math.max(0,
+        axes.DETONATION_CHARGE_PAIR_ECHO||0)/Math.min(chargeRef,markRef)).toFixed(6));
+      command.detonationChargeMarkSurplusEcho=Number((Math.max(0,
+        axes.DETONATION_MARK_SURPLUS||0)/markRef).toFixed(6));
+      command.detonationChargeSurplusDamage=Number((Math.max(0,
+        axes.DETONATION_CHARGE_SURPLUS||0)/chargeRef).toFixed(6));
+      reserve.DETONATION_CHARGE_PAIR_ECHO=0;reserve.DETONATION_MARK_SURPLUS=0;
+      reserve.DETONATION_CHARGE_SURPLUS=0;
+    }else if(engine==='DETONATION_CHARGE_CAPACITOR'){
+      const chargeRef=Math.max(1,SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),
+        markRef=Math.max(1,SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference),
+        retentionUnit=Math.max(1,markRef*chargeRef);
+      command.chargeMode='DETONATION_CAPACITOR';
+      command.detonationChargeRetentionPerMark=Number((Math.max(0,
+        axes.DETONATION_CHARGE_RETENTION||0)/retentionUnit).toFixed(6));
+      command.detonationChargeBreakRetentionPerMark=Number((Math.max(0,
+        axes.DETONATION_CHARGE_BREAK_RETENTION||0)/retentionUnit).toFixed(6));
+      command.detonationChargeEmptySeedPerMark=Number((Math.max(0,
+        axes.DETONATION_CHARGE_EMPTY_SEED||0)/retentionUnit).toFixed(6));
+      reserve.DETONATION_CHARGE_RETENTION=0;reserve.DETONATION_CHARGE_BREAK_RETENTION=0;
+      reserve.DETONATION_CHARGE_EMPTY_SEED=0;
+    }else if(engine==='DETONATION_CHARGE_DEFENSE_FUSE'){
+      const chargeRef=Math.max(1,SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge),
+        fusePower=Math.max(0,axes.DETONATION_DEFENSE_FUSE||0),
+        fuseDamage=Math.max(.001,fusePower/chargeRef);
+      command.chargeMode='DETONATION_DEFENSE_FUSE';
+      command.detonationDefenseFuseDamage=Number(fuseDamage.toFixed(6));
+      command.detonationDefenseParryMultiplier=Number((1+Math.max(0,
+        axes.DETONATION_DEFENSE_PARRY||0)/Math.max(1,fusePower)).toFixed(6));
+      command.detonationDefenseStreakRate=Number((Math.max(0,
+        axes.DETONATION_DEFENSE_STREAK||0)/Math.max(1,fusePower*3)).toFixed(6));
+      command.detonationDefenseBreakReturnRate=Number(clamp(Math.max(0,
+        axes.DETONATION_DEFENSE_BREAK_RETURN||0)/Math.max(1,fusePower),0,1).toFixed(6));
+      reserve.DETONATION_DEFENSE_FUSE=0;reserve.DETONATION_DEFENSE_PARRY=0;
+      reserve.DETONATION_DEFENSE_STREAK=0;reserve.DETONATION_DEFENSE_BREAK_RETURN=0;
     }
   }
   command.apexRefinementId=apex&&apex.mechanics&&apex.mechanics.refinement||null;
@@ -19475,12 +20259,32 @@ function commandExpectedAfflictionPower(command,
       Math.max(0,Number(command&&command.bleedPerChargeAtTick)||0)*
         envelope.defenseResponseCharge+
       Math.max(0,Number(command&&command.defenseBleedRetriggerPerCharge)||0)*
-        envelope.defenseResponseCharge;
+        envelope.defenseResponseCharge,
+    detonationWound=Math.max(0,Number(command&&command.afflictionPerConsumedMark)||0)*
+        envelope.markReadReference*BLEED_STATUS.totalDamageFactor+
+      Math.max(0,Number(command&&command.afflictionOpeningWound)||0)*
+        BLEED_STATUS.totalDamageFactor*.5+
+      Math.max(0,Number(command&&command.afflictionPerExistingBleed)||0)*
+        envelope.existingBleedReference*BLEED_STATUS.totalDamageFactor+
+      Math.max(0,Number(command&&command.afflictionPerUnspentContact)||0)*
+        Math.max(1,(command&&command.hits||1)-1)*BLEED_STATUS.totalDamageFactor+
+      Math.max(0,Number(command&&command.bleedRuptureBreakRate)||0)*
+        envelope.existingBleedReference*Math.max(0,
+          Number(command&&command.bleedRetriggerPerExistingBleed)||0)*envelope.breakActiveShare+
+      Math.max(0,Number(command&&command.detonationDamagePerExistingBleed)||0)*
+        envelope.existingBleedReference+
+      Math.max(0,Number(command&&command.detonationWoundEchoPerConsumedMark)||0)*
+        envelope.markReadReference*BLEED_STATUS.durationTicks+
+      Math.max(0,Number(command&&command.detonationWoundOpeningBonus)||0)+
+      Math.max(0,Number(command&&command.detonationWoundReloadCapacity)||0)*
+        Math.max(0,Number(command&&command.detonationWoundReloadDamagePerMark)||0)*.75+
+      Math.max(0,Number(command&&command.detonationWoundMovePulse)||0)*3+
+      Math.max(0,Number(command&&command.detonationFullPacketBonus)||0)*.7;
   return bleed*BLEED_STATUS.totalDamageFactor*(1+breakBonus*
       SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.breakActiveShare)+
     (markPerTick*BLEED_STATUS.durationTicks+finalMark)*SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN+
     delayedChain+critBleed+bleedChainRead+markPower+liveChainBleed+primer+postureTicks+
-    postureBleed+breakRetrigger+criticalWound+chargeWound+
+    postureBleed+breakRetrigger+criticalWound+chargeWound+detonationWound+
     Math.max(0,Number(command&&command.afflictionApplicationEventPower)||0);
 }
 function commandExpectedAnyCriticalChance(command,startingCharge=
@@ -27223,6 +28027,74 @@ const MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT=(()=>{
     twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
     standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
+const MARK_BURST_DETONATION_AFFLICTION_RUNTIME_AUDIT=(()=>{
+  const specId='detonation_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),commands=new Map(twists.map(twist=>[twist.id,
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',twist.id,'COMMON')]));
+  for(const [id,command] of commands)if(!command||command.markGain!==0||
+      !(commandBleedAmount(command)>0)||command.markDetonationEventMode!==
+        MARK_BURST_ROUTE_BY_ID[id].mechanics.detonationEngine)
+    throw new Error(id+' failed Detonation/Affliction runtime materialization');
+  const fuse=commands.get('detonation_bleed_fuse_twist'),rupture=
+      commands.get('detonation_bleed_rupture_twist'),wound=commands.get('detonation_wound_fuse_twist'),
+    packet=commands.get('detonation_bleed_packet_twist'),ambush=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON','detonation_wound_fuse_twist',
+        'COMMON','detonation_wound_fuse_twist_apex_2','COMMON'),reload=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON','detonation_wound_fuse_twist',
+        'COMMON','detonation_wound_fuse_twist_apex_3','COMMON'),danger=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON','detonation_wound_fuse_twist',
+        'COMMON','detonation_wound_fuse_twist_apex_4','COMMON');
+  if(!(fuse.afflictionPerConsumedMark>0)||!(rupture.bleedRetriggerPerExistingBleed>0)||
+     !(wound.detonationWoundEchoPerConsumedMark>0)||packet.deliveryPattern!==
+       'SIMULTANEOUS_PACKET'||!packet.afflictionSplitPerContact||
+     !ambush.detonationWoundOpeningTiming||!(reload.detonationWoundReloadCapacity>0)||
+     !(danger.detonationWoundMovePulse>0))
+    throw new Error('Detonation/Affliction signature runtime fields are incomplete');
+  return Object.freeze({passed:true,twists:4,apexes:16,ambush:true,reload:true,
+    movePulse:true,packetTruth:true});
+})();
+const MARK_BURST_DETONATION_CHARGE_RUNTIME_AUDIT=(()=>{
+  const specId='detonation_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),commands=new Map(twists.map(twist=>[twist.id,
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',twist.id,'COMMON')]));
+  for(const [id,command] of commands){
+    const plan=commandMarkPlan(command,4);
+    if(!command||command.markGain!==0||plan.consumedTotal<1||
+       plan.markDamageByHit.reduce((sum,value)=>sum+value,0)<=0||
+       command.markDetonationEventMode!==MARK_BURST_ROUTE_BY_ID[id].mechanics.detonationEngine)
+      throw new Error(id+' failed zero-Charge Detonation inheritance');
+  }
+  const discharge=commands.get('detonation_charge_discharge_twist'),pair=
+      commands.get('detonation_charge_pair_twist'),capacitor=
+      commands.get('detonation_charge_capacitor_twist'),fuse=
+      commands.get('detonation_charge_defense_fuse_twist'),breakDischarge=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+        'detonation_charge_discharge_twist','COMMON',
+        'detonation_charge_discharge_twist_apex_2','COMMON'),pairSurplus=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+        'detonation_charge_pair_twist','COMMON','detonation_charge_pair_twist_apex_4','COMMON'),
+    coldStart=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_charge_capacitor_twist','COMMON',
+      'detonation_charge_capacitor_twist_apex_4','COMMON'),streakFuse=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+        'detonation_charge_defense_fuse_twist','COMMON',
+        'detonation_charge_defense_fuse_twist_apex_3','COMMON');
+  if(commandChargeMode(discharge)!=='DETONATION_FULL_DISCHARGE'||
+     !(discharge.detonationChargeProductDamage>0)||
+     commandChargeMode(pair)!=='DETONATION_PAIRED_ECHO'||
+     !(pair.detonationChargeEchoPerPair>0)||
+     commandChargeMode(capacitor)!=='DETONATION_CAPACITOR'||
+     !(capacitor.detonationChargeRetentionPerMark>0)||
+     commandChargeMode(fuse)!=='DETONATION_DEFENSE_FUSE'||
+     !(fuse.detonationDefenseFuseDamage>0)||
+     !(breakDischarge.detonationChargeBreakRate>0)||
+     !(pairSurplus.detonationChargeSurplusDamage>0)||
+     !(coldStart.detonationChargeEmptySeedPerMark>0)||
+     !(streakFuse.detonationDefenseStreakRate>0))
+    throw new Error('Detonation/Charge signature or Apex runtime fields are incomplete');
+  return Object.freeze({passed:true,twists:4,apexes:16,zeroChargePrimary:true,
+    distinctModes:4,finiteDefenseFuse:true});
+})();
 function stableEvolutionPlaythroughVector(state,defenseChainPattern=STABLE_PLAYTHROUGH_DEFENSE_CHAIN_PATTERN){
   let mark=0,totalDamage=0,totalContribution=0,totalConsumedMark=0;
   const phases=[];
@@ -28661,11 +29533,57 @@ function commandHitBase(command,index){
 function commandDefenseTemperBonus(command,charge=bossCharge()){
   return stableDamage(commandDefenseTemperRate(command)*safeDefenseCharge(charge));
 }
-function commandChargeReleaseBonus(command,charge,startingMark=0,broken=false){
-  const spent=safeDefenseCharge(charge),marks=safeDefenseCharge(startingMark);
+function commandChargeReleaseBonus(command,charge,startingMark=0,broken=false,
+    consumedMark=null){
+  const spent=safeDefenseCharge(charge),marks=safeDefenseCharge(startingMark),consumed=
+      consumedMark===null?commandMarkPlan(command,marks).consumedTotal:
+        safeDefenseCharge(consumedMark),product=spent*consumed,
+    productRate=Math.max(0,Number(command&&command.detonationChargeProductDamage)||0),
+    breakRate=broken?Math.max(0,Number(command&&command.detonationChargeBreakRate)||0):0,
+    surplusCharge=Math.max(0,spent-consumed),surplusDamage=surplusCharge*Math.max(0,
+      Number(command&&command.detonationChargeSurplusDamage)||0);
   return stableDamage(spent*(commandDefenseTemperRate(command)+
     Math.max(0,Number(command&&command.chargeDamagePerMarkPerCharge)||0)*marks+
-    (broken?Math.max(0,Number(command&&command.chargeBreakDamagePerCharge)||0):0)));
+    (broken?Math.max(0,Number(command&&command.chargeBreakDamagePerCharge)||0):0))+
+    product*(productRate+breakRate)+surplusDamage);
+}
+function augmentDetonationChargeMarkPlan(command,plan,pairedCharge=0,chargeAtStart=0){
+  if(!command||!plan)return plan;
+  const consumed=safeDefenseCharge(plan.consumedTotal),paired=Math.min(consumed,
+      safeDefenseCharge(pairedCharge)),markSurplus=Math.max(0,consumed-paired),
+    last=Math.max(0,plan.markDamageByHit.length-1);
+  if(command.markDetonationEventMode==='DETONATION_CHARGE_DISCHARGE'){
+    plan.markDamageByHit[last]+=markSurplus*Math.max(0,
+      Number(command.detonationMarkSurplusRate)||0);
+  }else if(command.markDetonationEventMode==='DETONATION_CHARGE_PAIR'){
+    const echo=paired*Math.max(0,Number(command.detonationChargeEchoPerPair)||0)+
+      markSurplus*Math.max(0,Number(command.detonationChargeMarkSurplusEcho)||0);
+    if(echo>0){
+      plan.echoDamageTotal=stableCombatNumber((plan.echoDamageTotal||0)+echo);
+      plan.echoDamageByHit[last]=stableCombatNumber((plan.echoDamageByHit[last]||0)+echo);
+      plan.markDamageByHit[last]=stableCombatNumber(plan.markDamageByHit[last]+echo);
+    }
+    plan.pairedCharge=paired;plan.unpairedCharge=Math.max(0,
+      safeDefenseCharge(chargeAtStart)-paired);
+  }
+  return plan;
+}
+function capacitorChargeReturn(command,consumedMark,spentCharge,broken=false,emptyAtStart=false){
+  if(!boss||!command)return 0;
+  const consumed=safeDefenseCharge(consumedMark),spent=safeDefenseCharge(spentCharge);
+  if(emptyAtStart&&command.detonationChargeEmptySeedPerMark>0){
+    const raw=Math.max(0,Number(boss.detonationChargeSeedCarry)||0)+consumed*Math.max(0,
+        Number(command.detonationChargeEmptySeedPerMark)||0),seed=Math.floor(raw+1e-9);
+    boss.detonationChargeSeedCarry=stableCombatNumber(raw-seed);
+    return seed>0?restoreBossCharge(seed):0;
+  }
+  if(!spent)return 0;
+  const rate=Math.max(0,Number(command.detonationChargeRetentionPerMark)||0)+
+      (broken?Math.max(0,Number(command.detonationChargeBreakRetentionPerMark)||0):0),
+    raw=Math.max(0,Number(boss.detonationChargeRetentionCarry)||0)+consumed*rate,
+    retained=Math.min(spent,Math.floor(raw+1e-9));
+  boss.detonationChargeRetentionCarry=stableCombatNumber(raw-retained);
+  return retained>0?restoreBossCharge(retained):0;
 }
 function commandChainChargeReleaseBonus(command,charge,startingChain=0){
   return stableDamage(safeDefenseCharge(charge)*Math.max(0,Number(command&&
@@ -28734,6 +29652,10 @@ function commandChargeCombatText(command){
   else if(mode==='LIVE_WOUND')parts.push('Banka saldırıda tüketilmez; yara aktifken Perfect Dodge ve Parry bir sonraki Bleed tickini besler.');
   else if(mode==='BLEED_METER')parts.push('Banka saldırıda tüketilmez; her Bleed ticki o anda bulunan bütün Chargeı kendi hasarına çevirir.');
   else if(mode==='DEFENSE_RUPTURE')parts.push('Banka saldırıda tüketilmez; savunma fazındaki yeni performans faz sonunda tek yara yırtılmasına dönüşür.');
+  else if(mode==='DETONATION_FULL_DISCHARGE')parts.push('Bütün Charge tüketilir; gerçekten patlatılan Mark × harcanan Charge çarpımı tek ağır darbenin ücretli gücünü artırır.');
+  else if(mode==='DETONATION_PAIRED_ECHO')parts.push('Patlatılan Marklarla eşleşen Charge harcanır ve her eşleşme temassız bir Detonation yankısı üretir; eşleşmeyen Charge korunur.');
+  else if(mode==='DETONATION_CAPACITOR')parts.push('Bütün banka saldırıya gider; patlatılan Marklar yalnız gerçekten harcanmış Chargeın ücretli bir bölümünü geri taşır.');
+  else if(mode==='DETONATION_DEFENSE_FUSE')parts.push('Bütün banka finite bir sonraki-savunma füzesine çevrilir: Perfect Dodge 1, Parry 2 Charge harcayıp temassız pulse üretir.');
   if(command.chargeRetentionRate>0)parts.push('Harcanan Chargeın %'+
     damagePart(command.chargeRetentionRate*100)+' kadarı doğal olarak geri saklanır; harcanandan fazlası üretilemez.');
   if(command.chargeRetentionOnCriticalRate>0)parts.push('En az bir gerçek Crit gelirse harcanan Chargeın %'+
@@ -28943,6 +29865,7 @@ function beginPlayerTurn(fromBreak=false){
       pending.status='READY';boss.defenseChargeProgress=0;
       floater(VW/2-112,278,'RELEASE READY ×'+pending.charge,'#7fc9ff',14);
     }else finalizeDefenseChargePhase(fromBreak);
+    finalizeDetonationDefenseFuse(fromBreak);
   }
   if(defenseEnded&&activeSkillLabCombat()&&skillLabSession.defenseStats)
     skillLabSession.defenseStats.phases++;
@@ -28986,6 +29909,7 @@ function endPlayerTurn(){
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
   boss.partyActor='knight';boss.turnAction=null;
   startDefenseChargePhase();
+  if(resolveBossDetonationWoundDefenseOpening())return true;
   floater(VW/2,278,'ENEMY TURN '+boss.enemyTurn,'#ff9a3a',17);
   return true;
 }
@@ -29184,10 +30108,17 @@ function commandAfflictionDynamicAmount(command,action,critical=false){
     Math.max(0,Number(command.afflictionPerLiveChain)||0)*Math.max(0,chainStacks)+
     Math.max(0,Number(command.afflictionPerPostureRatio)||0)*Math.max(0,postureRatio)+
     Math.max(0,Number(command.afflictionPerCharge)||0)*Math.max(0,action.chargeSpent)+
+    Math.max(0,Number(command.afflictionPerConsumedMark)||0)*Math.max(0,action.consumedMark)+
+    (action.bleedAtStart>0?0:Math.max(0,Number(command.afflictionOpeningWound)||0))+
+    Math.max(0,Number(command.afflictionPerExistingBleed)||0)*Math.max(0,action.bleedAtStart)+
+    Math.max(0,Number(command.afflictionPerUnspentContact)||0)*Math.max(0,
+      Math.max(1,action.hits||1)-Math.max(0,action.consumedMark||0))+
     (critical?Math.max(0,Number(command.afflictionCritBonus)||0):
       Math.max(0,Number(command.afflictionNonCritBonus)||0)));
 }
-function commandAfflictionRuntimeEffects(command){
+function commandAfflictionRuntimeEffects(command,action=null){
+  const consumed=Math.max(0,Number(action&&action.consumedMark)||0),echo=
+    consumed*Math.max(0,Number(command.detonationWoundEchoPerConsumedMark)||0);
   return Object.freeze({
     nextActionMark:Math.max(0,Number(command.bleedMarkNextAction)||0),
     chainPrimerPerTick:Math.max(0,Number(command.bleedChainPrimerPerTick)||0),
@@ -29196,7 +30127,13 @@ function commandAfflictionRuntimeEffects(command){
     breakRetrigger:Math.max(0,Number(command.bleedBreakRetrigger)||0),
     defenseFeedRate:Math.max(0,Number(command.defenseBleedPerCharge)||0),
     chargeMeterRate:Math.max(0,Number(command.bleedPerChargeAtTick)||0),
-    defenseRuptureRate:Math.max(0,Number(command.defenseBleedRetriggerPerCharge)||0)
+    defenseRuptureRate:Math.max(0,Number(command.defenseBleedRetriggerPerCharge)||0),
+    detonationEcho:echo,detonationOpeningTiming:command.detonationWoundOpeningTiming===true,
+    detonationOpeningBonus:Math.max(0,Number(command.detonationWoundOpeningBonus)||0),
+    detonationReloadCapacity:Math.max(0,Number(command.detonationWoundReloadCapacity)||0),
+    detonationReloadDamagePerMark:Math.max(0,
+      Number(command.detonationWoundReloadDamagePerMark)||0),
+    detonationMovePulse:Math.max(0,Number(command.detonationWoundMovePulse)||0)
   });
 }
 function resolveCommandAfflictionFinalRewards(command,action,x,y){
@@ -29214,6 +30151,8 @@ function resolveCommandAfflictionFinalRewards(command,action,x,y){
   if(action.anyCritical)rupture+=Math.max(0,Number(command.bleedRetriggerOnCritical)||0);
   if(action.bleedAtStart>0)rupture+=action.bleedAtStart*Math.max(0,
     Number(command.bleedRetriggerPerExistingBleed)||0);
+  if(rupture>0&&(action.breakAtStart||boss.playerTurnBreak))rupture*=1+
+    Math.max(0,Number(command.bleedRuptureBreakRate)||0);
   if(rupture>0){
     hurtBoss(rupture,false,'bleed_rupture',false);
     floater(x,y-146,'WOUND RUPTURE +'+damagePart(rupture),'#ff9aaa',14);
@@ -29283,7 +30222,12 @@ function resolveTurnActionHit(action){
     base=stableDamage(commandHitBase(command,index)+chargeContactBonus+chargeCriticalBonus),
     markPayload=action.markPlan.markDamageByHit[index]||0,
     echoPayload=action.markPlan.echoDamageByHit[index]||0,
-    rawContactDetonationPayload=command.markDetonationCascade?0:Math.max(0,markPayload-echoPayload),
+    existingWoundDetonation=index===action.hits-1?Math.max(0,
+      Number(command.detonationDamagePerExistingBleed)||0)*Math.max(0,action.bleedAtStart):0,
+    fullPacketDetonation=index===action.hits-1&&action.consumedMark>=action.hits?
+      Math.max(0,Number(command.detonationFullPacketBonus)||0):0,
+    rawContactDetonationPayload=command.markDetonationCascade?0:Math.max(0,
+      markPayload-echoPayload+existingWoundDetonation+fullPacketDetonation),
     generatedChain=Math.max(0,chainStacks-action.chainAtStart),
     baseContactDetonationPayload=stableCombatNumber(rawContactDetonationPayload*(1+
       generatedChain*Math.max(0,Number(command.markDetonationChainFeedbackRate)||0))),
@@ -29418,7 +30362,7 @@ function resolveTurnActionHit(action){
         Math.max(0,Number(command.afflictionMarkPerTick)||0)/divisor,
         Math.max(0,Number(command.afflictionFinalMark)||0)/divisor,
         Math.max(0,Number(command.afflictionChainPerTick)||0)/divisor,
-        finalContact?commandAfflictionRuntimeEffects(command):null,
+        finalContact?commandAfflictionRuntimeEffects(command,action):null,
         commandAfflictionTickWeights(command,action.anyCritical===true));
       floater(x,y-82,'WOUND '+(index+1)+'/'+action.hits+' +'+damagePart(added),'#d9788b',13);
       if(critBleed>0)floater(x,y-104,'CRIT WOUND +'+damagePart(critBleed),'#ff9aaa',13);
@@ -29462,7 +30406,7 @@ function resolveTurnActionHit(action){
       commandAfflictionDynamicAmount(command,action,action.anyCritical===true));
     if(bleed){
       const added=addBossBleed(bleed,command.afflictionMarkPerTick,command.afflictionFinalMark,
-        command.afflictionChainPerTick,commandAfflictionRuntimeEffects(command),
+        command.afflictionChainPerTick,commandAfflictionRuntimeEffects(command,action),
         commandAfflictionTickWeights(command,action.anyCritical===true));
       floater(x,y-82,'BLEED +'+damagePart(added),'#d9788b',15);
     }
@@ -29606,7 +30550,8 @@ function performPlayerAction(command,options=null){
   }
   command=materializeStartingChainDelivery(command,chainStacks);
   const startingMark=bossMark(),startingCharge=primaryRelease?
-      safeDefenseCharge(options.reservedCharge):bossCharge(),chargeMode=commandChargeMode(command);
+      safeDefenseCharge(options.reservedCharge):bossCharge(),chargeMode=commandChargeMode(command),
+    plannedConsumedMark=commandMarkPlan(command,startingMark).consumedTotal;
   if(primaryRelease){
     command={...command};
     command.critChance=clamp(Math.max(0,Number(command.critChance)||0)+
@@ -29651,7 +30596,7 @@ function performPlayerAction(command,options=null){
     command=truncated;
   }
   beginSkillLabActionLog(command);
-  let chargeSpent=primaryRelease?safeDefenseCharge(options.reservedCharge):0,
+  let chargeSpent=primaryRelease?safeDefenseCharge(options.reservedCharge):0,chargePaired=0,
     spentChainForCharge=0,chargeBonus=0,
     chargeMarkBonus=0,chargeChainBonus=0,chargeRetained=0,
     chargeCriticalRetained=0,
@@ -29674,7 +30619,8 @@ function performPlayerAction(command,options=null){
     const postureRatio=(boss.postureMax||0)>0?(boss.posture||0)/(boss.postureMax||1):0,
       streak=safeDefenseCharge(options.maxStreak),actionSteps=safeDefenseCharge(options.actionSteps);
     chargeBonus=commandChargeReleaseBonus(command,chargeSpent,startingMark,
-        boss.playerTurnBreak===true)+commandChainChargeReleaseBonus(command,chargeSpent,chainStacks)+
+        boss.playerTurnBreak===true,plannedConsumedMark)+
+      commandChainChargeReleaseBonus(command,chargeSpent,chainStacks)+
       stableDamage(chargeSpent*(Math.max(0,Number(command.chargePowerPerPoint)||0)+
         Math.max(0,Number(command.chargeDamagePerPostureRatioPerCharge)||0)*postureRatio+
         Math.max(0,Number(command.chargeDamagePerBleedPerCharge)||0)*bossBleed()+
@@ -29708,6 +30654,26 @@ function performPlayerAction(command,options=null){
       engine.markCarry+=engine.markPerAction;
       chargeMarkBonus=Math.max(0,Math.floor(engine.markCarry+1e-9));
       engine.markCarry-=chargeMarkBonus;
+    }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_FULL_DISCHARGE'){
+      chargeSpent=consumeBossCharge();chargePaired=Math.min(chargeSpent,plannedConsumedMark);
+      chargeBonus=commandChargeReleaseBonus(command,chargeSpent,startingMark,
+        boss.playerTurnBreak===true,plannedConsumedMark);
+    }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_PAIRED_ECHO'){
+      chargePaired=Math.min(startingCharge,plannedConsumedMark);
+      const spendSurplus=command.detonationChargeSurplusDamage>0,
+        spend=spendSurplus?startingCharge:chargePaired;
+      chargeSpent=consumeBossCharge(spend);
+      chargeBonus=stableDamage(chargeSpent*commandDefenseTemperRate(command)+
+        Math.max(0,chargeSpent-chargePaired)*Math.max(0,
+          Number(command.detonationChargeSurplusDamage)||0));
+    }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_CAPACITOR'){
+      chargeSpent=consumeBossCharge();chargePaired=Math.min(chargeSpent,plannedConsumedMark);
+      chargeBonus=stableDamage(chargeSpent*commandDefenseTemperRate(command));
+      chargeRetained=capacitorChargeReturn(command,plannedConsumedMark,chargeSpent,
+        boss.playerTurnBreak===true,startingCharge===0);
+    }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_DEFENSE_FUSE'){
+      chargeSpent=consumeBossCharge();chargePaired=Math.min(chargeSpent,plannedConsumedMark);
+      chargeBonus=0;if(chargeSpent)armDetonationDefenseFuse(command,chargeSpent);
     }else if(commandUsesDefenseCharge(command)&&chargeMode==='POSTURE_MEASURED'){
       const basePosture=commandPostureDamage(command,chainStacks,startingMark,
           boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX,bossBleed(),0),
@@ -29729,7 +30695,8 @@ function performPlayerAction(command,options=null){
     }else if(commandUsesDefenseCharge(command)&&chargeMode!=='DISTRIBUTED'){
       chargeSpent=consumeBossCharge();
       chargeBonus=commandChargeReleaseBonus(command,chargeSpent,startingMark,
-        boss.playerTurnBreak===true)+commandChainChargeReleaseBonus(command,chargeSpent,chainStacks);
+        boss.playerTurnBreak===true,plannedConsumedMark)+
+        commandChainChargeReleaseBonus(command,chargeSpent,chainStacks);
       chargeMarkBonus=commandChargeMarkBonus(command,chargeSpent);
       chargeChainBonus=commandChargeChainBonus(command,chargeSpent);
       chargeRetained=commandChargeRetained(command,chargeSpent);
@@ -29742,7 +30709,8 @@ function performPlayerAction(command,options=null){
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionReturnMenu=skill?'skills':'root';
   const delivery=commandDeliveryContract(command),hits=actionHits,
-    markPlan=commandMarkPlan(command,startingMark),
+    markPlan=augmentDetonationChargeMarkPlan(command,commandMarkPlan(command,startingMark),
+      chargePaired,startingCharge),
     detonationPostureTotal=commandDetonationPostureAmount(command,markPlan,chainStacks,
       boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX,bossBleed(),chargeSpent),
     detonationPostureSeal=commandDetonationPostureSealAmount(command,markPlan),
@@ -29783,7 +30751,8 @@ function performPlayerAction(command,options=null){
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
     postureAtStart:boss.posture||0,postureMaxAtStart:boss.postureMax||CFG.BOSS_POSTURE_MAX,
     bleedAtStart:bossBleed(),breakAtStart:boss.playerTurnBreak===true,
-    chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargeBonus,chargeMarkBonus,chargeChainBonus,
+    chainAtStart:chainStacks,resolveSpent:cost,chargeSpent,chargePaired,chargeBonus,
+    chargeMarkBonus,chargeChainBonus,
     chargeRetained,chargeCriticalRetained,chargeCriticalRetentionApplied:false,
     distributedChargeAction,primaryChargeRelease:primaryRelease,spentChainForCharge,chargeNextMark,
     scheduleChargeAftershock,
@@ -29791,7 +30760,11 @@ function performPlayerAction(command,options=null){
     critPlan};
   const breakAttack=boss.playerTurnBreak===true;
   floater(VW/2,318,command.name,command.col||'#ffffff',skill?19:17);
-  if(chargeSpent)floater(VW/2,344,'CHARGE ×'+chargeSpent+' · BASE +'+damagePart(chargeBonus),'#7fc9ff',15);
+  if(chargeSpent)floater(VW/2,344,chargeMode==='DETONATION_DEFENSE_FUSE'?
+    'DEFENSE FUSE ARMED ×'+chargeSpent:
+    'CHARGE ×'+chargeSpent+' · BASE +'+damagePart(chargeBonus),'#7fc9ff',15);
+  if(chargeRetained)floater(VW/2,326,(startingCharge===0?'COLD START':'CAPACITOR')+
+    ' · CHARGE +'+chargeRetained,'#7fc9ff',14);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×'+damagePart(CFG.BREAK_DAMAGE_MULT),'#ffe37a',16);
   if(!bowTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
   return true;
@@ -30963,7 +31936,9 @@ function sweepBodyLane(move,k){
   return lerp(1,lane,factor)+(move.bodyOffset||0);
 }
 function cueBossMove(){
-  if(boss) boss.cueMove();
+  if(!boss)return false;
+  if(resolveBossWoundMovePulse())return true;
+  boss.cueMove();return false;
 }
 /* A tell may scale down, but never below the physical time needed to reach safety.
    Two-lane traps grant longer than one-lane dodges; jump/duck retain a firm floor. */
@@ -31061,9 +32036,16 @@ function startBoss(definitionId=null){
     bleedDefenseFeedRate:0,bleedDefenseFeedRateLater:0,
     bleedChargeMeterRate:0,bleedChargeMeterRateLater:0,
     bleedDefenseRuptureRate:0,bleedDefenseRuptureRateLater:0,
+    bleedDetonationEcho:0,bleedDetonationEchoLater:0,
+    bleedDetonationReloadCapacity:0,bleedDetonationReloadCapacityLater:0,
+    bleedDetonationReloadDamage:0,bleedDetonationReloadDamageLater:0,
+    bleedMoveDetonationPulse:0,bleedMoveDetonationPulseLater:0,
+    pendingDefenseOpeningDetonation:0,
     afflictionNextActionMark:0,afflictionChainPrimer:0,
     charge:0,defenseChargeProgress:0,chargeEnabled:false,distributedChargeEngine:null,
     pendingChargeRelease:null,pendingChargeAftershock:null,chargeFailurePrecision:0,
+    pendingDetonationDefenseFuse:null,detonationChargeRetentionCarry:0,
+    detonationChargeSeedCarry:0,
     partyActor:'knight',playerActionReturnMenu:'root',allyAttackAnim:0,
     playerMarkTrailPerContact:0,lastMarkEvent:null,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
@@ -31352,7 +32334,8 @@ function chooseBossAttack(movesLeft=boss.attacksLeft){
 function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',critical=false){
   if(!boss||boss.state==='dying'||boss.state==='finisher') return false;
   /* Turn combat resolves lethal damage immediately, regardless of its source. */
-  const bleedBreak=damageSource==='bleed_break',bleed=damageSource==='bleed'||bleedBreak;
+  const bleedBreak=damageSource==='bleed_break',woundDetonation=damageSource==='wound_detonation',
+    bleed=damageSource==='bleed'||bleedBreak||woundDetonation;
   dmg=stableDamage(dmg);boss.hp=stableCombatNumber(boss.hp-dmg);
   if(boss.phase!=='dodge'||bleed)boss.dealt=stableDamage((boss.dealt||0)+dmg);
   if(damageSource==='counter'&&hasRelic('venom')){ boss.poisonT=8; // VENOM VIAL: the counter envenoms
@@ -31367,7 +32350,8 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
     critical?['#ffcc4d','#ffffff','#ff7a3d']:
       rush?['#8d46d8','#c995ff','#ffffff']:bleed?['#68152a','#d9788b','#ffb0ba']:['#ff4d3a','#ffe37a'],
     rush?(rushFinal?220:145):180,120,rush?(rushFinal?5:3.5):4,.6);
-  floater(laneX(boss.x,p.t),p.y-120*p.s,(bleed?(bleedBreak?'BLEED BREAK -':'BLEED -'):'-')+
+  floater(laneX(boss.x,p.t),p.y-120*p.s,(woundDetonation?'WOUND DETONATION -':
+    bleed?(bleedBreak?'BLEED BREAK -':'BLEED -'):'-')+
     healthDamageText(dmg),
     critical?'#ffcc4d':rush?'#c995ff':bleed?'#d9788b':fromCounter?'#ffe37a':'#fff',
     critical?23:rush?(rushFinal?24:19):fromCounter?22:18);
@@ -36504,6 +37488,26 @@ function skillLabCompactSynthesisMechanics(command){
       command.detonationNonCritPayloadRate)+' güçlenir; kaçırma Precision biriktirir.');
   else if(command.markDetonationEventMode==='DETONATION_CRIT_PACKET')
     lines.push('Oynanış: Eşzamanlı oklar tek ortak Crit sonucu kullanır; uygun her temas 1 Mark patlatır ve paket toplam 1 Chain üretir.');
+  else if(command.markDetonationEventMode==='DETONATION_BLEED_FUSE')
+    lines.push('Oynanış: Tüketilen her Mark Detonation yanında iki ticklik yarayı +'+
+      damagePart(command.afflictionPerConsumedMark)+' derinleştirir.');
+  else if(command.markDetonationEventMode==='DETONATION_BLEED_RUPTURE')
+    lines.push('Oynanış: Saldırı başındaki yara tüketilmeden anında yeniden açılır; yeni yara aynı saldırıda okunmaz.');
+  else if(command.markDetonationEventMode==='DETONATION_WOUND_FUSE')
+    lines.push('Oynanış: Tüketilen Marklar iki yara tickine Detonation yankısı bağlar.'+
+      (command.detonationWoundOpeningTiming?' İlk yankı boss hareketinden önce vurur.':'')+
+      (command.detonationWoundReloadCapacity>0?' İkinci tick arada eklenen Markları yeniden patlatabilir.':'')+
+      (command.detonationWoundMovePulse>0?' Aktif yara sırasında her ayrı boss hareketi pulse üretir.':''));
+  else if(command.markDetonationEventMode==='DETONATION_BLEED_PACKET')
+    lines.push('Oynanış: Eşzamanlı temaslar birer Mark patlatabilir; tek toplam yara bütün oklara bölünür ve paket toplam 1 Chain üretir.');
+  else if(command.markDetonationEventMode==='DETONATION_CHARGE_DISCHARGE')
+    lines.push('Oynanış: Bütün Charge harcanır; patlatılan Mark × Charge ilişkisi tek ağır okun anlık hasarını büyütür.');
+  else if(command.markDetonationEventMode==='DETONATION_CHARGE_PAIR')
+    lines.push('Oynanış: Patlatılan Markla eşleşen Charge harcanır ve eşleşme temassız yankı üretir; eşleşmeyen Charge korunur.');
+  else if(command.markDetonationEventMode==='DETONATION_CHARGE_CAPACITOR')
+    lines.push('Oynanış: Banka harcanır; patlatılan Marklar gerçekten harcanmış Chargeın ücretli bir bölümünü geri taşır.');
+  else if(command.markDetonationEventMode==='DETONATION_CHARGE_DEFENSE_FUSE')
+    lines.push('Oynanış: Harcanan Charge sonraki savunmaya füze olur; Dodge 1, Parry 2 birim harcayıp Chainsiz/Critsiz pulse üretir.');
   if(command.markDetonationChainFeedbackRate>0)lines.push('Son patlama: saldırı içinde üretilen her Chain, Mark patlamasını %'+
     damagePart(command.markDetonationChainFeedbackRate*100)+' büyütür.');
   if(command.markDetonationCascadeChainRate>0)lines.push('Patlama zinciri: önceki her darbenin ürettiği Chain, sonraki darbeyi %'+

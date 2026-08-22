@@ -6,8 +6,15 @@ Bu dosya, hafıza sıfırlansa veya projeyi başka bir AI devralsa bile yeni bir
 
 1. Bu dosya.
 2. `STABLE_SKILL_TREE_RULES.md`.
-3. `MOVE_FAMILY_ACCEPTANCE_TEMPLATE_TR.md`.
-4. Tasarlanacak aileye en yakın, testleri geçen mevcut aile ve onun derleyicisi.
+3. Twist yazılacaksa `TWIST_AUTHORING_CONTRACT_TR.md`.
+4. Apex yazılacaksa `APEX_AUTHORING_CONTRACT_TR.md`.
+5. `MOVE_FAMILY_ACCEPTANCE_TEMPLATE_TR.md`.
+6. Tasarlanacak aileye en yakın, testleri geçen mevcut aile ve onun derleyicisi.
+
+F5 ve sonraki Formlarda `Twist Identity V1` bulunmadan route materialize edilemez. Dört Twist ayrı
+ayrı değil bir set olarak tasarlanır. Delivery tek başına mekanik kimlik sayılmaz.
+Yeni Apex ailesi `Apex Design V2` taşır. Dört seçeneğin en az ikisi gerçek oyuncu planını ve en az
+iki farklı karar eksenini değiştirmiyorsa aile, güç dengesi doğru olsa bile tamamlanmış sayılmaz.
 
 ## Sorumluluk ayrımı
 
@@ -50,7 +57,9 @@ Sentez katmanı şunları hesaplar; rarity başına elle kart kopyalanmaz:
     deployda yeniden çalıştırılmaz.
 
 Yerel görsel smoke testi için Python gerekmez: `node tools/serve-local.cjs . 8765` çalıştırılır ve
-`http://127.0.0.1:8765/KnightRush.html` açılır. Başarılı açılışta Canvas üzerinde hem
+`http://127.0.0.1:8765/KnightRush.html` açılır. Debug Run / Skill Lab açılmadan önce sesin
+susturulduğu doğrulanır. Test modları kod seviyesinde zorunlu mute taşır; normal oyuncu ses tercihi
+değiştirilmez. Başarılı açılışta Canvas üzerinde hem
 `data-boot-ready="1"` hem `data-render-ready="1"` bulunmalı, `data-boot-error` ve konsol hatası
 bulunmamalıdır. `boot-ready` yalnız derlemeyi; `render-ready` ilk gerçek frame'in tamamlandığını kanıtlar.
 
@@ -62,13 +71,20 @@ F3 balance matrisi oyun bootundan ayrı tutulur; 18 temsili geçmişte 108 Twist
 kardeş kıyası yapar. Maksimum kardeş farkı `%20`, ortalama fark `%10`; komşu aile maksimumu
 `%20`, ortalaması `%12` sınırındadır. Eşik, kaybolan Quality çıktısını gizlemek için gevşetilmez.
 
-F4 Critical referansi Form ve Specialization seviyesinde materializedir. Critical Primary;
+F4 Critical referansi Form, Specialization, Twist ve Apex seviyesinde tam kapanmistir:
+`127 route / 508 rarity card`. Critical Primary;
 move-local Chance ile turler arasinda saklanan Precision kurar. Iskalayan Crit Precision biriktirir,
 basarili Crit yalniz o moveun Precisionini sifirlar. Critical Secondary bu motoru acamaz. Twistten
 once sadece saf Critical/Critical rotasi `CRIT_POWER` satin alabilir; diger rotalarda dogal Chance
 ve Precision tasmasi kaybolmak yerine local Crit carpimina akar. Yeni Critical ailesi yazari;
 Critical/Critical carpani liderligini, parent Crit oranini ve uzun vadeli beklenen Crit oranini ayri
-denetlemelidir. `--quick` icindeki F4 Form ve 96-kart Specialization matrisini azaltmak kabul edilmez.
+denetlemelidir. `--quick` icindeki F4 Form, 96-kart Specialization ve 508-kart closure
+matrisini azaltmak kabul edilmez. F4S1-S3 de dort Twist ve Twist basina dort Apex tasir:
+Critical/Mark Marki tuketmeden Crit odagi kurar veya gercek Critten Mark uretir;
+Critical/Chain baslangic/canli Chaini Crit sansi, Crit carpani ya da Crit sonrasi Chain olarak
+yorumlar; Critical/Posture ayni Crit sonucunu light-bow Posture etkisine uygular. Sirali delivery
+temas basina, eszamanli packet toplam bir Chain uretir. Hicbir authored gameplay cap veya
+diminishing bu rotalara eklenemez.
 F4S4 Critical/Critical dort Twist ile materializedir: bagimsiz rollu sirali volley, stored Precisioni
 Crit carpanina ceviren tek agir ok, Crit geldikce uzayip ilk normal vurusla duran cascade ve tek ortak
 roll kullanan eszamanli packet. Sirali gercek oklar temas basina Chain kurar; packet toplam bir Chain
@@ -80,6 +96,51 @@ Precision dongusunu oldurmek yerine garanti Mark kurulumunu buyutur. Apex parent
 Chain sozlesmesini degistiremez ve Chain scaling alamaz. Bootta `CCC/LCC/LLC/LLL` gecmisleri ile
 butun Apex raritylerini kapsayan 256-kart matris kosar; daha buyuk kombinatoryal matris oyuncu
 acilisina konmaz.
+
+F4S5 Critical/Affliction Twist referansi dort farkli iliski kurar: bagimsiz Crit atan ve toplam
+Bleedi temaslara bolen sirali volley; Crit gelince ek ucretli Bleed acan tek agir rupture; mevcut
+Bleedi tuketmeden Crit carpanina okuyan Bloodsight; tek ortak Crit rollu ve tek toplam Chainli
+eszamanli dikenli packet. Yeni Affliction ailesi yazari, gorunen her okun toplam wounddan gercek pay
+tasidigini, temas sayisinin Bleedi cogaltmadigini ve yeni uygulanan Bleedin ayni vurus tarafindan
+geriye donuk okunmadigini kanitlamalidir. `--quick` icindeki 256-kart F4S5 matrisi korunur.
+F4S5 altindaki 16 Apex parent mekanigi degistirmez: A1 iliskinin, A2 Crit guvenilirliginin,
+A3 toplam Bleedin, A4 temiz impactin lideridir. Apex delivery/roll/wound/Chain sozlesmesini miras
+alir. `CCC/LCC/LLC/LLL` temsili gecmisleriyle 256-kart Apex matrisi yayin kapisinda gecmelidir.
+
+F4S6 Critical/Charge referansi da dort iliski kurar: bankayi tek agir Crit darbesine sikistiran
+Overload; bir toplam Charge salimini bagimsiz Crit atan gercek oklara bolen Volley; action-start
+Chargei once local Crit sansina, sonra Crit carpanina ceviren Focus; ilk Critte duran ve yalniz
+harcadigi bankadan ucretli iade yapan Hunt. Multihit Chargei kopyalayamaz. Hunt ilk oku bedava
+hazirlar fakat sonraki ok sayisi mevcut banka ile sinirlidir. A1 iliski, A2 Crit guvenilirligi,
+A3 Charge salimi, A4 temiz impact lideridir. Derin rarity matrisi oyun bootunda degil validator
+icinde calisir.
+
+F5 Affliction referansi Form, Specialization, Twist ve Apex seviyesinde materializedir. Form tek okla Base Mark,
+tek gercek Chain ve iki tick Bleed kurar; direct damage F1-F4'ten bilincli olarak dusuktur. Stable
+Bleed suresi rarity ile uzamaz, Crit atmaz ve Chain'den damage almaz. Alti Specialization yalniz yeni
+paketini Mark, Chain, Posture, Critical, Affliction veya Charge ile boler. S2 disinda delivery tek
+oktur; S2'nin her gorunen oku Chain ve tek toplam Bleed paketinden pozitif pay tasir. Temas sayisi
+Bleedi cogaltamaz. Altı ailenin her birinde 4 Twist ve her Twist altında 4 Apex vardır: toplam
+`1 Form + 6 Specialization + 24 Twist + 96 Apex = 127 route / 508 rarity card`. Saf
+Affliction/Affliction içinde açık ekstra Bleed Power yalnız Virulence Twistinin imzasıdır; diğer
+üç Twist aynı bütçeyi mevcut yarayı yeniden açma, tick zamanlaması veya ayrı yara uygulama olayına
+harcar. Her Apex parent davranışını koruyarak sırasıyla ilişki, yara, dengeli ifade veya temiz impact
+payını büyütür. `--quick` closure denetimi parent/rank gerilemesini, delivery gerçeğini, bütün mekanik
+alanlarını ve Apex kardeş güç bandını birlikte kontrol eder.
+
+Mark Burst F1S5 Detonation/Affliction referansı `4 Twist / 16 Apex` ile materializedir. T1 tüketilen
+Markı iki ticklik yaraya, T2 action-start yarayı tüketmeden anlık rupture'a, T3 tüketilen payloadı
+iki savunma fazına yayılan finite Detonation yarasına, T4 ise tek toplam yara ve tek Chain taşıyan
+eşzamanlı pakete dönüştürür. T3A2 ilk yankıyı bossun ilk hareketinden önce çalıştırır; T3A3 arada
+yeniden eklenen Markı ikinci tickte gerçekten tüketir; T3A4 aktif yara boyunca her ayrı boss move
+başlangıcını bir ücretli pulse'a çevirir. Bu aile `Apex Design V2` yüzeysellik kapısının referansıdır.
+
+Mark Burst F1S6 Detonation/Charge referansı da `4 Twist / 16 Apex` ile materializedir. T1 bütün
+bankayı Detonation ile aynı ağır darbeye boşaltır; T2 yalnız patlatılan Markla eşleşen Chargeı
+harcayıp finite yankı üretir; T3 harcanmış bankanın ücretli bölümünü Marklarla geri taşır; T4
+bankayı sonraki savunmada Dodge/Parry başarılarının tükettiği finite pulse havuzuna çevirir.
+Sıfır Charge parent Detonationı kilitleyemez. Temassız yankı ve savunma pulseları Chain/Crit/Mark
+üretemez; hiçbir iade gerçekten harcanmış bankayı aşamaz.
 
 ## Kabul edilmeyen sonuçlar
 
