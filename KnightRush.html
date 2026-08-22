@@ -9636,6 +9636,7 @@ function createRunSkill(definition){
     detonationPostureSealFlat:0,detonationPostureSealAmplification:0,
     detonationPostureSealLayers:1,detonationPostureSealMeasured:false,
     detonationCritMode:null,detonationCritChancePerConsumedMark:0,
+    detonationCritOverflowMultiplierPerChance:0,
     detonationCriticalPayloadRate:0,detonationCriticalBreakPayloadRate:0,
     detonationNonCritPayloadRate:0,
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
@@ -9797,6 +9798,7 @@ function transformSharpshoot(skill,patch){
     detonationPostureSealFlat:0,detonationPostureSealAmplification:0,
     detonationPostureSealLayers:1,detonationPostureSealMeasured:false,
     detonationCritMode:null,detonationCritChancePerConsumedMark:0,
+    detonationCritOverflowMultiplierPerChance:0,
     detonationCriticalPayloadRate:0,detonationCriticalBreakPayloadRate:0,
     detonationNonCritPayloadRate:0,
     critChance:0,critChancePerStartingMark:0,critChancePerStartingChain:0,
@@ -10121,7 +10123,7 @@ const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DETONATION_POSTURE_READ','DETONATION_POSTURE_ECHO_FLOOR',
   'DETONATION_POSTURE_SEAL','DETONATION_POSTURE_SEAL_AMPLIFICATION',
   'DETONATION_POSTURE_SEAL_LAYERS','DETONATION_POSTURE_SEAL_MEASURED',
-  'DETONATION_CRIT_AIM','DETONATION_CRIT_PAYLOAD','DETONATION_CRIT_BREAK',
+  'DETONATION_CRIT_AIM','DETONATION_CRIT_OVERFLOW','DETONATION_CRIT_PAYLOAD','DETONATION_CRIT_BREAK',
   'DETONATION_NONCRIT_PAYLOAD',
   'DELIVERY_CONTACTS','DELIVERY_WEIGHT',
   'CHAIN_SCALING','CHAIN_MANAGEMENT',
@@ -16075,8 +16077,9 @@ const MARK_BURST_DETONATION_CRITICAL_APEX_DEFINITIONS=Object.freeze({
   DETONATION_CRIT_AIM:Object.freeze([
     Object.freeze({key:'DEEP_SIGHT',kind:'NUMERIC_MASTERY',profile:Object.freeze({DIRECT_DAMAGE:.10,
       DETONATION_DAMAGE:.15,DETONATION_CONSUMPTION:.15,CRIT_CHANCE:.15,DETONATION_CRIT_AIM:.45})}),
-    Object.freeze({key:'MEMORY_SIGHT',kind:'BEHAVIORAL_CAPSTONE',profile:Object.freeze({DIRECT_DAMAGE:.10,
-      DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,CRIT_CHANCE:.15,CRIT_PRECISION:.40})}),
+    Object.freeze({key:'OVERDRAWN_SIGHT',kind:'BEHAVIORAL_CAPSTONE',profile:Object.freeze({DIRECT_DAMAGE:.10,
+      DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,CRIT_CHANCE:.25,
+      DETONATION_CRIT_OVERFLOW:.30})}),
     Object.freeze({key:'LETHAL_CALCULATION',kind:'BEHAVIORAL_CAPSTONE',profile:Object.freeze({DIRECT_DAMAGE:.10,
       DETONATION_DAMAGE:.15,DETONATION_CONSUMPTION:.15,DETONATION_CRIT_AIM:.20,CRIT_POWER:.40})}),
     Object.freeze({key:'STEADY_IMPACT',kind:'RELIABILITY',profile:Object.freeze({DIRECT_DAMAGE:.40,
@@ -16329,11 +16332,15 @@ const MARK_BURST_DETONATION_CRITICAL_STRUCTURE_AUDIT=(()=>{
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
       twistIds.includes(route.parentId)),engines=new Set(twists.map(route=>
-      route.mechanics.detonationEngine));
+      route.mechanics.detonationEngine)),precisionTwists=twists.filter(route=>
+      (route.qualityProfile.CRIT_PRECISION||0)>0),precisionApexes=apexes.filter(route=>
+      (route.qualityProfile.CRIT_PRECISION||0)>0);
   if(twists.length!==4||apexes.length!==16||engines.size!==4||
      twists.some(route=>route.apexTarget!==4||!route.twistIdentity||!route.twistDesign)||
      apexes.some(route=>!route.apexDesign||!twistIds.includes(route.parentId))||
-     twists.some(twist=>apexes.filter(apex=>apex.parentId===twist.id).length!==4))
+     twists.some(twist=>apexes.filter(apex=>apex.parentId===twist.id).length!==4)||
+     precisionTwists.length!==1||precisionTwists[0].id!=='detonation_critical_failsafe_twist'||
+     precisionApexes.some(route=>route.parentId!=='detonation_critical_failsafe_twist'))
     throw new Error('Detonation/Critical needs 4 distinct Twists and 4 Apexes per Twist');
   return Object.freeze({passed:true,twists:twists.length,apexes:apexes.length,
     engines:engines.size});
@@ -17768,7 +17775,7 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
 });
 const MARK_BURST_CRITICAL_APEX_DEBUG_SUMMARY_TR=Object.freeze({
   detonation_critical_aim_twist_apex_1:'Patlatılan her Markın verdiği nişan bonusunu büyütür.',
-  detonation_critical_aim_twist_apex_2:'Kaçan ağır okun sonraki denemeye taşıdığı Precisionı büyütür.',
+  detonation_critical_aim_twist_apex_2:'Mark kaynaklı toplam nişan %100ü aşarsa boşa gidecek kısmı ücretli biçimde Crit çarpanına aktarır.',
   detonation_critical_aim_twist_apex_3:'Markla kurulan nişanı korur, başarılı Critin çarpanını büyütür.',
   detonation_critical_aim_twist_apex_4:'Mark olmasa bile güvenilir temiz darbe ve taban Crit şansı verir.',
   detonation_critical_ignition_twist_apex_1:'Gerçek Critin ateşlediği Detonation bonusunu büyütür.',
@@ -17949,7 +17956,8 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'detonationPostureSealPerMark','detonationPostureSealFlat',
   'detonationPostureSealAmplification','detonationPostureSealLayers',
   'detonationPostureSealMeasured',
-  'detonationCritMode','detonationCritChancePerConsumedMark','detonationCriticalPayloadRate',
+  'detonationCritMode','detonationCritChancePerConsumedMark',
+  'detonationCritOverflowMultiplierPerChance','detonationCriticalPayloadRate',
   'detonationCriticalBreakPayloadRate','detonationNonCritPayloadRate',
   'critChance','critChancePerStartingMark','critChancePerStartingChain','critChanceRampPerHit',
   'critDamagePerStartingChain','critChainBonus','critMarkBonus','critRollMode',
@@ -18745,6 +18753,7 @@ function markBurstSecondaryPostureOutput(power,reference=1){
     skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED')/
     (SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE*Math.max(.001,reference))).toFixed(6));
 }
+const MARK_BURST_CRITICAL_SECONDARY_PRECISION_EXPRESSION=.40;
 /* All six Forms use one compiler. The route owns the budget and Delivery opt-in;
    this function only materializes that declaration. Consequently a future Form
    cannot accidentally receive free contacts/Weight or forget Mark Burst's
@@ -18856,11 +18865,19 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
     reserve.POSTURE_DAMAGE=0;
   }else if(specialization&&secondary==='CRITICAL'){
     const chance=skillLocalCritChanceProgress(Math.max(0,axes.CRIT_CHANCE||0),command.damage),
-      precision=skillLocalCritPrecisionProgress(Math.max(0,axes.CRIT_PRECISION||0),
+      paidPrecision=Math.max(0,axes.CRIT_PRECISION||0),expressedPrecision=paidPrecision*
+        MARK_BURST_CRITICAL_SECONDARY_PRECISION_EXPRESSION,
+      precision=skillLocalCritPrecisionProgress(expressedPrecision,
         command.damage,chance.output),effective=skillPersistentPrecisionCritRate(
         chance.output,precision.output),multiplier=skillLocalCritMultiplierProgress(
         Math.max(0,axes.CRIT_POWER||0)+chance.reserve+precision.reserve,
         command.damage,effective);
+    if(paidPrecision>expressedPrecision){
+      const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference;
+      command.markRule=markRule({...command.markRule,damagePerMark:Number((
+        command.markRule.damagePerMark+(paidPrecision-expressedPrecision)/
+        Math.max(1,reference)).toFixed(6))});
+    }
     command.critChance=Number(chance.output.toFixed(6));
     command.critPrecisionGain=Number(precision.output.toFixed(6));
     command.critDamageMultiplier=multiplier.output;
@@ -18998,7 +19015,9 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       command.detonationCritMode='PAID_CAPACITY_AIM';
       command.detonationCritChancePerConsumedMark=Number((aim.output/
         Math.max(1,reference)).toFixed(6));
-      reserve.DETONATION_CRIT_AIM=aim.reserve;
+      command.detonationCritOverflowMultiplierPerChance=Number((Math.max(0,
+        axes.DETONATION_CRIT_OVERFLOW||0)/Math.max(.001,command.damage*.5)).toFixed(6));
+      reserve.DETONATION_CRIT_AIM=aim.reserve;reserve.DETONATION_CRIT_OVERFLOW=0;
     }else if(engine==='DETONATION_CRIT_IGNITION'){
       const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
         payloadReference=Math.max(1,command.markRule.damagePerMark*Math.min(reference,
@@ -19597,16 +19616,19 @@ function commandExpectedDetonationCriticalPower(command,markStacks=8,startingCha
   const plan=commandMarkPlan(command,markStacks),consumed=Math.max(0,plan.consumedTotal),
     payload=Math.max(0,plan.markDamageByHit.reduce((sum,value)=>sum+value,0)),
     baseChance=commandExpectedLocalCritChance(command,markStacks,startingChain),
-    aimedChance=clamp(baseChance+consumed*Math.max(0,
-      Number(command.detonationCritChancePerConsumedMark)||0),0,1),
+    rawAimedChance=baseChance+consumed*Math.max(0,
+      Number(command.detonationCritChancePerConsumedMark)||0),
+    aimedChance=clamp(rawAimedChance,0,1),aimOverflow=Math.max(0,rawAimedChance-1),
     multiplier=Math.max(1,Number(command.critDamageMultiplier)||CFG.CRIT_DAMAGE_MULT),
     directAim=Math.max(0,aimedChance-baseChance)*commandDirectDamageTotal(command)*(multiplier-1),
+    overflowPower=aimedChance*commandDirectDamageTotal(command)*aimOverflow*Math.max(0,
+      Number(command.detonationCritOverflowMultiplierPerChance)||0),
     criticalPayload=aimedChance*payload*(Math.max(0,
       Number(command.detonationCriticalPayloadRate)||0)+.35*Math.max(0,
       Number(command.detonationCriticalBreakPayloadRate)||0)),
     nonCriticalPayload=(1-aimedChance)*payload*Math.max(0,
       Number(command.detonationNonCritPayloadRate)||0);
-  return directAim+criticalPayload+nonCriticalPayload;
+  return directAim+overflowPower+criticalPayload+nonCriticalPayload;
 }
 function commandExpectedPostureRelationshipPower(command){
   const values=SKILL_GUARDRAIL_POWER_VALUES,breakShare=.35;
@@ -29596,9 +29618,14 @@ function performPlayerAction(command,options=null){
   }
   if(command.detonationCritChancePerConsumedMark>0){
     command={...command};
-    const aimedMarks=commandMarkPlan(command,startingMark).consumedTotal;
-    command.critChance=Math.max(0,Number(command.critChance)||0)+aimedMarks*
-      Math.max(0,Number(command.detonationCritChancePerConsumedMark)||0);
+    const aimedMarks=commandMarkPlan(command,startingMark).consumedTotal,
+      aim=aimedMarks*Math.max(0,Number(command.detonationCritChancePerConsumedMark)||0),
+      local=Math.max(0,Number(command.critChance)||0),
+      overflow=Math.max(0,globalCritChance(actorId)+local+aim-1);
+    command.critChance=local+aim;
+    command.critDamageMultiplier=Math.max(1,Number(command.critDamageMultiplier)||
+      CFG.CRIT_DAMAGE_MULT)+overflow*Math.max(0,Number(
+        command.detonationCritOverflowMultiplierPerChance)||0);
   }
   let plannedHits=command.hits||1;
   if(chargeMode==='CRITICAL_HUNT'&&plannedHits>1+startingCharge){
@@ -36465,7 +36492,9 @@ function skillLabCompactSynthesisMechanics(command){
       (command.detonationPostureSealMeasured?'; mühür yalnız Break için gerekeni harcar.':'.'));
   else if(command.markDetonationEventMode==='DETONATION_CRIT_AIM')
     lines.push('Oynanış: Gerçekten patlatılacak her Mark bu oka +'+
-      (command.detonationCritChancePerConsumedMark*100).toFixed(2)+'% yerel Crit şansı verir.');
+      (command.detonationCritChancePerConsumedMark*100).toFixed(2)+'% yerel Crit şansı verir.'+
+      (command.detonationCritOverflowMultiplierPerChance>0?
+        ' %100 üzerindeki ücretli nişan Crit çarpanına aktarılır.':''));
   else if(command.markDetonationEventMode==='DETONATION_CRIT_IGNITION')
     lines.push('Oynanış: Doğrudan ok Crit atarsa Detonation ×'+damagePart(1+
       command.detonationCriticalPayloadRate)+' güçlenir'+
