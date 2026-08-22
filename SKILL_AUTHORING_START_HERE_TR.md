@@ -38,6 +38,17 @@ Sentez katmanı şunları hesaplar; rarity başına elle kart kopyalanmaz:
 
 1. Base identity ve Primary için kaybolamayacak çıktıları yaz.
 2. Secondary'nin rolünü ve özellikle yapmaması gerekenleri yaz.
+   Her Attribute motoru `URETIR / OKUR / HARCAR / COZUM SIRASI` bildirir; her Delivery yalnız
+   mekanik temas gruplarını ve bu grupların zamanını bildirir. Aynı anda çözülen temaslar aynı
+   grup-başı snapshotı okur, çıktılarını grup bitince aktarır; sıralı gruplar önceki grupların
+   çıktısını okur. Primary/Secondary motor kendi doğal çıktısını gerçekten üretir, sıfır kaynakla
+   çalışır ve toplam Quality büyürken bu çıktı gerilemez. Tek temas, sequential, shotgun, echo ve
+   gelecekteki Deliveryler aynı matristen geçer; skill id/adresi için istisna yazılmaz.
+   Chain motorunda her mekanik temas tam `+1 Chain` üretir. Tek temas görünmez biçimde çoklu Chain
+   yazamaz; daha fazla Chain gerekiyorsa Delivery gerçek kurulum teması üretir.
+   Ortak motor-delivery materializerı `SINGLE`, `SEQUENTIAL`, `SIMULTANEOUS_PACKET` ve
+   `IMPACT_ECHO` topolojilerinin tamamını bütün Attribute motorları için kabul eder. Silah animasyonu
+   bu katmana gömülmez; Bow/Sword gibi sunum adapterı aynı topolojiye kendi recipe'sini bağlar.
 3. Varsayılan olarak dört, birbirinden oynanış olarak ayrılan Twist tasarla. Sadece sayıları değişen iki Twist kabul edilmez.
 4. Önce mekanik kararı ver, sonra onu en iyi anlatan delivery'yi seç. Her aileye zorla bütün delivery türleri dağıtılmaz.
 5. **Görünen temas sonuç üretir:** ekranda ayrı bir ok/vuruş hedefe değiyorsa o temasın hasar, Chain, Mark, Crit, Posture veya status katkısı açıkça tanımlanmalıdır. Birden fazla temas tek bir toplam payload taşıyorsa toplam güç temaslara bölünür; son temasa gizlenmez ve temas sayısıyla bedavaya çarpılmaz.
@@ -141,6 +152,20 @@ harcayıp finite yankı üretir; T3 harcanmış bankanın ücretli bölümünü 
 bankayı sonraki savunmada Dodge/Parry başarılarının tükettiği finite pulse havuzuna çevirir.
 Sıfır Charge parent Detonationı kilitleyemez. Temassız yankı ve savunma pulseları Chain/Crit/Mark
 üretemez; hiçbir iade gerçekten harcanmış bankayı aşamaz.
+
+Mark Burst F2 Chain Formunun altı Specialization rotası materializedir. Hepsi Quality ile büyüyen
+aynı sıralı ok dizisini, temas başına gerçek `+1 Chain` üretimini, canlı Chain okumasını ve yalnız
+son temasta patlayan temel `1 Mark`ı korur. Chain/Detonation bu tek patlamayı güçlendirir fakat
+tüketim sayısını artırmaz; Chain/Chain en yüksek Chain ve temas bütçesini alır. Posture, Bleed ve
+Charge rotaları aksiyon başına yalnız bir toplam ücretli paketi temaslara böler; temas sayısı bu
+paketleri çoğaltmaz. Critical her gerçek temasta bağımsız yerel zar atar ve Specialization
+katmanında Precision üretmez. Mark Burst hiçbir Stable rotada Mark üretmez.
+
+Mark Burst F2S1 Chain/Detonation `4 Twist / 16 Apex` ile materializedir. T1 canlı Chaini
+tüketmeden finaldeki tek-Mark patlamasına okur; T2 ücretli birden fazla tek-Mark olayını gerçek
+oklara dağıtır; T3 yalnız başarılı patlamada seçilen Chain rezervini tüketir; T4 başarılı
+patlamadan sonra Mark patlatmayan gerçek dönüş okları açar. Her rota en az bir Detonation girişimi
+taşır. Mark yokken T3 Chain harcayamaz ve T4 dönüş dalgası üretemez; ana Chain saldırısı çalışır.
 
 ## Kabul edilmeyen sonuçlar
 

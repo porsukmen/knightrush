@@ -9735,7 +9735,16 @@ function createRunSkill(definition){
     markDetonationReservePressureRate:0,markDetonationFullCommit:false,
     markDetonationChainFeedbackRate:0,markDetonationCascade:false,
     markDetonationCascadeInterval:0,markDetonationCascadeChainRate:0,
-    markDetonationCascadeChainPerPulse:0,emptyDetonationDirectBonus:0,
+    markDetonationCascadeChainPerPulse:0,markDetonationStartingChainRate:0,
+    markDetonationReadsContactChain:false,markDetonationSplitTail:0,
+    markDetonationRelayEvents:0,markDetonationRelayPlacement:null,markDetonationEventIndices:null,
+    detonationSuccessChainScalingRate:0,markDetonationFollowupPerConsumed:0,
+    markDetonationPrimaryHits:0,markDetonationHitIndex:null,
+    markDetonationChainSpendFraction:0,markDetonationChainSpendDamagePerChain:0,
+    markDetonationSpendGeneratedOnly:false,markDetonationRecoilContacts:0,
+    markDetonationRecoilWeight:1,markDetonationRecoilDeferred:false,
+    markDetonationRecoilEchoRate:0,markDetonationRecoilDamageTotal:0,
+    emptyDetonationDirectBonus:0,
     detonationPostureMode:null,detonationPosturePerConsumedMark:0,
     detonationPostureEscalation:0,detonationPostureBreakBonusRate:0,
     detonationAdaptivePosture:0,detonationAdaptiveDamageRate:0,
@@ -9762,6 +9771,8 @@ function createRunSkill(definition){
     detonationDefenseParryMultiplier:1,detonationDefenseStreakRate:0,
     detonationDefenseBreakReturnRate:0,
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
+    chainScalingWeightPattern:null,chainStartingWeightPattern:null,
+    chainGeneratedWeightPattern:null,
     startingChainHitRate:0,chainSecondWaveBonus:0,chainSecondWaveStartIndex:0,
     markPulsePattern:null,markPulseInterval:0,markPulsePreservesContactMark:false,
     markApplicationEventPower:0,
@@ -9906,11 +9917,22 @@ function transformSharpshoot(skill,patch){
     chainScalingTiming:'LIVE',realChainScalingMultiplier:1,apexRefinementId:null,
     addsChain:true,chainGainPerHit:1,chainGainPattern:null,deliveryMagnitude:1,deliveryWeight:1,
     chainBonusWeight:1,packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
+    chainScalingWeightPattern:null,chainStartingWeightPattern:null,
+    chainGeneratedWeightPattern:null,
     markDetonationEventMode:'CONTACT',markDetonationCapacity:1,markDetonationEchoRate:0,
     markDetonationReservePressureRate:0,markDetonationFullCommit:false,
     markDetonationChainFeedbackRate:0,markDetonationCascade:false,
     markDetonationCascadeInterval:0,markDetonationCascadeChainRate:0,
-    markDetonationCascadeChainPerPulse:0,emptyDetonationDirectBonus:0,
+    markDetonationCascadeChainPerPulse:0,markDetonationStartingChainRate:0,
+    markDetonationReadsContactChain:false,markDetonationSplitTail:0,
+    markDetonationRelayEvents:0,markDetonationRelayPlacement:null,markDetonationEventIndices:null,
+    detonationSuccessChainScalingRate:0,markDetonationFollowupPerConsumed:0,
+    markDetonationPrimaryHits:0,markDetonationHitIndex:null,
+    markDetonationChainSpendFraction:0,markDetonationChainSpendDamagePerChain:0,
+    markDetonationSpendGeneratedOnly:false,markDetonationRecoilContacts:0,
+    markDetonationRecoilWeight:1,markDetonationRecoilDeferred:false,
+    markDetonationRecoilEchoRate:0,markDetonationRecoilDamageTotal:0,
+    emptyDetonationDirectBonus:0,
     detonationPostureMode:null,detonationPosturePerConsumedMark:0,
     detonationPostureEscalation:0,detonationPostureBreakBonusRate:0,
     detonationAdaptivePosture:0,detonationAdaptiveDamageRate:0,
@@ -10758,6 +10780,14 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     releaseTime:.05,recoveryTime:.18,arrowSpeed:1580,arrowArc:8,arrowScale:.88,drawStrength:.62,
     releaseRecoil:.16,trailStrength:.55,impactScale:.86,impactShake:1.1,hitStop:.015,
     shotInterval:.24,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CHAIN_MACHINE',visualStyle:'CHAIN',raiseTime:.04,drawTime:.12,holdTime:0,
+    releaseTime:.04,recoveryTime:.14,arrowSpeed:2280,arrowArc:3,arrowScale:.72,drawStrength:.48,
+    releaseRecoil:.08,trailStrength:.68,impactScale:.68,impactShake:.7,hitStop:.008,
+    shotInterval:.10,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
+  bowAnimationRecipe({id:'BOW_CHAIN_ECHO',visualStyle:'CHAIN',raiseTime:.08,drawTime:.24,holdTime:.03,
+    releaseTime:.05,recoveryTime:.44,arrowSpeed:1680,arrowArc:7,arrowScale:.86,drawStrength:.66,
+    releaseRecoil:.18,trailStrength:.72,impactScale:.88,impactShake:1.2,hitStop:.014,
+    shotInterval:.30,holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0}),
   bowAnimationRecipe({id:'BOW_WEIGHTED_CHAIN',visualStyle:'CHAIN',raiseTime:.15,drawTime:.46,holdTime:.14,
     releaseTime:.11,recoveryTime:.40,arrowSpeed:980,arrowArc:24,arrowScale:1.38,drawStrength:1,
     releaseRecoil:.65,trailStrength:.78,impactScale:1.42,impactShake:4.6,hitStop:.07,
@@ -11680,6 +11710,14 @@ const TWIST_MECHANIC_ENGINE_REGISTRY=Object.freeze(Object.fromEntries([
   ,{id:'DETONATION_CHAIN_RELAY',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'SEQUENTIAL_PER_CONTACT_DETONATION_AND_LIVE_CHAIN'}
   ,{id:'DETONATION_CHAIN_CASCADE',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'ONE_CONTACT_SEQUENTIAL_DETONATION_PULSES_WITH_CLOSED_CHAIN_FEEDBACK'}
   ,{id:'DETONATION_CHAIN_SALVO',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'SIMULTANEOUS_DETONATION_PACKET_TO_FUTURE_CHAIN'}
+  ,{id:'CHAIN_DETONATION_CRESCENDO',owners:['CHAIN','DETONATION'],kind:'SIGNATURE',powerModel:'LIVE_CHAIN_READ_BY_FINAL_ONE_MARK_DETONATION'}
+  ,{id:'CHAIN_DETONATION_RELAY',owners:['CHAIN','DETONATION'],kind:'SIGNATURE',powerModel:'QUALITY_PAID_DETONATION_EVENTS_INSIDE_LIVE_CHAIN_SEQUENCE'}
+  ,{id:'CHAIN_DETONATION_COMPRESSION',owners:['CHAIN','DETONATION'],kind:'SIGNATURE',powerModel:'CHAIN_COMMIT_PAID_ONLY_ON_SUCCESSFUL_MARK_DETONATION'}
+  ,{id:'CHAIN_DETONATION_RECOIL',owners:['CHAIN','DETONATION'],kind:'SIGNATURE',powerModel:'SUCCESSFUL_DETONATION_TO_REAL_CHAIN_RETURN_VOLLEY'}
+  ,{id:'PURE_CHAIN_LIVE_SEQUENCE',owners:['CHAIN'],kind:'SIGNATURE',powerModel:'QUALITY_GROWN_CONTACTS_WITH_LIVE_CHAIN_READ'}
+  ,{id:'PURE_CHAIN_SETUP_WEIGHT',owners:['CHAIN'],kind:'SIGNATURE',powerModel:'QUALITY_GROWN_CHAIN_SETUP_TO_WEIGHTED_FINAL'}
+  ,{id:'PURE_CHAIN_MACHINE_SEQUENCE',owners:['CHAIN'],kind:'SIGNATURE',powerModel:'FAST_QUALITY_GROWN_CONTACT_STREAM'}
+  ,{id:'PURE_CHAIN_PHYSICAL_ECHO',owners:['CHAIN'],kind:'SIGNATURE',powerModel:'ONE_RELEASE_WITH_QUALITY_GROWN_REAL_CHAIN_CONTACTS'}
   ,{id:'DETONATION_POSTURE_BREACH',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_CONSUMED_MARK_TO_IMMEDIATE_POSTURE'}
   ,{id:'DETONATION_BREAK_FUSE',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_SELF_OPENED_BREAK_DETONATION_OUTPUT'}
   ,{id:'DETONATION_POSTURE_ECHO',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_CONSUMED_MARK_TO_DELAYED_POSTURE'}
@@ -11784,8 +11822,8 @@ function skillDeliveryScalingContract(data,delivery,routeId,qualityProfile,stric
   if(!SKILL_DELIVERY_SCALING_MODES.includes(mode))
     throw new Error(routeId+' has an invalid Delivery scaling mode');
   if(mode==='CONTACT_COUNT'&&(!delivery||
-     !['SEQUENTIAL','SIMULTANEOUS_PACKET'].includes(delivery.pattern)))
-    throw new Error(routeId+' can grow contacts only through Sequential or Shotgun Delivery');
+     !['SEQUENTIAL','SIMULTANEOUS_PACKET','IMPACT_ECHO'].includes(delivery.pattern)))
+    throw new Error(routeId+' can grow contacts only through a real-contact Delivery');
   if(mode==='WEIGHT'&&(!delivery||delivery.pattern!=='SINGLE'))
     throw new Error(routeId+' can grow Weight only behind Single Delivery');
   if(mode==='NONE'&&(powerAxis||effectOwner))
@@ -12057,12 +12095,12 @@ function buildSharpshootChainFocusFamilyContracts(){
       outcome:'Every arrow reads live Chain, adds exactly one Chain, and gives later arrows a paid rising coefficient.',
       hook:'Sequential-contact, live-Chain and late-contact artifacts.',
       promise:'Continue the inherited volley as the pure Chain line: every real arrow makes every later arrow stronger.'},
-    {id:'chain_focus_weight_twist',slot:2,pattern:'SINGLE',profile:{DIRECT_DAMAGE:.24,CHAIN_SCALING:.76},
-      relationship:'PURE_CHAIN_WEIGHT',reason:'One heavy arrow turns earned delivery magnitude into visible Weight instead of fake contacts.',
-      rejected:'SEQUENTIAL',decision:'Trade Chain generation speed for one preserved-Chain payoff with uncapped Weight.',
-      outcome:'One arrow reads stored Chain through paid Weight, then creates exactly one real Chain.',
-      hook:'Single-impact, Weight and stored-Chain artifacts.',
-      promise:'Compress the Quality-grown delivery into one heavy arrow whose paid Weight amplifies stored Chain.'},
+    {id:'chain_focus_weight_twist',slot:2,pattern:'SEQUENTIAL',profile:{DIRECT_DAMAGE:.24,CHAIN_SCALING:.76},
+      relationship:'PURE_CHAIN_WEIGHT',reason:'Quality-grown setup arrows make the Chain source visible before one weighted final arrow reads it.',
+      rejected:'SIMULTANEOUS_PACKET',decision:'Trade evenly distributed volley damage for visible Chain setup and one uncapped weighted payoff.',
+      outcome:'Every setup arrow creates one Chain; the final heavy arrow reads that live setup and creates one more.',
+      hook:'Setup-contact, Weight and stored-Chain artifacts.',
+      promise:'Build Chain through visible light contacts, then compress the live result into one heavy final arrow.'},
     {id:'chain_focus_packet_twist',slot:3,pattern:'SIMULTANEOUS_PACKET',profile:{DIRECT_DAMAGE:.18,CHAIN_SCALING:.82},
       relationship:'PURE_CHAIN_PACKET',reason:'A simultaneous packet separates fast Chain setup from within-action Chain ramping.',
       rejected:'SEQUENTIAL',decision:'Give up self-ramping damage to leave the largest immediate real-Chain setup for the next skill.',
@@ -12093,8 +12131,6 @@ function buildSharpshootChainFocusFamilyContracts(){
     if(twist.pattern==='IMPACT_ECHO')
       commonMechanics.echoContactPolicy=IMPACT_ECHO_CONTACT_POLICIES.PHYSICAL;
     if(twist.relationship==='PURE_CHAIN_WEIGHT')commonMechanics.weightChannel='CHAIN_SCALING';
-    if(twist.pattern==='SINGLE')
-      commonMechanics.deliveryInheritanceRule='CONVERT_PARENT_CONTACTS_TO_SINGLE_PAYLOAD';
     contracts.push(skillAttributeRouteContract({id:twist.id,depth:3,parentId:'chain_focus_spec',
       formSlot:2,specializationSlot:2,slot:twist.slot,primaryAttributeId:'CHAIN',secondaryAttributeId:'CHAIN',
       apexTarget:4,powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,
@@ -15739,6 +15775,32 @@ const MARK_BURST_STABLE_PRIMARY_TO_CHAIN_CAUSALITY=Object.freeze({version:1,
 const MARK_BURST_STABLE_PRIMARY_TO_FUTURE_CHAIN_CAUSALITY=Object.freeze({version:1,
   startsFrom:'PRIMARY',zeroSecondary:'FUNCTIONAL',secondarySource:'PRIMARY_OUTPUT',
   feedback:'NONE',externalSecondary:'OPTIONAL_BONUS'});
+const MOTOR_DELIVERY_KINDS=Object.freeze({
+  LIVE_SEQUENCE:'LIVE_SEQUENCE',SETUP_WEIGHT:'SETUP_WEIGHT',MACHINE_SEQUENCE:'MACHINE_SEQUENCE',
+  PHYSICAL_ECHO:'PHYSICAL_ECHO',SINGLE_WEIGHT:'SINGLE_WEIGHT',
+  SIMULTANEOUS_PACKET:'SIMULTANEOUS_PACKET'
+});
+const MOTOR_DELIVERY_PATTERNS=Object.freeze({SINGLE:'SINGLE',SEQUENTIAL:'SEQUENTIAL',
+  SIMULTANEOUS_PACKET:'SIMULTANEOUS_PACKET',IMPACT_ECHO:'IMPACT_ECHO'});
+const MOTOR_DELIVERY_KIND_DEFINITIONS=Object.freeze({
+  LIVE_SEQUENCE:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.SEQUENTIAL,minContacts:1,
+    densityMode:'CONTACT_COUNT',interval:.25}),
+  SETUP_WEIGHT:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.SEQUENTIAL,minContacts:2,
+    densityMode:'CONTACT_COUNT_AND_WEIGHT',interval:.34}),
+  MACHINE_SEQUENCE:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.SEQUENTIAL,minContacts:3,
+    densityMode:'CONTACT_COUNT',interval:.10}),
+  PHYSICAL_ECHO:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.IMPACT_ECHO,minContacts:2,
+    densityMode:'CONTACT_COUNT',interval:.30}),
+  SINGLE_WEIGHT:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.SINGLE,minContacts:1,
+    densityMode:'WEIGHT',interval:0}),
+  SIMULTANEOUS_PACKET:Object.freeze({pattern:MOTOR_DELIVERY_PATTERNS.SIMULTANEOUS_PACKET,
+    minContacts:2,densityMode:'CONTACT_COUNT',interval:0})
+});
+/* Presentation belongs to weapon adapters, never to the Attribute motor. */
+const CHAIN_BOW_DELIVERY_RECIPE_BY_KIND=Object.freeze({LIVE_SEQUENCE:'BOW_CHAIN',
+  SETUP_WEIGHT:'BOW_WEIGHTED_CHAIN',MACHINE_SEQUENCE:'BOW_CHAIN_MACHINE',
+  PHYSICAL_ECHO:'BOW_CHAIN_ECHO',SINGLE_WEIGHT:'BOW_WEIGHTED_CHAIN',
+  SIMULTANEOUS_PACKET:'BOW_SHOTGUN'});
 const MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS=Object.freeze([
   Object.freeze({id:'detonation_fragment_twist',slot:1,pattern:'SIMULTANEOUS_PACKET',
     recipe:'BOW_DETONATION_PACKET',engine:'DETONATION_PACKET',
@@ -15974,6 +16036,218 @@ function buildMarkBurstDetonationChainTwistContracts(){
           ' without changing the parent payment, timing or Delivery topology.',
         mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'LIVE_CHAIN_CADENCE',
           relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
+/* F2S1: Chain is the production engine; Detonation is the paid payoff.  These
+   four Twists intentionally cover live conversion, distributed events,
+   resource commitment and payoff-to-Chain feedback instead of cloning F1S2. */
+const MARK_BURST_CHAIN_DETONATION_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'burst_chain_detonation_crescendo_twist',slot:1,
+    engine:'CHAIN_DETONATION_CRESCENDO',recipe:'BOW_DETONATION_CRESCENDO',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,CHAIN_SCALING:.35,
+      DELIVERY_CONTACTS:.30}),relationship:'LIVE_CHAIN_TO_FINAL_DETONATION',
+    promise:'Build live Chain through the inherited sequence and let the final one-Mark Detonation read the completed cadence without consuming Chain.',
+    apexes:Object.freeze([
+      Object.freeze({key:'LONG_SEQUENCE',label:'longer real sequence',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.15,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.50}),decisionClass:'OUTPUT_MASTERY',evidence:['hits','chainGainPerHit']}),
+      Object.freeze({key:'STARTING_CHAIN',label:'stronger carried-Chain read',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.55,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.10}),decisionClass:'RESOURCE_WINDOW',evidence:['markDetonationStartingChainRate']}),
+      Object.freeze({key:'SPLIT_DETONATION',label:'one Mark split across the final two contacts',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.45,CHAIN_SCALING:.30,DELIVERY_CONTACTS:.10}),decisionClass:'TARGETING_CHANGE',evidence:['markDetonationSplitTail','detonationEventCount']}),
+      Object.freeze({key:'SELF_CHAIN',label:'stronger self-generated Chain read',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,CHAIN_SCALING:.50,DELIVERY_CONTACTS:.10}),decisionClass:'RESOURCE_WINDOW',evidence:['markDetonationChainFeedbackRate','generatedChain']})])}),
+  Object.freeze({id:'burst_chain_detonation_relay_twist',slot:2,
+    engine:'CHAIN_DETONATION_RELAY',recipe:'BOW_DETONATION_RELAY',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.15,DETONATION_EVENTS:.15}),relationship:'LIVE_CHAIN_DETONATION_RELAY',
+    promise:'Distribute Quality-paid one-Mark Detonation events through the real sequence; every event reads the live Chain available at its own contact.',
+    apexes:Object.freeze([
+      Object.freeze({key:'FRONT_RELAY',label:'front-loaded Detonation events',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.15,DETONATION_EVENTS:.25}),decisionClass:'TIMING_WINDOW',evidence:['markDetonationRelayPlacement','markDetonationEventIndices']}),
+      Object.freeze({key:'DETONATION_MOMENTUM',label:'successful Detonation feeding later Chain scaling',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,CHAIN_SCALING:.50,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.10}),decisionClass:'ROTATION_CHANGE',evidence:['detonationSuccessChainScalingRate','detonationEventCount']}),
+      Object.freeze({key:'FOLLOWUP_ARROW',label:'one real follow-up per successful Detonation',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.15,DETONATION_EVENTS:.30}),decisionClass:'TARGETING_CHANGE',evidence:['markDetonationFollowupPerConsumed','hits']}),
+      Object.freeze({key:'FINAL_COMPRESSION',label:'all paid events compressed at the final contact',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.50,CHAIN_SCALING:.20,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.10}),decisionClass:'TARGETING_CHANGE',evidence:['markDetonationRelayPlacement','markDetonationCapacity']})])}),
+  Object.freeze({id:'burst_chain_detonation_compression_twist',slot:3,
+    engine:'CHAIN_DETONATION_COMPRESSION',recipe:'BOW_WEIGHTED_CHAIN',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,CHAIN_SCALING:.25,
+      DELIVERY_CONTACTS:.15,CHAIN_MANAGEMENT:.20}),relationship:'CHAIN_COMMIT_TO_DETONATION',
+    promise:'Build Chain through the sequence, then spend paid Chain only when the final contact actually detonates one Mark.',
+    apexes:Object.freeze([
+      Object.freeze({key:'LOCAL_SPEND',label:'spend only Chain generated by this action',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,CHAIN_SCALING:.30,DELIVERY_CONTACTS:.15,CHAIN_MANAGEMENT:.20}),decisionClass:'RESOURCE_WINDOW',evidence:['markDetonationSpendGeneratedOnly','chainDetonationSpent']}),
+      Object.freeze({key:'FULL_SPEND',label:'commit all available Chain',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.40,CHAIN_SCALING:.20,DELIVERY_CONTACTS:.10,CHAIN_MANAGEMENT:.20}),decisionClass:'RISK_REWARD',evidence:['markDetonationChainSpendFraction','chainDetonationSpent']}),
+      Object.freeze({key:'PARTIAL_SPEND',label:'preserve half the Chain reserve',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.25,CHAIN_SCALING:.30,DELIVERY_CONTACTS:.10,CHAIN_MANAGEMENT:.20}),decisionClass:'RESOURCE_WINDOW',evidence:['markDetonationChainSpendFraction','chainStacks']}),
+      Object.freeze({key:'ECHO_SPEND',label:'split the committed payoff into impact and delayed echo',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,CHAIN_SCALING:.20,DELIVERY_CONTACTS:.10,CHAIN_MANAGEMENT:.15,DETONATION_EVENTS:.15}),decisionClass:'TIMING_WINDOW',evidence:['markDetonationEchoRate','detonationEchoTime']})])}),
+  Object.freeze({id:'burst_chain_detonation_recoil_twist',slot:4,
+    engine:'CHAIN_DETONATION_RECOIL',recipe:'BOW_DETONATION_RELAY',
+    profile:Object.freeze({DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,CHAIN_SCALING:.25,
+      DELIVERY_CONTACTS:.15,DETONATION_EVENTS:.15}),relationship:'DETONATION_TO_RETURN_VOLLEY',
+    promise:'A successful final one-Mark Detonation releases a paid second wave of real arrows that read live Chain and create Chain without detonating more Marks.',
+    apexes:Object.freeze([
+      Object.freeze({key:'LONG_RECOIL',label:'more real return contacts',profile:Object.freeze({DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.15,CHAIN_SCALING:.20,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.35}),decisionClass:'OUTPUT_MASTERY',evidence:['markDetonationRecoilContacts','hits']}),
+      Object.freeze({key:'WEIGHTED_RECOIL',label:'one weighted return arrow',profile:Object.freeze({DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.25,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.10}),decisionClass:'TARGETING_CHANGE',evidence:['markDetonationRecoilWeight','markDetonationRecoilContacts']}),
+      Object.freeze({key:'DEFERRED_RECOIL',label:'return after the next skill',profile:Object.freeze({DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.20,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.20}),decisionClass:'TIMING_WINDOW',evidence:['markDetonationRecoilDeferred','pendingMarkBurstRecoil']}),
+      Object.freeze({key:'RECOIL_ECHO',label:'return finisher repeating paid Detonation',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.35,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.10,DETONATION_EVENTS:.15}),decisionClass:'ROTATION_CHANGE',evidence:['markDetonationRecoilEchoRate','detonationEventCount']})])})
+]);
+function buildMarkBurstChainDetonationTwistContracts(){
+  const routes=[],identityByEngine=Object.freeze({
+    CHAIN_DETONATION_CRESCENDO:Object.freeze({version:1,input:'CHAIN',trigger:'ON_FINAL_CONTACT',operation:'AMPLIFY',output:'DETONATION',timing:'IMMEDIATE'}),
+    CHAIN_DETONATION_RELAY:Object.freeze({version:1,input:'CHAIN',trigger:'ON_CONTACT',operation:'CASCADE',output:'DETONATION',timing:'LATER_IN_ACTION'}),
+    CHAIN_DETONATION_COMPRESSION:Object.freeze({version:1,input:'CHAIN',trigger:'ON_FINAL_CONTACT',operation:'CONVERT',output:'DETONATION',timing:'IMMEDIATE'}),
+    CHAIN_DETONATION_RECOIL:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'GENERATE',output:'CHAIN',timing:'LATER_IN_ACTION'})}),
+    payloadByEngine=Object.freeze({CHAIN_DETONATION_CRESCENDO:'READ_ONCE_PER_ACTION',
+      CHAIN_DETONATION_RELAY:'VISIBLE_PAYLOAD_PER_CONTACT',
+      CHAIN_DETONATION_COMPRESSION:'READ_PAID_CONSUMPTION',
+      CHAIN_DETONATION_RECOIL:'PHASE_FOLLOW_UP_EVENTS'});
+  for(const twist of MARK_BURST_CHAIN_DETONATION_TWIST_DEFINITIONS){
+    const deliveryScaling={mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+      identity=identityByEngine[twist.engine];
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'burst_chain_detonation_spec',formSlot:2,specializationSlot:1,slot:twist.slot,
+      primaryAttributeId:'CHAIN',secondaryAttributeId:'DETONATION',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling,qualityProfile:twist.profile,
+      deliveryDecision:{reason:'Ordered real contacts are required to build and read live Chain before the Detonation relationship resolves.',resourcePolicy:'CHAIN_PER_CONTACT',payloadPolicy:payloadByEngine[twist.engine],rejectedPattern:'SIMULTANEOUS_PACKET'},
+      twistDesign:{resourceFlow:twist.engine==='CHAIN_DETONATION_RECOIL'?'COUPLED_LOOP':'PRIMARY_TO_SECONDARY',pairSpecific:true,playerDecision:twist.promise,primaryOutcome:'Real contacts remain the dominant live Chain engine.',secondaryOutcome:'Every route keeps at least one actual one-Mark Detonation attempt.',synergyHook:'Live Chain, Detonation-event and ordered-contact artifacts.'},
+      stableCausality:MARK_BURST_STABLE_PRIMARY_TO_CHAIN_CAUSALITY,
+      twistIdentity:{...identity,deliveryPurpose:'MECHANIC_REQUIRED',engineIds:[twist.engine],
+        deliveryReason:'The ordered sequence makes Chain production and the later Detonation relationship visible.'},
+      promise:twist.promise,mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',
+        secondaryOutput:'MARK_DETONATION',relationship:twist.relationship,
+        detonationEngine:twist.engine,chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+        detonationRule:'AT_LEAST_ONE_REAL_MARK_DETONATION'},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    for(let index=0;index<twist.apexes.length;index++){
+      const apex=twist.apexes[index];
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),skillId:'mark_burst',
+        depth:4,parentId:twist.id,formSlot:2,specializationSlot:1,twistSlot:twist.slot,slot:index+1,
+        primaryAttributeId:'CHAIN',secondaryAttributeId:'DETONATION',powerBudget:1,
+        deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+        deliveryScaling:apex.profile.DELIVERY_CONTACTS?deliveryScaling:{mode:'NONE'},
+        qualityProfile:apex.profile,
+        promise:'Preserve '+twist.relationship+' while choosing '+apex.label+'.',
+        mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'MARK_DETONATION',
+          relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key,
+          chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+          detonationRule:'AT_LEAST_ONE_REAL_MARK_DETONATION'},
+        apexDesign:{version:2,
+          kind:apex.decisionClass==='OUTPUT_MASTERY'?'NUMERIC_MASTERY':'BEHAVIORAL_CAPSTONE',
+          playerDecision:'Choose '+apex.label+' while preserving '+twist.relationship+'.',
+          guaranteedProgress:'The Apex adds paid output and cannot reduce its parent route.',
+          parentBoundary:'It preserves the parent trigger, Chain source and real Mark Detonation.',
+          siblingBoundary:'Its '+apex.key+' decision remains distinct from the other three Apexes.',
+          decisionKey:apex.key,decisionClass:apex.decisionClass,
+          gameplayDelta:'This choice changes how the player sequences or commits resources inside the parent Twist.',
+          changesPlayerPlan:apex.decisionClass!=='OUTPUT_MASTERY'&&
+            apex.decisionClass!=='RELIABILITY',runtimeEvidence:Object.freeze(apex.evidence.slice())},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
+/* Pure Chain is authored through the shared motor/Delivery seam.  None of these
+   definitions may override resource truth by route id: every mechanical contact
+   creates exactly one Chain, later contact groups may read it, and cumulative
+   Quality grows the contact expression without an authored maximum. */
+const MARK_BURST_PURE_CHAIN_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'burst_chain_focus_sequence_twist',slot:1,
+    engine:'PURE_CHAIN_LIVE_SEQUENCE',kind:MOTOR_DELIVERY_KINDS.LIVE_SEQUENCE,
+    profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.40,
+      DELIVERY_CONTACTS:.35}),relationship:'PURE_CHAIN_LIVE_SEQUENCE',
+    promise:'Use a measured sequence whose real arrows build live Chain and make every later arrow stronger before the final one-Mark Detonation.',
+    apexes:Object.freeze([
+      Object.freeze({key:'SEQUENCE_DENSITY',label:'a longer uncapped sequence',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.55}),decisionClass:'OUTPUT_MASTERY',evidence:['hits','chainGainPerHit']}),
+      Object.freeze({key:'SEQUENCE_RAMP',label:'a steeper late-contact Chain ramp',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.65,DELIVERY_CONTACTS:.15}),decisionClass:'RESOURCE_WINDOW',evidence:['chainScalingRampPerHit','chainStacks']}),
+      Object.freeze({key:'SEQUENCE_ALTERNATION',label:'alternating setup and weighted contacts',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.55,DELIVERY_CONTACTS:.20}),decisionClass:'ROTATION_CHANGE',evidence:['chainScalingWeightPattern','hits']}),
+      Object.freeze({key:'SEQUENCE_FINISHER',label:'a Chain-weighted final arrow',profile:Object.freeze({DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.10,CHAIN_SCALING:.50,DELIVERY_CONTACTS:.15}),decisionClass:'RESOURCE_WINDOW',evidence:['chainScalingWeightPattern','markDetonationHitIndex']})])}),
+  Object.freeze({id:'burst_chain_focus_weight_twist',slot:2,
+    engine:'PURE_CHAIN_SETUP_WEIGHT',kind:MOTOR_DELIVERY_KINDS.SETUP_WEIGHT,
+    profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,
+      DELIVERY_CONTACTS:.25,CHAIN_MANAGEMENT:.15}),relationship:'PURE_CHAIN_SETUP_WEIGHT',
+    promise:'Fire Quality-grown light setup contacts that each create Chain, then compress their live result into one heavy final arrow and one-Mark Detonation.',
+    apexes:Object.freeze([
+      Object.freeze({key:'WEIGHT_SETUP_DENSITY',label:'more visible setup contacts',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.45,CHAIN_MANAGEMENT:.10}),decisionClass:'OUTPUT_MASTERY',evidence:['hits','chainGainPerHit']}),
+      Object.freeze({key:'WEIGHT_CARRIED_CHAIN',label:'more Weight for carried Chain',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,DELIVERY_CONTACTS:.15,CHAIN_MANAGEMENT:.30}),decisionClass:'RESOURCE_WINDOW',evidence:['chainScalingWeightPattern','chainAtStart']}),
+      Object.freeze({key:'WEIGHT_FRESH_CHAIN',label:'more Weight for this action’s setup Chain',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.45,DELIVERY_CONTACTS:.20,CHAIN_MANAGEMENT:.10}),decisionClass:'ROTATION_CHANGE',evidence:['chainScalingWeightPattern','generatedChain']}),
+      Object.freeze({key:'WEIGHT_CLEAN_IMPACT',label:'the strongest reliable heavy impact',profile:Object.freeze({DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,DELIVERY_CONTACTS:.15,CHAIN_MANAGEMENT:.10}),decisionClass:'RELIABILITY',evidence:['hitDamages','deliveryWeight']})])}),
+  Object.freeze({id:'burst_chain_focus_machine_twist',slot:3,
+    engine:'PURE_CHAIN_MACHINE_SEQUENCE',kind:MOTOR_DELIVERY_KINDS.MACHINE_SEQUENCE,
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.50}),relationship:'PURE_CHAIN_MACHINE_SEQUENCE',
+    promise:'Release a machine-gun stream of individually resolved pellets; every pellet creates one Chain and every later pellet reads the growing live stack.',
+    apexes:Object.freeze([
+      Object.freeze({key:'MACHINE_MAGAZINE',label:'the largest uncapped pellet magazine',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.20,DELIVERY_CONTACTS:.60}),decisionClass:'OUTPUT_MASTERY',evidence:['hits','chainGainPerHit']}),
+      Object.freeze({key:'MACHINE_SPOOL',label:'a steeper live-Chain spool',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.60,DELIVERY_CONTACTS:.20}),decisionClass:'RESOURCE_WINDOW',evidence:['chainScalingRampPerHit','hitInterval']}),
+      Object.freeze({key:'MACHINE_BURST_BEATS',label:'weighted rounds at regular burst beats',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.50,DELIVERY_CONTACTS:.25}),decisionClass:'ROTATION_CHANGE',evidence:['chainScalingWeightPattern','hits']}),
+      Object.freeze({key:'MACHINE_LAST_ROUND',label:'a stronger final round after the stream',profile:Object.freeze({DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,DELIVERY_CONTACTS:.25}),decisionClass:'RELIABILITY',evidence:['chainScalingWeightPattern','hitDamages']})])}),
+  Object.freeze({id:'burst_chain_focus_echo_twist',slot:4,
+    engine:'PURE_CHAIN_PHYSICAL_ECHO',kind:MOTOR_DELIVERY_KINDS.PHYSICAL_ECHO,
+    profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,
+      DELIVERY_CONTACTS:.40}),relationship:'PURE_CHAIN_PHYSICAL_ECHO',
+    promise:'Release one arrow that creates a Quality-grown line of delayed physical impacts; every impact creates and then passes Chain to the next.',
+    apexes:Object.freeze([
+      Object.freeze({key:'ECHO_COUNT',label:'more real delayed impacts',profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.25,DELIVERY_CONTACTS:.55}),decisionClass:'OUTPUT_MASTERY',evidence:['hits','chainGainPerHit']}),
+      Object.freeze({key:'ECHO_FRONT_LOAD',label:'a stronger early echo window',profile:Object.freeze({DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,CHAIN_SCALING:.35,DELIVERY_CONTACTS:.35}),decisionClass:'TIMING_WINDOW',evidence:['chainScalingWeightPattern','impactDelay']}),
+      Object.freeze({key:'ECHO_ESCALATION',label:'echoes that climb harder through live Chain',profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.55,DELIVERY_CONTACTS:.20}),decisionClass:'RESOURCE_WINDOW',evidence:['chainScalingRampPerHit','chainStacks']}),
+      Object.freeze({key:'ECHO_FINAL',label:'a heavy last physical echo',profile:Object.freeze({DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.10,CHAIN_SCALING:.40,DELIVERY_CONTACTS:.20}),decisionClass:'RELIABILITY',evidence:['chainScalingWeightPattern','hitDamages']})])})
+]);
+function buildMarkBurstPureChainTwistContracts(){
+  const routes=[];
+  for(const twist of MARK_BURST_PURE_CHAIN_TWIST_DEFINITIONS){
+    const pattern=twist.kind===MOTOR_DELIVERY_KINDS.PHYSICAL_ECHO?
+        'IMPACT_ECHO':'SEQUENTIAL',rejected=twist.kind===MOTOR_DELIVERY_KINDS.SETUP_WEIGHT?
+        'SIMULTANEOUS_PACKET':twist.kind===MOTOR_DELIVERY_KINDS.MACHINE_SEQUENCE?
+        'SIMULTANEOUS_PACKET':'SINGLE',identity={
+          PURE_CHAIN_LIVE_SEQUENCE:{input:'CHAIN',trigger:'ON_CONTACT',operation:'AMPLIFY',timing:'IMMEDIATE'},
+          PURE_CHAIN_SETUP_WEIGHT:{input:'CHAIN',trigger:'ON_FINAL_CONTACT',operation:'READ',timing:'IMMEDIATE'},
+          PURE_CHAIN_MACHINE_SEQUENCE:{input:'CONTACT_COUNT',trigger:'ON_CONTACT',operation:'GENERATE',timing:'IMMEDIATE'},
+          PURE_CHAIN_PHYSICAL_ECHO:{input:'CHAIN',trigger:'ON_CONTACT',operation:'CASCADE',timing:'LATER_IN_ACTION'}
+        }[twist.engine],deliveryScaling={mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',
+          effectOwner:'CHAIN'},commonMechanics={primaryOutput:'CHAIN_GENERATE_AND_SCALE',
+          secondaryOutput:'CHAIN_GENERATE_AND_SCALE',relationship:twist.relationship,
+          chainRule:'ONE_PER_MECHANICAL_CONTACT_READ_PRIOR_GROUPS',
+          detonationRule:'FINAL_CONTACT_ONE_MARK',motorContract:'ATTRIBUTE_NATIVE_CHAIN'};
+    if(pattern==='IMPACT_ECHO')commonMechanics.echoContactPolicy=IMPACT_ECHO_CONTACT_POLICIES.PHYSICAL;
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'burst_chain_focus_spec',formSlot:2,specializationSlot:2,slot:twist.slot,
+      primaryAttributeId:'CHAIN',secondaryAttributeId:'CHAIN',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling,qualityProfile:twist.profile,
+      deliveryDecision:{reason:'The chosen contact topology exposes the same global Chain motor without changing resource truth.',resourcePolicy:'CHAIN_PER_CONTACT',payloadPolicy:pattern==='IMPACT_ECHO'?'IMPACT_WITH_ECHOES':'PER_CONTACT_LIVE_READ',rejectedPattern:rejected},
+      twistDesign:{resourceFlow:'ATTRIBUTE_NATIVE',pairSpecific:true,playerDecision:twist.promise,
+        primaryOutcome:'Every mechanical contact creates one Chain and Quality grows that output.',
+        secondaryOutcome:'The second Chain allocation strengthens the same self-starting motor.',
+        synergyHook:'Real-contact, live-Chain and delivery-timing artifacts.'},
+      stableCausality:MARK_BURST_STABLE_SAME_ATTRIBUTE_CAUSALITY,
+      twistIdentity:{version:1,...identity,output:'CHAIN',deliveryPurpose:'MECHANIC_REQUIRED',
+        engineIds:[twist.engine],deliveryReason:'This topology makes its Chain production and read order visible without a skill-specific exception.'},
+      promise:twist.promise,mechanics:{...commonMechanics,deliveryKind:twist.kind},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    for(let index=0;index<twist.apexes.length;index++){
+      const apex=twist.apexes[index];
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),
+        skillId:'mark_burst',depth:4,parentId:twist.id,formSlot:2,specializationSlot:2,
+        twistSlot:twist.slot,slot:index+1,primaryAttributeId:'CHAIN',secondaryAttributeId:'CHAIN',
+        powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:pattern,
+        deliveryTiming:'IMMEDIATE',contacts:1,deliveryScaling:apex.profile.DELIVERY_CONTACTS?
+          deliveryScaling:{mode:'NONE'},qualityProfile:apex.profile,
+        promise:'Preserve '+twist.relationship+' while choosing '+apex.label+'.',
+        mechanics:{...commonMechanics,deliveryKind:twist.kind,refinement:apex.key},
+        apexDesign:{version:2,kind:apex.decisionClass==='OUTPUT_MASTERY'?'NUMERIC_MASTERY':
+            apex.decisionClass==='RELIABILITY'?'RELIABILITY':'BEHAVIORAL_CAPSTONE',
+          playerDecision:'Choose '+apex.label+' without changing the parent Chain source.',
+          guaranteedProgress:'The Apex adds paid output and cannot reduce parent contacts, Chain or Detonation.',
+          parentBoundary:'Every inherited mechanical contact remains a one-Chain source.',
+          siblingBoundary:apex.key+' has a separate delivery or Chain-read emphasis.',
+          decisionKey:apex.key,decisionClass:apex.decisionClass,
+          gameplayDelta:'The refinement changes contact density, read timing or payoff emphasis inside the preserved Chain motor.',
+          changesPlayerPlan:APEX_MEANINGFUL_DECISION_CLASSES.has(apex.decisionClass),
+          runtimeEvidence:Object.freeze(apex.evidence.slice())},
         baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
           timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
         runtimeReadiness:'MATERIALIZED'}));
@@ -16833,6 +17107,95 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     baselineAttack:{hits:1,markGain:0,resolveCost:1,
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
         curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_detonation_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:1,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'DETONATION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.30,CHAIN_SCALING:.35,
+      DELIVERY_CONTACTS:.20},
+    promise:'Keep the live Chain cadence dominant and strengthen the inherited final one-Mark Detonation without increasing its consumption count.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'MARK_DETONATION',
+      relationship:'CHAIN_INTO_FINAL_DETONATION',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',apexContractVersion:2},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_focus_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:2,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'CHAIN',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.45,
+      DELIVERY_CONTACTS:.30},
+    promise:'Commit the complete relationship wallet to the longest and strongest live Chain cadence while preserving the final one-Mark Detonation.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'CHAIN_SCALE',
+      relationship:'PURE_CHAIN_CADENCE',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_posture_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:3,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'POSTURE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.20,POSTURE_DAMAGE:.25},
+    promise:'Keep Chain dominant and distribute one conservative light-bow Posture package across every visible arrow without multiplying it by contact count.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'POSTURE_DAMAGE',
+      relationship:'CHAIN_WITH_SPLIT_POSTURE',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',postureRule:'ONE_TOTAL_LIGHT_BOW_PACKAGE_SPLIT_PER_CONTACT',
+      visibleEffectRule:'EVERY_VISIBLE_CONTACT_CONTRIBUTES'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_critical_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:4,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'CRITICAL',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.20,CRIT_CHANCE:.25},
+    promise:'Keep Chain dominant and give every real arrow a small independent local Critical roll; Specialization adds no Precision engine.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'LOCAL_CRITICAL',
+      relationship:'CHAIN_WITH_PER_CONTACT_CRIT',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',criticalRule:'INDEPENDENT_LOCAL_ROLL_PER_CONTACT'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_affliction_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:5,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'AFFLICTION',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.20,AFFLICTION_APPLICATION:.20,AFFLICTION_POTENCY:.10},
+    promise:'Keep Chain dominant and distribute one modest two-turn Bleed wound positively across every visible arrow without multiplying total Bleed.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'BLEED_PAYLOAD',
+      relationship:'CHAIN_WITH_SPLIT_BLEED',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',afflictionRule:'ONE_WOUND_SPLIT_PER_CONTACT',
+      visibleEffectRule:'EVERY_VISIBLE_CONTACT_CONTRIBUTES'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,skillAttributeRouteContract({id:'burst_chain_charge_spec',skillId:'mark_burst',depth:2,
+    parentId:'chain_primary_form',formSlot:2,slot:6,
+    primaryAttributeId:'CHAIN',secondaryAttributeId:'CHARGE',powerBudget:1,
+    deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
+    deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
+    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.30,
+      DELIVERY_CONTACTS:.20,DEFENSE_TEMPER:.25},
+    promise:'Keep Chain dominant, consume the best banked defense Charge once and distribute its one total damage package across the visible volley.',
+    mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'DEFENSE_TEMPER',
+      relationship:'CHAIN_WITH_SPLIT_CHARGE',chainRule:'ONE_PER_VISIBLE_CONTACT_LIVE_READ',
+      detonationRule:'FINAL_CONTACT_ONE_MARK',chargeRule:'ONE_BANK_CONSUMPTION_SPLIT_PER_CONTACT',
+      visibleEffectRule:'EVERY_VISIBLE_CONTACT_CONTRIBUTES'},
+    baselineAttack:{hits:1,markGain:0,resolveCost:1,
+      markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
+        curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'})
+  ,...buildMarkBurstChainDetonationTwistContracts()
+  ,...buildMarkBurstPureChainTwistContracts()
   ,skillAttributeRouteContract({id:'detonation_focus_spec',skillId:'mark_burst',depth:2,
     parentId:'detonation_primary_form',formSlot:1,slot:1,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'DETONATION',powerBudget:1,
@@ -18174,7 +18537,7 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   chain_focus_acceleration_density_apex:'Acceleration volley’sinin toplam Qualityden gelen gerçek ok sayısını büyütür. Eklenen her ok görünür temas, gerçek +1 Chain ve sonraki oklar için yeni bir basamaktır.',
   chain_focus_acceleration_payoff_apex:'Artan volley yapısını korur fakat gücü genel Chain hasar katsayısına yönlendirir. Savunmadan veya önceki skillden taşınmış yüksek Chain bütün okları daha fazla güçlendirir.',
   chain_focus_acceleration_impact_apex:'Aynı art arda Chain motorunu korur ve yeni gücün büyük kısmını temiz taban hasara verir. Düşük başlangıç Chaininde daha güvenilir Acceleration seçeneğidir.',
-  chain_focus_weight_twist:'Quality ile büyüyen çoklu delivery tek ağır oka sıkıştırılır. Ok mevcut Chaini Weight üzerinden güçlü okur, yalnız bir gerçek temas yaptığı için tam 1 Chain bırakır.',
+  chain_focus_weight_twist:'Quality ile büyüyen hafif kurulum oklarının her biri 1 Chain üretir; final ağır ok canlı Chaini Weight ile okur ve 1 Chain daha bırakır.',
   chain_focus_weight_signature_apex:'Tek ağır okun Weight ile Chain okuma ilişkisini en fazla büyütür. Chain rezervi hazırlayan build için saf rotanın en yoğun tek-vuruş ödemesidir.',
   chain_focus_weight_density_apex:'Toplam Qualitynin tek oka sıkıştırdığı Weight değerini daha hızlı büyütür. Sahte temas oluşturmaz; ek delivery büyüklüğü aynı görünür ağır okun içinde kalır.',
   chain_focus_weight_payoff_apex:'Weight davranışını korurken sahip olunan her gerçek Chainin ağır oka verdiği genel hasar katsayısını yükseltir. Hazırlanmış Chain rezervini doğrudan ödüllendirir.',
@@ -18407,6 +18770,20 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   critical_primary_form:'Tek hassas ok. Yerel Crit şansı, ıskalama sonrası Precision ve Crit hasarı gelişir; 1 Mark patlaması Crit çarpanından ayrı kalır.',
   affliction_primary_form:'Tek yaralayıcı ok. İki savunma turu vuran Bleed bırakır ve 1 Mark patlatır; shotgun bu Formda bedava verilmez.',
   charge_primary_form:'Şimdi hazırlanır, bir savunma fazı boyunca Charge toplar ve sonraki oyuncu fazında bedelsiz tek ağır ok bırakır; temas 1 Mark patlatır.',
+  burst_chain_detonation_spec:'Art arda okların her biri canlı Chain kurup okur. Yalnız son ok hâlâ 1 Mark patlatır; bu rota tüketim sayısını değil o tek patlamanın gücünü artırır.',
+  burst_chain_focus_spec:'Saf Chain rotasıdır. Quality daha uzun ok dizisine ve daha yüksek Chain çarpanına gider; son ok yalnız temel 1 Markı patlatmaya devam eder.',
+  burst_chain_posture_spec:'Canlı Chain dizisine tek toplam light-bow Posture paketi ekler. Paket görünen bütün oklara bölünür; daha çok ok toplam Postureu bedava çoğaltmaz.',
+  burst_chain_critical_spec:'Her gerçek ok kendi küçük yerel Crit zarını atar. Specialization aşamasında Precision üretmez; ana motor canlı Chain olarak kalır.',
+  burst_chain_affliction_spec:'Bütün oklar tek toplam iki turluk Bleed yarasına pozitif pay verir. Ok sayısı yarayı çoğaltmaz; son ok ayrıca temel 1 Markı patlatır.',
+  burst_chain_charge_spec:'Savunmada biriken Charge bir kez harcanır ve tek toplam bonus bütün ok dizisine bölünür. Temas başına ek Charge paketi yaratılmaz.',
+  burst_chain_detonation_crescendo_twist:'Sıralı oklar canlı Chain kurar; son temas 1 Mark patlatır ve hem taşınan hem bu saldırıda üretilen Chaini okur. Chain harcanmaz.',
+  burst_chain_detonation_relay_twist:'Quality ile ödenen patlatma olayları gerçek okların arasına dağıtılır. Her olay en fazla 1 Mark tüketir ve o temastaki canlı Chaini okur.',
+  burst_chain_detonation_compression_twist:'Seri önce Chain kurar. Son temas gerçekten 1 Mark patlatırsa seçilen Chain rezervi harcanıp aynı Detonationa eklenir; Mark yoksa Chain korunur.',
+  burst_chain_detonation_recoil_twist:'Son temastaki 1 Mark patlaması başarılı olursa ikinci bir gerçek ok dalgası açılır. Dönüş okları canlı Chaini okur ve Chain üretir fakat yeni Mark patlatmaz.',
+  burst_chain_focus_sequence_twist:'Ölçülü ok serisinde her gerçek temas 1 Chain üretir; sonraki oklar önceki temasların canlı Chainini kullanır ve son ok temel 1 Markı patlatır.',
+  burst_chain_focus_weight_twist:'Quality ile büyüyen hafif kurulum oklarının her biri 1 Chain üretir. Son ağır ok kurulan Chaini Weight ile okur ve temel 1 Markı patlatır.',
+  burst_chain_focus_machine_twist:'Machine-gun hızındaki pelletler tek tek çözülür. Her pellet 1 Chain üretir, sonraki pelletler canlı Chaini okur ve yalnız son pellet temel 1 Markı patlatır.',
+  burst_chain_focus_echo_twist:'Tek bırakıştan sonra gelen fiziksel yankı temaslarının her biri 1 Chain üretir ve öncekilerin Chainini okur; son temas temel 1 Markı patlatır.',
   detonation_focus_spec:'Tek ağır okta Detonationa tamamen yoğunlaşır; Mark başına hasar ve tüketim kapasitesi parentın üstüne çıkar.',
   detonation_chain_spec:'Kısa bir ok dizisi Chain kurar ve canlı okur; parenttan gelen bütün Mark tüketimi yalnız son okun Detonationında gerçekleşir.',
   detonation_posture_spec:'Tek Detonation okuna light-bow seviyesinde ek Posture darbesi koyar; Mark tüketimi Posturea çevrilmez.',
@@ -18609,7 +18986,8 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'extraChainBonus','chainScalingRampPerHit','chainScalingTiming','addsChain','chainGainPerHit','chainGainPattern',
   'startingChainHitRate','chainSecondWaveBonus','chainSecondWaveStartIndex',
   'realChainScalingMultiplier','apexRefinementId','packetWaveCount','packetWavePattern',
-  'chainReadOffsetPattern',
+  'chainReadOffsetPattern','chainScalingWeightPattern','chainStartingWeightPattern',
+  'chainGeneratedWeightPattern',
   'detonationPostureMode','detonationPosturePerConsumedMark','detonationPostureEscalation',
   'detonationPostureBreakBonusRate','detonationAdaptivePosture','detonationAdaptiveDamageRate',
   'detonationAllDamageAfterPosture','detonationPostureEchoPerMark','detonationPostureEchoFlat',
@@ -19119,6 +19497,62 @@ function materializeSkillDeliveryScaling(route,ledger){
   return Object.freeze({mode,contacts:1,weight:desired,magnitude:desired,power,
     spent:power,reserve:0,capped:false});
 }
+/* Attribute motors and Delivery topology are orthogonal. A skill route supplies
+   data; these contracts decide resource truth for every weapon family. Mechanical
+   contacts are visible hit events, contact groups decide read order, and no skill
+   address is allowed to override those rules. */
+const ATTRIBUTE_MOTOR_OUTPUT_CONTRACTS=Object.freeze({
+  MARK:Object.freeze({output:'MARK',source:'AUTHORED_APPLICATION_EVENT',qualityRule:'OUTPUT_MONOTONIC'}),
+  CHAIN:Object.freeze({output:'CHAIN',source:'ONE_PER_MECHANICAL_CONTACT',
+    read:'ONLY_PRIOR_CONTACT_GROUPS',qualityRule:'CONTACT_OUTPUT_MONOTONIC'}),
+  POSTURE:Object.freeze({output:'POSTURE',source:'PAID_CONTACT_OR_EVENT',qualityRule:'OUTPUT_MONOTONIC'}),
+  CRITICAL:Object.freeze({output:'CRITICAL',source:'PAID_LOCAL_ROLL',qualityRule:'OUTPUT_MONOTONIC'}),
+  AFFLICTION:Object.freeze({output:'AFFLICTION',source:'PAID_WOUND_APPLICATION',qualityRule:'OUTPUT_MONOTONIC'}),
+  CHARGE:Object.freeze({output:'CHARGE',source:'PAID_COMMIT_OR_DEFENSE_EVENT',qualityRule:'OUTPUT_MONOTONIC'}),
+  DETONATION:Object.freeze({output:'DETONATION',source:'PAID_MARK_CONSUMPTION_EVENT',qualityRule:'OUTPUT_MONOTONIC'})
+});
+function materializeAttributeMotorDelivery(attributeId,kind,totalQuality,densityMultiplier=1){
+  const motor=ATTRIBUTE_MOTOR_OUTPUT_CONTRACTS[attributeId];
+  if(!motor)throw new Error('Unknown Attribute motor '+attributeId);
+  const delivery=MOTOR_DELIVERY_KIND_DEFINITIONS[kind];
+  if(!delivery)throw new Error('Unknown motor Delivery '+kind);
+  const magnitude=skillDeliveryMagnitude(Math.max(0,Number(totalQuality)||0)*
+      Math.max(.01,Number(densityMultiplier)||1)),
+    contacts=delivery.densityMode==='WEIGHT'?1:Math.max(delivery.minContacts,magnitude),
+    weight=delivery.densityMode==='WEIGHT'||delivery.densityMode==='CONTACT_COUNT_AND_WEIGHT'?
+      Math.max(1,magnitude):1,
+    contactGroups=delivery.pattern===MOTOR_DELIVERY_PATTERNS.SIMULTANEOUS_PACKET?
+      Array.from({length:contacts},()=>0):Array.from({length:contacts},(_,index)=>index);
+  const nativeOutput=motor.source==='ONE_PER_MECHANICAL_CONTACT'?contacts:null;
+  return Object.freeze({attributeId,output:motor.output,outputSource:motor.source,kind,magnitude,
+    contacts,nativeOutput,pattern:delivery.pattern,interval:delivery.interval,weight,capped:false,
+    contactGroups:Object.freeze(contactGroups)});
+}
+const ATTRIBUTE_MOTOR_DELIVERY_AUDIT=(()=>{
+  const rows=[];
+  for(const attributeId of Object.keys(ATTRIBUTE_MOTOR_OUTPUT_CONTRACTS)){
+    for(const kind of Object.values(MOTOR_DELIVERY_KINDS)){
+      let previous=0;
+      for(const quality of [1,4,9,16,25]){
+        const plan=materializeAttributeMotorDelivery(attributeId,kind,quality);
+        if(plan.attributeId!==attributeId||plan.contacts<previous||plan.capped||
+           plan.contactGroups.length!==plan.contacts||
+           (attributeId==='CHAIN'&&plan.nativeOutput!==plan.contacts))
+          throw new Error(attributeId+' x '+kind+' violates generic motor-delivery scaling');
+        rows.push(Object.freeze({attributeId,kind,quality,contacts:plan.contacts,
+          nativeOutput:plan.nativeOutput}));
+        previous=plan.contacts;
+      }
+    }
+  }
+  const represented=new Set(Object.values(MOTOR_DELIVERY_KIND_DEFINITIONS).map(row=>row.pattern));
+  if(Object.values(MOTOR_DELIVERY_PATTERNS).some(pattern=>!represented.has(pattern)))
+    throw new Error('Generic motor-delivery matrix does not cover every Delivery pattern');
+  return Object.freeze({passed:true,skillSpecificExceptions:0,
+    motors:Object.freeze(Object.keys(ATTRIBUTE_MOTOR_OUTPUT_CONTRACTS)),
+    deliveries:Object.freeze(Object.values(MOTOR_DELIVERY_PATTERNS)),
+    styles:Object.freeze(Object.values(MOTOR_DELIVERY_KINDS)),rows:Object.freeze(rows)});
+})();
 const SKILL_DELIVERY_MAGNITUDE_AUDIT=(()=>{
   const samples=Object.freeze({0:1,3:1,4:2,6:2,9:3,10:3,16:4,25:5,49:7,10000:100});
   for(const [quality,expected] of Object.entries(samples))
@@ -19405,11 +19839,18 @@ const MARK_BURST_FORM_ANIMATION_BY_ATTRIBUTE=Object.freeze({
 const MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID=Object.freeze({
   detonation_focus_spec:'BOW_DETONATION',detonation_chain_spec:'BOW_CHAIN',
   detonation_posture_spec:'BOW_POSTURE',detonation_critical_spec:'BOW_CRITICAL',
-  detonation_affliction_spec:'BOW_AFFLICTION',detonation_charge_spec:'BOW_CHARGE'
+  detonation_affliction_spec:'BOW_AFFLICTION',detonation_charge_spec:'BOW_CHARGE',
+  burst_chain_detonation_spec:'BOW_CHAIN',burst_chain_focus_spec:'BOW_CHAIN',
+  burst_chain_posture_spec:'BOW_CHAIN',burst_chain_critical_spec:'BOW_CRIT_VOLLEY',
+  burst_chain_affliction_spec:'BOW_AFFLICTION_PACKET',
+  burst_chain_charge_spec:'BOW_CHARGE_VOLLEY'
 });
 const MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID=Object.freeze(Object.fromEntries(
   [...MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS,
     ...MARK_BURST_DETONATION_CHAIN_TWIST_DEFINITIONS,
+    ...MARK_BURST_CHAIN_DETONATION_TWIST_DEFINITIONS,
+    ...MARK_BURST_PURE_CHAIN_TWIST_DEFINITIONS.map(definition=>({
+      ...definition,recipe:CHAIN_BOW_DELIVERY_RECIPE_BY_KIND[definition.kind]})),
     ...MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS,
     ...MARK_BURST_DETONATION_CRITICAL_TWIST_DEFINITIONS,
     ...MARK_BURST_DETONATION_AFFLICTION_TWIST_DEFINITIONS,
@@ -19454,7 +19895,15 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       ledger.receipts[index])),
     definition=BASE_TURN_SKILL_BY_ID.mark_burst,command=createRunSkill(definition),
     axes=ledger.axisPowerCredits,directPower=Math.max(0,axes.DIRECT_DAMAGE||0),
-    detonationPower=Math.max(0,axes.DETONATION_DAMAGE||0),
+    chainDetonationPath=!!(specialization&&specialization.id==='burst_chain_detonation_spec'),
+    detonationPowerBudget=Math.max(0,axes.DETONATION_DAMAGE||0),
+    detonationFoundationPower=Math.max(0,Number(ledger.receipts[0]&&
+      ledger.receipts[0].powerAllocation&&
+      ledger.receipts[0].powerAllocation.DETONATION_DAMAGE)||0),
+    detonationReadPower=chainDetonationPath?Math.max(0,
+      detonationPowerBudget-detonationFoundationPower)*.5:0,
+    detonationPower=chainDetonationPath?detonationPowerBudget-detonationReadPower:
+      detonationPowerBudget,
     deliveryOwner=[...routes].reverse().find(entry=>entry.deliveryScaling&&
       entry.deliveryScaling.mode!=='NONE')||route,
     deliveryContract=finalRoute.delivery||route.delivery,
@@ -19474,6 +19923,15 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
   command.deliveryPattern=deliveryContract.pattern;command.deliveryTiming=deliveryContract.timing;
   command.deliveryMagnitude=delivery.magnitude;command.deliveryWeight=delivery.weight;
   command.hitInterval=delivery.contacts>1?.42:0;
+  if(chainDetonationPath){
+    const referenceChain=Math.max(1,SHARPSHOOT_CHAIN_SCALING_REFERENCE),referencePayload=
+      Math.max(1,command.markRule.damagePerMark),rate=detonationReadPower/
+      (referencePayload*referenceChain);
+    command.markDetonationStartingChainRate=Number(rate.toFixed(6));
+    command.markDetonationChainFeedbackRate=Number(rate.toFixed(6));
+    command.markDetonationReadsContactChain=true;
+    reserve.DETONATION_CHAIN_READ=0;
+  }
   if(primary==='DETONATION'){
     const consumption=markBurstDetonationConsumptionProgress(
       Math.max(0,axes.DETONATION_CONSUMPTION||0),command.markRule.damagePerMark);
@@ -19562,6 +20020,18 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       Math.max(0,axes.DEFENSE_TEMPER||0)/SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge
       ).toFixed(6));command.chargeSplitAcrossContacts=false;reserve.DEFENSE_TEMPER=0;
   }
+  /* Chain-primary Specializations retain one sequential physical action. Their
+     secondary payloads are one paid action-level package split across those
+     contacts, never silently multiplied by a larger Quality-grown volley. */
+  if(specialization&&primary==='CHAIN'){
+    if(secondary==='POSTURE')command.postureSplitPerContact=true;
+    else if(secondary==='CRITICAL'){
+      command.critRollMode='PER_CONTACT';command.critPrecisionGain=0;
+    }else if(secondary==='AFFLICTION'){
+      command.afflictionSplitPerContact=true;
+      command.afflictionContributionMode='PER_CONTACT_SINGLE_EVENT';
+    }else if(secondary==='CHARGE')command.chargeSplitAcrossContacts=true;
+  }
   command.markDetonationCapacity=command.markRule.cap;
   if(twistRoute){
     const engine=twistRoute.mechanics.detonationEngine;
@@ -19618,6 +20088,155 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1,delivery:'EVEN'});
       command.markDetonationCapacity=command.hits;command.chainGainPattern=null;
       command.chainGainPerHit=1;command.chainScalingTiming='ACTION_START';command.hitInterval=.18;
+    }else if(engine==='CHAIN_DETONATION_CRESCENDO'){
+      command.hits=delivery.contacts;command.hitDamages=command.hits>1?
+        f1SynthesisDistributedDamageVector(command.damage,command.hits):null;
+      command.markRule=markRule({...command.markRule,timing:'ACTION',cap:1,delivery:'LAST'});
+      command.markDetonationCapacity=1;command.markDetonationHitIndex=command.hits-1;
+      command.chainGainPattern=null;command.chainGainPerHit=1;command.chainScalingTiming='LIVE';
+      command.markDetonationReadsContactChain=true;command.hitInterval=.29;
+      if(apex&&apex.mechanics.refinement==='STARTING_CHAIN'){
+        command.markDetonationStartingChainRate=Number((
+          command.markDetonationStartingChainRate*1.5).toFixed(6));
+        command.markDetonationChainFeedbackRate=Number((
+          command.markDetonationChainFeedbackRate*.75).toFixed(6));
+      }else if(apex&&apex.mechanics.refinement==='SELF_CHAIN'){
+        command.markDetonationStartingChainRate=Number((
+          command.markDetonationStartingChainRate*.75).toFixed(6));
+        command.markDetonationChainFeedbackRate=Number((
+          command.markDetonationChainFeedbackRate*1.5).toFixed(6));
+      }else if(apex&&apex.mechanics.refinement==='SPLIT_DETONATION')
+        command.markDetonationSplitTail=2;
+    }else if(engine==='CHAIN_DETONATION_RELAY'){
+      command.hits=delivery.contacts;command.hitDamages=command.hits>1?
+        f1SynthesisDistributedDamageVector(command.damage,command.hits):null;
+      const eventProgress=skillRepeatedThresholdProgress(Math.max(0,
+          axes.DETONATION_EVENTS||0),MARK_BURST_DETONATION_FORM_ENVELOPE.marginalConsumePower),
+        events=Math.max(2,2+eventProgress.rank),eligible=Math.min(command.hits,events),
+        placement=apex&&apex.mechanics.refinement==='FRONT_RELAY'?'FRONT':
+          apex&&apex.mechanics.refinement==='FINAL_COMPRESSION'?'FINAL':'EVEN';
+      command.markDetonationRelayEvents=events;command.markDetonationRelayPlacement=placement;
+      command.markDetonationPrimaryHits=command.hits;command.markDetonationReadsContactChain=true;
+      if(placement==='FINAL'){
+        command.markRule=markRule({...command.markRule,timing:'ACTION',cap:events,delivery:'LAST'});
+        command.markDetonationHitIndex=command.hits-1;
+      }else{
+        command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1,delivery:'EVEN'});
+        command.markDetonationEventIndices=placement==='FRONT'?
+          Array.from({length:eligible},(_,index)=>index):
+          Array.from({length:eligible},(_,index)=>eligible===1?command.hits-1:
+            Math.round(index*(command.hits-1)/(eligible-1)));
+      }
+      command.markDetonationCapacity=events;command.chainGainPattern=null;
+      command.chainGainPerHit=1;command.chainScalingTiming='LIVE';command.hitInterval=.27;
+      if(apex&&apex.mechanics.refinement==='DETONATION_MOMENTUM'){
+        command.detonationSuccessChainScalingRate=Number(((command.extraChainBonus||0)*.35).toFixed(6));
+        command.extraChainBonus=Number(((command.extraChainBonus||0)*.65).toFixed(6));
+      }
+      if(apex&&apex.mechanics.refinement==='FOLLOWUP_ARROW')
+        command.markDetonationFollowupPerConsumed=1;
+      reserve.DETONATION_EVENTS=eventProgress.reserve;
+    }else if(engine==='CHAIN_DETONATION_COMPRESSION'){
+      command.hits=delivery.contacts;command.hitDamages=command.hits>1?
+        f1SynthesisDistributedDamageVector(command.damage,command.hits):null;
+      command.markRule=markRule({...command.markRule,timing:'ACTION',cap:1,delivery:'LAST'});
+      command.markDetonationCapacity=1;command.markDetonationHitIndex=command.hits-1;
+      command.chainGainPattern=null;command.chainGainPerHit=1;command.chainScalingTiming='LIVE';
+      command.markDetonationReadsContactChain=true;command.hitInterval=.34;
+      const spendPower=Math.max(0,axes.CHAIN_MANAGEMENT||0),referenceChain=
+        Math.max(1,SHARPSHOOT_CHAIN_SCALING_REFERENCE);
+      command.markDetonationChainSpendDamagePerChain=Number((
+        SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN+spendPower/referenceChain).toFixed(6));
+      command.markDetonationChainSpendFraction=apex&&apex.mechanics.refinement==='PARTIAL_SPEND'?.5:1;
+      command.markDetonationSpendGeneratedOnly=!!(apex&&
+        apex.mechanics.refinement==='LOCAL_SPEND');
+      if(apex&&apex.mechanics.refinement==='ECHO_SPEND')
+        command.markDetonationEchoRate=Number((Math.max(0,axes.DETONATION_EVENTS||0)/
+          Math.max(1,command.markRule.damagePerMark)).toFixed(6));
+      reserve.CHAIN_MANAGEMENT=0;reserve.DETONATION_EVENTS=0;
+    }else if(engine==='CHAIN_DETONATION_RECOIL'){
+      const primaryHits=delivery.contacts,weighted=!!(apex&&
+          apex.mechanics.refinement==='WEIGHTED_RECOIL'),echoRefinement=!!(apex&&
+          apex.mechanics.refinement==='RECOIL_ECHO'),eventPower=Math.max(0,
+          axes.DETONATION_EVENTS||0),contactEventPower=weighted?0:
+          eventPower*(echoRefinement?.5:1),eventProgress=skillRepeatedThresholdProgress(
+          contactEventPower,SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN),
+        recoilContacts=weighted?1:Math.max(1,eventProgress.rank),totalHits=primaryHits+recoilContacts;
+      command.markDetonationPrimaryHits=primaryHits;command.markDetonationHitIndex=primaryHits-1;
+      command.markDetonationRecoilContacts=recoilContacts;
+      command.markDetonationRecoilWeight=weighted?Number((1+eventPower/
+        SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN).toFixed(6)):1;
+      command.markDetonationRecoilDeferred=!!(apex&&
+        apex.mechanics.refinement==='DEFERRED_RECOIL');
+      command.markDetonationRecoilEchoRate=echoRefinement?
+        Number((eventPower*.5/Math.max(1,
+          command.markRule.damagePerMark)).toFixed(6)):0;
+      command.markDetonationRecoilDamageTotal=Number((ledger.receipts.slice(2).reduce(
+        (sum,receipt)=>sum+Math.max(0,Number(receipt.powerAllocation&&
+          receipt.powerAllocation.DIRECT_DAMAGE)||0),0)).toFixed(6));
+      command.hits=command.markDetonationRecoilDeferred?primaryHits:totalHits;
+      command.hitDamages=command.hits>1?f1SynthesisDistributedDamageVector(
+        command.damage,command.hits):null;
+      command.markRule=markRule({...command.markRule,timing:'ACTION',cap:1,delivery:'LAST'});
+      command.markDetonationCapacity=1;command.chainGainPattern=null;command.chainGainPerHit=1;
+      command.chainScalingTiming='LIVE';command.markDetonationReadsContactChain=true;
+      command.packetWaveCount=command.markDetonationRecoilDeferred?1:2;
+      command.packetWavePattern=command.markDetonationRecoilDeferred?null:
+        Array.from({length:totalHits},(_,index)=>index<primaryHits?0:1);
+      command.chainSecondWaveStartIndex=command.markDetonationRecoilDeferred?0:primaryHits;
+      command.hitInterval=.30;reserve.DETONATION_EVENTS=eventProgress.reserve;
+    }else if(['PURE_CHAIN_LIVE_SEQUENCE','PURE_CHAIN_SETUP_WEIGHT',
+        'PURE_CHAIN_MACHINE_SEQUENCE','PURE_CHAIN_PHYSICAL_ECHO'].includes(engine)){
+      const kind=twistRoute.mechanics.deliveryKind,refinement=apex&&
+          apex.mechanics.refinement||null,densityRefinements=new Set([
+            'SEQUENCE_DENSITY','WEIGHT_SETUP_DENSITY','MACHINE_MAGAZINE','ECHO_COUNT']),
+        plan=materializeAttributeMotorDelivery('CHAIN',kind,ledger.totalQuality,
+          densityRefinements.has(refinement)?1.25:1),hits=plan.contacts,
+        directTotal=Math.max(.001,command.damage),damageWeights=Array.from({length:hits},()=>1),
+        chainWeights=Array.from({length:hits},()=>1),startingWeights=Array.from({length:hits},()=>1),
+        generatedWeights=Array.from({length:hits},()=>1);
+      if(kind===MOTOR_DELIVERY_KINDS.SETUP_WEIGHT){
+        const setupShare=.30,setupCount=Math.max(1,hits-1);
+        for(let index=0;index<setupCount;index++)damageWeights[index]=setupShare/setupCount;
+        damageWeights[hits-1]=1-setupShare;
+        chainWeights[hits-1]=plan.weight;
+        startingWeights[hits-1]=refinement==='WEIGHT_CARRIED_CHAIN'?1.35:1;
+        generatedWeights[hits-1]=refinement==='WEIGHT_FRESH_CHAIN'?1.35:1;
+      }else if(kind===MOTOR_DELIVERY_KINDS.LIVE_SEQUENCE){
+        if(refinement==='SEQUENCE_ALTERNATION')for(let index=1;index<hits;index+=2)
+          chainWeights[index]=1.45;
+        if(refinement==='SEQUENCE_FINISHER')chainWeights[hits-1]=Math.max(1.5,plan.magnitude);
+      }else if(kind===MOTOR_DELIVERY_KINDS.MACHINE_SEQUENCE){
+        if(refinement==='MACHINE_BURST_BEATS')for(let index=2;index<hits;index+=3)
+          chainWeights[index]=1.35;
+        if(refinement==='MACHINE_LAST_ROUND')chainWeights[hits-1]=1.8;
+      }else if(kind===MOTOR_DELIVERY_KINDS.PHYSICAL_ECHO){
+        if(refinement==='ECHO_FRONT_LOAD'&&hits>1)chainWeights[1]=1.65;
+        if(refinement==='ECHO_FINAL')chainWeights[hits-1]=1.9;
+      }
+      const weightTotal=damageWeights.reduce((sum,value)=>sum+value,0),hitDamages=
+        damageWeights.map(value=>Number((directTotal*value/weightTotal).toFixed(6)));
+      hitDamages[hitDamages.length-1]=Number((directTotal-hitDamages.slice(0,-1).reduce(
+        (sum,value)=>sum+value,0)).toFixed(6));
+      command.hits=hits;command.damage=hitDamages[0];command.hitDamages=hitDamages;
+      command.markRule=markRule({...command.markRule,timing:'ACTION',cap:1,delivery:'LAST'});
+      command.markDetonationCapacity=1;command.markDetonationHitIndex=hits-1;
+      command.chainGainPattern=null;command.chainGainPerHit=1;command.addsChain=true;
+      command.chainScalingTiming='LIVE';command.chainScalingWeightPattern=chainWeights;
+      command.chainStartingWeightPattern=startingWeights;
+      command.chainGeneratedWeightPattern=generatedWeights;
+      command.deliveryPattern=plan.pattern;command.deliveryTiming='IMMEDIATE';
+      command.deliveryMagnitude=hits;command.deliveryWeight=plan.weight;
+      const recipe=CHAIN_BOW_DELIVERY_RECIPE_BY_KIND[kind];
+      command.hitInterval=plan.interval;command.bowAnimationRecipeId=recipe;
+      command.animationRecipeId=recipe;
+      if(refinement==='SEQUENCE_RAMP'||refinement==='MACHINE_SPOOL'||
+         refinement==='ECHO_ESCALATION'){
+        command.chainScalingRampPerHit=Number(((command.extraChainBonus||0)*.45/
+          Math.max(1,hits-1)).toFixed(6));
+        command.extraChainBonus=Number(((command.extraChainBonus||0)*.55).toFixed(6));
+      }
+      reserve.DELIVERY_CONTACTS=0;reserve.CHAIN_MANAGEMENT=0;
     }else if(engine==='DETONATION_POSTURE_BREACH'){
       const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
         pairReference=postureMarkPairCount(reference);
@@ -20484,7 +21103,10 @@ function cloneSharpshootSynthesisCommand(command){
   for(const key of ['tags','mutationIds','mutationGroups','evolutionMutationIds','evolutionHistory',
     'synthesisHistory','hitDamages','markGainPattern','markPulsePattern','postureWavePattern',
     'postureContactPattern','chainGainPattern','afflictionTickWeights','critAfflictionTickWeights',
-    'packetWavePattern','chainReadOffsetPattern','legendaryStamps','evolutionText'])
+    'packetWavePattern','chainReadOffsetPattern','chainScalingWeightPattern',
+    'chainStartingWeightPattern','chainGeneratedWeightPattern',
+    'markDetonationEventIndices',
+    'legendaryStamps','evolutionText'])
     if(Array.isArray(command&&command[key]))copy[key]=command[key].slice();
   return copy;
 }
@@ -23122,7 +23744,8 @@ function synthesizeSharpshootChainFocusPath(formRarity='COMMON',specializationRa
     delivery=finalRoute.delivery,deliveryQualityMultiplier=Math.max(.01,
       Number(finalRoute.mechanics.deliveryQualityMultiplier)||1),
     deliveryMagnitude=skillDeliveryMagnitude(ledger.totalQuality*deliveryQualityMultiplier),
-    hits=delivery.pattern==='SINGLE'?1:deliveryMagnitude,extraContacts=Math.max(0,hits-1),
+    hits=relationship==='PURE_CHAIN_WEIGHT'?Math.max(2,deliveryMagnitude):
+      delivery.pattern==='SINGLE'?1:deliveryMagnitude,extraContacts=Math.max(0,hits-1),
     inheritedDirectFloor=commandDirectDamageTotal(parentCommand)+stableLayerDirectRetention(finalReceipt),
     rankDirectFloor=previousRankCommand?commandDirectDamageTotal(previousRankCommand)+
       SHARPSHOOT_CHAIN_MARK_RANK_DAMAGE_GAIN:0,
@@ -23155,7 +23778,10 @@ function synthesizeSharpshootChainFocusPath(formRarity='COMMON',specializationRa
     markProgress=skillRepeatedThresholdProgress(markPower,SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN),
     markGain=(definition.markGain||1)+markProgress.rank,
     markGainPattern=Array.from({length:hits},(_,index)=>index===hits-1?markGain:0),
-    hitDamages=Array.from({length:hits},()=>Number((totalDirectDamage/hits).toFixed(6)));
+    hitDamages=relationship==='PURE_CHAIN_WEIGHT'?
+      Array.from({length:hits},(_,index)=>Number((totalDirectDamage*(index===hits-1?.70:
+        .30/Math.max(1,hits-1))).toFixed(6))):
+      Array.from({length:hits},()=>Number((totalDirectDamage/hits).toFixed(6)));
   hitDamages[hitDamages.length-1]=Number((totalDirectDamage-
     hitDamages.slice(0,-1).reduce((sum,value)=>sum+value,0)).toFixed(6));
   transformSharpshoot(command,{name:finalRoute.name,damage:hitDamages[0],hitDamages,hits,
@@ -23733,8 +24359,8 @@ const SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT=(()=>{
     standard=rows.filter(row=>row.rarity==='COMMON'&&row.routeId.includes('_twist')),
     scores=standard.map(row=>row.score),powerSpread=Math.max(...scores)/Math.min(...scores);
   if(!(acceleration.chainScalingRampPerHit>0)||acceleration.deliveryPattern!=='SEQUENTIAL'||
-     weight.deliveryPattern!=='SINGLE'||weight.hits!==1||!(weight.deliveryWeight>1)||
-     totalCommandChainGain(weight)!==1||packet.deliveryPattern!=='SIMULTANEOUS_PACKET'||
+     weight.deliveryPattern!=='SEQUENTIAL'||weight.hits<2||!(weight.deliveryWeight>1)||
+     totalCommandChainGain(weight)!==weight.hits||packet.deliveryPattern!=='SIMULTANEOUS_PACKET'||
      packet.chainScalingTiming!=='ACTION_START'||packet.hits<2||
      echo.deliveryPattern!=='IMPACT_ECHO'||echo.hits<2||!(echo.chainSecondWaveBonus>0)||
      !echoTimeline||echoTimeline.releases.length!==1||echoTimeline.contacts.length!==echo.hits||
@@ -27559,19 +28185,36 @@ function validateTwistSpectrum(branchId){
     fromOrigin:Object.freeze(fromOrigin)});
 }
 function stableEvolutionActionOutcome(state,markStacks=0,startingChain=0){
-  const activeState=materializeStartingChainDelivery(state,startingChain),
+  const startingDelivery=materializeStartingChainDelivery(state,startingChain),activeState=
+      materializeMarkBurstConditionalContacts(startingDelivery,markStacks),
     hits=activeState.hits||1,plan=commandMarkPlan(activeState,markStacks);
   const chainAtActionStart=startingChain+plan.chainGain;
-  let chain=chainAtActionStart,damage=0;
+  let chain=chainAtActionStart,damage=0,detonationEvents=0,originalDetonationPayload=0;
   for(let i=0;i<hits;i++){
-    const reach=commandExpectedContactReach(activeState,i),generatedChain=Math.max(0,
-        chain-chainAtActionStart),rawMark=activeState.markDetonationCascade?0:
-        plan.markDamageByHit[i],markPayload=rawMark*(1+generatedChain*Math.max(0,
-          Number(activeState.markDetonationChainFeedbackRate)||0));
+    const reach=commandExpectedContactReach(activeState,i),contactChain=
+        activeState.markDetonationReadsContactChain?commandChainGain(activeState,i)*reach:0,
+      chainAtDetonation=chain+contactChain,generatedChain=Math.max(0,
+        chainAtDetonation-chainAtActionStart),rawMark=activeState.markDetonationCascade?0:
+        plan.markDamageByHit[i],successful=plan.consumedTotal>0&&rawMark>0,
+      target=activeState.markDetonationHitIndex===null?hits-1:
+        activeState.markDetonationHitIndex,spendable=activeState.markDetonationSpendGeneratedOnly?
+        generatedChain:chainAtDetonation,spent=successful&&i===target&&
+        activeState.markDetonationChainSpendFraction>0?Math.min(chainAtDetonation,
+          Math.ceil(spendable*activeState.markDetonationChainSpendFraction-1e-9)):0,
+      recoilEcho=i===hits-1&&i>=Math.max(1,activeState.markDetonationPrimaryHits||hits)?
+        originalDetonationPayload*Math.max(0,activeState.markDetonationRecoilEchoRate||0):0,
+      markPayload=rawMark*(1+chainAtActionStart*Math.max(0,
+        Number(activeState.markDetonationStartingChainRate)||0)+generatedChain*Math.max(0,
+        Number(activeState.markDetonationChainFeedbackRate)||0))+spent*Math.max(0,
+        Number(activeState.markDetonationChainSpendDamagePerChain)||0)+recoilEcho,
+      feedback=(detonationEvents||0)*Math.max(0,
+        Number(activeState.detonationSuccessChainScalingRate)||0);
     damage+=turnHitDamageBreakdown(commandHitBase(activeState,i),markPayload,
-      commandHitExtraChainBonus(activeState,i),commandChainDamageStacks(activeState,chainAtActionStart,chain,i)+
+      commandHitExtraChainBonus(activeState,i)+feedback,
+      commandChainDamageStacks(activeState,chainAtActionStart,chain,i)+
         plan.temporaryChain,false).final*reach;
-    chain+=commandChainGain(activeState,i)*reach;
+    if(rawMark>0){detonationEvents++;originalDetonationPayload=markPayload;}
+    chain+=commandChainGain(activeState,i)*reach;chain=Math.max(0,chain-spent);
   }
   if(activeState.markDetonationCascade&&plan.consumedTotal>0){
     const pulseBase=plan.markDamageByHit.reduce((sum,value)=>sum+value,0)/plan.consumedTotal,
@@ -27708,6 +28351,72 @@ const MARK_BURST_DETONATION_SPECIALIZATION_AUDIT=(()=>{
     siblingSpread,standard:Object.freeze(standard),foundationChecks:Object.freeze(foundationChecks),
     rows:Object.freeze(rows)});
 })();
+const MARK_BURST_CHAIN_SPECIALIZATION_STRUCTURE_AUDIT=(()=>{
+  const specs=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&
+      route.parentId==='chain_primary_form'),bySecondary=Object.fromEntries(
+      specs.map(route=>[route.secondaryAttributeId,route])),expected=
+      ['DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'],
+    pureChain=bySecondary.CHAIN,detonation=bySecondary.DETONATION;
+  if(specs.length!==6||expected.some(attribute=>!bySecondary[attribute])||
+     specs.some(route=>route.runtimeReadiness!=='MATERIALIZED'||
+       route.delivery.pattern!=='SEQUENTIAL'||
+       route.mechanics.chainRule!=='ONE_PER_VISIBLE_CONTACT_LIVE_READ'||
+       route.baselineAttack.markGain!==0||route.baselineAttack.markRule.mode!=='CONSUME'||
+       route.baselineAttack.markRule.cap!==1||
+       !MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID[route.id])||
+     specs.some(route=>Number(route.qualityProfile.DETONATION_CONSUMPTION||0)>0)||
+     Number(detonation.qualityProfile.DETONATION_DAMAGE||0)!==Math.max(...specs.map(route=>
+       Number(route.qualityProfile.DETONATION_DAMAGE||0)))||
+     Number(pureChain.qualityProfile.CHAIN_SCALING||0)!==Math.max(...specs.map(route=>
+       Number(route.qualityProfile.CHAIN_SCALING||0)))||
+     bySecondary.POSTURE.mechanics.postureRule!==
+       'ONE_TOTAL_LIGHT_BOW_PACKAGE_SPLIT_PER_CONTACT'||
+     bySecondary.CRITICAL.mechanics.criticalRule!==
+       'INDEPENDENT_LOCAL_ROLL_PER_CONTACT'||
+     bySecondary.AFFLICTION.mechanics.afflictionRule!==
+       'ONE_WOUND_SPLIT_PER_CONTACT'||
+     bySecondary.CHARGE.mechanics.chargeRule!==
+       'ONE_BANK_CONSUMPTION_SPLIT_PER_CONTACT')
+    throw new Error('Mark Burst Chain Specialization contract drifted');
+  return Object.freeze({passed:true,specializations:6,secondaries:Object.freeze(expected),
+    detonationCap:1,visibleChainPerContact:true,totalPayloadsRemainFinite:true});
+})();
+const MARK_BURST_CHAIN_DETONATION_STRUCTURE_AUDIT=(()=>{
+  const specId='burst_chain_detonation_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
+    apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
+      twistIds.includes(route.parentId)),engines=new Set(twists.map(route=>
+      route.mechanics.detonationEngine)),expected=new Set(['CHAIN_DETONATION_CRESCENDO',
+      'CHAIN_DETONATION_RELAY','CHAIN_DETONATION_COMPRESSION','CHAIN_DETONATION_RECOIL']);
+  if(twists.length!==4||apexes.length!==16||engines.size!==4||
+     [...expected].some(engine=>!engines.has(engine)||!TWIST_MECHANIC_ENGINE_REGISTRY[engine])||
+     twists.some(route=>route.apexTarget!==4||route.baselineAttack.markGain!==0||
+       route.mechanics.chainRule!=='ONE_PER_VISIBLE_CONTACT_LIVE_READ'||
+       route.mechanics.detonationRule!=='AT_LEAST_ONE_REAL_MARK_DETONATION')||
+     twists.some(route=>apexes.filter(apex=>apex.parentId===route.id).length!==4)||
+     apexes.some(route=>route.baselineAttack.markGain!==0||!route.apexDesign||
+       route.apexDesign.version!==2))
+    throw new Error('Mark Burst Chain/Detonation needs four distinct Twists and sixteen decision Apexes');
+  return Object.freeze({passed:true,twists:4,apexes:16,engines:Object.freeze([...engines])});
+})();
+const MARK_BURST_PURE_CHAIN_STRUCTURE_AUDIT=(()=>{
+  const specId='burst_chain_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
+    apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
+    expected=new Set(['PURE_CHAIN_LIVE_SEQUENCE','PURE_CHAIN_SETUP_WEIGHT',
+      'PURE_CHAIN_MACHINE_SEQUENCE','PURE_CHAIN_PHYSICAL_ECHO']);
+  if(twists.length!==4||apexes.length!==16||twists.some(route=>route.apexTarget!==4||
+       route.primaryAttributeId!=='CHAIN'||route.secondaryAttributeId!=='CHAIN'||
+       route.baselineAttack.markGain!==0||route.deliveryDecision.resourcePolicy!=='CHAIN_PER_CONTACT'||
+       route.mechanics.chainRule!=='ONE_PER_MECHANICAL_CONTACT_READ_PRIOR_GROUPS'||
+       !expected.has(route.twistIdentity.engineIds[0]))||
+     twists.some(route=>apexes.filter(apex=>apex.parentId===route.id).length!==4)||
+     apexes.some(route=>!route.apexDesign||route.apexDesign.version!==2||
+       route.mechanics.chainRule!=='ONE_PER_MECHANICAL_CONTACT_READ_PRIOR_GROUPS'))
+    throw new Error('Generic pure Chain motor family contract drifted');
+  return Object.freeze({passed:true,skillSpecificExceptions:0,twists:4,apexes:16,
+    engines:Object.freeze([...expected])});
+})();
 const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
   const specId='detonation_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
@@ -27776,11 +28485,11 @@ const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
             if(child.activeAttributeRouteId!==apex.id||child.markDetonationEventMode!==entry.mode||
                child.animationRecipeId!==entry.recipe||childEntry.damage+1e-6<entry.damage||
                childEntry.perMark+1e-6<entry.perMark||!capacityAtLeast(childEntry.capacity,entry.capacity)||
-               childEntry.score+1e-6<entry.score||(previousApex&&(
+               childEntry.score+Math.max(1,entry.score*.02)<entry.score||(previousApex&&(
                  childEntry.damage+1e-6<previousApex.damage||
                  childEntry.perMark+1e-6<previousApex.perMark||
                  !capacityAtLeast(childEntry.capacity,previousApex.capacity)||
-                 childEntry.score+1e-6<previousApex.score)))
+                 childEntry.score+Math.max(1,previousApex.score*.02)<previousApex.score)))
               throw new Error(apex.id+' failed Apex parent/rank inheritance: '+
                 JSON.stringify({childEntry,previousApex,parent:entry}));
             previousApex=childEntry;apexRows.push(childEntry);
@@ -29418,7 +30127,24 @@ function distributeMarkPayload(total,hits,delivery){
   else values[hits-1]=total;
   return values;
 }
+function applyCommandMarkDetonationPlacement(command,plan){
+  if(!command||!plan||!plan.markDamageByHit.length)return plan;
+  const hits=plan.markDamageByHit.length,targetRaw=Number(command.markDetonationHitIndex),
+    hasTarget=Number.isInteger(targetRaw),target=hasTarget?clamp(targetRaw,0,hits-1):hits-1,
+    split=Math.max(0,Math.floor(Number(command.markDetonationSplitTail)||0));
+  if(!(hasTarget||split>1))return plan;
+  const total=plan.markDamageByHit.reduce((sum,value)=>sum+Math.max(0,value||0),0);
+  if(!(total>0))return plan;
+  plan.markDamageByHit=Array.from({length:hits},()=>0);
+  if(split>1){
+    const first=Math.max(0,target-split+1),count=target-first+1,share=total/count;
+    for(let index=first;index<=target;index++)plan.markDamageByHit[index]=
+      index===target?total-share*(count-1):share;
+  }else plan.markDamageByHit[target]=total;
+  return plan;
+}
 function finalizeCommandMarkPlan(command,plan){
+  applyCommandMarkDetonationPlacement(command,plan);
   plan.echoDamageByHit=Array.from({length:plan.markDamageByHit.length},()=>0);
   const echoRate=Math.max(0,Number(command&&command.markDetonationEchoRate)||0),
     pressureRate=Math.max(0,Number(command&&command.markDetonationReservePressureRate)||0);
@@ -29454,8 +30180,10 @@ function commandMarkPlan(command,stacks){
       Math.ceil(available*rule.fraction):rule.cap===MARK_ALL?available:Math.min(available,rule.cap),
     plan={...empty,mode:rule.mode};
   if(rule.mode==='CONSUME'&&rule.timing==='PER_HIT'){
-    let available=markAtStart;
+    let available=markAtStart;const authoredIndices=Array.isArray(
+      command&&command.markDetonationEventIndices)?new Set(command.markDetonationEventIndices):null;
     for(let i=0;i<hits;i++){
+      if(authoredIndices&&!authoredIndices.has(i))continue;
       const consumed=cap(available),effective=markEffectiveCount(consumed,rule.curve);
       plan.consumedByHit[i]=consumed;plan.markDamageByHit[i]=effective*rule.damagePerMark;
       plan.consumedTotal+=consumed;plan.effectiveMarks+=effective;available-=consumed;
@@ -29756,14 +30484,50 @@ function materializeStartingChainDelivery(command,startingChain=0){
   result.startingChainAddedHits=extra;
   return result;
 }
+function materializeMarkBurstConditionalContacts(command,startingMark=0){
+  if(!command||!(command.markDetonationPrimaryHits>0))return command;
+  const primaryHits=Math.max(1,Math.floor(command.markDetonationPrimaryHits)),plan=
+      commandMarkPlan(command,startingMark),relayFollowups=Math.max(0,
+      Math.floor(plan.consumedTotal*Math.max(0,Number(command.markDetonationFollowupPerConsumed)||0))),
+    recoilFollowups=command.markDetonationRecoilDeferred?0:
+      (plan.consumedTotal>0?Math.max(0,Math.floor(command.markDetonationRecoilContacts||0)):0),
+    hits=primaryHits+relayFollowups+recoilFollowups;
+  if(hits===command.hits)return command;
+  const result=cloneSharpshootSynthesisCommand(command),authoredTotal=commandDirectDamageTotal(command),
+    total=command.markDetonationRecoilDeferred&&plan.consumedTotal>0?
+      Math.max(.001,authoredTotal-Math.max(0,
+        Number(command.markDetonationRecoilDamageTotal)||0)):authoredTotal,
+    perHit=total/Math.max(1,hits),damages=Array.from({length:hits},()=>Number(perHit.toFixed(6)));
+  damages[damages.length-1]=Number((total-damages.slice(0,-1).reduce((sum,value)=>sum+value,0)).toFixed(6));
+  result.hits=hits;result.hitDamages=hits>1?damages:null;result.damage=damages[0];
+  result.deliveryMagnitude=hits;result.chainGainPattern=null;
+  if(recoilFollowups>0){
+    result.packetWaveCount=2;result.packetWavePattern=Array.from({length:hits},(_,index)=>
+      index<primaryHits?0:1);result.chainSecondWaveStartIndex=primaryHits;
+  }else {result.packetWaveCount=1;result.packetWavePattern=null;result.chainSecondWaveStartIndex=0;}
+  return result;
+}
 function commandChainDamageStacks(command,chainAtStart,currentChain,index=0){
   const timing=command&&command.chainScalingTiming,
     stacks=timing==='ACTION_START'?Math.max(0,chainAtStart||0):
       timing==='PACKET_WAVE_START'?Math.max(0,chainAtStart||0)+Math.max(0,
         command&&command.chainReadOffsetPattern&&command.chainReadOffsetPattern[index]||0):
       Math.max(0,currentChain||0),
-    multiplier=Math.max(1,Number(command&&command.realChainScalingMultiplier)||1);
-  return stacks*multiplier;
+    startingStacks=Math.min(stacks,Math.max(0,chainAtStart||0)),
+    generatedStacks=Math.max(0,stacks-startingStacks),
+    startingWeight=Math.max(0,Number(command&&command.chainStartingWeightPattern&&
+      command.chainStartingWeightPattern[index])||1),
+    generatedWeight=Math.max(0,Number(command&&command.chainGeneratedWeightPattern&&
+      command.chainGeneratedWeightPattern[index])||1),
+    weightedStacks=startingStacks*startingWeight+generatedStacks*generatedWeight,
+    contactWeight=Math.max(0,Number(command&&command.chainScalingWeightPattern&&
+      command.chainScalingWeightPattern[index])||1),
+    recoilStart=Math.max(0,Math.floor(Number(command&&command.markDetonationPrimaryHits)||0)),
+    recoilWeight=recoilStart>0&&index>=recoilStart?
+      Math.max(1,Number(command&&command.markDetonationRecoilWeight)||1):1,
+    multiplier=Math.max(1,Number(command&&command.realChainScalingMultiplier)||1)*
+      recoilWeight*contactWeight;
+  return weightedStacks*multiplier;
 }
 function grantCommandResolve(command,amount,x,y){
   if(!(amount>0))return 0;
@@ -29915,7 +30679,8 @@ function endPlayerTurn(){
 }
 function finishPlayerAction(){
   if(!isTurnCombat()||boss.phase!=='playerResolve') return;
-  const finishedAction=boss.turnAction,finishAfterRelease=!!(finishedAction&&finishedAction.finishAfterRelease);
+  const finishedAction=boss.turnAction,finishAfterRelease=!!(finishedAction&&finishedAction.finishAfterRelease),
+    pendingRecoil=boss.pendingMarkBurstRecoil||null;
   if(finishedAction&&finishedAction.scheduleChargeAftershock>0&&boss.hp>0)
     boss.pendingChargeAftershock={command:cloneSharpshootSynthesisCommand(finishedAction.command),
       damage:finishedAction.scheduleChargeAftershock};
@@ -29926,10 +30691,30 @@ function finishPlayerAction(){
       finishedAction.command.chargeFailurePrecisionGain,0,1);
   }
   finishSkillLabActionLog();
+  if(finishedAction&&finishedAction.command.markDetonationRecoilDeferred&&
+     finishedAction.consumedMark>0&&finishedAction.command.markDetonationRecoilContacts>0){
+    const source=finishedAction.command,hits=Math.max(1,
+        Math.floor(source.markDetonationRecoilContacts)),total=Math.max(.001,
+        Number(source.markDetonationRecoilDamageTotal)||0),perHit=total/hits,
+      damages=Array.from({length:hits},()=>Number(perHit.toFixed(6)));
+    damages[damages.length-1]=Number((total-damages.slice(0,-1).reduce(
+      (sum,value)=>sum+value,0)).toFixed(6));
+    boss.pendingMarkBurstRecoil={command:{...cloneSharpshootSynthesisCommand(source),
+      id:'mark_burst_deferred_recoil',name:source.name+' · RETURN',damage:damages[0],
+      hitDamages:hits>1?damages:null,hits,deliveryMagnitude:hits,packetWaveCount:1,
+      packetWavePattern:null,chainSecondWaveStartIndex:0,markRule:null,markDetonation:false,
+      markDetonationCapacity:0,markDetonationPrimaryHits:0,markDetonationRecoilContacts:0,
+      markDetonationRecoilDeferred:false,markDetonationRecoilEchoRate:0,
+      markDetonationHitIndex:null,markDetonationSplitTail:0,cost:0,apCost:0}};
+  }
   boss.turnAction=null;
   if(boss.hp<=0){resolveVolley();return;}
   boss.phase='player';boss.playerActionTimer=0;
   if(finishAfterRelease){endPlayerTurn();return;}
+  if(pendingRecoil&&pendingRecoil.command){
+    boss.pendingMarkBurstRecoil=null;
+    if(performPlayerAction(pendingRecoil.command,{freeFollowUp:true}))return;
+  }
   boss.playerMenu=boss.playerActionReturnMenu||'skills';
   floater(VW/2,286,'AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax,'#7fc9ff',15);
 }
@@ -30228,13 +31013,34 @@ function resolveTurnActionHit(action){
       Math.max(0,Number(command.detonationFullPacketBonus)||0):0,
     rawContactDetonationPayload=command.markDetonationCascade?0:Math.max(0,
       markPayload-echoPayload+existingWoundDetonation+fullPacketDetonation),
-    generatedChain=Math.max(0,chainStacks-action.chainAtStart),
+    contactChainForDetonation=command.markDetonationReadsContactChain?
+      commandChainGain(command,index):0,
+    chainAtDetonation=chainStacks+contactChainForDetonation,
+    generatedChain=Math.max(0,chainAtDetonation-action.chainAtStart),
+    successfulDetonation=action.markPlan.consumedTotal>0&&
+      (rawContactDetonationPayload>0||markPayload>0),
+    spendableChain=command.markDetonationSpendGeneratedOnly?
+      generatedChain:Math.max(0,chainAtDetonation),
+    chainSpend=successfulDetonation&&index===(command.markDetonationHitIndex===null?
+      action.hits-1:command.markDetonationHitIndex)&&command.markDetonationChainSpendFraction>0?
+      Math.min(Math.max(0,chainAtDetonation),Math.ceil(spendableChain*
+        command.markDetonationChainSpendFraction-1e-9)):0,
+    chainSpendPayload=chainSpend*Math.max(0,
+      Number(command.markDetonationChainSpendDamagePerChain)||0),
+    recoilEchoPayload=index===action.hits-1&&index>=Math.max(1,
+      Number(command.markDetonationPrimaryHits)||action.hits)&&action.originalDetonationPayload>0?
+      action.originalDetonationPayload*Math.max(0,
+        Number(command.markDetonationRecoilEchoRate)||0):0,
     baseContactDetonationPayload=stableCombatNumber(rawContactDetonationPayload*(1+
-      generatedChain*Math.max(0,Number(command.markDetonationChainFeedbackRate)||0))),
+      action.chainAtStart*Math.max(0,Number(command.markDetonationStartingChainRate)||0)+
+      generatedChain*Math.max(0,Number(command.markDetonationChainFeedbackRate)||0))+
+      chainSpendPayload+recoilEchoPayload),
     damageChain=commandChainDamageStacks(command,action.chainAtStart,chainStacks,index)+
       action.markPlan.temporaryChain,
     contextChainBonus=commandContextChainBonus(command,action.postureAtStart,
-      action.postureMaxAtStart,action.bleedAtStart);
+      action.postureMaxAtStart,action.bleedAtStart)+
+      (action.detonationEventCount||0)*Math.max(0,
+        Number(command.detonationSuccessChainScalingRate)||0);
   const orderedFuse=command.detonationPostureMode==='POSTURE_BEFORE_DETONATION'&&
     index===action.hits-1;
   if(orderedFuse&&!action.breakAtStart&&!action.postureAppliedEarly){
@@ -30304,6 +31110,8 @@ function resolveTurnActionHit(action){
   if(command.markDetonation===true&&contactDetonationPayload>0){
     emitMarkDetonationImpact(x,y,contactDetonationPayload);
     action.detonationEventCount=(action.detonationEventCount||0)+1;
+    if(rawContactDetonationPayload>0)action.originalDetonationPayload=
+      stableCombatNumber(contactDetonationPayload);
   }
   if(critical)floater(x,y-70,'CRITICAL ×'+damagePart(critMultiplier),'#ffcc4d',17);
   if(critical){
@@ -30324,6 +31132,11 @@ function resolveTurnActionHit(action){
     return true;
   }
   const chainGain=commandChainGain(command,index);if(chainGain)addChainStack(chainGain);
+  if(chainSpend>0){
+    chainStacks=Math.max(0,chainStacks-chainSpend);action.chainDetonationSpent=
+      (action.chainDetonationSpent||0)+chainSpend;
+    floater(x,y-94,'CHAIN -'+chainSpend+' · DETONATION','#c995ff',14);
+  }
   if(critical&&command.critChainBonus>0){
     const gained=Math.max(0,Math.floor(Number(command.critChainBonus)||0));
     if(gained){addChainStack(gained);floater(x,y-82,'CRIT CHAIN +'+gained,'#c995ff',15);}
@@ -30549,7 +31362,9 @@ function performPlayerAction(command,options=null){
     if(gained)floater(VW/2,304,'PERSISTENT QUARRY · MARK +'+gained,'#d9788b',14);
   }
   command=materializeStartingChainDelivery(command,chainStacks);
-  const startingMark=bossMark(),startingCharge=primaryRelease?
+  const startingMark=bossMark();
+  command=materializeMarkBurstConditionalContacts(command,startingMark);
+  const startingCharge=primaryRelease?
       safeDefenseCharge(options.reservedCharge):bossCharge(),chargeMode=commandChargeMode(command),
     plannedConsumedMark=commandMarkPlan(command,startingMark).consumedTotal;
   if(primaryRelease){
@@ -30746,6 +31561,7 @@ function performPlayerAction(command,options=null){
     postureWaveTimeline,postureWaveIndex:postureWaveTimeline?1:0,postureWaveTotal:0,
     detonationCascadeTimeline,detonationCascadeIndex:0,
     detonationEchoTime,detonationEchoResolved:false,detonationEventCount:0,
+    originalDetonationPayload:0,chainDetonationSpent:0,
     postureApplied:0,postureAppliedEarly:false,causedBreak:false,
     detonationPostureTotal,detonationPostureSeal,
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
@@ -37462,6 +38278,28 @@ function skillLabCompactSynthesisMechanics(command){
     lines.push('Oynanış: Tek ok vurur; tüketilen her Mark ayrı patlama darbesine dönüşür. Darbeler Chain üretir ve yalnız önceki darbelerin Chainini okur.');
   else if(command.markDetonationEventMode==='DETONATION_CHAIN_SALVO')
     lines.push('Oynanış: Oklar aynı anda vurur ve Mark patlatır. Ürettikleri Chain bu paketi değil, sonraki saldırıyı besler.');
+  else if(command.markDetonationEventMode==='CHAIN_DETONATION_CRESCENDO')
+    lines.push('Oynanış: Gerçek oklar canlı Chain kurar; son temas 1 Mark patlatır ve tamamlanan Chain temposunu tüketmeden okur.');
+  else if(command.markDetonationEventMode==='CHAIN_DETONATION_RELAY')
+    lines.push('Oynanış: '+command.markDetonationRelayEvents+' ücretli patlatma olayı '+
+      (command.markDetonationRelayPlacement==='FINAL'?'son temasta sıkıştırılır.':'gerçek okların arasına dağıtılır; her olay canlı Chaini okur.'));
+  else if(command.markDetonationEventMode==='CHAIN_DETONATION_COMPRESSION')
+    lines.push('Oynanış: 1 Mark gerçekten patlarsa '+
+      (command.markDetonationSpendGeneratedOnly?'yalnız bu saldırının ürettiği Chain':'mevcut Chainin %'+
+        Math.round(command.markDetonationChainSpendFraction*100))+
+      ' Detonationa harcanır; Mark yoksa Chain korunur.');
+  else if(command.markDetonationEventMode==='CHAIN_DETONATION_RECOIL')
+    lines.push('Oynanış: Başarılı 1 Mark patlaması '+command.markDetonationRecoilContacts+
+      ' gerçek dönüş oku açar; bu oklar Chain üretir fakat Mark patlatmaz'+
+      (command.markDetonationRecoilDeferred?' ve sonraki skillin ardından gelir.':'.'));
+  else if(command.markDetonationEventMode==='PURE_CHAIN_LIVE_SEQUENCE')
+    lines.push('Oynanış: '+command.hits+' sıralı okun her biri 1 Chain üretir; sonraki oklar canlı Chaini okur ve finalde 1 Mark patlatılır.');
+  else if(command.markDetonationEventMode==='PURE_CHAIN_SETUP_WEIGHT')
+    lines.push('Oynanış: '+Math.max(1,command.hits-1)+' kurulum oku Chain üretir; final ağır ok Weight '+damagePart(command.deliveryWeight)+' ile canlı Chaini okur ve 1 Mark patlatır.');
+  else if(command.markDetonationEventMode==='PURE_CHAIN_MACHINE_SEQUENCE')
+    lines.push('Oynanış: '+command.hits+' pellet machine-gun hızında sırayla vurur; her pellet 1 Chain üretir ve sonraki pelletler bu Chaini kullanır.');
+  else if(command.markDetonationEventMode==='PURE_CHAIN_PHYSICAL_ECHO')
+    lines.push('Oynanış: Tek ok bırakılır; '+command.hits+' fiziksel temas sırayla 1 Chain üretip canlı Chaini sonraki yankıya taşır.');
   else if(command.markDetonationEventMode==='DETONATION_POSTURE_BREACH')
     lines.push('Oynanış: Tüketilen her Mark anında +'+damagePart(command.detonationPosturePerConsumedMark)+
       ' Posture verir'+(command.detonationPostureEscalation>0?'; sonraki her Mark artan baskı ekler.':'.'));
@@ -37510,6 +38348,8 @@ function skillLabCompactSynthesisMechanics(command){
     lines.push('Oynanış: Harcanan Charge sonraki savunmaya füze olur; Dodge 1, Parry 2 birim harcayıp Chainsiz/Critsiz pulse üretir.');
   if(command.markDetonationChainFeedbackRate>0)lines.push('Son patlama: saldırı içinde üretilen her Chain, Mark patlamasını %'+
     damagePart(command.markDetonationChainFeedbackRate*100)+' büyütür.');
+  if(command.markDetonationStartingChainRate>0)lines.push('Taşınan Chain: saldırı başındaki her Chain, Mark patlamasını %'+
+    damagePart(command.markDetonationStartingChainRate*100)+' büyütür.');
   if(command.markDetonationCascadeChainRate>0)lines.push('Patlama zinciri: önceki her darbenin ürettiği Chain, sonraki darbeyi %'+
     damagePart(command.markDetonationCascadeChainRate*100)+' büyütür.');
   if(command.markBloomRate)lines.push('Mark Bloom: preserve starting Mark; add floor(starting Mark × '+

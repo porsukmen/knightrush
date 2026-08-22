@@ -72,6 +72,13 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 
 - Kaynak okuma ani aciktir: action-start, hit-before, hit-after veya action-end.
 - Uretim, okuma, tuketim, Break ve ertelenmis etkinin sirasi test edilir.
+- Her Attribute icin `URETIR / OKUR / HARCAR / COZUM SIRASI`, her Delivery icin temas-grubu
+  topolojisi vardir. Ayni gruptaki temaslar ayni snapshoti okur; sonraki grup onceki grubun
+  ciktisini gorur. Primary/Secondary motor kendi dogal ciktisini gercekten uretir, sifir kaynakta
+  calisir ve Quality ile monoton buyur. Skill id veya agac adresine ozel kaynak istisnasi yasaktir.
+- Ortak matris her motoru `SINGLE`, `SEQUENTIAL`, `SIMULTANEOUS_PACKET` ve `IMPACT_ECHO` ile
+  materialize edebilmelidir. Delivery temas/grup sirasi kurar; silaha ozel animasyon recipe'si ayri
+  adapterdan gelir ve motor kurallarini degistiremez.
 - Hareket kendisini yanlislikla prime edemez; Break sonrasi sizan gecici durum birakamaz.
 - Bir olay yalniz bir kez calisir; multihit veya gecikmeli event yanlis tekrar uretmez.
 
@@ -98,6 +105,9 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Combat contact sayisi ile gorsel projectile sayisi birbirine karistirilmaz.
 - Sequential temaslarin her biri dogal Chain uretir; Packet ancak acikca yazilan wave/contact
   sozlesmesi kadar Chain uretir; hasarsiz event hic Chain uretmez.
+- Chain motorunda Delivery turunden bagimsiz olarak her mekanik temas `+1 Chain` uretir. Chain
+  ciktisi toplam Quality ile monoton buyur. Tek agir temas gorunmez bicimde birden fazla Chain
+  yazamaz; gerekiyorsa Quality ile buyuyen gorunur kurulum temaslari kullanilir.
 - Delivery Quality ile buyuyorsa buyuyen parametre (contact, pellet veya Weight) tek kaynaktan
   hesaplanir ve gameplay limiti eklenmez.
 - Delivery'nin verdigi ek guc ya attribute wallet'indan odenir ya da adiyla kayitli, test edilen
@@ -276,18 +286,6 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
   derleyicisine dusmemeli; bu dispatch kuralinin testi yeni Chain ailelerinde otomatik tekrarlar.
 - Mark/Chain ile Chain/Mark karismamalidir: bu ailede asil motor Chain uretimi ve canli Chain hasari,
   Mark ise hic tuketilmeyen destekleyici output veya uygulama zamanlamasidir.
-
-## F2S2 Chain/Chain kabul listesi
-
-- Tam sayım `4 Twist / 16 Apex`tir; her Twist tam dört materialize Apex çocuğuna sahiptir.
-- Aile yalnız Sharpshoot base Markını taşır. Ekstra Mark, Mark tüketimi, üçüncü attribute, AP/Resolve ekonomisi veya authored büyüme sınırı yoktur.
-- T1 canlı Chain kullanan hızlanan seri, T2 bir temaslı Weight oku, T3 action-start Chain snapshotlı eşzamanlı paket, T4 tek projectile bırakışlı gecikmeli yankıdır.
-- Görünen her temas tam `+1 Chain` verir. T2 her zaman tek temas/tek Chain'dir; T3 kendi ürettiği Chain'i aynı pakette okuyamaz; T4ün bütün yankıları canlı Chain'i okur.
-- Common Twistler arası güç oranı `1.20`yi aşamaz; dört route yalnız sayısal varyant değildir.
-- Rarity yükselirken gerçek hasar, Chain outputu, temas/Weight yoğunluğu ve routea ait payoff gerilemez.
-- Common child Legendary parenti sıfırlamaz. Parent avantajının en az `%10`u ve en az `1` görünür güç puanı sonraki kartta korunur.
-- Delivery yoğunluğu bütün geçmişin Quality'sinden türetilir ve maksimumla kesilmez.
-- Quality bütçesi doğrudan hasar ile derived Chain payoffuna iki kez tam değerle yazılamaz.
 
 ## Görünen sonuç kabul listesi
 
