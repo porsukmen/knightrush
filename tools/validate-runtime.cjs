@@ -1599,6 +1599,9 @@ try{
     globalThis.__detonationChainClosureAudit=
       typeof MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT==='undefined'?null:
       MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT;
+    globalThis.__detonationPostureClosureAudit=
+      typeof MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT==='undefined'?null:
+      MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT;
     globalThis.__markBurstStableCausalityAudit=
       typeof MARK_BURST_STABLE_CAUSALITY_AUDIT==='undefined'?null:
       MARK_BURST_STABLE_CAUSALITY_AUDIT;
@@ -1788,6 +1791,39 @@ try{
           cascadePulses,chain:chainStacks,returnedToPlayer:boss.phase==='player'};
       });
     })();
+    globalThis.__detonationPostureCombatAudit=(()=>{
+      openSkillLab();startSkillLabCombat();
+      const twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
+        route.parentId==='detonation_posture_spec'),routes=twists.flatMap(twist=>[twist,
+          ...MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&route.parentId===twist.id)]);
+      return routes.map(route=>{
+        applySkillLabPreset('clean',false);clearBossPostureSeal();
+        boss.hp=boss.maxHp=99999;boss.mark=8;boss.posture=0;boss.postureMax=99999;
+        const twist=route.depth===3?route:MARK_BURST_ROUTE_BY_ID[route.parentId],command=
+          synthesizeMarkBurstDetonationPath('COMMON','detonation_posture_spec','COMMON',twist.id,
+            'COMMON',route.depth===4?route.id:null,'COMMON'),plan=commandMarkPlan(command,8);
+        replaceRunSkill('mark_burst',command);const hpBefore=boss.hp,started=performPlayerAction(command),
+          action=boss.turnAction,recipe=action&&action.bowTimeline&&action.bowTimeline.recipe.id,
+          authoredPosture=action&&action.detonationPostureTotal||0,
+          authoredSeal=action&&action.detonationPostureSeal||0;
+        let frames=0;while(boss.phase==='playerResolve'&&frames++<600){
+          updateTurnAction(1/60);boss.playerActionTimer-=1/60;
+          if(boss.playerActionTimer<=0)finishPlayerAction();
+        }
+        const postureAfterAction=boss.posture||0,sealBeforeTrigger=boss.postureSealAmount||0,
+          triggerBefore=boss.posture||0,phaseAfterAction=boss.phase;
+        if(command.detonationPostureMode==='NEXT_SOURCE_SEAL'){
+          boss.phase='playerResolve';applyTurnSkillPosture(10);boss.phase=phaseAfterAction;
+        }
+        return {id:route.id,depth:route.depth,twistId:twist.id,started,recipe,frames,
+          mode:command.detonationPostureMode,damage:Number((hpBefore-boss.hp).toFixed(3)),
+          markAfter:bossMark(),consumed:plan.consumedTotal,authoredPosture,authoredSeal,
+          postureAfterAction,sealBeforeTrigger,triggerGain:Number(((boss.posture||0)-
+            triggerBefore).toFixed(3)),sealAfterTrigger:boss.postureSealAmount||0,
+          echoEvents:command.detonationPostureEchoEvents||0,
+          returnedToPlayer:boss.phase==='player'};
+      });
+    })();
     globalThis.__combatInteractionAudit=(()=>{
       openSkillLab();startSkillLabCombat();
       const hpBefore=boss.hp,apBefore=boss.ap,resolveBefore=boss.resolve,
@@ -1948,6 +1984,7 @@ try{
       detonationSpecializations=sandbox.__detonationSpecializationAudit,
       detonationFocusClosure=sandbox.__detonationFocusClosureAudit,
       detonationChainClosure=sandbox.__detonationChainClosureAudit,
+      detonationPostureClosure=sandbox.__detonationPostureClosureAudit,
       markBurstStableCausality=sandbox.__markBurstStableCausalityAudit,
       weaponSkillHierarchy=sandbox.__weaponSkillHierarchyAudit,
       detonationBase=sandbox.__detonationBaseAudit,
@@ -1957,6 +1994,7 @@ try{
       detonationSpecializationCombat=sandbox.__detonationSpecializationCombatAudit,
       detonationFocusCombat=sandbox.__detonationFocusCombatAudit,
       detonationChainCombat=sandbox.__detonationChainCombatAudit,
+      detonationPostureCombat=sandbox.__detonationPostureCombatAudit,
       combatInteraction=sandbox.__combatInteractionAudit;
     if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
        bowRouteRecipe.routeMappings<100)
@@ -1976,7 +2014,7 @@ try{
       throw new Error('Quick Detonation base-attribute route gate failed: '+
         JSON.stringify(detonationBaseAttributeRoute));
     if(!markBurstStableCausality||!markBurstStableCausality.passed||
-       markBurstStableCausality.twists!==8||
+       markBurstStableCausality.twists!==12||
        !markBurstStableCausality.rejectedExternalSecondaryStarter)
       throw new Error('Quick Mark Burst Stable causality gate failed: '+
         JSON.stringify(markBurstStableCausality));
@@ -2010,8 +2048,15 @@ try{
        detonationChainClosure.siblingSpread>.45||!detonationChainClosure.identityAudit.passed)
       throw new Error('Quick Detonation/Chain Twist+Apex closure gate failed: '+
         JSON.stringify(detonationChainClosure));
+    if(!detonationPostureClosure||!detonationPostureClosure.passed||
+       detonationPostureClosure.capped||detonationPostureClosure.twists!==4||
+       detonationPostureClosure.apexes!==16||detonationPostureClosure.twistCards!==256||
+       detonationPostureClosure.apexCards!==1024||detonationPostureClosure.siblingSpread>.45||
+       !detonationPostureClosure.identityAudit.passed)
+      throw new Error('Quick Detonation/Posture Twist+Apex closure gate failed: '+
+        JSON.stringify(detonationPostureClosure));
     if(!weaponSkillHierarchy||!weaponSkillHierarchy.passed||weaponSkillHierarchy.catalogues!==2||
-       weaponSkillHierarchy.routes!==757||weaponSkillHierarchy.detonationRoutes!==52||
+       weaponSkillHierarchy.routes!==757||weaponSkillHierarchy.detonationRoutes!==72||
        weaponSkillHierarchy.detonationCoverage!=='IN_PROGRESS'||
        weaponSkillHierarchy.base.base!=='DETONATION'||
        weaponSkillHierarchy.base.primary!==null||weaponSkillHierarchy.base.secondary!==null||
@@ -2093,6 +2138,24 @@ try{
          .some(entry=>entry.events!==entry.consumed||entry.chain!==entry.hits))
       throw new Error('Quick Detonation/Chain real combat gate failed: '+
         JSON.stringify(detonationChainCombat));
+    if(!detonationPostureCombat||detonationPostureCombat.length!==20||
+       detonationPostureCombat.some(entry=>!entry.started||!entry.returnedToPlayer||
+         !(entry.damage>0)||entry.markAfter!==8-entry.consumed||!(entry.authoredPosture>0))||
+       detonationPostureCombat.filter(entry=>
+         entry.twistId==='detonation_posture_breach_twist').some(entry=>
+           entry.mode!=='IMMEDIATE_BREACH'||!(entry.postureAfterAction>0))||
+       detonationPostureCombat.filter(entry=>
+         entry.twistId==='detonation_posture_fuse_twist').some(entry=>
+           entry.mode!=='POSTURE_BEFORE_DETONATION'||!(entry.postureAfterAction>0))||
+       detonationPostureCombat.filter(entry=>
+         entry.twistId==='detonation_posture_echo_twist').some(entry=>
+           entry.mode!=='DELAYED_FRACTURE'||entry.echoEvents<1||!(entry.postureAfterAction>0))||
+       detonationPostureCombat.filter(entry=>
+         entry.twistId==='detonation_posture_seal_twist').some(entry=>
+           entry.mode!=='NEXT_SOURCE_SEAL'||!(entry.authoredSeal>0)||
+           !(entry.sealBeforeTrigger>0)||!(entry.triggerGain>10)))
+      throw new Error('Quick Detonation/Posture real combat gate failed: '+
+        JSON.stringify(detonationPostureCombat));
     if(!combatInteraction||!combatInteraction.menuOpened||!combatInteraction.actionStarted||
        !combatInteraction.actionCreated||!combatInteraction.hitLogged||
        !(combatInteraction.hpAfter<combatInteraction.hpBefore)||

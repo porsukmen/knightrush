@@ -9627,6 +9627,14 @@ function createRunSkill(definition){
     markDetonationChainFeedbackRate:0,markDetonationCascade:false,
     markDetonationCascadeInterval:0,markDetonationCascadeChainRate:0,
     markDetonationCascadeChainPerPulse:0,emptyDetonationDirectBonus:0,
+    detonationPostureMode:null,detonationPosturePerConsumedMark:0,
+    detonationPostureEscalation:0,detonationPostureBreakBonusRate:0,
+    detonationAdaptivePosture:0,detonationAdaptiveDamageRate:0,
+    detonationAllDamageAfterPosture:false,detonationPostureEchoPerMark:0,
+    detonationPostureEchoFlat:0,detonationPosturePerExistingPosture:0,
+    detonationPostureEchoEvents:1,detonationPostureSealPerMark:0,
+    detonationPostureSealFlat:0,detonationPostureSealAmplification:0,
+    detonationPostureSealLayers:1,detonationPostureSealMeasured:false,
     packetWaveCount:1,packetWavePattern:null,chainReadOffsetPattern:null,
     startingChainHitRate:0,chainSecondWaveBonus:0,chainSecondWaveStartIndex:0,
     markPulsePattern:null,markPulseInterval:0,markPulsePreservesContactMark:false,
@@ -9777,6 +9785,14 @@ function transformSharpshoot(skill,patch){
     markDetonationChainFeedbackRate:0,markDetonationCascade:false,
     markDetonationCascadeInterval:0,markDetonationCascadeChainRate:0,
     markDetonationCascadeChainPerPulse:0,emptyDetonationDirectBonus:0,
+    detonationPostureMode:null,detonationPosturePerConsumedMark:0,
+    detonationPostureEscalation:0,detonationPostureBreakBonusRate:0,
+    detonationAdaptivePosture:0,detonationAdaptiveDamageRate:0,
+    detonationAllDamageAfterPosture:false,detonationPostureEchoPerMark:0,
+    detonationPostureEchoFlat:0,detonationPosturePerExistingPosture:0,
+    detonationPostureEchoEvents:1,detonationPostureSealPerMark:0,
+    detonationPostureSealFlat:0,detonationPostureSealAmplification:0,
+    detonationPostureSealLayers:1,detonationPostureSealMeasured:false,
     critChance:0,critChancePerStartingMark:0,critChancePerStartingChain:0,
     critChanceRampPerHit:0,critDamagePerStartingChain:0,critChainBonus:0,
     critMarkBonus:0,critRollMode:'PER_CONTACT',critDamageMultiplier:CFG.CRIT_DAMAGE_MULT,critPrecisionGain:0,
@@ -10091,6 +10107,14 @@ const COMBAT_ATTRIBUTE_IDS=Object.freeze([
 const COMBAT_ATTRIBUTE_SCALING_AXES=Object.freeze([
   'DIRECT_DAMAGE','MARK_GAIN','MARK_CONTROL','MARK_APPLICATION_EVENTS','MARK_BLOOM_RATE','MARK_TRAIL_STRENGTH',
   'DETONATION_DAMAGE','DETONATION_CONSUMPTION','DETONATION_EVENTS',
+  /* Mark Burst F1S3: Detonation remains Primary while paid relationship axes
+     decide how its consumed Mark payload expresses light-ranged Posture. */
+  'DETONATION_POSTURE_PER_MARK','DETONATION_POSTURE_ESCALATION',
+  'DETONATION_BREAK_ORDER','DETONATION_BREAK_ADAPTIVE','DETONATION_FULL_BREAK_EXPOSURE',
+  'DETONATION_POSTURE_ECHO','DETONATION_POSTURE_ECHO_EVENTS',
+  'DETONATION_POSTURE_READ','DETONATION_POSTURE_ECHO_FLOOR',
+  'DETONATION_POSTURE_SEAL','DETONATION_POSTURE_SEAL_AMPLIFICATION',
+  'DETONATION_POSTURE_SEAL_LAYERS','DETONATION_POSTURE_SEAL_MEASURED',
   'DELIVERY_CONTACTS','DELIVERY_WEIGHT',
   'CHAIN_SCALING','CHAIN_MANAGEMENT',
   'POSTURE_DAMAGE','MARK_POSTURE_READ','MARK_POSTURE_ESCALATION','CHAIN_POSTURE_READ','POSTURE_CHAIN_READ','POSTURE_PRIMER','POSTURE_PRIMER_AMPLIFICATION','POSTURE_THRESHOLD','POSTURE_THRESHOLD_CRESCENDO','POSTURE_APPLICATION_EVENTS','BREAK_RELATION','BREAK_MARK_REWARD','POSTURE_MARK_TRAIL','BREAK_CHAIN_REWARD','CRIT_POSTURE_ECHO','BLEED_POSTURE_READ','CHARGE_POSTURE_RELATION','CHARGE_POSTURE_CONTROL','CRIT_CHANCE','CRIT_POWER','CRIT_PRECISION','MARK_CRIT_READ','CRIT_MARK_REWARD','CHAIN_CRIT_READ','CHAIN_CRIT_POWER','CRIT_CHAIN_REWARD',
@@ -10549,6 +10573,30 @@ const BOW_ANIMATION_RECIPES=new DefinitionRegistry('bow animation recipe');
     trailStrength:.82,impactScale:1.02,impactShake:3.3,hitStop:.032,shotInterval:.18,
     holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
     trailColor:'#ff596d',glowColor:'#ffe37a',impactColor:'#ff334f'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_POSTURE_BREACH',visualStyle:'POSTURE',
+    raiseTime:.17,drawTime:.52,holdTime:.20,releaseTime:.12,recoveryTime:.50,
+    arrowSpeed:900,arrowArc:27,arrowScale:1.52,drawStrength:1,releaseRecoil:.74,
+    trailStrength:.88,impactScale:1.62,impactShake:5.6,hitStop:.085,shotInterval:.58,
+    holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff6b72',glowColor:'#9ecbff',impactColor:'#ffe37a'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_POSTURE_FUSE',visualStyle:'POSTURE',
+    raiseTime:.19,drawTime:.56,holdTime:.24,releaseTime:.12,recoveryTime:.58,
+    arrowSpeed:860,arrowArc:29,arrowScale:1.58,drawStrength:1,releaseRecoil:.80,
+    trailStrength:.92,impactScale:1.68,impactShake:6.0,hitStop:.095,shotInterval:.60,
+    holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#9ecbff',glowColor:'#ffe37a',impactColor:'#ff334f'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_POSTURE_ECHO',visualStyle:'POSTURE',
+    raiseTime:.16,drawTime:.49,holdTime:.17,releaseTime:.11,recoveryTime:.68,
+    arrowSpeed:940,arrowArc:25,arrowScale:1.38,drawStrength:1,releaseRecoil:.67,
+    trailStrength:.90,impactScale:1.46,impactShake:4.8,hitStop:.070,shotInterval:.40,
+    holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#ff6b72',glowColor:'#c7d6ff',impactColor:'#9ecbff'}),
+  bowAnimationRecipe({id:'BOW_DETONATION_POSTURE_SEAL',visualStyle:'POSTURE',
+    raiseTime:.18,drawTime:.55,holdTime:.27,releaseTime:.12,recoveryTime:.56,
+    arrowSpeed:880,arrowArc:31,arrowScale:1.48,drawStrength:1,releaseRecoil:.72,
+    trailStrength:.96,impactScale:1.52,impactShake:5.0,hitStop:.080,shotInterval:.58,
+    holdPerCharge:0,scalePerCharge:0,recoilPerCharge:0,
+    trailColor:'#c995ff',glowColor:'#9ecbff',impactColor:'#ff596d'}),
   bowAnimationRecipe({id:'BOW_CHAIN',visualStyle:'CHAIN',raiseTime:.07,drawTime:.21,holdTime:.02,
     releaseTime:.05,recoveryTime:.18,arrowSpeed:1580,arrowArc:8,arrowScale:.88,drawStrength:.62,
     releaseRecoil:.16,trailStrength:.55,impactScale:.86,impactShake:1.1,hitStop:.015,
@@ -11475,6 +11523,10 @@ const TWIST_MECHANIC_ENGINE_REGISTRY=Object.freeze(Object.fromEntries([
   ,{id:'DETONATION_CHAIN_RELAY',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'SEQUENTIAL_PER_CONTACT_DETONATION_AND_LIVE_CHAIN'}
   ,{id:'DETONATION_CHAIN_CASCADE',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'ONE_CONTACT_SEQUENTIAL_DETONATION_PULSES_WITH_CLOSED_CHAIN_FEEDBACK'}
   ,{id:'DETONATION_CHAIN_SALVO',owners:['DETONATION','CHAIN'],kind:'SIGNATURE',powerModel:'SIMULTANEOUS_DETONATION_PACKET_TO_FUTURE_CHAIN'}
+  ,{id:'DETONATION_POSTURE_BREACH',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_CONSUMED_MARK_TO_IMMEDIATE_POSTURE'}
+  ,{id:'DETONATION_BREAK_FUSE',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_SELF_OPENED_BREAK_DETONATION_OUTPUT'}
+  ,{id:'DETONATION_POSTURE_ECHO',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'PAID_CONSUMED_MARK_TO_DELAYED_POSTURE'}
+  ,{id:'DETONATION_POSTURE_SEAL',owners:['DETONATION','POSTURE'],kind:'SIGNATURE',powerModel:'FINITE_PAID_NEXT_POSTURE_SOURCE_OUTPUT'}
 ].map(engine=>[engine.id,Object.freeze({...engine,owners:Object.freeze(engine.owners.slice()),
   testPolicy:'RUNTIME_SEQUENCE_AND_POWER_LEDGER'})])));
 const TWIST_IDENTITY_ENUMS=Object.freeze({
@@ -11638,6 +11690,7 @@ function skillAttributeRouteContract(data){
      deliveryProfileId:data.deliveryProfileId,deliveryPattern:data.deliveryPattern,
      deliveryTiming:data.deliveryTiming,payloadApplication:data.payloadApplication||{}}):null;
   const twistDesign=data.depth===3&&data.twistDesign?Object.freeze({...data.twistDesign}):null,
+    apexDesign=data.depth===4&&data.apexDesign?Object.freeze({...data.apexDesign}):null,
     stableCausality=data.depth===3&&data.stableCausality?
       stableTwistCausalityContract(data.stableCausality,data.id,data.primaryAttributeId,
         data.secondaryAttributeId):null,
@@ -11652,6 +11705,16 @@ function skillAttributeRouteContract(data){
        typeof twistDesign.synergyHook!=='string'||!twistDesign.synergyHook||
        !flowIds.has(twistDesign.resourceFlow)||typeof twistDesign.pairSpecific!=='boolean')
       throw new Error(data.id+' needs an explicit flexible Twist design decision');
+  }
+  if(apexDesign){
+    const kinds=new Set(['NUMERIC_MASTERY','RESOURCE_EXPRESSION','BEHAVIORAL_CAPSTONE',
+      'RELIABILITY']);
+    if(!kinds.has(apexDesign.kind)||typeof apexDesign.playerDecision!=='string'||
+       !apexDesign.playerDecision||typeof apexDesign.guaranteedProgress!=='string'||
+       !apexDesign.guaranteedProgress||typeof apexDesign.parentBoundary!=='string'||
+       !apexDesign.parentBoundary||typeof apexDesign.siblingBoundary!=='string'||
+       !apexDesign.siblingBoundary)
+      throw new Error(data.id+' needs a complete pilot Apex expression decision');
   }
   if(data.depth===3&&data.formSlot>=5&&data.runtimeReadiness==='MATERIALIZED'&&!twistIdentity)
     throw new Error(data.id+' cannot materialize without Twist Identity V1');
@@ -11749,7 +11812,7 @@ function skillAttributeRouteContract(data){
     qualityProfile,qualityAxes,baselineAttack,delivery,
     deliveryDecision:deliveryDecision?Object.freeze({...deliveryDecision}):null,twistDesign,
     stableCausality,
-    twistIdentity,deliveryPolicy,deliveryScaling});
+    twistIdentity,apexDesign,deliveryPolicy,deliveryScaling});
 }
 const DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT=(()=>{
   const route=skillAttributeRouteContract({id:'audit_mark_burst_detonation_form',skillId:'mark_burst',
@@ -15716,6 +15779,223 @@ function buildMarkBurstDetonationChainTwistContracts(){
   }
   return Object.freeze(routes);
 }
+/* F1S3 pilot: Twist owns the tactical engine; Apex owns a recognizable expression
+   of that same engine. Two or more Apexes in every family change player decision,
+   while numerical mastery remains available as a readable low-complexity choice. */
+const MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS=Object.freeze([
+  Object.freeze({id:'detonation_posture_breach_twist',slot:1,pattern:'SINGLE',
+    recipe:'BOW_DETONATION_POSTURE_BREACH',engine:'DETONATION_POSTURE_BREACH',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,DETONATION_CONSUMPTION:.25,
+      POSTURE_DAMAGE:.15,DETONATION_POSTURE_PER_MARK:.20}),
+    promise:'Detonate the paid Mark capacity in one heavy impact and turn every consumed Mark into an immediate, fully paid light-bow Posture contribution.',
+    relationship:'CONSUMED_MARK_IMMEDIATE_POSTURE',payloadPolicy:'PER_ACTION',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    playerDecision:'Cash stored Mark into immediate Break pressure without turning the Bow into a Posture-primary weapon.',
+    primaryOutcome:'Every paid consumed Mark keeps its full Detonation payload.',
+    secondaryOutcome:'The same consumed count creates a separate paid immediate Posture packet.',
+    synergyHook:'Large Mark reserve, immediate Posture and Break-window artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_CONTACT',operation:'CONVERT',
+      output:'POSTURE',timing:'IMMEDIATE',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_POSTURE_BREACH'],
+      deliveryReason:'One heavy contact keeps Detonation and its immediate armor fracture readable as one committed impact.'})}),
+  Object.freeze({id:'detonation_posture_fuse_twist',slot:2,pattern:'SINGLE',
+    recipe:'BOW_DETONATION_POSTURE_FUSE',engine:'DETONATION_BREAK_FUSE',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,DETONATION_CONSUMPTION:.20,
+      POSTURE_DAMAGE:.20,DETONATION_BREAK_ORDER:.20}),
+    promise:'Resolve paid Posture before Detonation so a Break opened by this arrow can empower the Detonation portion that follows.',
+    relationship:'POSTURE_OPENS_DETONATION_BREAK_WINDOW',payloadPolicy:'PER_ACTION',
+    rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'COUPLED_LOOP',
+    playerDecision:'Aim at a nearly fractured boss and trade unconditional output for a self-opened Break jackpot.',
+    primaryOutcome:'Paid Mark Detonation remains the dominant damage payload.',
+    secondaryOutcome:'Paid Posture resolves first and may open the Break state used by that payload.',
+    synergyHook:'Exact Break timing, Detonation payoff and Break-window artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_BREAK',operation:'AMPLIFY',
+      output:'DETONATION',timing:'IMMEDIATE',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_BREAK_FUSE'],
+      deliveryReason:'One staged heavy impact makes the Posture check visibly precede the Mark explosion without inventing extra contacts.'})}),
+  Object.freeze({id:'detonation_posture_echo_twist',slot:3,pattern:'IMPACT_ECHO',
+    recipe:'BOW_DETONATION_POSTURE_ECHO',engine:'DETONATION_POSTURE_ECHO',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,DETONATION_CONSUMPTION:.20,
+      POSTURE_DAMAGE:.15,DETONATION_POSTURE_ECHO:.25}),
+    promise:'Detonate Mark on the real arrow, then translate the consumed count into a delayed, non-contact Posture fracture during the same action.',
+    relationship:'DETONATION_TO_DELAYED_POSTURE_FRACTURE',payloadPolicy:'DELAYED_NON_CONTACT_EVENTS',
+    rejectedPattern:'SEQUENTIAL',resourceFlow:'PRIMARY_TO_SECONDARY',
+    playerDecision:'Delay Break pressure to gain a second visible Posture event and a clean follow-up window.',
+    primaryOutcome:'The physical arrow keeps the full paid Detonation payload.',
+    secondaryOutcome:'A later Healthless and Chainsless fracture applies the paid Posture output.',
+    synergyHook:'Delayed event, Posture event and same-phase Break artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'SHIFT_TIMING',
+      output:'POSTURE',timing:'LATER_IN_ACTION',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_POSTURE_ECHO'],
+      deliveryReason:'Impact Echo is required because one physical arrow is followed by a separate non-contact Posture fracture.'})}),
+  Object.freeze({id:'detonation_posture_seal_twist',slot:4,pattern:'SINGLE',
+    recipe:'BOW_DETONATION_POSTURE_SEAL',engine:'DETONATION_POSTURE_SEAL',
+    profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.30,DETONATION_CONSUMPTION:.20,
+      POSTURE_DAMAGE:.15,DETONATION_POSTURE_SEAL:.25}),
+    promise:'Detonate Mark now and store paid Posture from the consumed count in a finite seal triggered by a later positive Posture source.',
+    relationship:'DETONATION_STORES_NEXT_SOURCE_POSTURE',payloadPolicy:'PHASE_FOLLOW_UP_EVENTS',
+    rejectedPattern:'IMPACT_ECHO',resourceFlow:'PRIMARY_TO_SECONDARY',
+    playerDecision:'Delay part of the Break pressure to create a cross-skill or Knight Rush Posture combo.',
+    primaryOutcome:'The arrow immediately delivers the inherited paid Detonation payload.',
+    secondaryOutcome:'Consumed Mark stores a finite Posture seal that cannot read or refill itself.',
+    synergyHook:'Cross-skill Posture, Knight Rush and next-source artifacts.',
+    identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'PRESERVE',
+      output:'POSTURE',timing:'NEXT_ACTION',deliveryPurpose:'MECHANIC_REQUIRED',
+      engineIds:['DETONATION_POSTURE_SEAL'],
+      deliveryReason:'One sealing arrow is sufficient because the paid Posture remains on the target until a later real Posture source triggers it.'})})
+]);
+const MARK_BURST_DETONATION_POSTURE_APEX_DEFINITIONS=Object.freeze({
+  DETONATION_POSTURE_BREACH:Object.freeze([
+    Object.freeze({key:'DEEP_FRACTURE',kind:'NUMERIC_MASTERY',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.15,DETONATION_POSTURE_PER_MARK:.35}),
+      decision:'Prefer the largest reliable linear Posture return per consumed Mark.',
+      progress:'Every rank increases a currently owned immediate Posture output.',
+      sibling:'Does not add escalation, faster consumption or a low-Mark floor.'}),
+    Object.freeze({key:'RISING_PRESSURE',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_ESCALATION:.45}),
+      decision:'Hoard deep Mark reserves so every later consumed Mark fractures harder than the previous one.',
+      progress:'A small paid linear relationship remains while uncapped ordinal escalation grows.',
+      sibling:'Keeps immediate timing and never becomes the delayed Echo Twist.'}),
+    Object.freeze({key:'WIDE_IGNITION',kind:'RESOURCE_EXPRESSION',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.50,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_PER_MARK:.10}),
+      decision:'Process more of a large stored Mark reserve in one action instead of maximizing each stack.',
+      progress:'Quality always advances paid consumption capacity or its carried reserve.',
+      sibling:'Keeps one immediate impact and does not distribute Detonation into Chain contacts.'}),
+    Object.freeze({key:'RELIABLE_IMPACT',kind:'RELIABILITY',
+      profile:Object.freeze({DIRECT_DAMAGE:.40,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.20}),
+      decision:'Accept a lower high-Mark ceiling for dependable clean impact and flat Posture.',
+      progress:'Direct damage and flat Posture improve even at zero starting Mark.',
+      sibling:'Does not gain a delayed event, adaptive Break ordering or stored seal.'})
+  ]),
+  DETONATION_BREAK_FUSE:Object.freeze([
+    Object.freeze({key:'HEAVY_WEDGE',kind:'NUMERIC_MASTERY',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.45,DETONATION_BREAK_ORDER:.10}),
+      decision:'Maximize the chance that this staged arrow opens Break before its explosion.',
+      progress:'The pre-Detonation Posture packet and a small fuse bonus always improve.',
+      sibling:'Raises Break reliability rather than the self-Break jackpot multiplier.'}),
+    Object.freeze({key:'GRAND_OPENING',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.35,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_BREAK_ORDER:.30}),
+      decision:'Time the arrow precisely for the strongest self-opened Detonation jackpot.',
+      progress:'Detonation damage improves unconditionally; self-Break adds the specialist premium.',
+      sibling:'Does not move clean impact into the Break window or auto-adapt its wallet.'}),
+    Object.freeze({key:'ADAPTIVE_FUSE',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_BREAK_ORDER:.05,DETONATION_BREAK_ADAPTIVE:.40}),
+      decision:'Trade specialist ceiling for a fuse that shifts paid power between Posture and Detonation with boss state.',
+      progress:'A guaranteed small fuse improvement remains at every Posture state.',
+      sibling:'Its flexible result remains below Heavy Wedge and Grand Opening at their specialist peaks.'}),
+    Object.freeze({key:'FULL_OPENING',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_FULL_BREAK_EXPOSURE:.15}),
+      decision:'Expose the clean arrow as well as Detonation to the Break opened by its own Posture.',
+      progress:'Clean damage improves even when the arrow fails to Break.',
+      sibling:'Changes only damage exposure inside the inherited staged impact; it adds no echo or second contact.'})
+  ]),
+  DETONATION_POSTURE_ECHO:Object.freeze([
+    Object.freeze({key:'DEEP_ECHO',kind:'NUMERIC_MASTERY',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_ECHO:.45}),
+      decision:'Keep one delayed fracture and maximize its Posture per consumed Mark.',
+      progress:'The owned delayed Posture packet improves at every rank.',
+      sibling:'Does not add event density, current-Posture reading or a flat zero-Mark floor.'}),
+    Object.freeze({key:'FRACTURE_SERIES',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        DETONATION_POSTURE_ECHO:.25,DETONATION_POSTURE_ECHO_EVENTS:.30}),
+      decision:'Split paid delayed Posture across many real fracture events for event synergies.',
+      progress:'Total echo Posture still grows while Quality buys additional event density without a gameplay cap.',
+      sibling:'All events remain Healthless and Chainsless; this never becomes a projectile volley.'}),
+    Object.freeze({key:'RESONANT_FRACTURE',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        DETONATION_POSTURE_ECHO:.15,DETONATION_POSTURE_READ:.40}),
+      decision:'Use the delayed fracture as a finisher on a boss that already carries high Posture.',
+      progress:'A small delayed payload remains at zero Posture; the uncapped state read supplies the specialist ceiling.',
+      sibling:'Reads existing Posture only for the delayed fracture and never reorders Detonation before Break.'}),
+    Object.freeze({key:'FIXED_AFTERSHOCK',kind:'RELIABILITY',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_ECHO:.15,DETONATION_POSTURE_ECHO_FLOOR:.30}),
+      decision:'Keep a meaningful delayed fracture even when no Mark is available.',
+      progress:'The flat delayed floor and inherited per-Mark echo both remain positive upgrades.',
+      sibling:'The guaranteed output is still delayed and cannot replace the immediate Breach Twist.'})
+  ]),
+  DETONATION_POSTURE_SEAL:Object.freeze([
+    Object.freeze({key:'DEEP_SEAL',kind:'NUMERIC_MASTERY',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_SEAL:.45}),
+      decision:'Store the largest simple one-use Posture seal per consumed Mark.',
+      progress:'Finite stored Posture improves at every rank and always consumes itself once.',
+      sibling:'Does not read the triggering source, split across sources or meter overkill.'}),
+    Object.freeze({key:'RESONANT_SEAL',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_SEAL:.15,
+        DETONATION_POSTURE_SEAL_AMPLIFICATION:.30}),
+      decision:'Pair the seal with one naturally large later Posture source for the strongest cross-skill combo.',
+      progress:'A finite stored floor remains while the native triggering source adds paid amplification.',
+      sibling:'Reads only the source before seal reactions and can never read its own output.'}),
+    Object.freeze({key:'LAYERED_SEAL',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_SEAL:.20,DETONATION_POSTURE_SEAL_LAYERS:.25}),
+      decision:'Distribute one finite seal across several later Posture sources for event and combo synergies.',
+      progress:'Stored Posture grows while Quality buys more paid trigger layers without multiplying the pool.',
+      sibling:'Never exceeds its finite stored pool and does not become a same-action Echo.'}),
+    Object.freeze({key:'MEASURED_SEAL',kind:'BEHAVIORAL_CAPSTONE',
+      profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,
+        POSTURE_DAMAGE:.10,DETONATION_POSTURE_SEAL:.25,
+        DETONATION_POSTURE_SEAL_MEASURED:.20}),
+      decision:'Spend only enough stored Posture to open Break and preserve the finite remainder for later bars.',
+      progress:'The stored pool improves unconditionally; metering can only reduce waste, never create Posture.',
+      sibling:'It changes finite release efficiency, not storage source, Detonation payment or attribute identity.'})
+  ])
+});
+function buildMarkBurstDetonationPostureTwistContracts(){
+  const routes=[];
+  for(const twist of MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS){
+    routes.push(skillAttributeRouteContract({id:twist.id,skillId:'mark_burst',depth:3,
+      parentId:'detonation_posture_spec',formSlot:1,specializationSlot:3,slot:twist.slot,
+      primaryAttributeId:'DETONATION',secondaryAttributeId:'POSTURE',apexTarget:4,powerBudget:1,
+      deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+      deliveryScaling:{mode:'NONE'},qualityProfile:twist.profile,
+      deliveryDecision:{reason:twist.identity.deliveryReason,resourcePolicy:'ONE_CHAIN_TOTAL',
+        payloadPolicy:twist.payloadPolicy,rejectedPattern:twist.rejectedPattern},
+      twistDesign:{resourceFlow:twist.resourceFlow,pairSpecific:true,
+        playerDecision:twist.playerDecision,primaryOutcome:twist.primaryOutcome,
+        secondaryOutcome:twist.secondaryOutcome,synergyHook:twist.synergyHook},
+      stableCausality:twist.engine==='DETONATION_BREAK_FUSE'?
+        MARK_BURST_STABLE_PRIMARY_TO_CHAIN_CAUSALITY:
+        MARK_BURST_STABLE_PRIMARY_TO_FUTURE_CHAIN_CAUSALITY,
+      twistIdentity:twist.identity,promise:twist.promise,
+      mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'POSTURE_DAMAGE',
+        relationship:twist.relationship,detonationEngine:twist.engine,
+        echoContactPolicy:twist.pattern==='IMPACT_ECHO'?IMPACT_ECHO_CONTACT_POLICIES.PAYLOAD:undefined},
+      baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+        timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+      runtimeReadiness:'MATERIALIZED'}));
+    const apexes=MARK_BURST_DETONATION_POSTURE_APEX_DEFINITIONS[twist.engine];
+    for(let index=0;index<apexes.length;index++){
+      const apex=apexes[index];
+      routes.push(skillAttributeRouteContract({id:twist.id+'_apex_'+(index+1),skillId:'mark_burst',
+        depth:4,parentId:twist.id,formSlot:1,specializationSlot:3,twistSlot:twist.slot,slot:index+1,
+        primaryAttributeId:'DETONATION',secondaryAttributeId:'POSTURE',powerBudget:1,
+        deliveryProfileId:'OWNER_BOW',deliveryPattern:twist.pattern,deliveryTiming:'IMMEDIATE',contacts:1,
+        deliveryScaling:{mode:'NONE'},qualityProfile:apex.profile,
+        promise:'Preserve '+twist.relationship+' while choosing '+apex.decision,
+        apexDesign:{kind:apex.kind,playerDecision:apex.decision,
+          guaranteedProgress:apex.progress,parentBoundary:'Preserve '+twist.engine+
+            ' source, trigger family, paid Detonation and Delivery.',siblingBoundary:apex.sibling},
+        mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'POSTURE_DAMAGE',
+          relationship:twist.relationship,detonationEngine:twist.engine,refinement:apex.key},
+        baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
+          timing:'ACTION',cap:1,damagePerMark:10,curve:'FULL',delivery:'LAST'}),markDetonation:true},
+        runtimeReadiness:'MATERIALIZED'}));
+    }
+  }
+  return Object.freeze(routes);
+}
 /* Mark Burst starts as the payoff half of the Bow pair. This first Form is kept
    deliberately small: one real heavy arrow owns one contact, creates no Mark,
    and spends accumulated Mark for full-value Detonation. Quality may buy more
@@ -15874,7 +16154,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
         curve:'FULL',delivery:'LAST'}),markDetonation:true},runtimeReadiness:'MATERIALIZED'}),
   ...buildMarkBurstDetonationFocusTwistContracts(),
-  ...buildMarkBurstDetonationChainTwistContracts()
+  ...buildMarkBurstDetonationChainTwistContracts(),
+  ...buildMarkBurstDetonationPostureTwistContracts()
 ]);
 const MARK_BURST_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   MARK_BURST_ROUTE_CONTRACTS.map(route=>[route.id,route])));
@@ -17296,7 +17577,11 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   detonation_fragment_twist:'Quality ile büyüyen tüketim kapasitesini eşzamanlı patlama paketine böler. Her tüketilen Mark ayrı olaydır; bütün paket yalnız 1 doğal Chain üretir.',
   detonation_compression_twist:'Quality ile büyüyen tüketim kapasitesindeki bütün Markları tek ağır hasar olayında sıkıştırır.',
   detonation_echo_twist:'Normal kapasitesi kadar Mark patlatır; aynı tüketilmiş payloadın Quality ile büyüyen bir kısmı Mark harcamadan aftershock olarak tekrar vurur.',
-  detonation_total_twist:'Başlangıçtaki bütün Mark rezervini tam değerle tek vuruşta patlatır. Mark sayısına yapay sınır veya diminishing uygulanmaz.'
+  detonation_total_twist:'Başlangıçtaki bütün Mark rezervini tam değerle tek vuruşta patlatır. Mark sayısına yapay sınır veya diminishing uygulanmaz.',
+  detonation_posture_breach_twist:'Tek ağır ok ücretli Mark kapasitesini patlatır; tüketilen her Mark aynı anda light-bow seviyesinde ek Posture üretir.',
+  detonation_posture_fuse_twist:'Tek kademeli darbede önce Posture çözülür. Bu ok Break açarsa ardından gelen Detonation yeni Break penceresinden yararlanır.',
+  detonation_posture_echo_twist:'Gerçek ok Markları patlatır; ardından hasar ve Chain üretmeyen gecikmeli bir Posture çatlağı gelir.',
+  detonation_posture_seal_twist:'Marklar şimdi patlar; tüketilen sayıya göre finite Posture mührü depolanır ve sonraki gerçek Posture kaynağı tarafından tetiklenir.'
 });
 function markBurstRouteDebugSummaryTr(route){
   const authored=route&&MARK_BURST_ROUTE_DEBUG_SUMMARY_TR[route.id];if(authored)return authored;
@@ -17305,6 +17590,8 @@ function markBurstRouteDebugSummaryTr(route){
     roleText=role==='RELATIONSHIP'?'parent mekanizmasının ana çıktısını':
       role==='PAYLOAD'?'Mark başına Detonation hasarını':role==='BALANCED'?
       'mekanik, tüketim ve hasarı dengeli biçimde':'temiz ok darbesini';
+  if(route.apexDesign&&parent)return MARK_BURST_ROUTE_DEBUG_SUMMARY_TR[parent.id]+' Apex seçimi: '+
+    route.apexDesign.playerDecision+' Garantili ilerleme: '+route.apexDesign.guaranteedProgress;
   return parent?MARK_BURST_ROUTE_DEBUG_SUMMARY_TR[parent.id]+' Bu Apex '+roleText+
     ' büyütür; parentın tetikleme, ödeme ve Delivery kuralını değiştirmez.':null;
 }
@@ -17452,6 +17739,13 @@ const SKILL_COMMAND_PATCH_FIELDS=Object.freeze([
   'startingChainHitRate','chainSecondWaveBonus','chainSecondWaveStartIndex',
   'realChainScalingMultiplier','apexRefinementId','packetWaveCount','packetWavePattern',
   'chainReadOffsetPattern',
+  'detonationPostureMode','detonationPosturePerConsumedMark','detonationPostureEscalation',
+  'detonationPostureBreakBonusRate','detonationAdaptivePosture','detonationAdaptiveDamageRate',
+  'detonationAllDamageAfterPosture','detonationPostureEchoPerMark','detonationPostureEchoFlat',
+  'detonationPosturePerExistingPosture','detonationPostureEchoEvents',
+  'detonationPostureSealPerMark','detonationPostureSealFlat',
+  'detonationPostureSealAmplification','detonationPostureSealLayers',
+  'detonationPostureSealMeasured',
   'critChance','critChancePerStartingMark','critChancePerStartingChain','critChanceRampPerHit',
   'critDamagePerStartingChain','critChainBonus','critMarkBonus','critRollMode',
   'critDamageMultiplier','critPrecisionGain','critDamagePerStoredPrecision',
@@ -18236,9 +18530,15 @@ const MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID=Object.freeze({
 });
 const MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID=Object.freeze(Object.fromEntries(
   [...MARK_BURST_DETONATION_FOCUS_TWIST_DEFINITIONS,
-    ...MARK_BURST_DETONATION_CHAIN_TWIST_DEFINITIONS].map(definition=>
+    ...MARK_BURST_DETONATION_CHAIN_TWIST_DEFINITIONS,
+    ...MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS].map(definition=>
       [definition.id,definition.recipe])));
 const MARK_BURST_SYNTHESIS_COMMAND_CACHE=new Map();
+function markBurstSecondaryPostureOutput(power,reference=1){
+  return Number((Math.max(0,Number(power)||0)*
+    skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED')/
+    (SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE*Math.max(.001,reference))).toFixed(6));
+}
 /* All six Forms use one compiler. The route owns the budget and Delivery opt-in;
    this function only materializes that declaration. Consequently a future Form
    cannot accidentally receive free contacts/Weight or forget Mark Burst's
@@ -18418,6 +18718,64 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       command.markRule=markRule({...command.markRule,timing:'PER_HIT',cap:1,delivery:'EVEN'});
       command.markDetonationCapacity=command.hits;command.chainGainPattern=null;
       command.chainGainPerHit=1;command.chainScalingTiming='ACTION_START';command.hitInterval=.18;
+    }else if(engine==='DETONATION_POSTURE_BREACH'){
+      const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
+        pairReference=postureMarkPairCount(reference);
+      command.detonationPostureMode='IMMEDIATE_BREACH';
+      command.detonationPosturePerConsumedMark=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_PER_MARK,reference);
+      command.detonationPostureEscalation=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_ESCALATION,Math.max(1,pairReference));
+      reserve.DETONATION_POSTURE_PER_MARK=0;reserve.DETONATION_POSTURE_ESCALATION=0;
+    }else if(engine==='DETONATION_BREAK_FUSE'){
+      const payloadReference=Math.max(1,command.markRule.damagePerMark*
+        Math.min(SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
+          Math.max(1,Number(command.markRule.cap)||1))),adaptivePower=Math.max(0,
+          axes.DETONATION_BREAK_ADAPTIVE||0);
+      command.detonationPostureMode='POSTURE_BEFORE_DETONATION';
+      command.detonationPostureBreakBonusRate=Number((Math.max(0,
+        axes.DETONATION_BREAK_ORDER||0)/(payloadReference*.35)).toFixed(6));
+      command.detonationAdaptivePosture=markBurstSecondaryPostureOutput(adaptivePower);
+      command.detonationAdaptiveDamageRate=Number((adaptivePower/payloadReference).toFixed(6));
+      command.detonationAllDamageAfterPosture=!!(apex&&
+        apex.mechanics.refinement==='FULL_OPENING');
+      reserve.DETONATION_BREAK_ORDER=0;reserve.DETONATION_BREAK_ADAPTIVE=0;
+      reserve.DETONATION_FULL_BREAK_EXPOSURE=0;
+    }else if(engine==='DETONATION_POSTURE_ECHO'){
+      const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
+        eventPower=Math.max(0,axes.DETONATION_POSTURE_ECHO_EVENTS||0),eventProgress=
+          skillRepeatedThresholdProgress(eventPower,SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN);
+      command.detonationPostureMode='DELAYED_FRACTURE';
+      command.detonationPostureEchoPerMark=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_ECHO,reference);
+      command.detonationPostureEchoFlat=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_ECHO_FLOOR);
+      command.detonationPosturePerExistingPosture=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_READ,
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*.5);
+      command.detonationPostureEchoEvents=Math.max(1,1+eventProgress.rank);
+      command.postureApplicationEventPower=eventPower;
+      command.postureWavePattern=[0,...Array.from({length:command.detonationPostureEchoEvents},()=>1)];
+      command.postureWaveInterval=.30;
+      reserve.DETONATION_POSTURE_ECHO=0;reserve.DETONATION_POSTURE_ECHO_EVENTS=eventProgress.reserve;
+      reserve.DETONATION_POSTURE_READ=0;reserve.DETONATION_POSTURE_ECHO_FLOOR=0;
+    }else if(engine==='DETONATION_POSTURE_SEAL'){
+      const reference=SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.markReadReference,
+        layerPower=Math.max(0,axes.DETONATION_POSTURE_SEAL_LAYERS||0),layerProgress=
+          skillRepeatedThresholdProgress(layerPower,SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN),
+        measuredPower=Math.max(0,axes.DETONATION_POSTURE_SEAL_MEASURED||0);
+      command.detonationPostureMode='NEXT_SOURCE_SEAL';
+      command.detonationPostureSealPerMark=markBurstSecondaryPostureOutput(
+        Math.max(0,axes.DETONATION_POSTURE_SEAL||0)+measuredPower,reference);
+      command.detonationPostureSealAmplification=markBurstSecondaryPostureOutput(
+        axes.DETONATION_POSTURE_SEAL_AMPLIFICATION,
+        SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference);
+      command.detonationPostureSealLayers=Math.max(1,1+layerProgress.rank);
+      command.detonationPostureSealMeasured=!!(apex&&apex.mechanics.refinement==='MEASURED_SEAL');
+      reserve.DETONATION_POSTURE_SEAL=0;
+      reserve.DETONATION_POSTURE_SEAL_AMPLIFICATION=0;
+      reserve.DETONATION_POSTURE_SEAL_LAYERS=layerProgress.reserve;
+      reserve.DETONATION_POSTURE_SEAL_MEASURED=0;
     }
   }
   command.apexRefinementId=apex&&apex.mechanics&&apex.mechanics.refinement||null;
@@ -18946,17 +19304,40 @@ function commandExpectedPosturePower(command,markStacks=SHARPSHOOT_POSTURE_SECON
       SHARPSHOOT_AFFLICTION_SECONDARY_ENVELOPE.existingBleedReference,
     chargePosture=Math.max(0,Number(command&&command.chargePosturePerPoint)||0)*
       SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.expectedCharge,
+    consumed=command&&command.markDetonation?commandMarkPlan(command,markStacks).consumedTotal:0,
+    detonationPosture=consumed*Math.max(0,Number(command&&
+      command.detonationPosturePerConsumedMark)||0)+postureMarkPairCount(consumed)*
+      Math.max(0,Number(command&&command.detonationPostureEscalation)||0)+
+      consumed*Math.max(0,Number(command&&command.detonationPostureEchoPerMark)||0)+
+      Math.max(0,Number(command&&command.detonationPostureEchoFlat)||0)+
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*.5*
+        Math.max(0,Number(command&&command.detonationPosturePerExistingPosture)||0)+
+      Math.max(0,Number(command&&command.detonationAdaptivePosture)||0)*.5,
+    seal=Math.max(0,Number(command&&command.detonationPostureSealFlat)||0)+
+      consumed*Math.max(0,Number(command&&command.detonationPostureSealPerMark)||0)+
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference*
+        Math.max(0,Number(command&&command.detonationPostureSealAmplification)||0),
     criticalFactor=1+commandExpectedLocalCritChance(command,markStacks,
       envelope.chainReadReference)*(Math.max(1,Number(command&&command.critDamageMultiplier)||
         CFG.CRIT_DAMAGE_MULT)-1),
     directPosture=flat+chainRead+markRead+markEscalation+threshold+thresholdCrescendo+
-      existingBleedRead+chargePosture,
-    delayedPosture=primer+primerAmplification+
+      existingBleedRead+chargePosture+detonationPosture,
+    delayedPosture=primer+primerAmplification+seal+
       Math.max(0,Number(command&&command.critPostureEcho)||0)*
         commandExpectedLocalCritChance(command,markStacks,envelope.chainReadReference);
   /* Runtime Critical multiplies the impact's Health and Posture together. A
      Primer is installed after that contact and therefore is not Crit-scaled. */
   return (directPosture*criticalFactor+delayedPosture)*values.POSTURE_DAMAGE+postureChainRead;
+}
+function commandExpectedDetonationPostureDamagePower(command,markStacks=8){
+  if(!command||command.detonationPostureMode!=='POSTURE_BEFORE_DETONATION')return 0;
+  const plan=commandMarkPlan(command,markStacks),payload=plan.markDamageByHit.reduce(
+      (sum,value)=>sum+value,0),activeShare=.35,adaptiveShare=.5,
+    selfBreak=payload*Math.max(0,Number(command.detonationPostureBreakBonusRate)||0)*activeShare,
+    adaptive=payload*Math.max(0,Number(command.detonationAdaptiveDamageRate)||0)*adaptiveShare,
+    fullExposure=command.detonationAllDamageAfterPosture?
+      commandDirectDamageTotal(command)*(CFG.BREAK_DAMAGE_MULT-1)*activeShare:0;
+  return selfBreak+adaptive+fullExposure;
 }
 function commandExpectedPostureRelationshipPower(command){
   const values=SKILL_GUARDRAIL_POWER_VALUES,breakShare=.35;
@@ -26127,6 +26508,7 @@ function stableEvolutionGuardrailValue(state,markStacks=0,startingChain=0){
     (state.resolveOverflowToChain?values.RESOLVE_OVERFLOW_OPTION:0)+
     commandExpectedPosturePower(state,markStacks)+commandExpectedPostureEventPower(state)+
     commandExpectedPostureRelationshipPower(state)+
+    commandExpectedDetonationPostureDamagePower(state,markStacks)+
     commandExpectedLocalCritPower(state,markStacks,startingChain)+
     commandExpectedAfflictionPower(state)+commandExpectedDefenseTemperPower(state);
 }
@@ -26418,6 +26800,132 @@ const MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT=(()=>{
         Math.min(...scores))/Math.max(1,mean)).toFixed(4));
   if(rows.length!==256||apexRows.length!==1024||siblingSpread>.45)
     throw new Error('Detonation/Chain closure size or sibling power drifted: '+
+      JSON.stringify({twistCards:rows.length,apexCards:apexRows.length,siblingSpread,standard}));
+  return Object.freeze({passed:true,capped:false,twists:twists.length,apexes:apexes.length,
+    twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
+    standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
+})();
+const MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT=(()=>{
+  const specId='detonation_posture_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
+      route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
+    apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
+      twistIds.includes(route.parentId)),expectedModes=Object.freeze(Object.fromEntries(
+      MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS.map(definition=>
+        [definition.id,definition.engine==='DETONATION_POSTURE_BREACH'?'IMMEDIATE_BREACH':
+          definition.engine==='DETONATION_BREAK_FUSE'?'POSTURE_BEFORE_DETONATION':
+          definition.engine==='DETONATION_POSTURE_ECHO'?'DELAYED_FRACTURE':'NEXT_SOURCE_SEAL']))),
+    recipeByTwist=MARK_BURST_DETONATION_TWIST_ANIMATION_BY_ID,rows=[],apexRows=[],
+    score=command=>Number(stableEvolutionGuardrailValue(command,8,0).toFixed(3)),
+    posture=command=>Number(commandExpectedPosturePower(command,8,0,
+      SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.referencePostureMax*.5).toFixed(3)),
+    brief=Object.freeze({specId,twistTarget:4,minSignatureTwists:4,maxGenericBridges:0,
+      maxSiblingSimilarity:.82,signatureEngineIds:Object.freeze(
+        MARK_BURST_DETONATION_POSTURE_TWIST_DEFINITIONS.map(definition=>definition.engine))}),
+    identityAudit=auditTwistIdentitySet(twists.map(route=>Object.freeze({id:route.id,
+      deliveryPattern:route.delivery.pattern,identity:route.twistIdentity})),brief);
+  if(twists.length!==4||apexes.length!==16||twists.some(route=>route.apexTarget!==4)||
+     apexes.some(route=>!route.apexDesign)||!identityAudit.passed)
+    throw new Error('Detonation/Posture identity or Apex design closure failed: '+JSON.stringify({
+      twists:twists.length,apexes:apexes.length,identityAudit}));
+  for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER){
+    const parent=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity);
+    for(const twist of twists){
+      let previous=null;
+      for(const twistRarity of SKILL_RARITY_ORDER){
+        const command=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity,
+            twist.id,twistRarity),plan=commandMarkPlan(command,8),delivery=
+            commandDeliveryContract(command),timeline=buildBowActionTimeline(command,delivery,0,600,8),
+          entry=Object.freeze({formRarity,specRarity,twistRarity,twistId:twist.id,
+            damage:commandDirectDamageTotal(command),perMark:command.markRule.damagePerMark,
+            consumed:plan.consumedTotal,posture:posture(command),score:score(command),
+            mode:command.detonationPostureMode,recipe:timeline.recipe.id});
+        if(command.baseAttributeId!=='DETONATION'||command.primaryAttributeId!=='DETONATION'||
+           command.secondaryAttributeId!=='POSTURE'||command.markGain!==0||entry.consumed<1||
+           entry.damage+1e-6<commandDirectDamageTotal(parent)||
+           entry.perMark+1e-6<parent.markRule.damagePerMark||entry.posture+1e-6<posture(parent)||
+           entry.score+1e-6<score(parent)||entry.mode!==expectedModes[twist.id]||
+           entry.recipe!==recipeByTwist[twist.id]||timeline.contacts.length!==command.hits||
+           (previous&&(entry.damage+1e-6<previous.damage||entry.perMark+1e-6<previous.perMark||
+             entry.consumed<previous.consumed||entry.posture+1e-6<previous.posture||
+             entry.score+1e-6<previous.score)))
+          throw new Error(twist.id+' failed Detonation/Posture parent-rank inheritance: '+
+            JSON.stringify({entry,previous,parent:{damage:commandDirectDamageTotal(parent),
+              perMark:parent.markRule.damagePerMark,posture:posture(parent),score:score(parent)}}));
+        if(twist.id==='detonation_posture_breach_twist'&&
+           !(command.detonationPosturePerConsumedMark>0))throw new Error(twist.id+' lost Breach');
+        if(twist.id==='detonation_posture_fuse_twist'&&
+           command.detonationPostureMode!=='POSTURE_BEFORE_DETONATION')
+          throw new Error(twist.id+' lost ordered fuse');
+        if(twist.id==='detonation_posture_echo_twist'&&(
+           !(command.detonationPostureEchoPerMark>0)||command.postureWavePattern[0]!==0))
+          throw new Error(twist.id+' lost delayed non-contact fracture');
+        if(twist.id==='detonation_posture_seal_twist'&&
+           !(command.detonationPostureSealPerMark>0))throw new Error(twist.id+' lost finite seal');
+        previous=entry;rows.push(entry);
+      }
+    }
+  }
+  const historyCorners=Object.freeze([['COMMON','COMMON'],['COMMON','LEGENDARY'],
+    ['LEGENDARY','COMMON'],['LEGENDARY','LEGENDARY']]);
+  for(const [formRarity,specRarity] of historyCorners)for(const twist of twists)
+    for(const twistRarity of SKILL_RARITY_ORDER){
+      const parent=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity,
+        twist.id,twistRarity),children=apexes.filter(route=>route.parentId===twist.id);
+      for(const apex of children){
+        let previous=null;
+        for(const apexRarity of SKILL_RARITY_ORDER){
+          const command=synthesizeMarkBurstDetonationPath(formRarity,specId,specRarity,
+              twist.id,twistRarity,apex.id,apexRarity),entry=Object.freeze({formRarity,
+              specRarity,twistRarity,apexRarity,twistId:twist.id,apexId:apex.id,
+              damage:commandDirectDamageTotal(command),perMark:command.markRule.damagePerMark,
+              consumed:commandMarkPlan(command,8).consumedTotal,posture:posture(command),
+              score:score(command)});
+          if(command.activeAttributeRouteId!==apex.id||command.detonationPostureMode!==
+             parent.detonationPostureMode||command.animationRecipeId!==parent.animationRecipeId||
+             entry.damage+1e-6<commandDirectDamageTotal(parent)||
+             entry.perMark+1e-6<parent.markRule.damagePerMark||
+             entry.consumed<commandMarkPlan(parent,8).consumedTotal||
+             entry.posture+1e-6<posture(parent)||entry.score+1e-6<score(parent)||
+             (previous&&(entry.damage+1e-6<previous.damage||
+               entry.perMark+1e-6<previous.perMark||entry.consumed<previous.consumed||
+               entry.posture+1e-6<previous.posture||entry.score+1e-6<previous.score)))
+            throw new Error(apex.id+' failed Detonation/Posture Apex inheritance: '+
+              JSON.stringify({entry,previous,parent:{damage:commandDirectDamageTotal(parent),
+                perMark:parent.markRule.damagePerMark,posture:posture(parent),score:score(parent)}}));
+          previous=entry;apexRows.push(entry);
+        }
+      }
+    }
+  const standard=rows.filter(row=>row.formRarity==='COMMON'&&row.specRarity==='COMMON'&&
+      row.twistRarity==='COMMON'),scores=standard.map(row=>row.score),mean=scores.reduce(
+      (sum,value)=>sum+value,0)/scores.length,siblingSpread=Number(((Math.max(...scores)-
+        Math.min(...scores))/Math.max(1,mean)).toFixed(4)),breachEscalation=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+        'detonation_posture_breach_twist','COMMON',
+        'detonation_posture_breach_twist_apex_2','COMMON'),echoSeries=
+      synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+        'detonation_posture_echo_twist','COMMON','detonation_posture_echo_twist_apex_2','COMMON'),
+    echoRead=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_echo_twist','COMMON','detonation_posture_echo_twist_apex_3','COMMON'),
+    sealResonance=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_seal_twist','COMMON','detonation_posture_seal_twist_apex_2','COMMON'),
+    sealLayers=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_seal_twist','COMMON','detonation_posture_seal_twist_apex_3','COMMON'),
+    measured=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_seal_twist','COMMON','detonation_posture_seal_twist_apex_4','COMMON'),
+    adaptive=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_fuse_twist','COMMON','detonation_posture_fuse_twist_apex_3','COMMON'),
+    fullOpening=synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',
+      'detonation_posture_fuse_twist','COMMON','detonation_posture_fuse_twist_apex_4','COMMON');
+  if(rows.length!==256||apexRows.length!==1024||siblingSpread>.45||
+     !(breachEscalation.detonationPostureEscalation>0)||
+     !(echoSeries.detonationPostureEchoEvents>1)||
+     !(echoRead.detonationPosturePerExistingPosture>0)||
+     !(sealResonance.detonationPostureSealAmplification>0)||
+     !(sealLayers.detonationPostureSealLayers>1)||!measured.detonationPostureSealMeasured||
+     !(adaptive.detonationAdaptivePosture>0)||!(adaptive.detonationAdaptiveDamageRate>0)||
+     !fullOpening.detonationAllDamageAfterPosture)
+    throw new Error('Detonation/Posture closure size, power or Apex identity drifted: '+
       JSON.stringify({twistCards:rows.length,apexCards:apexRows.length,siblingSpread,standard}));
   return Object.freeze({passed:true,capped:false,twists:twists.length,apexes:apexes.length,
     twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
@@ -27829,6 +28337,32 @@ function commandPostureDamage(command,chain=chainStacks,mark=bossMark(),postureA
       Math.max(0,Number(chargeSpent)||0)+
     (thresholdActive?threshold+crescendo:0));
 }
+function commandDetonationPostureAmount(command,markPlan,chain=chainStacks,
+    postureAtStart=boss&&boss.posture||0,postureMax=boss&&boss.postureMax||CFG.BOSS_POSTURE_MAX,
+    bleedAtStart=0,chargeSpent=0){
+  const base=commandPostureDamage(command,chain,markPlan&&markPlan.markAtStart||0,
+      postureAtStart,postureMax,bleedAtStart,chargeSpent),consumed=Math.max(0,
+      Number(markPlan&&markPlan.consumedTotal)||0),pairs=postureMarkPairCount(consumed),
+    ratio=clamp(Math.max(0,Number(postureAtStart)||0)/Math.max(1,
+      Number(postureMax)||CFG.BOSS_POSTURE_MAX),0,1),mode=command&&command.detonationPostureMode;
+  if(mode==='IMMEDIATE_BREACH')return stableCombatNumber(base+
+    consumed*Math.max(0,Number(command.detonationPosturePerConsumedMark)||0)+
+    pairs*Math.max(0,Number(command.detonationPostureEscalation)||0));
+  if(mode==='POSTURE_BEFORE_DETONATION')return stableCombatNumber(base+
+    Math.max(0,Number(command.detonationAdaptivePosture)||0)*(1-ratio));
+  if(mode==='DELAYED_FRACTURE')return stableCombatNumber(base+
+    Math.max(0,Number(command.detonationPostureEchoFlat)||0)+
+    consumed*Math.max(0,Number(command.detonationPostureEchoPerMark)||0)+
+    Math.max(0,Number(postureAtStart)||0)*
+      Math.max(0,Number(command.detonationPosturePerExistingPosture)||0));
+  return stableCombatNumber(base);
+}
+function commandDetonationPostureSealAmount(command,markPlan){
+  if(!command||command.detonationPostureMode!=='NEXT_SOURCE_SEAL')return 0;
+  const consumed=Math.max(0,Number(markPlan&&markPlan.consumedTotal)||0);
+  return stableCombatNumber(Math.max(0,Number(command.detonationPostureSealFlat)||0)+
+    consumed*Math.max(0,Number(command.detonationPostureSealPerMark)||0));
+}
 function commandHitBase(command,index){
   return command.hitDamages&&command.hitDamages[index]!==undefined?command.hitDamages[index]:command.damage;
 }
@@ -28194,12 +28728,57 @@ function consumeBossPosturePrimerBonus(sourceAmount){
   if(boss){boss.posturePrimer=0;boss.posturePrimerAmplification=0;}
   return bonus;
 }
+function clearBossPostureSeal(){
+  if(!boss)return;
+  boss.postureSealAmount=0;boss.postureSealAmplification=0;
+  boss.postureSealLayers=0;boss.postureSealMeasured=false;
+}
+function installBossPostureSeal(amount,amplification=0,layers=1,measured=false){
+  amount=Math.max(0,Number(amount)||0);amplification=Math.max(0,Number(amplification)||0);
+  layers=Math.max(1,Math.floor(Number(layers)||1));
+  if(!boss||(!(amount>0)&&!(amplification>0)))return 0;
+  boss.postureSealAmount=stableCombatNumber(Math.max(0,
+    Number(boss.postureSealAmount)||0)+amount);
+  boss.postureSealAmplification=stableCombatNumber(Math.max(0,
+    Number(boss.postureSealAmplification)||0)+amplification);
+  boss.postureSealLayers=Math.max(0,Math.floor(Number(boss.postureSealLayers)||0))+layers;
+  boss.postureSealMeasured=!!(boss.postureSealMeasured||measured);
+  return amount+amplification*SHARPSHOOT_POSTURE_SECONDARY_ENVELOPE.primerSourceReference;
+}
+/* Seal reads only the native source amount passed by the caller. Existing
+   primers and the seal's own output are deliberately excluded, closing every
+   possible self-feedback path. The stored pool is finite and decreases on every
+   release; measured mode changes waste, never total authored power. */
+function consumeBossPostureSealBonus(sourceAmount,before,max,otherBonus=0){
+  if(!boss)return 0;
+  const stored=Math.max(0,Number(boss.postureSealAmount)||0),rate=Math.max(0,
+      Number(boss.postureSealAmplification)||0),layers=Math.max(0,
+      Math.floor(Number(boss.postureSealLayers)||0));
+  if(!(stored>0)&&!(rate>0)){clearBossPostureSeal();return 0;}
+  let storedRelease=stored,rateRelease=rate*Math.max(0,Number(sourceAmount)||0);
+  if(layers>1)storedRelease=stored/layers;
+  if(boss.postureSealMeasured){
+    const gap=Math.max(0,Math.max(1,Number(max)||1)-Math.max(0,Number(before)||0)-
+      Math.max(0,Number(sourceAmount)||0)-Math.max(0,Number(otherBonus)||0));
+    storedRelease=Math.min(storedRelease,gap);
+    rateRelease=0;
+  }
+  const released=stableCombatNumber(Math.max(0,storedRelease+rateRelease));
+  boss.postureSealAmount=stableCombatNumber(Math.max(0,stored-storedRelease));
+  boss.postureSealLayers=Math.max(0,layers-1);
+  if(layers<=1){boss.postureSealAmplification=0;
+    if(!boss.postureSealMeasured)boss.postureSealAmount=0;}
+  if(!(boss.postureSealAmount>0)&&!(boss.postureSealAmplification>0))clearBossPostureSeal();
+  return released;
+}
 function applyTurnSkillPosture(amount){
   if(!boss||!isTurnCombat()||boss.phase!=='playerResolve'||boss.playerTurnBreak||amount<=0)return 0;
-  const primer=consumeBossPosturePrimerBonus(amount),total=amount+primer,
-    before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
+  const before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX,
+    primer=consumeBossPosturePrimerBonus(amount),seal=consumeBossPostureSealBonus(
+      amount,before,max,primer),total=amount+primer+seal;
   boss.posture=Math.min(max,before+total);
   if(primer)floater(VW/2,236,'POSTURE PRIMER +'+damagePart(primer),'#9ecbff',14);
+  if(seal)floater(VW/2,216,'FRACTURE SEAL +'+damagePart(seal),'#c995ff',14);
   const trailRate=Math.max(0,Number(boss.postureMarkTrailRate)||0),
     trailMark=trailRate>0?Math.floor((boss.posture-before)*trailRate+1e-9):0;
   if(trailRate>0){
@@ -28414,16 +28993,49 @@ function resolveTurnActionHit(action){
     echoPayload=action.markPlan.echoDamageByHit[index]||0,
     rawContactDetonationPayload=command.markDetonationCascade?0:Math.max(0,markPayload-echoPayload),
     generatedChain=Math.max(0,chainStacks-action.chainAtStart),
-    contactDetonationPayload=stableCombatNumber(rawContactDetonationPayload*(1+
+    baseContactDetonationPayload=stableCombatNumber(rawContactDetonationPayload*(1+
       generatedChain*Math.max(0,Number(command.markDetonationChainFeedbackRate)||0))),
     damageChain=commandChainDamageStacks(command,action.chainAtStart,chainStacks,index)+
       action.markPlan.temporaryChain,
     contextChainBonus=commandContextChainBonus(command,action.postureAtStart,
-      action.postureMaxAtStart,action.bleedAtStart),
+      action.postureMaxAtStart,action.bleedAtStart);
+  const orderedFuse=command.detonationPostureMode==='POSTURE_BEFORE_DETONATION'&&
+    index===action.hits-1;
+  if(orderedFuse&&!action.breakAtStart&&!action.postureAppliedEarly){
+    const before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX,
+      primer=bossPosturePrimerBonus(action.detonationPostureTotal),
+      sealPreview=Math.max(0,Number(boss.postureSealAmount)||0),
+      applied=applyTurnSkillPosture(action.detonationPostureTotal);
+    action.postureApplied=stableCombatNumber((action.postureApplied||0)+applied);
+    action.postureAppliedEarly=true;
+    if(action.detonationPostureTotal>0&&before<max&&
+       before+action.detonationPostureTotal+primer+sealPreview>=max)action.causedBreak=true;
+  }
+  const selfOpenedBreak=orderedFuse&&!action.breakAtStart&&boss.playerTurnBreak===true,
+    postureRatio=clamp(action.postureAtStart/Math.max(1,action.postureMaxAtStart),0,1),
+    contactDetonationPayload=stableCombatNumber(baseContactDetonationPayload*(1+
+      postureRatio*Math.max(0,Number(command.detonationAdaptiveDamageRate)||0)+
+      (selfOpenedBreak?Math.max(0,Number(command.detonationPostureBreakBonusRate)||0):0)));
+  let damageResult,damage;
+  if(orderedFuse){
+    const directBroken=command.detonationAllDamageAfterPosture?
+        boss.playerTurnBreak===true:action.breakAtStart,
+      directResult=combatTurnHitDamageBreakdown(base,0,
+        commandHitExtraChainBonus(command,index)+contextChainBonus,damageChain,
+        directBroken,chainBonus(),critical,critMultiplier),
+      detonationResult=combatTurnHitDamageBreakdown(0,contactDetonationPayload,0,0,
+        boss.playerTurnBreak===true,0,false,critMultiplier);
+    damage=stableCombatNumber(directResult.final+detonationResult.final);
+    damageResult={...directResult,mark:detonationResult.mark,
+      break:stableCombatNumber(directResult.break+detonationResult.break),
+      exactFinal:damage,final:damage};
+  }else{
     damageResult=combatTurnHitDamageBreakdown(base,contactDetonationPayload,
       commandHitExtraChainBonus(command,index)+contextChainBonus,
-      damageChain,boss.playerTurnBreak===true,chainBonus(),critical,critMultiplier),damage=damageResult.final,
-    p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
+      damageChain,boss.playerTurnBreak===true,chainBonus(),critical,critMultiplier);
+    damage=damageResult.final;
+  }
+  const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
   if(action.actorId==='ally')boss.allyAttackAnim=1;
   else if(isBowTurnAction(action)){
@@ -28558,9 +29170,8 @@ function resolveTurnActionHit(action){
       floater(x,y-82,'BLEED +'+damagePart(added),'#d9788b',15);
     }
     resolveCommandAfflictionFinalRewards(command,action,x,y);
-    const postureBase=command.postureSplitPerContact?0:
-      commandPostureDamage(command,action.chainAtStart,action.markStacks,
-        action.postureAtStart,action.postureMaxAtStart,action.bleedAtStart,action.chargeSpent),
+    const postureBase=command.postureSplitPerContact||action.postureAppliedEarly?0:
+      action.detonationPostureTotal,
       postureTotal=critical?postureBase*critMultiplier:postureBase,
       posture=postureTotal*(action.postureWaveTimeline?action.postureWaveTimeline.pattern[0]:1),
       postureBefore=boss.posture||0,
@@ -28578,6 +29189,14 @@ function resolveTurnActionHit(action){
     const finalCausedBreak=causedBreak||action.causedBreak===true||
       (!action.breakAtStart&&boss.playerTurnBreak===true);
     action.causedBreak=finalCausedBreak;
+    if(action.detonationPostureSeal>0||command.detonationPostureSealAmplification>0){
+      installBossPostureSeal(action.detonationPostureSeal,
+        command.detonationPostureSealAmplification,command.detonationPostureSealLayers,
+        command.detonationPostureSealMeasured);
+      floater(x,y-110,'FRACTURE SEAL '+damagePart(action.detonationPostureSeal)+
+        (command.detonationPostureSealLayers>1?' · '+command.detonationPostureSealLayers+' LAYERS':'')+
+        (command.detonationPostureSealMeasured?' · MEASURED':''),'#c995ff',14);
+    }
     if((command.posturePrimer>0||command.posturePrimerAmplification>0)&&
        !finalCausedBreak&&!boss.playerTurnBreak){
       installBossPosturePrimer(command.posturePrimer,command.posturePrimerAmplification);
@@ -28816,6 +29435,9 @@ function performPlayerAction(command,options=null){
   boss.playerActionReturnMenu=skill?'skills':'root';
   const delivery=commandDeliveryContract(command),hits=actionHits,
     markPlan=commandMarkPlan(command,startingMark),
+    detonationPostureTotal=commandDetonationPostureAmount(command,markPlan,chainStacks,
+      boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX,bossBleed(),chargeSpent),
+    detonationPostureSeal=commandDetonationPostureSealAmount(command,markPlan),
     bowGeometry=actorId==='knight'&&delivery.profileId==='OWNER_BOW'?bowTurnActionGeometry():null,
     bowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance,
       markPlan.markAtStart,boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX):null,
@@ -28848,7 +29470,8 @@ function performPlayerAction(command,options=null){
     postureWaveTimeline,postureWaveIndex:postureWaveTimeline?1:0,postureWaveTotal:0,
     detonationCascadeTimeline,detonationCascadeIndex:0,
     detonationEchoTime,detonationEchoResolved:false,detonationEventCount:0,
-    postureApplied:0,causedBreak:false,
+    postureApplied:0,postureAppliedEarly:false,causedBreak:false,
+    detonationPostureTotal,detonationPostureSeal,
     consumedMark:markPlan.consumedAtStart,markStacks:markPlan.markAtStart,markPlan,
     postureAtStart:boss.posture||0,postureMaxAtStart:boss.postureMax||CFG.BOSS_POSTURE_MAX,
     bleedAtStart:bossBleed(),breakAtStart:boss.playerTurnBreak===true,
@@ -28920,10 +29543,12 @@ function applyBossPosture(amount,source,reaction=null){
   if(!boss||boss._moveLab||boss.phase!=='dodge'||boss.state==='dying'||
      boss.state==='finisher'||boss.state==='break'||boss.state==='breakRecover'||
      boss.pendingBreak||amount<=0) return 0;
-  const primer=consumeBossPosturePrimerBonus(amount),total=amount+primer,
-    before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX;
+  const before=boss.posture||0,max=boss.postureMax||CFG.BOSS_POSTURE_MAX,
+    primer=consumeBossPosturePrimerBonus(amount),seal=consumeBossPostureSealBonus(
+      amount,before,max,primer),total=amount+primer+seal;
   boss.posture=Math.min(max,before+total);
   if(primer)floater(VW/2,236,'POSTURE PRIMER +'+damagePart(primer),'#9ecbff',14);
+  if(seal)floater(VW/2,216,'FRACTURE SEAL +'+damagePart(seal),'#c995ff',14);
   boss.lastPostureSource=source;
   if(boss.posture>=max){
     boss.pendingBreak={source};
@@ -35545,6 +36170,18 @@ function skillLabCompactSynthesisMechanics(command){
     lines.push('Oynanış: Tek ok vurur; tüketilen her Mark ayrı patlama darbesine dönüşür. Darbeler Chain üretir ve yalnız önceki darbelerin Chainini okur.');
   else if(command.markDetonationEventMode==='DETONATION_CHAIN_SALVO')
     lines.push('Oynanış: Oklar aynı anda vurur ve Mark patlatır. Ürettikleri Chain bu paketi değil, sonraki saldırıyı besler.');
+  else if(command.markDetonationEventMode==='DETONATION_POSTURE_BREACH')
+    lines.push('Oynanış: Tüketilen her Mark anında +'+damagePart(command.detonationPosturePerConsumedMark)+
+      ' Posture verir'+(command.detonationPostureEscalation>0?'; sonraki her Mark artan baskı ekler.':'.'));
+  else if(command.markDetonationEventMode==='DETONATION_BREAK_FUSE')
+    lines.push('Oynanış: Posture önce çözülür; bu ok Break açarsa Detonation Break bonusunu kullanır.'+
+      (command.detonationAllDamageAfterPosture?' Temiz ok hasarı da aynı pencereye taşınır.':''));
+  else if(command.markDetonationEventMode==='DETONATION_POSTURE_ECHO')
+    lines.push('Oynanış: Mark patlamasından sonra '+command.detonationPostureEchoEvents+
+      ' hasarsız/Chainsiz Posture çatlağı gelir.');
+  else if(command.markDetonationEventMode==='DETONATION_POSTURE_SEAL')
+    lines.push('Oynanış: Tüketilen Mark finite bir sonraki-kaynak Posture mührü depolar'+
+      (command.detonationPostureSealMeasured?'; mühür yalnız Break için gerekeni harcar.':'.'));
   if(command.markDetonationChainFeedbackRate>0)lines.push('Son patlama: saldırı içinde üretilen her Chain, Mark patlamasını %'+
     damagePart(command.markDetonationChainFeedbackRate*100)+' büyütür.');
   if(command.markDetonationCascadeChainRate>0)lines.push('Patlama zinciri: önceki her darbenin ürettiği Chain, sonraki darbeyi %'+
