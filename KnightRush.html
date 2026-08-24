@@ -30454,7 +30454,9 @@ function distributeMarkPayload(total,hits,delivery){
 function applyCommandMarkDetonationPlacement(command,plan){
   if(!command||!plan||!plan.markDamageByHit.length)return plan;
   const hits=plan.markDamageByHit.length,targetRaw=Number(command.markDetonationHitIndex),
-    hasTarget=Number.isInteger(targetRaw),target=hasTarget?clamp(targetRaw,0,hits-1):hits-1,
+    hasTarget=command.markDetonationHitIndex!==null&&
+      command.markDetonationHitIndex!==undefined&&Number.isInteger(targetRaw),
+    target=hasTarget?clamp(targetRaw,0,hits-1):hits-1,
     split=Math.max(0,Math.floor(Number(command.markDetonationSplitTail)||0));
   if(!(hasTarget||split>1))return plan;
   const total=plan.markDamageByHit.reduce((sum,value)=>sum+Math.max(0,value||0),0);
