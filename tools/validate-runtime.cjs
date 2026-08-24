@@ -2115,9 +2115,11 @@ try{
     if(!detonationFocusCombat||detonationFocusCombat.length!==20||
        detonationFocusCombat.some(entry=>!entry.started||!entry.returnedToPlayer||
          !(entry.damage>0)||entry.markAfter!==8-entry.consumed)||
-       detonationFocusCombat.filter(entry=>entry.twistId==='detonation_fragment_twist')
-         .some(entry=>entry.hits<2||entry.consumed!==entry.hits||entry.chain!==1||
-           entry.events!==entry.hits)||
+        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_fragment_twist')
+          .some(entry=>entry.hits<2||entry.consumed!==entry.hits||entry.chain!==1||
+            /* SIMULTANEOUS_PACKET has many visible payload contacts but resolves
+               one logical Detonation event and one total natural Chain. */
+            entry.events!==1)||
        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_compression_twist')
          .some(entry=>entry.hits!==1||entry.events!==1)||
        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_echo_twist')
