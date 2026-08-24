@@ -76,6 +76,9 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
   topolojisi vardir. Ayni gruptaki temaslar ayni snapshoti okur; sonraki grup onceki grubun
   ciktisini gorur. Primary/Secondary motor kendi dogal ciktisini gercekten uretir, sifir kaynakta
   calisir ve Quality ile monoton buyur. Skill id veya agac adresine ozel kaynak istisnasi yasaktir.
+- Chain icin `HARCAR = HICBIR ZAMAN`dir. Move Chaini okuyabilir, koruyabilir, uretebilir veya
+  Chain katsayisini buyutebilir; Chaini azaltan, sifirlayan, maliyet yapan ya da baska ciktiga
+  donustururken silen kart reddedilir. Yalniz faz reseti ve gercek yara ile combo kirilmasi ayridir.
 - Ortak matris her motoru `SINGLE`, `SEQUENTIAL`, `SIMULTANEOUS_PACKET` ve `IMPACT_ECHO` ile
   materialize edebilmelidir. Delivery temas/grup sirasi kurar; silaha ozel animasyon recipe'si ayri
   adapterdan gelir ve motor kurallarini degistiremez.
@@ -240,6 +243,8 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
   davranisini miras alir. Specialization sadece kendi yeni Quality paketini bolusturur.
 - Her gercek temas once mevcut Chaini okur, sonra tam `+1 Chain` verir. Karttaki temas sayisi ile
   runtime Chain ciktisi ayni olmalidir.
+- Primary Chain her rarityde en az iki gercek temas tasir. Toplam Quality temas sayisini uncapped
+  buyutur. Weight kimligi `SINGLE` degil; daha yavas buyuyen kurulum oklari ve agir final temasidir.
 - Chain/Mark gorunur Secondary Markini kendi `%30` paketinden oder. Gerekirse yalniz o paketin Chain
   payindan esige kadar borclanabilir; Formdan veya bedava guc kaynagindan borclanamaz.
 - Chain/Chain esit gecmiste en yuksek Chain katsayisina sahip olur. Chain/Posture tek toplam Postureu

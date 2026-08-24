@@ -46,6 +46,13 @@ Sentez katmanı şunları hesaplar; rarity başına elle kart kopyalanmaz:
    gelecekteki Deliveryler aynı matristen geçer; skill id/adresi için istisna yazılmaz.
    Chain motorunda her mekanik temas tam `+1 Chain` üretir. Tek temas görünmez biçimde çoklu Chain
    yazamaz; daha fazla Chain gerekiyorsa Delivery gerçek kurulum teması üretir.
+   `Primary = Chain` için sözleşme daha serttir: materialized hareket en az iki gerçek temas üretir.
+   Rarity geçmişinin toplam Quality'si temas sayısını sınırsız büyütür. Weight rotası daha düşük
+   temas yoğunluğu kullanabilir fakat `SINGLE` olamaz; hafif kurulum temaslarını ağır final izler.
+   **Chain kalıcı momentumdur ve hiçbir kart tarafından tüketilemez.** Hareket Chain üretebilir,
+   mevcut Chaini okuyabilir veya katsayısını büyütebilir; Chaini maliyet olarak harcamak, azaltmak,
+   sıfırlamak ya da başka kaynağa çevirmek yasaktır. Tur/faz sözleşmesindeki reset ve oyuncunun
+   gerçek darbe almasıyla Chain kırılması bu kart kuralından ayrıdır.
    Ortak motor-delivery materializerı `SINGLE`, `SEQUENTIAL`, `SIMULTANEOUS_PACKET` ve
    `IMPACT_ECHO` topolojilerinin tamamını bütün Attribute motorları için kabul eder. Silah animasyonu
    bu katmana gömülmez; Bow/Sword gibi sunum adapterı aynı topolojiye kendi recipe'sini bağlar.
@@ -163,9 +170,24 @@ katmanında Precision üretmez. Mark Burst hiçbir Stable rotada Mark üretmez.
 
 Mark Burst F2S1 Chain/Detonation `4 Twist / 16 Apex` ile materializedir. T1 canlı Chaini
 tüketmeden finaldeki tek-Mark patlamasına okur; T2 ücretli birden fazla tek-Mark olayını gerçek
-oklara dağıtır; T3 yalnız başarılı patlamada seçilen Chain rezervini tüketir; T4 başarılı
+oklara dağıtır; T3 yalnız başarılı patlamada başlangıç ve yeni üretilen Chaini koruyarak tek ağır
+patlamaya okur; T4 başarılı
 patlamadan sonra Mark patlatmayan gerçek dönüş okları açar. Her rota en az bir Detonation girişimi
-taşır. Mark yokken T3 Chain harcayamaz ve T4 dönüş dalgası üretemez; ana Chain saldırısı çalışır.
+taşır. Mark yokken T3 bonus okumayı ve T4 dönüş dalgasını üretemez; ana Chain saldırısı çalışır ve
+Chain hiçbir rotada harcanmaz.
+
+Mark Burst F2S2 Chain/Chain `4 Twist / 16 Apex` ile materializedir. Primary Chain rotalarında
+`SINGLE` yoktur: canlı sekans, kurulum+agir final, machine-gun sekansi ve fiziksel echo kimlikleri
+gercek multi-contact uretir. Her temas tam `+1 Chain` verir, Chain tuketilmez ve current rarity
+yukseldikce temas sayisi kesinlikle artar. Weight yalniz agir final carpanidir; saf Chain rotasina
+ilgisiz kaynak veya gizli Mark uretimi eklemez.
+
+Mark Burst F2S3 Chain/Posture `4 Twist / 16 Apex` ile materializedir. T1 tek toplam light-bow
+Posture paketini butun gercek oklara boler; T2 hafif Chain kurulumundan sonra tasinan ve yeni
+uretilen Chaini ayri okuyabilen agir final kullanir; T3 Postureu acilis okuna yukleyip kendi actigi
+Breaki kalan oklara kullandirir; T4 kalici Chainin `4/8/12/...` limitsiz esiklerinde Posture pulse
+uretir. Pulse Chain harcamaz. Apexler dagilim, carried/generated Chain, Breach retry/conversion ve
+esik davranisini parent Twist'i bozmadan farkli oyuncu kararlarina donusturur.
 
 ## Kabul edilmeyen sonuçlar
 
