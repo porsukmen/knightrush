@@ -2200,7 +2200,9 @@ try{
       throw new Error('Quick F6 Charge Primary closure gate failed: '+
         JSON.stringify(chargePrimaryClosure));
     if(!chargePrimaryRuntime||!chargePrimaryRuntime.passed||
-       chargePrimaryRuntime.halfOfNine!==5||chargePrimaryRuntime.uncappedTenThousand!==5000||
+       chargePrimaryRuntime.preservedChainEcho!==2||
+       chargePrimaryRuntime.uncappedTenThousand!==20000||
+       chargePrimaryRuntime.baseRelease!==8||chargePrimaryRuntime.paidMastery!==12||
        chargePrimaryRuntime.aftershock!==6)
       throw new Error('Quick F6 Charge Primary runtime gate failed: '+
         JSON.stringify(chargePrimaryRuntime));
