@@ -2166,7 +2166,7 @@ try{
        !combatInteraction.returnedToPlayer)
       throw new Error('Quick combat interaction gate failed: '+JSON.stringify(combatInteraction));
     if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
-       chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4')
+       chainForm.rows.map(row=>row.hits).join('|')!=='2|3|4|5')
       throw new Error('Quick F2 Chain Form gate failed: '+JSON.stringify(chainForm));
     if(!postureForm||!postureForm.passed||postureForm.cards!==4||postureForm.capped||
        postureForm.postureTiming!=='AFTER_FINAL_CONTACT'||
@@ -2451,7 +2451,7 @@ try{
     postureSpecs=sandbox.__postureSpecializationAudit,
     chainSpecs=sandbox.__chainSpecializationAudit;
   if(!chainForm||!chainForm.passed||chainForm.cards!==4||chainForm.capped||
-     chainForm.rows.map(row=>row.hits).join('|')!=='1|2|3|4'||
+     chainForm.rows.map(row=>row.hits).join('|')!=='2|3|4|5'||
      chainForm.rows.some(row=>row.chain!==row.hits||row.mark<1))
     throw new Error('F2 Chain Form contract failed: '+JSON.stringify(chainForm));
   console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
