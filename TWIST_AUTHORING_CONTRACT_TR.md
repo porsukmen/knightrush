@@ -122,9 +122,17 @@ Primary ve Secondary aynıysa sistem otomatik bedava güç eklemez. Önce o attr
 görünür ve ücretli bir ustalık fiili aranır. Varsa yalnız rota makbuzundaki Secondary payını kullanır;
 yoksa temiz sayısal güçte kalmak yeni bir anlamsız engine uydurmaktan daha doğrudur.
 
-Charge/Charge referans uygulamasında bu fiil `Charge Power`dır. Dört Twist aynı katsayının kopyası
+Charge Primary yalnız garanti Quality bonuslu gecikmeli saldırıdır; savunma Charge'ı Secondary'ye
+aittir. Saf Charge/Charge ikisini açar. Eski Sharpshoot Twistlerinde ücretli `Charge Power` da vardır.
+Dört Twist aynı katsayının kopyası
 değildir: anlık Release yoğunluğu, sonraki hand artçı oku, hatasız savunma streaki ve action-order
 geciktirmesi. Üçü de aynı kaynakla çalışsa bile farklı trigger, timing ve oyuncu kararı taşır.
+
+Mark Burst ve Sharpshoot Charge/Charge native birleşimi: prepare eski
+bankayı rezerve eder; yeni savunma kazancı ayrıca eklenir ve ücretsiz Release ikisini bir kez
+harcar. Eski ve yeni banka aynı ücretli Secondary oranını kullanır; Primary ayrıca savunmadan
+bağımsız garanti hazırlık bonusu verir. Banka fiyat referansı 2 eski + 2 yeni = 4, gameplay cap değil.
+Mark Burst Spec'i ayrı Charge Power statı açmaz; Twistleri eski Sharpshoot'tan otomatik kopyalanmaz.
 
 Detonation/Charge referansında dört farklı kaynak fiili kullanılır: bütün bankayı harca, yalnız
 eşleşen kısmı harca, harcanmış kısmı geri taşı ve bankayı sonraki savunmaya finite füze olarak kur.

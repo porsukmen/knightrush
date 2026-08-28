@@ -144,8 +144,7 @@ const chainAdjacentAuditScript=String.raw`
   })();`;
 
 try{
-  const exhaustiveSource=match[1]+`\n;globalThis.__runtimeAudit=typeof SHARPSHOOT_MARK_MATERIALIZATION_AUDIT==='undefined'?null:
-    SHARPSHOOT_MARK_MATERIALIZATION_AUDIT;
+  const exhaustiveSource=match[1]+`\n;globalThis.__runtimeAudit=runSharpshootMarkMaterializationAudit();
   globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
     SHARPSHOOT_CHAIN_FORM_AUDIT;
   globalThis.__postureFormAudit=typeof SHARPSHOOT_POSTURE_FORM_AUDIT==='undefined'?null:
@@ -1423,7 +1422,28 @@ try{
         return {routes:routes.length,specs,twists,apexes,
           comparisons:specs*12+twists*96+apexes*576};
       })();`,
-    bootOnly=process.argv.includes('--boot-only'),
+    criticalPostureOnly=process.argv.includes('--critical-posture'),
+    criticalFocusOnly=process.argv.includes('--critical-focus'),
+    criticalAfflictionOnly=process.argv.includes('--critical-affliction'),
+    criticalChargeOnly=process.argv.includes('--critical-charge'),
+    arrowScalingOnly=process.argv.includes('--arrow-scaling'),
+    globalChainOnly=process.argv.includes('--global-chain'),
+    chargeSpecsOnly=process.argv.includes('--charge-specs'),
+    chargeDetonationOnly=process.argv.includes('--charge-detonation'),
+    chargeChainOnly=process.argv.includes('--charge-chain'),
+    chargePostureOnly=process.argv.includes('--charge-posture'),
+    chargeCriticalOnly=process.argv.includes('--charge-critical'),
+    chargeAfflictionOnly=process.argv.includes('--charge-affliction'),
+    chargeFocusOnly=process.argv.includes('--charge-focus'),
+    afflictionSpecsOnly=process.argv.includes('--affliction-specs'),
+    afflictionDetonationOnly=process.argv.includes('--affliction-detonation'),
+    afflictionChainOnly=process.argv.includes('--affliction-chain'),
+    afflictionPostureOnly=process.argv.includes('--affliction-posture'),
+    afflictionCriticalOnly=process.argv.includes('--affliction-critical'),
+    afflictionFocusOnly=process.argv.includes('--affliction-focus'),
+    afflictionChargeOnly=process.argv.includes('--affliction-charge'),
+    hasFocusedAudits=chargeFocusOnly||chargeAfflictionOnly||chargeCriticalOnly||chargePostureOnly||chargeChainOnly||chargeDetonationOnly||chargeSpecsOnly||criticalPostureOnly||criticalFocusOnly||criticalAfflictionOnly||criticalChargeOnly||arrowScalingOnly||globalChainOnly||afflictionSpecsOnly||afflictionDetonationOnly||afflictionChainOnly||afflictionPostureOnly||afflictionCriticalOnly||afflictionFocusOnly||afflictionChargeOnly,
+    bootOnly=process.argv.includes('--boot-only')||(hasFocusedAudits&&!process.argv.includes('--quick')),
     adjacentOnly=process.argv.includes('--adjacent'),
     exhaustiveFeature=process.argv.includes('--exhaustive-feature'),
     exhaustiveDelivery=process.argv.includes('--exhaustive-delivery'),
@@ -1431,14 +1451,18 @@ try{
     exhaustiveHierarchy=process.argv.includes('--exhaustive-hierarchy'),
     parentStrengthOnly=process.argv.includes('--parent-strength'),
     postureBalanceOnly=process.argv.includes('--posture-balance'),
+    f2CommonBalanceOnly=process.argv.includes('--f2-common-balance'),
     combatRoutesOnly=process.argv.includes('--combat-routes'),
     quick=process.argv.includes('--quick')||(!bootOnly&&!adjacentOnly&&!exhaustiveFeature&&
       !exhaustiveDelivery&&!exhaustiveRank&&!exhaustiveHierarchy&&
-      !parentStrengthOnly&&!postureBalanceOnly&&!combatRoutesOnly),
+      !parentStrengthOnly&&!postureBalanceOnly&&!f2CommonBalanceOnly&&!combatRoutesOnly),
     adjacentSource=match[1]+chainAdjacentAuditScript,
     postureBalanceSource=match[1]+`
     ;globalThis.__postureBalanceAudit=typeof runSharpshootPostureBalanceAudit==='undefined'?null:
       runSharpshootPostureBalanceAudit();`,
+    f2CommonBalanceSource=match[1]+`
+    ;globalThis.__f2CommonBalanceAudit=typeof MARK_BURST_F2_COMMON_BALANCE_AUDIT==='undefined'?null:
+      MARK_BURST_F2_COMMON_BALANCE_AUDIT;`,
     combatRoutesSource=match[1]+String.raw`
     ;globalThis.__combatRoutesAudit=(()=>{
       openSkillLab();moveTreeSkillIndex=0;
@@ -1495,12 +1519,53 @@ try{
         forms:[...forms].sort(),patterns:[...patterns].sort(),recipes:[...recipes].sort(),
         mechanicFamilies:mechanicFamilies.size,totalFrames,maxFrames,failures};
     })();`,
-    source=bootOnly?match[1]:parentStrengthOnly?parentStrengthSource:
+    focusedSource=(criticalPostureOnly?'\n'+fs.readFileSync(
+      require('node:path').join(__dirname,'critical-posture-audit.js'),'utf8'):'')+
+      (criticalFocusOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'critical-focus-audit.js'),'utf8'):'')+
+      (criticalAfflictionOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'critical-affliction-audit.js'),'utf8'):'')+
+      (criticalChargeOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'critical-charge-audit.js'),'utf8'):'')+
+      (arrowScalingOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'arrow-scaling-audit.js'),'utf8'):'')+
+      (globalChainOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'global-chain-audit.js'),'utf8'):'')+
+      (chargeSpecsOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-specs-audit.js'),'utf8'):'')+
+      (chargeDetonationOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-detonation-audit.js'),'utf8'):'')+
+      (chargeChainOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-chain-audit.js'),'utf8'):'')+
+      (chargePostureOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-posture-audit.js'),'utf8'):'')+
+      (chargeCriticalOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-critical-audit.js'),'utf8'):'')+
+      (chargeAfflictionOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-affliction-audit.js'),'utf8'):'')+
+      (chargeFocusOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'charge-focus-audit.js'),'utf8'):'')+
+      (afflictionSpecsOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-specs-audit.js'),'utf8'):'')+
+      (afflictionDetonationOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-detonation-audit.js'),'utf8'):'')+
+      (afflictionChainOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-chain-audit.js'),'utf8'):'')+
+      (afflictionPostureOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-posture-audit.js'),'utf8'):'')+
+      (afflictionCriticalOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-critical-audit.js'),'utf8'):'')+
+      (afflictionFocusOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-focus-audit.js'),'utf8'):'')+
+      (afflictionChargeOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'affliction-charge-audit.js'),'utf8'):''),
+    source=(bootOnly?match[1]:parentStrengthOnly?parentStrengthSource:
       exhaustiveFeature?exhaustiveFeatureSource:
       exhaustiveDelivery?exhaustiveDeliverySource:
       exhaustiveRank?exhaustiveRankSource:
       exhaustiveHierarchy?exhaustiveHierarchySource:
       postureBalanceOnly?postureBalanceSource:
+      f2CommonBalanceOnly?f2CommonBalanceSource:
       combatRoutesOnly?combatRoutesSource:quick?match[1]+`
     ;globalThis.__chainFormAudit=typeof SHARPSHOOT_CHAIN_FORM_AUDIT==='undefined'?null:
       SHARPSHOOT_CHAIN_FORM_AUDIT;
@@ -1676,6 +1741,7 @@ try{
         }
         skillLabSession.forceCritical=false;
         return {routeId,started,recipe,frames,hits:command.hits,weight:command.deliveryWeight,
+          capacity:command.markDetonationCoreCapacity,
           damage:Number((hpBefore-boss.hp).toFixed(3)),markAfter:bossMark(),chain:chainStacks,
           posture:boss.posture||0,bleed:bossBleed(),returnedToPlayer:boss.phase==='player'};
       };
@@ -1684,7 +1750,7 @@ try{
         chargeCommand:(()=>{const command=synthesizeMarkBurstFormRoute(
           MARK_BURST_ROUTE_BY_ID.charge_primary_form,'RARE');return {
           mode:commandChargeMode(command),timing:command.deliveryTiming,
-          rate:commandDefenseTemperRate(command),hits:command.hits,weight:command.deliveryWeight,
+          preparation:commandPreparationDamage(command),hits:command.hits,weight:command.deliveryWeight,
           recipe:command.bowAnimationRecipeId};})()};
     })();
     globalThis.__detonationFormUiAudit=(()=>{
@@ -1763,7 +1829,9 @@ try{
         }
         return {id:route.id,depth:route.depth,twistId:twist.id,started,recipe,frames,
           hits:command.hits,damage:Number((hpBefore-boss.hp).toFixed(3)),markAfter:bossMark(),
-          consumed:plan.consumedTotal,echo:Number((plan.echoDamageTotal||0).toFixed(3)),
+          consumed:plan.consumedTotal,capacity:command.markDetonationCoreCapacity,
+          contactEvents:plan.markDamageByHit.filter(damage=>damage>0).length,
+          echo:Number((plan.echoDamageTotal||0).toFixed(3)),
           events:action&&action.detonationEventCount||0,chain:chainStacks,
           returnedToPlayer:boss.phase==='player'};
       });
@@ -1789,6 +1857,7 @@ try{
         return {id:route.id,depth:route.depth,twistId:twist.id,started,recipe,frames,
           hits:command.hits,damage:Number((hpBefore-boss.hp).toFixed(3)),markAfter:bossMark(),
           consumed:plan.consumedTotal,events:action&&action.detonationEventCount||0,
+          contactEvents:plan.markDamageByHit.filter(damage=>damage>0).length,
           cascadePulses,chain:chainStacks,returnedToPlayer:boss.phase==='player'};
       });
     })();
@@ -1842,7 +1911,7 @@ try{
         returnedToPlayer:boss.phase==='player',hitLogged:!!(skillLabSession.lastLog&&
           skillLabSession.lastLog.hits.length)};
     })();`:
-      adjacentOnly?adjacentSource:match[1];
+      adjacentOnly?adjacentSource:match[1])+focusedSource;
   /* Full-history coverage grows deliberately with every materialized family.
      Keep a finite guard, but allow the exhaustive route matrix to finish on
      slower CI/mobile-development machines. This timeout never touches gameplay. */
@@ -1851,9 +1920,111 @@ try{
      matrix grows with authored content, so a fixed nine-minute limit can turn a
      slow but correct validation into a false failure. Daily quick and focused
      Posture checks keep their shorter runaway guard. */
-  if(postureBalanceOnly||combatRoutesOnly||quick)vmOptions.timeout=180000;
+  // Explicit combined release checks reuse one boot; each focused suite has its
+  // own bounded sample set. The standalone CI quick timeout remains unchanged.
+  if(postureBalanceOnly||f2CommonBalanceOnly||combatRoutesOnly||quick&&!hasFocusedAudits)vmOptions.timeout=180000;
   vm.runInNewContext(source,sandbox,vmOptions);
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
+  if(criticalPostureOnly){
+    const audit=sandbox.__criticalPostureAudit;
+    console.log('CRITICAL_POSTURE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F4S3 targeted audit failed');
+  }
+  if(criticalFocusOnly){
+    const audit=sandbox.__criticalFocusAudit;
+    console.log('CRITICAL_FOCUS_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F4S4 targeted audit failed');
+  }
+  if(criticalAfflictionOnly){
+    const audit=sandbox.__criticalAfflictionAudit;
+    console.log('CRITICAL_AFFLICTION_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F4S5 targeted audit failed');
+  }
+  if(criticalChargeOnly){
+    const audit=sandbox.__criticalChargeAudit;
+    console.log('CRITICAL_CHARGE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F4S6 targeted audit failed');
+  }
+  if(arrowScalingOnly){
+    const audit=sandbox.__arrowScalingAudit;
+    console.log('ARROW_SCALING_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('Mark Burst supporting-arrow audit failed');
+  }
+  if(globalChainOnly){
+    const audit=sandbox.__globalChainAudit;
+    console.log('GLOBAL_CHAIN_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('Global Chain role audit failed');
+  }
+  if(chargePostureOnly){
+    const audit=sandbox.__chargePostureAudit;
+    console.log('CHARGE_POSTURE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S3 targeted audit failed');
+  }
+  if(chargeCriticalOnly){
+    const audit=sandbox.__chargeCriticalAudit;
+    console.log('CHARGE_CRITICAL_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S4 targeted audit failed');
+  }
+  if(chargeAfflictionOnly){
+    const audit=sandbox.__chargeAfflictionAudit;
+    console.log('CHARGE_AFFLICTION_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S5 targeted audit failed');
+  }
+  if(chargeFocusOnly){
+    const audit=sandbox.__chargeFocusAudit;
+    console.log('CHARGE_FOCUS_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S6 targeted audit failed');
+  }
+  if(chargeChainOnly){
+    const audit=sandbox.__chargeChainAudit;
+    console.log('CHARGE_CHAIN_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S2 targeted audit failed');
+  }
+  if(chargeDetonationOnly){
+    const audit=sandbox.__chargeDetonationAudit;
+    console.log('CHARGE_DETONATION_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6S1 targeted audit failed');
+  }
+  if(chargeSpecsOnly){
+    const audit=sandbox.__chargeSpecsAudit;
+    console.log('CHARGE_SPECS_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F6 Specialization targeted audit failed');
+  }
+  if(afflictionSpecsOnly){
+    const audit=sandbox.__afflictionSpecsAudit;
+    console.log('AFFLICTION_SPECS_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5 Specialization targeted audit failed');
+  }
+  if(afflictionDetonationOnly){
+    const audit=sandbox.__afflictionDetonationAudit;
+    console.log('AFFLICTION_DETONATION_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S1 targeted audit failed');
+  }
+  if(afflictionChainOnly){
+    const audit=sandbox.__afflictionChainAudit;
+    console.log('AFFLICTION_CHAIN_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S2 targeted audit failed');
+  }
+  if(afflictionPostureOnly){
+    const audit=sandbox.__afflictionPostureAudit;
+    console.log('AFFLICTION_POSTURE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S3 targeted audit failed');
+  }
+  if(afflictionCriticalOnly){
+    const audit=sandbox.__afflictionCriticalAudit;
+    console.log('AFFLICTION_CRITICAL_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S4 targeted audit failed');
+  }
+  if(afflictionFocusOnly){
+    const audit=sandbox.__afflictionFocusAudit;
+    console.log('AFFLICTION_FOCUS_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S5 targeted audit failed');
+  }
+  if(afflictionChargeOnly){
+    const audit=sandbox.__afflictionChargeAudit;
+    console.log('AFFLICTION_CHARGE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('F5S6 targeted audit failed');
+  }
   if(bootOnly){console.log(`BOOT_RUNTIME_OK ${file}`);process.exit(0);}
   if(combatRoutesOnly){
     const combat=sandbox.__combatRoutesAudit;
@@ -1943,6 +2114,13 @@ try{
       throw new Error('F3 representative full-history balance failed: '+JSON.stringify(balance));
     process.exit(0);
   }
+  if(f2CommonBalanceOnly){
+    const balance=sandbox.__f2CommonBalanceAudit;
+    console.log('F2_COMMON_BALANCE_AUDIT '+JSON.stringify(balance));
+    if(!balance||!balance.passed)
+      throw new Error('F2 pure Common balance failed: '+JSON.stringify(balance));
+    process.exit(0);
+  }
   if(adjacentOnly){
     const adjacent=sandbox.__chainAdjacentFamilyAudit;
     console.log('CHAIN_ADJACENT_FAMILY_AUDIT '+JSON.stringify(adjacent));
@@ -2021,7 +2199,7 @@ try{
       throw new Error('Quick Mark Burst Stable causality gate failed: '+
         JSON.stringify(markBurstStableCausality));
     if(!detonationForm||!detonationForm.passed||detonationForm.capped||
-       detonationForm.rows[0].consume!==1||
+       detonationForm.rows[0].consume!==2||
        detonationForm.rows.some((row,index,rows)=>index&&(row.damage<rows[index-1].damage||
          row.damagePerMark<rows[index-1].damagePerMark||row.consume<rows[index-1].consume||
          row.primed<rows[index-1].primed)))
@@ -2075,18 +2253,25 @@ try{
        !detonationBase.primed.returnedToPlayer||detonationBase.primed.damage!==30||
        detonationBase.primed.markAfter!==0||detonationBase.primed.chain!==1)
       throw new Error('Quick base Detonation combat gate failed: '+JSON.stringify(detonationBase));
-    if(!detonationFormCombat||!detonationFormCombat.common.started||
-       !detonationFormCombat.common.actionCreated||!detonationFormCombat.common.returnedToPlayer||
-       detonationFormCombat.common.markAfter!==7||detonationFormCombat.common.consume!==1||
-       Math.abs(detonationFormCombat.common.damage-36.435)>.001||
-       !detonationFormCombat.rare.started||!detonationFormCombat.rare.actionCreated||
-       !detonationFormCombat.rare.returnedToPlayer||detonationFormCombat.rare.markAfter!==6||
-       detonationFormCombat.rare.consume!==2||Math.abs(detonationFormCombat.rare.damage-73)>.001)
+    // Compare real combat with the current paid capacity/potency, not the retired
+    // fixed one-Mark Form. Starting Mark=8, Chain=0, no Crit or Break.
+    if(!detonationFormCombat||['common','rare'].some(key=>{
+      const actual=detonationFormCombat[key],expected=detonationForm.rows.find(
+        row=>row.rarity===key.toUpperCase());
+      return !actual||!expected||!actual.started||!actual.actionCreated||!actual.returnedToPlayer||
+        actual.chain!==1||actual.consume!==expected.consume||
+        actual.markAfter!==8-Math.min(8,expected.consume)||
+        Math.abs(actual.damage-(expected.damage+Math.min(8,expected.consume)*expected.damagePerMark))>.002;
+    }))
       throw new Error('Quick Detonation Form combat gate failed: '+
         JSON.stringify(detonationFormCombat));
     if(!markBurstSiblingCombat||!markBurstSiblingCombat.chain.started||
        !markBurstSiblingCombat.chain.returnedToPlayer||markBurstSiblingCombat.chain.hits!==4||
-       markBurstSiblingCombat.chain.chain!==4||markBurstSiblingCombat.chain.markAfter!==4||
+       markBurstSiblingCombat.chain.chain!==4||
+       ['chain','posture','critical','affliction'].some(key=>{
+         const row=markBurstSiblingCombat[key];
+         return !row||row.markAfter!==5-Math.min(5,row.capacity);
+       })||
        !markBurstSiblingCombat.posture.started||!markBurstSiblingCombat.posture.returnedToPlayer||
        !(markBurstSiblingCombat.posture.posture>0)||markBurstSiblingCombat.posture.weight!==3||
        !markBurstSiblingCombat.critical.started||!markBurstSiblingCombat.critical.returnedToPlayer||
@@ -2094,7 +2279,7 @@ try{
        !(markBurstSiblingCombat.affliction.bleed>0)||
        markBurstSiblingCombat.chargeCommand.mode!=='DELAYED_PRIMARY'||
        markBurstSiblingCombat.chargeCommand.timing!=='DELAYED_RELEASE'||
-       !(markBurstSiblingCombat.chargeCommand.rate>0)||
+       !(markBurstSiblingCombat.chargeCommand.preparation>0)||
        markBurstSiblingCombat.chargeCommand.recipe!=='BOW_CHARGE_WEIGHT')
       throw new Error('Quick Mark Burst sibling combat gate failed: '+
         JSON.stringify(markBurstSiblingCombat));
@@ -2116,8 +2301,8 @@ try{
        detonationFocusCombat.some(entry=>!entry.started||!entry.returnedToPlayer||
          !(entry.damage>0)||entry.markAfter!==8-entry.consumed)||
        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_fragment_twist')
-         .some(entry=>entry.hits<2||entry.consumed!==entry.hits||entry.chain!==1||
-           entry.events!==entry.hits)||
+         .some(entry=>entry.hits<2||entry.consumed!==Math.min(8,entry.capacity)||entry.chain!==1||
+           entry.events!==entry.contactEvents)||
        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_compression_twist')
          .some(entry=>entry.hits!==1||entry.events!==1)||
        detonationFocusCombat.filter(entry=>entry.twistId==='detonation_echo_twist')
@@ -2132,12 +2317,12 @@ try{
        detonationChainCombat.filter(entry=>entry.twistId==='detonation_chain_crescendo_twist')
          .some(entry=>entry.events!==1||entry.chain!==entry.hits)||
        detonationChainCombat.filter(entry=>entry.twistId==='detonation_chain_relay_twist')
-         .some(entry=>entry.events!==entry.consumed||entry.chain!==entry.hits)||
+         .some(entry=>entry.events!==entry.contactEvents||entry.chain!==entry.hits)||
        detonationChainCombat.filter(entry=>entry.twistId==='detonation_chain_cascade_twist')
-         .some(entry=>entry.hits!==1||entry.cascadePulses!==entry.consumed||
-           entry.events!==entry.consumed||entry.chain!==1+entry.consumed)||
+         .some(entry=>entry.hits<2||entry.cascadePulses!==entry.consumed||
+           entry.events!==entry.consumed||entry.chain!==entry.hits+entry.consumed)||
        detonationChainCombat.filter(entry=>entry.twistId==='detonation_chain_salvo_twist')
-         .some(entry=>entry.events!==entry.consumed||entry.chain!==entry.hits))
+         .some(entry=>entry.events!==entry.contactEvents||entry.chain!==entry.hits))
       throw new Error('Quick Detonation/Chain real combat gate failed: '+
         JSON.stringify(detonationChainCombat));
     if(!detonationPostureCombat||detonationPostureCombat.length!==20||
@@ -2188,7 +2373,7 @@ try{
          !(row.totalTimedDamage>row.damage)))
       throw new Error('Quick F5 Affliction Form gate failed: '+JSON.stringify(afflictionForm));
     if(!chargeForm||!chargeForm.passed||chargeForm.cards!==4||chargeForm.capped||
-       !(chargeForm.commonRate>0)||!(chargeForm.legendaryRate>chargeForm.commonRate))
+       !(chargeForm.commonBonus>0)||!(chargeForm.legendaryBonus>chargeForm.commonBonus))
       throw new Error('Quick F6 Charge Form gate failed: '+JSON.stringify(chargeForm));
     if(!chargePrimaryClosure||!chargePrimaryClosure.passed||
       chargePrimaryClosure.specializations!==6||chargePrimaryClosure.twists!==24||

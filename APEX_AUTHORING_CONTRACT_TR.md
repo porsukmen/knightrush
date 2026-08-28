@@ -6,14 +6,20 @@ Bu sözleşme Stable skill ağacındaki bütün yeni Apex üretimlerinde uygulan
 
 Apex yeni bir Twist yaratmaz. Parent Twist'in kaynak, tetik, sonuç, zamanlama ve Delivery kimliğini korur; o kimliği farklı bir oyun kararına götüren son biçime ulaştırır.
 
-Her Twist için dört Apex şu rolleri doldurur:
+Her Twist için ideal hedef dört Apextir. Tasarım önce dört basit, gerçek ve birbirinden ayrılan
+upgrade arar. Dördüncü kart ancak dolgu, tekrar veya gereksiz karmaşıklık olacaksa sayı üçe; aynı
+sorun sürüyorsa ikiye düşürülür. Yeni Stable ailelerde `apexTarget` açıkça `2–4` arasında beyan edilir
+ve materialize çocuk sayısıyla tam eşleşir. Dört kartı hak eden bir Twist aşağıdaki yönlerin dördünü
+de kullanabilir; daha az kartlı bir Twist en güçlü ve en ayrışan yönleri seçer:
 
 1. **Sayısal ustalık:** Parent'ın ana çıktısını doğrudan ve güvenilir biçimde büyütür.
 2. **Kaynak ifadesi:** Aynı motorun farklı rezerv, tüketim veya olay yoğunluğu kullanımını öne çıkarır.
 3. **Davranışsal son biçim:** Oyuncunun hedef seçimini, zamanlamasını veya skill sırasını anlamlı biçimde değiştirir.
 4. **Güvenilirlik ya da ikinci davranış:** Kötü başlangıç durumunda taban değer sağlar veya aynı motoru farklı bir kararla kullanır.
 
-Bu sıra zorunlu değildir; dört kartın toplam rol dağılımı zorunludur. Bir ailede en az iki Apex yalnız sayı artırmaktan öte bir oyuncu kararı yaratmalıdır. Bu iki Apex de aynı karar türünü tekrarlayamaz.
+Bu sıra ve dört rolün tamamı zorunlu değildir. Dört Apex ideal, dolgu Apex yasaktır. Her Twistte
+en az bir Apex yalnız sayı artırmaktan öte gerçek bir oyuncu kararı yaratmalıdır. Birden fazla
+plan-değiştiren Apex varsa aynı karar türünü tekrarlamamalıdır.
 
 ## Yüzeysellik red kapısı
 
@@ -24,7 +30,10 @@ Aşağıdakiler tek başına yeni bir oyuncu kararı sayılmaz:
 - Aynı koşulu başka isimle tekrar etmek.
 - Artifact ileride anlam kazandırabilir diye bugün karar üretmeyen bir event eklemek.
 
-Dört Apex'in en az ikisi oyuncunun gerçek planını değiştirmelidir. Bu iki kart en az iki ayrı sınıftan gelmelidir: okunan savaş durumu, zamanlama penceresi, skill sırası/rotasyonu, risk-ödül, hedef seçimi veya kaynak penceresi. Bir zamanlama değişikliği ancak başka bir fazda sonuç doğuruyor ya da oyuncunun sonraki kararını değiştiriyorsa anlamlıdır.
+Her Twistte en az bir Apex oyuncunun gerçek planını değiştirmelidir. Plan-değiştiren kartlar mümkün
+olduğunda ayrı sınıflardan gelir: okunan savaş durumu, zamanlama penceresi, skill sırası/rotasyonu,
+risk-ödül, hedef seçimi veya kaynak penceresi. Bir zamanlama değişikliği ancak başka bir fazda sonuç
+doğuruyor ya da oyuncunun sonraki kararını değiştiriyorsa anlamlıdır.
 
 ## Değişmez kurallar
 
@@ -36,7 +45,7 @@ Dört Apex'in en az ikisi oyuncunun gerçek planını değiştirmelidir. Bu iki 
 - Delayed event gerçek projectile/contact sayılmaz; görünür sonuç neyse event modeli onu temsil eder.
 - Stored veya delayed güç finite olmalıdır. Kendi çıktısını okuyup kendini yeniden dolduramaz.
 - Oynanış limitiyle sahte denge kurulmaz. Büyüyen değer Quality matematiğiyle dengelenir; keyfi maksimum konmaz.
-- Dört sibling yaklaşık aynı toplam güç bandında kalır fakat aynı gameplay kararını tekrarlamaz.
+- Bütün siblingler yaklaşık aynı toplam güç bandında kalır fakat aynı gameplay kararını tekrarlamaz.
 
 ## Her Apex kaydında zorunlu açıklama
 
@@ -54,15 +63,16 @@ Dört Apex'in en az ikisi oyuncunun gerçek planını değiştirmelidir. Bu iki 
 
 ## Zorunlu otomatik kontroller
 
-- Yapı: Her Twist altında tam dört Apex ve her Apex'te tasarım metadatası.
+- Yapı: Her Twist `2–4` arası açık `apexTarget` taşır; gerçek çocuk sayısı buna eşittir ve her Apex'te tasarım metadatası vardır.
 - Parent: Hasar, ana/secondary çıktı, tüketim kapasitesi ve toplam güç gerilemez.
 - Rarity: Dört rank boyunca hiçbir sahip olunan değer düşmez.
 - Kimlik: Motor, zamanlama ve animasyon/Delivery recipe parent ile aynıdır.
 - Güç: Sibling'ler belirlenen güç bandını aşmaz.
 - Runtime: Her Apex gerçek combat action içinde saldırı üretir ve kendi özel motorunu çalıştırır.
 - Döngü güvenliği: Stored/delayed mekanikler yalnız gerçek dış kaynakları okur ve finite rezerv harcar.
-- Karar derinliği: Dört sibling benzersiz `decisionKey` taşır; en az iki tanesi plan değiştirir, bu ikisi en az iki farklı karar sınıfına aittir.
-- Kanıt çeşitliliği: Dört Apex en az üç farklı runtime kanıt imzası taşır. Aynı statın dört dağılımı aile olarak reddedilir.
+- Karar derinliği: Bütün siblingler benzersiz `decisionKey` taşır ve en az biri plan değiştirir.
+- Kanıt çeşitliliği: İki Apex en az iki, üç veya dört Apex en az üç farklı runtime kanıt imzası taşır.
+  Aynı statın farklı dağılımları aile olarak reddedilir.
 
 Detonation/Posture F1S3 ailesi bu sözleşmenin ilk referans uygulamasıdır.
 

@@ -3,6 +3,143 @@
 Bu kalip, materialize edilen her yeni Twist veya Apex ailesinde sirasi degistirilmeden uygulanir.
 Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 
+## Genel checkpoint kontrolu — 2026-08-28
+
+- --quick ve mevcut 20 hedefli F4/F5/F6/global audit tek bootta PASS. Runtime harness artik
+  acik --quick ile hedefli bayraklari birlikte calistirir; tek-basina quick guardi degismedi.
+- Global Chain: 853 kart / 23 action; destek-ok: 104 rota / 283 kart / 17 action.
+- Eski sabit Detonation miktarlari yerine onayli dinamik kapasite/potency ve gercek HP;
+  patlama sayisi Mark adedi degil pozitif-payload temaslari; cascade coklu fiziksel Chaini korunur.
+- Uc onayli LONG Apexin Quality 15'teki ucretli 3=3 baslangici ayrica raporlanir.
+  Quality 16 ve uzerinde iki Chain rolunden yavas buyume kontrolden gecti; oyun tasarimi degismedi.
+- Shared packet tek Chain / prepared-Crit per-contact packet her okta Chain ayrimi dogrulandi.
+- HTML/JS/audit syntax ve diff temiz. Yerelde --adjacent/exhaustive/browser yapilmadi.
+  GitHub yayin workflow'unun mevcut --adjacent kapisi korunmustur; remote sonuc ayrica okunur.
+
+## Son aile kontrolu: F6S6 Charge / Charge (2026-08-28)
+
+- 4 Twist / 16 Apex; ortak factory, frozen chargeFocus, dort Bow recipe/cue.
+- --charge-focus: 101 current-rank/high-parent kart / 81 gercek action / 75 faz PASS.
+- Native direct/hazirlik/banka/Detonation parent-rank ilerlemesi; %10 Base / saf %100 kimlik;
+  iliski+temas+guvence butcesi bagimsiz sayimla korunur. Genel Charge carpani/ucuncu attribute yok.
+- Eski banka Prepare'da ayrilir; eski+yeni bir kez harcanir. 0/1/120/240 Charge ve aradaki
+  Secondary saldirisinin rezervi calamamasi; bedelsiz manuel ve otomatik Release.
+- T1 eski/yeni banka ve guvence; 1 Charge kazanmak sifir-banka guvencesinden daha zayif degil.
+- T2 ilk-ok hazirlik / banka dagilimi, final dinamik Detonation; temas basina Chain ve 100
+  Chain'de gercek HP. Ek Salim iki Chain rolunden yavas, tum-gecmis-Legendary sentinel dahil.
+- T3 Parry/Dodge, ilk-basari, gercek hasardan sonra yeniden seri; invulnerability korunur;
+  120 basarida katsayi dogrusal, banka veya seriyle ikinci carpan yok.
+- T4 tek frozen devir; normal saldiri/basarisiz Prepare tuketmez; ayni-route / farkli-skill /
+  ayni-skill-baska-route ayrimi, Sharpshoot alici, sifir-bankada kendini beslememe ve reset.
+- Dort ayri core; komsu benzerligi .80. Common referans fark %0.84; Apex referans butceleri esit.
+- --charge-specs 36 kart / 44 action / 43 faz; --charge-chain 100 kart / 121 action / 77 faz PASS.
+- Combat sonrasi idle-bow gorsel eklemesi izole gercek-function testiyle dogrulandi: artan
+  enerji/devir/reset/olum ve Parry/counter/sword onceligi. Combat kapi gereksiz tekrarlanmadi.
+- HTML/audit/harness parse ve diff temiz. Browser/playtest/genis matris/commit/push yok;
+  referans guc esitligi gercek DPS veya exhaustive-history sertifikasi degildir.
+
+## Onceki aile kontrolu: F6S5 Charge / Affliction (2026-08-28)
+
+- 4 Twist / 16 Apex; ortak factory, frozen chargeAffliction ve dort Bow recipe/cue.
+- --charge-affliction: 100 current-rank/high-parent kart / 86 gercek action / 79 faz PASS.
+- Parent/rank direct, garanti hazirlik, native Bleed, dinamik Base Detonation ve iliski gucu;
+  Base %10 / kimlik 70-30; iki Chain rolunden yavas ucretli temas plani.
+- T1 eski snapshot / gercek tick / son tick / onceki farkli skill / yeni savunma yarasi ayrimi;
+  gercek Break tick hasari ve kaynak yara bittikten sonra korunan hazirlik kaydi.
+- T2 on ok yarasi, agir finalin tek hazirligi; clean/early Apex kosullari; yarayla final katkisini
+  birlikte fiyatlama; 100 Chain'de gercek HP ile native paketin ve bonusun kopyalanmamasi.
+- T3 yalniz READY yeni yarasi, tek/iki gercek saldiri, onceki eski yara ve yara uretmeyen hamle,
+  farkli skill, basarisiz/otomatik hamle izolasyonu ve dogrudan Release guvencesi.
+- T4 iki native tick, hazirlik var/yok, ayni/farkli Charge skill, ilk tick bonusu, guvence;
+  sifir banka/Mark/Chain uretimi ve bonus hasarinin T1'i yeniden beslememesi; reset temiz.
+- --charge-specs 36 kart / 44 action / 43 faz ve --affliction-charge 80 kart / 57 action / 60 faz PASS.
+- Dort ayri core; komsu benzerligi .7714. Common referans farki %1.67, Apex referans butceleri esit.
+  Gercek DPS/playtest veya tum history kombinasyonlarinin sertifikasi degildir.
+- HTML/audit/harness parse ve diff temiz; genis matris/browser/commit/push yok.
+
+## Onceki aile kontrolu: F6S4 Charge / Critical (2026-08-28)
+
+- 4 Twist / 16 Apex; ortak factory, frozen chargeCritical, dort Bow recipe/cue.
+- --charge-critical son gecis: 100 current-rank/high-parent kart / 83 action / 78 faz PASS.
+  Gercek HP/cift-hasar, saturasyon, savunma Breaki+artci+hazir Release birlesimi dahil.
+- Parent/rank direct, garanti hazirlik, Crit sansi ve Base Detonation gerilemez; %10 Base / 70-30.
+- T1 bagimsiz-Crit packet; ortak action-start Chain snapshoti; tek toplam hazirlik;
+  ayri ucretli katkida ikinci Crit veya Chain carpani yok.
+- T2 hazirliktan Crit sansina gercek yatirim; Prepare'da sonuc kaydi yok. %100 ve global-Crit
+  tasmasi garanti hazirliga doner; genel Crit Damage statina veya Precisiona degil.
+- T3 normal sonuc telafisi, eksik-can snapshoti ve ayni-route onceki normal sonuc. Baska gercek
+  saldiri tekrar kosulunu bozar. Butun bonuslar birlikte Crit avantajini gecmez; fazla pay garantiye.
+  Telafi ikinci Chain terimi almaz; 8/100 Chain gercek HP kontrolu Critin ustunlugunu korur.
+- T4 kaynak Crit -> sonraki gercek savunma bitisi -> temiz ucretsiz destek. Global/Lab force
+  Crit dahil destekte Crit yok; hazirlik/Detonation/recursive bilet yok. Her ok gercek bir Chain.
+- Kaynak+destek ortak dusuk yogunluklu temas plani; otomatik destek ilk oyuncu hamlesini calmaz.
+- Actor/route/faz gecmisi ve pending paketler resetlenir; preview, temas ve animasyon baglantisi.
+- --charge-specs 36 kart / 44 action / 43 faz ve --critical-charge 87 kart / 50 action PASS.
+- Dort ayri core; komsu benzerligi .8. Common referans butceleri esit, en yuksek Apex fark %0.35.
+  Bunlar gercek DPS/playtest esitligi veya tum history kombinasyonlarinin sertifikasi degildir.
+- HTML/audit/harness parse ve diff temiz; genis matris/browser/commit/push yok.
+
+## Onceki aile kontrolu: F6S3 Charge / Posture (2026-08-28)
+
+- 4 Twist / 16 Apex, ortak factory/compiler ve 4 ayri Bow recipe/cue.
+- --charge-posture: 100 current-rank/high-parent kart / 76 gercek action / 63 faz senaryosu PASS.
+- Parent/rank native hasar, hazirlik, Posture ve dinamik Base Detonation; %10 Base / 70-30;
+  destek-ok buyumesi, sifir banka ve saf-stat acilmamasi, preview/temas/animasyon kontrolu.
+- Gercek on-ok Breaki -> final; zaten Broken guvencesi; onceki farkli skillin gercek Postureu.
+- Prepare sonrasi dis Break / self-Release Break ayrimi, Parry / baska skill ayrimi,
+  Breakin ilk ve sonraki saldirilari; sifir Breakte Guvenli Pusu ek Postureu.
+- Gercek uygulanmis Posture aktarimi, overflow haric; sonraki saldiri sonunda tek kullanim,
+  ayni/farkli skill ve ayni/sonraki faz, basarisiz komut/Prepare bileti korur.
+- Artci native Postureu eksiltmez; erken savunma acilisi / gec gercek boss move bitisi.
+  Gec etki cozulmemis hazard/Parry-grace sonucunu bekler, ilk saldiriyi silemez.
+  Artcinin actigi Break kalan diziyi keser; Mark/Chain ve recursive bilet uretimi yok; reset temiz.
+- --charge-specs ve --charge-chain komsu regresyonlari PASS. Common referans fark %1.67,
+  komsu benzerligi .6286; playtest veya tum history kombinasyonlarinin sertifikasi degildir.
+- HTML/audit/harness parse ve diff temiz. Genis matris/browser/commit/push yok.
+
+## Onceki aile kontrolu: F6S2 Charge / Chain (2026-08-28)
+
+- Onayli 4 Twist / 16 Apex, 4 ayri core; ortak factory/compiler ve 4 Bow recipe/cue.
+- --charge-chain: 100 current-rank/high-parent kart / 121 gercek action / 77 faz PASS.
+- Tum kartlarda native parent/rank, tek hazirlik paketi, dinamik son-normal-ok Detonation,
+  Base %10 / 70-30, Primary savunma-bankasi ayrimi ve preview kontrol edildi.
+- Ana dizi + destek + esik oklari birlikte Primary Chain temas butcesini asmiyor.
+- Eslik bir sonraki gercek saldiridan sonra tek kullanim; ayni/farkli skill, ayni/sonraki faz,
+  bedelsiz destek, ek Mark/Detonation yok, Prepare bileti tuketmez, auto-Finish korunur.
+- READY history 0/1/iki ayni/iki farkli skill; savunma ve kendi Release'i haric.
+- 4/3 esik tum kalintilari gercek temasla; ek ok yeni ek ok tetiklemez ve hazirlik kopyalamaz.
+  Yuksek-Quality'de imkansiz Kesintisiz Salvo kosulunun payi garanti finalde korunur.
+- Komşu --charge-specs ve onceki --charge-detonation regresyonlari PASS.
+- Common Twist referans farki %5.07, komsu benzerligi .7429; bunlar playtest/DPS onayi degil.
+- HTML/audit/harness parse ve diff temiz. Genis matris/browser/commit/push yok.
+
+## Onceki aile kontrolu: F6S1 Charge / Detonation (2026-08-28)
+
+- Onayli 4 Twist / 16 Apex; ortak factory, dort engine, dort Bow recipe/cue ve Apex Design V2.
+- --charge-detonation: 84 current-rank/high-parent kart, 74 gercek action, 61 savunma fazi.
+- Prepare snapshoti, sifir/yuksek savunma basarisindan bagimsizlik, ucretsiz Release,
+  ilk-temas Detonation / agir final, gercek Mark-source history ve support-vs-Chain buyumesi.
+- Takip gercek saldirinin Mark/pulse uygulamalarindan sonra bir kez; sifir-Mark fallback,
+  ayni/sonraki faz ayrimi, kendi kendini tetiklememe. Devir rezervasyonu ve sifir-Markta self-feed yok.
+- Tum Apexler gercek actionda; parent/rank, Base %10 / 70-30, preview, pozitif temas ve reset.
+- Komşu Charge specs regresyonu 36 kart / 44 action / 43 faz PASS. Genis matris/browser/push yok.
+- Son takip-kaynak fiyatlamasi sonrasi aile PASS; Common Twist referans farki %1.90,
+  en yuksek Common Apex farki %3.30. HTML/audit/harness parse, boot ve diff temiz; playtest degil.
+
+## Son Spec kontrolu: Mark Burst F6 Charge Primary (2026-08-28)
+
+- Alti onayli Spec, ortak factory/compiler; Twist/Apex bu kaydin kapsaminda degildir.
+- Hedefli `--charge-specs`: 36 kart, 44 gercek action, 43 savunma fazi.
+- Prepare maliyeti ve sifir hasar, sonraki tur bedelsiz Release, Finish Turn auto-release,
+  eski bankanin prepare'da izole edilmesi, aradaki Secondary ile cift harcanmamasi, reset,
+  sifir/yuksek Charge, local Crit, iki-tick Bleed, dinamik Detonation ve gercek Chain delivery.
+- Mark Burst ve Sharpshoot karma/bare Primary: sifir ve 12 basarida ayni garanti hazirlik bonusu;
+  banka acilmaz. Uc legacy hazirlik payload'i sifir savunma basarisinda da calisir.
+- Pure Charge: garanti Primary bonusu + eski/yeni Charge icin ayni ucretli Secondary oran.
+  Fiyat referansi 4, gameplay cap degil. Normal Secondary max-bankalama degismedi.
+- Referans rarity spreadleri %4.43 / %8.02 / %2.86 / %6.12; playtest sonucu degildir.
+- F5 specs ve F5S6 regresyonlari, HTML parse, boot ve diff PASS. Browser/genis matris/push yok.
+
 ## 0. Tasarim sozlesmesi
 
 - F5 ve sonrasi icin dort Twist birlikte tasarlanir; her biri complete Twist Identity V1 tasir.
@@ -310,43 +447,49 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 
 ## F2S5 Chain/Affliction kabul listesi
 
-- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
-- [ ] T1 görünür wound volley, T2 Chain→Bleed Weight, T3 Bleed tick→Chain, T4 mevcut Bleed→Chain packet kimliğini korur.
-- [ ] Çoklu Bleed delivery'de bütün temaslar pozitif pay uygular; payların toplamı tam bir aksiyonluk Bleed paketine eşittir.
-- [ ] T3'ün gecikmeli Chain'i iki Bleed tickinde ayrı ayrı ödenir; T4 yalnız action-start Bleed ve Chain snapshotını okur.
-- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Bleed ve temiz hasar Apexleri ayrı liderlik testini geçer.
+- [x] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [x] T1 Taze Yara, T2 Kanlı Rezerv, T3 Yara Hafızası ve T4 Kan İzinde kimliğini korur.
+- [x] Çoklu delivery'de bütün temaslar pozitif yara payı uygular; payların toplamı tam bir aksiyonluk Bleed paketine eşittir ve direct/Bleed temas sayısıyla çoğalmaz.
+- [x] Her gerçek temas canlı Chaini okuyup tam `+1 Chain` üretir; final temas base Detonationı korur. Bleed tickleri Crit veya Chain üretmez.
+- [x] T2 yalnız action-start Chaini, T3/T4 yalnız action-start Bleedi okur; bu aksiyonun yeni Chain/yara çıktısı aynı paketi recursive büyütmez.
+- [x] Common kardeş güç oranı `1.20`yi aşmaz; bütün Apexler parent/rank ilerlemesi ve ayrı runtime kanıtı taşır.
 
 ## F2 komşu aile kabul listesi
 
-- [ ] Yeni aile, tamamlanmış bütün F2 komşularıyla aynı rarity geçmişleri altında karşılaştırma matrisine eklenmiştir.
-- [ ] All-Common Twist ve Apex aile ortalaması score/play farkı `%12`yi aşmaz.
+- [x] Altı tamamlanmış F2 ailesi saf All-Common karşılaştırmasına eksiksiz eklenmiştir.
+- [x] All-Common Spec farkı `%1.80`, Twist aile ortalaması `%6.74`, Apex aile ortalaması `%11.05`tir.
 - [ ] Bütün rarity geçmişlerinde tekil maksimum fark `%20`, bütün geçmişlerin toplam aile ortalaması farkı `%10` veya altındadır.
-- [ ] Farklı attribute çıktıları aynı sayıya zorlanmamış; kendi gerçek kullanım senaryolarında fiyatlanmıştır.
+- [x] Farklı attribute çıktıları aynı sayıya zorlanmamış; kendi gerçek kullanım senaryolarında fiyatlanmıştır.
 - [ ] `node tools/validate-runtime.cjs KnightRush.html --adjacent` ve `--quick` geçmektedir.
 
 ## F2S4 Chain/Critical kabul listesi
 
-- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
-- [ ] T1 artan Crit volley, T2 Chain→Crit çarpanı Weight, T3 Crit→canlı Chain feedback, T4 bağımsız Crit echo kimliğini korur.
-- [ ] Critical move-local kalır; global Crit/Precision sızdırmaz. Crit bonus Chain yalnız gerçek Critten sonra eklenir.
-- [ ] Ağır ok, volley, feedback ve echo animasyonları gerçek delivery ile eşleşir.
-- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Crit ve temiz hasar Apexleri ayrı liderlik testini geçer.
+- [x] Tam sayım `4 Twist / 12 Apex`; `apexTarget` dağılımı `3/4/3/2` ve gerçek çocuk sayılarıyla eşleşir.
+- [x] T1 Yukselen Nisan, T2 Yuklu Final, T3 Kritik Geri Besleme ve T4 Ikili Ritim kimliğini korur.
+- [x] Her gerçek temas canlı Chaini okuyup tam `+1 Chain` üretir; final temas base Detonationı korur.
+- [x] Critical move-local kalır; global Crit/Precision sızdırmaz. Gerçek Crit bonus Chain üretmez,
+  yalnız T3te sonraki temasın Chain katsayısını büyütür.
+- [x] Crit yalnız direkt temas hasarını çarpar; Detonationı çarpmaz. İhtimal `%100`de doğal olarak
+  sınırlandığında overflow gizli çarpana dönüşmez.
+- [x] Common kardeş güç oranı `1.20`yi aşmaz; her Apex parent/rank ilerlemesi, karar ayrımı ve runtime kanıtı taşır.
 
 ## F2S6 Chain/Charge kabul listesi
 
-- [ ] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
-- [ ] T1 full-bank volley, T2 Charge→Chain burst, T3 Chain×Charge echo, T4 temas başına ölçülü harcama kimliğini korur.
-- [ ] Bir Charge noktası bir kez harcanır; multihit bankayı çoğaltmaz ve temas fazlası Charge korunur.
-- [ ] Charge→Chain final temastan sonra çalışır; aynı saldırıyı geriye dönük prime etmez.
-- [ ] Dört rota mekaniklerine uygun ayrı animasyon recipe'si kullanır ve Apexler parent recipe ailesini korur.
-- [ ] Common kardeş güç oranı `1.20`yi aşmaz; relationship, Chain, Charge ve temiz hasar Apexleri ayrı liderlik testini geçer.
+- [x] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
+- [x] T1 Tam Boşaltım, T2 Zincir Ateşleme, T3 Rezonans ve T4 Ölçülü Atış kimliğini korur.
+- [x] Bir Charge noktası bir kez harcanır; multihit bankayı çoğaltmaz ve temas fazlası Charge korunur.
+- [x] Charge→Chain final temastan sonra çalışır; aynı saldırıyı geriye dönük prime etmez. Rezonans yalnız action-start Chain snapshotını okur.
+- [x] Dört rota mekaniklerine uygun ayrı animasyon recipe'si kullanır ve Apexler parent recipe ailesini korur.
+- [x] Common kardeş güç oranı `1.20`yi aşmaz; bütün Apexler parent/rank ilerlemesi ve ayrı runtime kanıtı taşır.
 
 ## F2 tam kapanış kabul listesi
 
-- [ ] Sayım `1 Form / 6 Specialization / 24 Twist / 96 Apex / 127 route / 508 rarity card`tır.
-- [ ] Her Specialization dört Twist, her Twist dört Apex taşır; her Twist gerçek runtime command üretir.
-- [ ] Altı F2 ailesi aynı komşu güç matrisinde test edilir; eksik aile sessizce matristen düşmez.
-- [ ] Chain/Crit guardrail hesabı action-start Chaini Crit ihtimali ve çarpanına aktarır.
+- [x] Sayım `1 Form / 6 Specialization / 24 Twist / 92 Apex` ve materialize `apexTarget` toplamıdır; route/ranked-card
+  toplamı gerçek Apex sayısından türetilir, eski `96 Apex / 127 route / 508 card` kotası zorlanmaz.
+- [x] Her Specialization varsayılan dört ayrışan Twist taşır. Her Twist için ideal hedef dört Apextir;
+  yalnız dördüncü/üçüncü kart dolgu olacaksa `apexTarget` üçe veya ikiye düşürülür. Her Twist gerçek runtime command üretir.
+- [x] Altı F2 ailesi aynı saf All-Common güç kapısında test edilir; eksik aile sessizce matristen düşmez.
+- [x] Chain/Crit guardrail hesabı action-start Chaini Crit ihtimali ve çarpanına aktarır.
 - [ ] `--quick`, `--adjacent`, browser smoke ve console error kontrolü geçmeden aile tamamlanmış sayılmaz.
 
 ## Base Attribute kabul listesi
@@ -358,16 +501,177 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] Base reserve receipt üzerinde saklanır, kaybolmaz ve authored gameplay cap taşımaz.
 - [ ] Base, Primary, direct parent ve rarity çıktıları gerilemez; bütün komşu aile testleri yeniden geçer.
 
-## F3 Specialization kabul listesi
+## Mark Burst F3 Specialization kabul listesi
 
-- [ ] Altı route ve dört rarity ile `96` sentez kombinasyonu gerçek runtime command üretir.
-- [ ] Bütün rotalar `SINGLE`, bir gerçek temas, `+1 Chain`, pozitif Base Mark ve `AFTER_FINAL_CONTACT` Posture taşır.
-- [ ] Mark rotası parenttan görünür biçimde fazla Mark üretir ve Mark tüketmez; Chain rotası pozitif Chain scaling taşır.
-- [ ] Saf Posture kardeşlerinin en yüksek düz Posture çıktısına sahiptir.
-- [ ] Crit hem Health hem Posture'u etkiler; Bleed iki tick ve Break uygulama bonusu `%25`; Charge tek banka tüketimidir.
-- [ ] Rarity yükselirken damage, Mark, Posture ve birleşik güç gerilemez; kardeş spread `%12`yi aşmaz.
+- [x] Altı route gerçek runtime command üretir: Posture/Detonation, Posture/Chain,
+  Posture/Posture, Posture/Critical, Posture/Affliction ve Posture/Charge.
+- [x] Bütün rotalar Posture Primary, temel `1 Mark x 10 Detonation` ve görünür temas başına tam
+  `+1 Chain` taşır; hiçbir rota Mark üretmez.
+- [x] Posture/Chain kısa `SEQUENTIAL` multihittir. Temas sayısı Chain Primary'den daha yavaş büyür,
+  toplam direct/Posture bedava çoğalmaz. Her ok global canlı stack başına `%5` Chain hasarını
+  kullanır; skill-specific `extraChainBonus = 0` kalır.
+- [x] Diğer beş rota tek gerçek temastır. Detonation ek tüketim açmadan tek-Mark patlamasını
+  güçlendirir; saf Posture kardeşlerinin en yüksek düz Posture çıktısına sahiptir.
+- [x] Critical yalnız direct Health hasarını etkiler ve Precision üretmez. Affliction tek mütevazı
+  iki-tick Bleed, Charge tek finite direct-damage banka tüketimidir; Twistten önce çapraz ilişki yoktur.
+- [x] Ucuz All-Common kimlik kapısı parent mirasını, animasyonu ve kardeş spreadinin `%15` altında
+  kalmasını doğrular. Tam rarity/Twist/Apex matrisleri aile kapanışına kadar çalıştırılmaz.
 
-## F3 tam kapanış kabul listesi
+## Mark Burst F3S1 Posture/Detonation kabul listesi
+
+- [x] Sayım `4 Twist / 16 Apex`; bütün yollar Base Detonation, Posture Primary ve Detonation
+  Secondary receiptlerini ayrı ve ücretli taşır.
+- [x] Gerilim Okuması action-start Postureu, Taşan Kırılma yalnız native overflowu, Kırık Hükmü
+  action-start Break penceresini, Artçı Fitil ise başarısız Breakten sonraki gerçek Postureu okur.
+- [x] Her hareket tek fiziksel ok ve `+1 Chain`dir. Overflow halkası ve fitil patlaması temassızdır;
+  Health contact, Crit veya Chain olayı üretemez.
+- [x] Ek Mark Apexleri yalnız gerçekten bulunan Markı tüketir. Fitil finite, tek-kullanımlık ve
+  recursive değildir.
+- [x] Dört ayrı Bow recipe mekanik zamanlamayı gösterir; sahte ok veya sahte temas çizmez.
+- [x] Ucuz boot audit’i structure, Base receipt, parent/Apex mirası, kimlik ve All-Common kardeş
+  balance sınırını doğrular.
+
+## Mark Burst F3S2 Posture/Chain kabul listesi
+
+- [x] Sayım `4 Twist / 16 Apex`; Kırılma Rallisi, Zırh Yankısı, Çifte Tempo ve Baskı Takibi
+  Posture→Chain yönünde dört ayrı ilişki kurar ve komşu Chain/Posture ailesini kopyalamaz.
+- [x] Her route en az iki gerçek temas, temas başına doğal `+1 Chain`, global canlı stack başına
+  `%5` Chain read ve final temasta temel bir-Mark Detonation taşır. Parentta skill-specific
+  `extraChainBonus` yoktur; Chain Primary daha güçlü scaling kimliğini korur.
+- [x] Toplam direct/Posture temas sayısıyla çoğalmaz. Echo Postureu açılışa yükler; Tempo ağır ve
+  hızlı vuruşları ayırır; Rally bonusu yalnız Breakten sonraki gerçek temaslara gider.
+- [x] Pursuit hedef Postureunu yalnız action-startta okur: `%50` bir takip oku, Apex `%35` erken
+  eşik ve `%80` ikinci ok sağlar. Hareketin kendi Postureu aynı actionda yeni temas açamaz.
+- [x] On altı Apex parent temaslarını, Postureu, directi ve Detonationı geriletmez; her Twist dört
+  gerçek karar taşır, kota dolduran sahte Apex yoktur.
+- [x] Dört ayrı sabit maliyetli Bow recipe/cue mekanik zamanlamayı gösterir; fiziksel echo ve takip
+  okları gerçek projectile/contact olarak çizilir.
+- [x] Ucuz closure/boot auditi structure, kimlik, parent/Apex mirası, global `%5` Chain read,
+  Pursuit snapshotı ve All-Common kardeş balance sınırını doğrular.
+
+## Mark Burst F3S3 Posture/Posture kabul listesi
+
+- [x] Sayım `4 Twist / 14 Apex`, dağılım `3 / 4 / 4 / 3`tür; Crusher ve Reserve'e kota için
+  dördüncü Apex eklenmez.
+- [x] Saf rota Common seviyede bütün Posture kardeşlerinden daha yüksek düz Posture taşır ve
+  `Break Power` statını açar.
+- [x] Break Power yalnız bu hareketin Postureu Break açarsa taban `x1.50` pencereye lineer eklenir;
+  tetikleyen temas yararlanmaz, Break sonunda temizlenir, AP/Resolve/süre/kaynak üretmez.
+- [x] Ezici Ok tek ağır temas; Kırma Serisi tek toplam Postureu sıralı gerçek temaslara böler;
+  Artçı Kırık temassız Posture pulseları; Saklı Baskı başarısızlıkta tek-kullanımlık sonraki-source
+  Posture ve Break Power rezervidir.
+- [x] Fracture Health, Chain, Crit veya Mark olayı değildir. Reserve tüketilirken temizlenir ve
+  kendisini tekrar kuramaz. Sequence okları doğal Chain üretir fakat özel Chain katsayısı açmaz.
+- [x] On dört Apex parent direct/Posture/Detonation/Break Power çıktısını geriletmez ve parent
+  delivery/timing kimliğini korur.
+- [x] Dört ayrı sabit maliyetli Bow recipe/cue ile hedefli closure/boot auditi structure, causality,
+  Posture liderliği, Break state temizliği, fracture/reserve sınırı ve Common balanceı doğrular.
+
+## Mark Burst F3S4 Posture/Critical kabul listesi
+
+- [x] Sayım `4 Twist / 15 Apex`, dağılım `4 / 4 / 3 / 4`tür; Kritik Artçıya kota için sahte
+  dördüncü Apex eklenmez.
+- [x] Bütün Critler move-local ve Precision-free kalır. Crit Damage statı açılmaz, şans `%100`
+  doğal tavanda kesilir ve bir-Mark Detonation hiçbir rotada Crit atmaz.
+- [x] Kritik Delici tek okta direct Health ve immediate Postureu aynı yerel Crit ile çarpar.
+  Çatlak Merdiveni bağımsız Crit atan gerçek oklarla yalnız sonraki temaslara ücretli Posture ekler.
+- [x] T2 ok yoğunluğu Chain/Critical ağacından daha yavaş ölçeklenir ve Common ile Legendaryde
+  daha az ok taşır. Yine de authored cap yoktur; her gerçek ok doğal Chain ve global canlı `%5`
+  Chain read kullanır, skill-specific katsayı açılmaz.
+- [x] Kritik Artçı pulseu temassızdır; Health/Chain/Crit/Mark üretmeden Break açabilir. Gedikten
+  Atış sabit iki oktur; yalnız ilk okun açtığı Break final Crit şansını büyütür ve Full Breach
+  yalnız Break + final Crit birleşiminde finite direct paket verir.
+- [x] Shotgun bilinçli olarak ertelenir; bağımsız pellet Critleri ile temas Chaini bu ailede aynı
+  anda büyütülmez. Dört ayrı Bow recipe/cue gerçek temas ve temassız fracture ayrımını korur.
+- [x] Ucuz closure/boot auditi structure, kimlik, parent/Apex mirası, Crit sınırları, T2 rarity
+  yoğunluğu ve All-Common kardeş balanceını doğrular; geniş matris varsayılan değildir.
+
+## Mark Burst F3S5 Posture/Affliction kabul listesi
+
+- [x] Sayım `4 Twist / 16 Apex`, dağılım `4 / 4 / 4 / 4`tür. Bütün rotalar tek gerçek ok,
+  doğal `+1 Chain`, tek logical iki-tick wound ve final bir-Mark Detonation taşır.
+- [x] Posture yeni yaradan önce çözülür. Gedik Yarası yalnız bu okun açtığı Breakte yeni yarayı
+  güçlendirir; action-start Broken hedef veya dış Break self-Break bonusu vermez.
+- [x] İz Baskısı ve Yara Kopuşu yalnız action-start Bleedi snapshotlar. Yeni uygulanan yara aynı
+  saldırının Posture veya rupture hesabına giremez; mevcut yara tüketilmez.
+- [x] Sinsi Kırık yalnız başarısız self-Breakte tick-Posture kurar. İlk-tick ve iki-ticke bölme
+  aynı toplam paketi korur; tickte Bleed hasarı Posturedan önce çözülür.
+- [x] Yara Kopuşu için hem mevcut action-start yara hem bu okun açtığı Break gerekir. Rupture
+  standart wound Break çarpanıyla fiyatlanır; Crit/Chain/Mark üretmez ve recursive değildir.
+- [x] Mixed rota saf Posture Break Powerını açmaz. Multi-hit/shotgun, özel Chain katsayısı, ikinci
+  logical yara veya tick-fed kaynak yoktur. Dört Bow recipe/cue durumları ayrı gösterir.
+- [x] Ucuz closure/boot auditi 4/16 structure, kimlik, parent/Apex mirası, tek-temas/tek-wound
+  sınırı, delayed paket eşliği ve All-Common kardeş balanceını doğrular.
+
+## Mark Burst F4S3 Critical/Posture kabul listesi
+
+- [x] Dört Twist, açık `4/4/4/3` Apex hedefi ve 15 Apex Design V2 kaydı bulunur.
+- [x] Tek verdict, düşük yoğunluklu bağımsız salvo, Precision cashoutu ve ortak-roll shotgun
+  ayrı motorlardır; Critical Primary ile dinamik Base Detonation korunur.
+- [x] T2 Chain komşusundan yavaş büyür; packet tek Chain/roll/update taşır. Break Power açılmaz.
+- [x] Cashout pre-reset Precisionı okur. Full Focus Precisionla garantilenen Criti, reserve yalnız
+  başarısız cashoutu, ödül oku yalnız cashoutun kendisinin açtığı Breaki kabul eder.
+- [x] Reserve finite ve non-stackingdir; ödül oku Crit/Precision/Detonation/recursion üretmez.
+- [x] Dört ayrı Bow recipe, cashouta özel Precision cue ve ödül okunun gerçek projectile çizimi bağlıdır; görsel smoke henüz
+  yapılmamıştır. Headless doğrulama görsel kalite onayı sayılmaz.
+- [x] `--critical-posture` 76 rarity kartı ve 34 deterministik gerçek action ile parent/rank,
+  saf Posture liderliği, sibling balance ve combat edge-case kontrollerini geçti. Common Twist
+  spreadi son Crit Damage dağılımı düzeltmesinden sonra `%5.62`; geniş/brute-force matris çalıştırılmadı.
+
+## Mark Burst F4S6 Critical/Charge kabul listesi
+
+- [x] `4 Twist / 16 Apex`, Apex Design V2; her Twistte plan değiştiren Apex mevcut.
+- [x] Critical/Precision, tek banka ödemesi, parent/rank ve uncapped final Base Detonation korunur.
+  Genel Crit Damage, Posture/Break veya AP/Resolve kancası eklenmez.
+- [x] Arayan Salvo ilk Critte biter; kalan direct/Charge/Detonation son gerçek oka gider.
+  Sıfır Charge tek tam ok verir; gizli ok/RNG/Chain veya kayıp paket yoktur.
+- [x] İade harcanan Chargeı aşmaz. Son Çare final oka kadar Crit gelmemesini okur;
+  final Crit bonusu silmez. Natural Crit ve önceki farklı saldırı koşulları çalışır.
+- [x] Odak Bataryası gerçek hasar paketi üzerinden Chance satın alır; yüksek Charge karesel
+  çarpan açmaz. Son AP ödeme öncesi okunur. Precision taşması tek kullanımlık, nonstacking izdir.
+- [x] Dinamo Quality ödülüdür; harcanan Chargela kendi kendini büyütmez. İlk Parry/Dodge
+  başarısında bir kez çalışır; kullanılmayan paket savunma sonunda, bütün state resetlerde silinir.
+- [x] Ek ok büyümesi normal/Uzun Arayış için hem Primary hem Secondary Chainin altındadır;
+  current-rank, yedi eşit-Quality curve sentineli ve yüksek-geçmiş karşılaştırması geçti.
+  F4S3/S4 shotgun üçlü başlangıç ve tek-paket hasarını koruyarak daha yavaş saçma büyümesi kullanır.
+- [x] F4S6 `87 kart / 50 action`, Common Twist spread `%1.02`. Aynı bootta F4S3 `76/34`,
+  F4S4 `104/34`, F4S5 `84/43` regresyonları geçti. Parse/boot/diff temiz.
+- [x] Dört Bow recipe/cue ve Dinamo HUD başsız animasyon kontrolünden geçti.
+- [ ] Gerçek görsel browser smoke / playtest; maliyet politikası gereği bu adımda yapılmadı.
+
+## Mark Burst F4S5 Critical/Affliction kabul listesi
+
+- [x] `4 Twist / 16 Apex`, Apex Design V2; her Twistte en az bir plan değiştiren Apex.
+- [x] Genel Crit Damage/Bleed Power veya Break/Posture kancası yok; ortak final Detonation korunur.
+- [x] Kritik Yara natural/ilk-kan koşulları ve daha küçük non-Crit yara davranışı doğrulandı.
+- [x] Kanlı Salvo Common'da en az iki ok atar; Chain komşusundan daha az yoğun büyür.
+  Temel Bleed bölünür, önceki Critler yalnız sonraki yaraları büyütür; final Crit kendi yarasını verir.
+- [x] Saklı Sızı sonraki ilk gerçek temasta bir kez tüketilir; tick tüketmez, aynı action kendi
+  izini açmaz, tekrar kullanım izi büyüterek beslemez. Farklı skill/Crit tüketici Apexleri çalışır.
+- [x] Yara Avcısı başlangıç yarasını tüketmez ve kendi yeni yarasını okuyamaz. Son-tick ve
+  önceki-farklı-saldırı snapshotları, boş hedef ve gerçek direct damage katkısı doğrulandı.
+- [x] 80 current-rank kart + 4 yüksek-geçmiş sentinel, 43 action; parent/rank ve güç kontrolleri geçti.
+  Common Twist referans spreadi `%0.30`; F4S4 104 kart / 34 action regresyonu geçti.
+- [x] Dört Bow recipe/cue ve iz HUD işareti headless kontrol edildi. HTML parse, boot, diff temiz.
+- [ ] Görsel browser smoke / gerçek playtest (maliyet politikası gereği bu adımda çalıştırılmadı).
+
+## Mark Burst F4S4 Critical/Critical kabul listesi
+
+- [x] Dört Twist ve her birinde dört Apex; genel Crit Damage statı yalnız saf rotada açıktır.
+- [x] Karma/Form generic Crit Power payı Chance/Precisiona döner; Base ve 70/30 makbuzları,
+  ücretli doğal taşma ve isimli koşullu çarpanlar korunur. Chance %100ü geçmez.
+- [x] Bağımsız salvo, Precision hükmü, Crit-cascade ve ortak-roll saçma gerçek aksiyon üretir.
+  Yeni Apexlerde Break/Posture koşulu yoktur.
+- [x] Cascade ilk oku ve erken bitişte son gerçek temastaki Detonationı korur; görünmeyen
+  oklar RNG/Chain üretmez. %100 Crit sonlu Quality-paid planı tamamlar.
+- [x] Packet tek roll/Precision update ve toplam tek Chain taşır. Retention mevcut Precisionı
+  aşmaz; rotation/repeat aynı aktörün gerçek önceki saldırısını okur; execution action-starttır.
+- [x] F4S4 104 current-rank kart / 34 action, F4S3 76 kart / 34 action aynı bootta geçti.
+  F4S4 Common Twist spreadi `%7.16`; parent/rank ve Chain komşusu yoğunluk kontrolleri geçti.
+- [x] Dört Bow recipe bağlıdır; cascade için ayrı recipe eklendi.
+- [ ] Görsel browser smoke: maliyet politikası gereği yapılmadı; headless sonuç görsel onay değildir.
+
+## Legacy Sharpshoot F3 tam kapanış kabul listesi
 
 - [ ] Sayım `1 Form / 6 Specialization / 24 Twist / 96 Apex / 127 route / 508 rarity card`tır.
 - [ ] Her Specialization dört Twist, her Twist dört Apex taşır; bütün rotalar gerçek runtime command üretir.
@@ -399,8 +703,9 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 
 - [ ] Critical/Mark Aim Marki tuketmeden okur; Bounty yalniz gercek Critten Mark uretir; Tracking
   bagimsiz temas Critleri sonrasi tek toplam Mark birakir; Packet tek ortak Crit ve tek toplam Chain kullanir.
-- [ ] Critical/Chain Crescendo canli Chain okur; Weight baslangic Chainini Crit carpanina; Feedback
-  gercek Criti ek Chain odulune; Lock baslangic Chainini Crit sansina cevirir. Mark veya Chain tuketilmez.
+- [x] Critical/Chain Keskin Akis mevcut Precisioni Chain katsayisina; Yuklu Hazne action-start
+  Chaini ilk basarili Crit carpanina; Kritik Artci gercek Crit sayisini fiziksel Critsiz finishera;
+  Zincir Kilidi action-start Chaini opener Crit sansina okur. Chain tuketilmez ve recursion acilmaz.
 - [ ] Critical/Posture Verdict Health/Posture'u ayni Critle carpar; Volley toplam Posture'u gercek
   temaslara boler; Fracture Critten hasarsiz/Chainsiz Posture echo; Packet ortak Crit sonucu uretir.
 - [ ] Her foundation Twist tam dort Apex cocuguna sahiptir. A1 iliski, A2 Crit guvenilirligi,
@@ -419,6 +724,130 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] Affliction/Affliction kardeşler arasında en yüksek Bleed'i taşır; Charge bankayı bir actionda bir kez kullanır.
 - [ ] Stable Bleed süresi bütün raritylerde iki tick kalır; potency, damage, Mark ve delivery rank yükselirken gerilemez.
 - [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` 4 Form kartı, 96 Spec historysi ve `%13` sibling bandını geçirir.
+
+## F5S1 Affliction/Detonation Twist ve Apex kabul listesi
+
+- [x] Tam sayim `4 Twist / 16 Apex`; hepsi tek fiziksel ok, tek dogal Chain, iki tam Bleed ticki
+  ve ortak uncapped Base + Secondary Detonation kapasite/potency motorunu korur.
+- [x] Taze Yirtik yalniz yeni yarayi anlik okur ve ticklerini eksiltmez; Damar Besleme yalniz
+  action-start eski yaranin kalan ticklerini guclendirir, sure yenilemez.
+- [x] Olgun Fitil bu hareketin ticklerinden sonlu tek-kullanimlik odul hazirlar. Yalniz gercek
+  Mark patlamasi tuketir; fitil kendi hasarindan yeni fitil uretemez.
+- [x] Sonmeyen Yara sifir-Mark ve ucretli eksik-kapasite telafisi verir; eldeki gercek Marki
+  tutmaz, azaltmaz veya authored cap ile sinirlamaz.
+- [x] Butun Apexler `Apex Design V2`; kosul calismadiginda direct, native yara ve Detonation
+  ilerler. Crit/Precision/Posture/Break/ek temas veya generic Chain scaling sizmaz.
+- [x] Dort ayri Bow cue combat gercegindeki tek oku korur; Bleed HUD pending/ready fitili gosterir.
+- [x] Hedefli `--affliction-detonation`: 84 kart, 67 real action, 16 kosul, overlap/reset,
+  miras, receipt, kimlik ve komsu-agac kapilari PASS; brute-force matris kosulmaz.
+
+## F5S2 Affliction/Chain Twist ve Apex kabul listesi
+
+- [x] Tam sayim `4 Twist / 16 Apex`; hepsi gercek sequential oklar, temas basina tam `+1 Chain`,
+  pozitif direct/yara payi ve final temasta ortak dinamik Base Detonation tasir.
+- [x] Tek toplam iki-tick yara temaslara bolunur, temas sayisiyla cogalmaz. Baslangic Chaini
+  normal hasarda calisir; ayni-action iliskileri yalniz kendilerinden once uretilen Chaini okur.
+- [x] Canli Dikis yalniz onceki gercek oklarin yeni Chainini yeni yaraya okur; Hazir Iplik
+  baslangic Chainini acikca ve daha dusuk payla opt-in eder.
+- [x] Ince Dizi density lideridir fakat destek-ok egrisi Primary Chain'den yavas buyur.
+  Uzun Dizi ayni derinlikte yalniz bir ucretli ok ekler; toplam direct/yara kopyalanmaz.
+- [x] Kanli Kapanis action-start eski yaradan final Chain alir ve yarayi tuketmez. Ilk Kesik
+  butcesinin cogunu normal kosula, kucuk payini sifir-yara sigortasina verir.
+- [x] Gec Kadans yalniz action-start Chainini yeni yaranin ikinci tickine okur; self-generated
+  Chain geriye donuk okunmaz ve Bleed tickleri Chain uretmez.
+- [x] Butun Apexler `Apex Design V2`; Crit/Precision/Posture/Break, yeni kalici kaynak veya
+  generic Chain Damage stati sizmaz. Dort Bow recipe gercek combat temaslariyla eslesir.
+- [x] Hedefli `--affliction-chain`: 84 kart, 42 real action, 16 Apex kosulu, miras/receipt,
+  kimlik, balance, tick ve animasyon kontrolleri PASS; brute-force matris kosulmaz.
+
+## F5S3 Affliction/Posture Twist ve Apex kabul listesi
+
+- [x] Tam sayim `4 Twist / 16 Apex`; native iki-tick yara, light-bow Posture, gercek temas
+  basina Chain ve final dinamik Base Detonation korunur. Break Power acilmaz.
+- [x] Ilk Catlak yeni yarayi once uygular; yalniz temiz action-start hedefte ek Posture verir.
+  Eski Iz guvencesi temiz-hedef odulunden kucuktur.
+- [x] Basincli Yaranin tek ucretli paketi self-Breakte ilk, basarisiz Breakte ikinci ticke gider.
+  Iki dal ayni paketi kopyalayamaz; delayed yara Chain/Mark/Posture uretmez.
+- [x] Dikenli Dizi toplam direct/yara/Postureu pozitif gercek temaslara boler. Onceki yeni-yara
+  payi yalniz sonraki Postureu besler; her ok tam `+1 Chain` uretir.
+- [x] T3 destek-ok egrisi Primary ve Secondary Chain rollerinden yavas buyur; Long ayni
+  derinlikte yalniz bir ucretli ok ekler, Agir Kapanis toplam Postureu cogaltmaz.
+- [x] Acik Zirh yalniz action-start Broken durumunu okur ve Breaki tuketmez. Hazirlik Ucu
+  Broken olmayan hedefte Posture vererek pencereyi hazirlar.
+- [x] Butun Apexler `Apex Design V2`; Crit/Precision/genel Chain scaling, Break Power, yeni
+  meter/banka veya gorunmez temas sizmaz. Dort Bow recipe combat temaslariyla eslesir.
+- [x] Hedefli `--affliction-posture`: 84 kart, 46 real action, 16 Apex kosulu, miras/receipt,
+  kimlik, balance, iki tick, Break ve animasyon kontrolleri PASS; brute-force matris kosulmaz.
+
+## F5S4 Affliction/Critical Twist ve Apex kabul listesi
+
+- [x] Tam sayim `4 Twist / 16 Apex`; native iki-tick yara, direct-only yerel Crit, gercek
+  temas basina Chain ve final dinamik Base Detonation korunur.
+- [x] Keskin Akis tek ucretli yara paketini Critte ilk, Non-Critte ikinci ticke yollar;
+  toplam paket kopyalanmaz. Ani Yirtik yalniz direct Crit dalinda anlik yara verir.
+- [x] Kor Zehir Non-Crit sonucunu iki ticke aktarir; temiz hedef ve son AP Apexleri yalniz
+  kendi action-start kosullarini okur. Bleed veya Detonation Crit atmaz.
+- [x] Sabirli Dizi tek toplam yarayi pozitif gercek oklara boler; onceki Non-Critler yalniz
+  sonraki yara payini buyutur ve her ok tam `+1 Chain` uretir.
+- [x] T3 destek-ok egrisi `2/2/2/3`, Long `3/3/3/4`; Primary Chain `4/5/6/7`, Secondary
+  Chain `4/4/4/5`. Agir Kapanis toplam direct hasari cogaltmadan final payini buyutur.
+- [x] Kan Ritmi onceki Crit sonucunu bir kez okur; Crit paketi yaraya, Non-Crit/ilk kullanim
+  direct darbeye yonlendirir. Farkli-skill ve ayni-hareket Apexleri yeni token yaratmaz.
+- [x] Hicbir rota Precision, genel Crit Damage stati, Critleyen Bleed/Detonation, ekstra Chain
+  katsayisi, kalici meter veya gorunmez temas kazanmaz. Dort Bow recipe combatla eslesir.
+- [x] Hedefli `--affliction-critical --affliction-specs`: F5S4 84 kart / 21 real action,
+  F5 specs 36 kart / 16 action PASS; common spread `%2.24`, maksimum Apex spread `%6.72`,
+  komsu benzerligi `.7429`. Brute-force matris kosulmaz.
+
+## Mark Burst F5S5 Affliction/Affliction kabul listesi
+
+- [x] `4 Twist / 16 Apex`, dort signature engine, her Twistte iki farkli plan-degistiren
+  Apex sinifi vardir. Saf parentin iki ticki, native yara ve dinamik Base Detonation korunur.
+- [x] Yogun Kanama yalniz kendi yeni yarasina Yara Gucu verir. Stat toplam Bleede dahildir;
+  ayni Quality ikinci kez iliski gucu sayilmaz. Ilk Kan/ayni-hareket tekrari ve direct Apexleri calisir.
+- [x] Yeniden Ac eski kalan iki tick toplamindan tek anlik sonuc uretir; eski tickleri tuketmez
+  ve yeni yara ayni okumaya girmez. Son tick, farkli skill ve daha kucuk bos-hedef guvencesi vardir.
+- [x] Gec Sizi native ilk ticki azaltmaz; bonus yalniz ikinci ticktedir. Ilk saldiri ve eski
+  yaranin son ticki kosullari gercek runtime'da ayrilir; iki savunma tickinde yara sona erer.
+- [x] Katmanli Yara tek toplam native paketi gercek oklara boler. Yalniz onceki native paylar
+  sonraki bonusu besler; eski yara ve bonuslar kendilerini carpamaz. Fresh/Long/Repeat calisir.
+- [x] Ek oklar `2/2/2/3`, Uzun `3/3/3/4`; Primary `4/5/6/7`, Secondary `4/4/4/5` altindadir.
+  Sparse yuksek-Quality problari da iki Chain roluyle buyume sirasini korur.
+- [x] Dort Bow recipe/cue ve tum 20 Common route gercek aksiyonla denetlendi. Temassiz
+  yirtilma/tickler Crit, Mark veya Chain uretmez. Her gercek ok tam bir dogal Chain verir.
+- [x] Hedefli test 84 kart / 43 action PASS; Common Twist farki `%2.24`, en yuksek Apex
+  farki `%1.54`. Diger Form/Spec/Twist/Apex raritylerinin kartezyen carpimi calistirilmadi.
+- [x] Son `--affliction-focus --affliction-critical --affliction-specs` PASS. Ayni bootta
+  F5S4 84 kart / 21 action ve F5 specs 36 kart / 16 action regresyonlari gecti. Yuksek eski-yara,
+  gercek ard arda saldiri ve faz/Lab attack-history resetleri dogrulandi. Parse/diff temiz.
+- [ ] Gorsel browser smoke / playtest. Headless cue cizimi gorsel kalite onayi degildir.
+
+Alternatif: tum saf Twistlere ayni global Bleed carpani eklemek elendi; kimlikleri tekrarlar
+ve eski/yeni yarayi iki kez buyutme riski tasir. T1 native guc, T2 eski yara, T3 gecikme,
+T4 ayni-action native pay okumasiyla ayrilir; yeni meter veya artifact bagimliligi gerekmez.
+
+## Mark Burst F5S6 Affliction/Charge kabul listesi
+
+- [x] `4 Twist / 15 Apex`, dagilim `4/4/3/4`; ucuncu Twiste dolgu dorduncu kart eklenmedi.
+  Her Twist iki farkli plan-degistiren karar sinifi tasir. Son AP kosulu yoktur.
+- [x] Parent Charge impact, tek banka odemesi, native iki tick, tek dogal Chain ve dinamik
+  Base Detonation korunur. Her katmanda Base %10 ve karma 70/30 receiptleri dogrulandi.
+- [x] Yuklu Yara linear Chargedan ek yara alir; Bos Hazne ve son tamamlanmis hasarsiz savunma
+  kosullari calisir. Gercek hasar kusursuzlugu bozar, invulnerability ile yok sayilan temas bozmaz.
+- [x] Guard iki fazda gercek defense gaini okur, bankayi tuketmez; Parry ve ilk saldiri
+  Apexleri ayridir. Iade/bonus Charge kendiliginden defense eventi veya yeni yara tetigi degildir.
+- [x] Devour `max(banka, faz kazanci)`ni tek kez harcar; finalize tuketileni geri getirmez.
+  Overlapte ucretli oranlar toplanir, ayni Chargein firsat degeri tekrar odenmez. Iki tickte biter.
+- [x] Return ilk tickten sonra ve normal bankalamadan sonra tek iade verir; toplam harcanani
+  asmaz. Kullanilamayan ucretli pay yaraya gider; sifir Charge tekrar kendi iadesini kuramaz.
+- [x] Dort Bow recipe/cue ve Charge HUD metinleri headless olarak cizildi. Delayed hasar
+  projectile, Crit, Chain veya Mark uretmez. State reset/expiry ve yuksek kaynak problari gecti.
+- [x] `--affliction-charge --affliction-focus --affliction-specs` PASS: F5S6 80 kart / 57 action /
+  60 savunma fazi; F5S5 84 kart / 45 action; specs 36 kart / 16 action. Common net referans
+  butceleri esit; gercek DPS/banka degeri senaryoya gore degisir. Parse/diff temiz.
+- [x] F5S5 T1A3 Son Atis yerine Ust Uste Kesik guncellendi. Ayni onceki skill/route yeni yarayi
+  guclendirir; son AP tek basina bonus vermez. Eski route ID ve parent/rank korunur.
+- [ ] Gercek gorsel browser smoke / playtest; genis test matrisi kullanilmadi.
 
 ## F4S4 Critical/Critical Twist kabul listesi
 
