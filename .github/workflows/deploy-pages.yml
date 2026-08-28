@@ -31,9 +31,6 @@ jobs:
       - name: Validate fast runtime and closure contracts
         run: node tools/validate-runtime.cjs KnightRush.html --quick
 
-      - name: Validate F2 adjacent-family balance matrix
-        run: node tools/validate-runtime.cjs KnightRush.html --adjacent
-
       - name: Build single-file Pages artifact
         shell: bash
         run: |

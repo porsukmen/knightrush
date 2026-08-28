@@ -98,10 +98,11 @@ doğal Chain ve toplam payloadın bölünmesi birlikte doğrulanır. Günlük il
 9. Ortak sentez çekirdeğini kullan; yalnız silaha/mekaniğe özgü küçük bir adapter yaz.
 10. Hızlı testi çalıştır: `node tools/validate-runtime.cjs KnightRush.html --quick`.
 11. Tam Form için temsili rarity/geçmiş matrisini çalıştır: `node tools/validate-runtime.cjs KnightRush.html --posture-balance`.
-12. Aynı Formdaki ağır komşu aile kıyasını çalıştır: `node tools/validate-runtime.cjs KnightRush.html --adjacent`.
+12. Ağır `--adjacent` matrisi yalnız Sharpshoot F2 komşu ailelerini kapsar; ilgili değişiklik
+    ve ayrıca kullanıcı onayı varsa elle çalıştır. Mark Burst veya her yayın için çalıştırma.
 13. Skill Lab'de en az bir setup, bir payoff ve varsa kaynak tüketen route'u gerçek runtime ile dene.
-    `--quick` ve `--adjacent` birlikte yayın kapısıdır; eski monolitik F1 exhaustive matrisi her mobil
-    deployda yeniden çalıştırılmaz.
+    2026-08-29 kullanıcı kararıyla yayın kapısı kaynak doğrulaması + mevcut `--quick` testidir.
+    `--adjacent` ve eski monolitik F1 exhaustive matrisi deploy sırasında çalıştırılmaz.
 
 Yerel görsel smoke testi için Python gerekmez: `node tools/serve-local.cjs . 8765` çalıştırılır ve
 `http://127.0.0.1:8765/KnightRush.html` açılır. Debug Run / Skill Lab açılmadan önce sesin

@@ -1,7 +1,22 @@
 # Knight Rush — Yeni Chat Handoff
 
-Guncel durum: 2026-08-28. Bu dosya sohbet gecmisinin yerine gecen kisa durum belgesidir.
+Guncel durum: 2026-08-29. Bu dosya sohbet gecmisinin yerine gecen kisa durum belgesidir.
 Yeni bir AI once bu dosyayi, sonra asagidaki zorunlu belgeleri okumadan skill tasarlamamali.
+
+## Kisa yayin kapisi — 2026-08-29
+
+Kullanici uzun Sharpshoot kontrolunun yayini bekletmesini istemedi. Pages workflow'undan
+yalniz `--adjacent` F2 rarity-history matrisi kaldirildi. HTML/JS kaynak dogrulamasi,
+mevcut `--quick` runtime/closure kapisi ve tek dosya artifact dogrulamasi aynen korunur.
+`--adjacent` araci silinmedi; yalniz ilgili F2 degisikligi icin ayrica onaylanan manuel
+incelemede kullanilabilir. Her push'ta veya yeni Mark Burst ailesinde otomatik kosulmaz.
+Bu karar asagidaki eski "quick + adjacent yayin kapisi" notlarinin yerine gecer.
+
+e3f4bc8 checkpointi GitHub'a gonderildi. Run 33210388283 build VE deploy SUCCESS:
+https://github.com/porsukmen/knightrush/actions/runs/33210388283
+Quick 57 saniye, eski F2 matrisi 23 dakika 49 saniye surdu. Pages yayini 29 Agustos
+00:21 Turkiye saatinde tamamlandi. Bu workflow degisikligi oyun dosyasini degistirmez;
+ayni oyun icin uzun yerel testi yeniden kosmaya gerek yoktur.
 
 ## Yayin oncesi genel kontrol — 2026-08-28
 
