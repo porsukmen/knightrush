@@ -9580,6 +9580,19 @@ function commandPreparationDamage(command){
   return Math.max(0,Number(command&&command.preparedRelease&&command.preparedRelease.damage)||0);
 }
 function preparedChargeBankReference(){return DEFENSE_CHARGE.expectedSpend*2;}
+/* Charge Primary now has two paid expressions of the same Primary wallet:
+   a guaranteed delayed impact and a defense-earned bank payout. At the ordinary
+   two-point defense reference their sum equals the old guaranteed payload, so
+   adding player execution does not mint free expected power. Charge/Charge adds
+   its separately paid Secondary bank rate on top. */
+const PRIMARY_CHARGE_ECONOMY=Object.freeze({guaranteedShare:.55,bankShare:.45});
+function primaryChargeBankRate(primaryPower){
+  return Math.max(0,Number(primaryPower)||0)*PRIMARY_CHARGE_ECONOMY.bankShare/
+    DEFENSE_CHARGE.expectedSpend;
+}
+function primaryChargeGuaranteedDamage(primaryPower){
+  return Math.max(0,Number(primaryPower)||0)*PRIMARY_CHARGE_ECONOMY.guaranteedShare;
+}
 function commandReservedChargeBonus(command,charge){
   return stableDamage(safeDefenseCharge(charge)*Math.max(0,
     Number(command&&command.chargeBankDamagePerPoint)||0));
@@ -9591,7 +9604,7 @@ function commandChargeMode(command){
 function commandUsesDefenseCharge(command){return commandChargeMode(command)!=='NONE';}
 function commandCollectsDefenseCharge(command){
   const mode=commandChargeMode(command);
-  return mode!=='NONE'&&(mode!=='DELAYED_PRIMARY'||command.chargeBankDamagePerPoint>0);
+  return mode!=='NONE';
 }
 function chargeRouteEquipped(){return runSkills.some(commandCollectsDefenseCharge);}
 function bossChargeEnabled(){return !!(boss&&boss.chargeEnabled);}
@@ -9749,6 +9762,16 @@ function pendingPrimaryChargeFor(command=null){
 function primaryChargeReleaseReady(command=null){
   const pending=pendingPrimaryChargeFor(command);
   return !!(pending&&pending.status==='READY');
+}
+function primaryChargePreparationLocked(){
+  const pending=pendingPrimaryChargeRelease();
+  return !!(pending&&pending.status==='ARMED');
+}
+function primaryChargeStatusAfterFinish(status){
+  return status==='ARMED'||status==='READY'?'DEFENDING':status;
+}
+function primaryChargeStatusAfterDefense(status){
+  return status==='DEFENDING'?'READY':status;
 }
 /* Mark is an encounter resource, not a three-token damage buff. The technical
    ceiling only protects arithmetic/save data; authored moves must balance gain
@@ -10357,13 +10380,14 @@ const SKILL_EVOLUTIONS=Object.freeze([
   skillMutation({id:'war_draw',routeId:'charge_primary_form',skillId:'sharpshoot',group:'sharpshoot_form',
     name:'F6 · CHARGE',rarity:'RARE',weight:7,buildAspect:'CHARGE_RELEASE',col:'#7fc9ff',
     grantsTags:['charge','defense','mark','delayed'],
-    summary:'Commit now, defend once and release the earned Charge as one free heavy arrow next phase.',details:[
-      'Pay 1 AP and 1 Resolve now; no arrow is fired and the enemy phase begins.',
+    summary:'Commit now, end the turn manually and release the earned Charge only when you choose.',details:[
+      'Pay 1 AP and 1 Resolve now; no arrow is fired and other moves lock until Finish Turn.',
       'Perfect Dodge gives 1 Charge and Parry gives 2; being hit does not erase it.',
-      'Release next player phase for 0 AP and 0 Resolve, applying 1 Mark and 1 Chain.'
+      'Release for 0 AP and 0 Resolve only when pressed; READY may be held.'
     ],apply:skill=>transformSharpshoot(skill,{name:'F6 · CHARGE',damage:18,hits:1,
       markGain:1,cost:1,col:'#7fc9ff',addsChain:true,chainGainPerHit:1,consumeChain:false,
-      chargeMode:'DELAYED_PRIMARY',preparedRelease:{damage:10.2},
+      chargeMode:'DELAYED_PRIMARY',preparedRelease:{damage:primaryChargeGuaranteedDamage(10.2)},
+      chargeBankDamagePerPoint:primaryChargeBankRate(10.2),
       bowAnimationRecipeId:'BOW_CHARGE_WEIGHT',deliveryProfileId:'OWNER_BOW',
       deliveryPattern:'SINGLE',deliveryTiming:'DELAYED_RELEASE'})}),
 ]);
@@ -14425,10 +14449,9 @@ function buildSharpshootAfflictionFamilyTreeContracts(){
   return contracts;
 }
 /* F6 Charge-primary keeps one immutable promise across every descendant: pay the
-   move now, defend once, then Release for 0 AP / 0 Resolve. Specialization spends
-   only its own packet at roughly 70/30; Twist changes how the delayed Charge and
-   Secondary speak to each other. Primary preparation is guaranteed; only
-   Secondary owns defense-earned Charge, including the paid pure route. */
+   move now, manually end the turn, then manually Release for 0 AP / 0 Resolve.
+   Every Primary banks defense Charge; the pure route adds a separately paid
+   Secondary mastery layer. Holding a READY release is a player choice. */
 const SHARPSHOOT_CHARGE_PRIMARY_BLUEPRINTS=Object.freeze([
   Object.freeze({specId:'charge_mark_spec',slot:1,secondary:'MARK',specPattern:'SINGLE',
     specProfile:{DIRECT_DAMAGE:.20,MARK_GAIN:.31,CHARGE_RELEASE:.49},twists:Object.freeze([
@@ -14612,9 +14635,9 @@ const SHARPSHOOT_CHARGE_PRIMARY_BLUEPRINTS=Object.freeze([
     {id:'charge_focus_last_command_twist',axis:'CHARGE_ACTION_DELAY',pattern:'SINGLE',relationship:'LAST_COMMAND_RELEASE',
       input:'CHARGE',trigger:'ON_NEXT_ACTION',operation:'METER',output:'CHARGE',timing:'NEXT_ACTION',engines:['CHARGE_MASTERY','CHARGE_METERING'],
       payload:'PHASE_FOLLOW_UP_EVENTS',rejected:'SEQUENTIAL',flow:'COUPLED_LOOP',decision:'Delay the ready Release and use other actions first to grow its final payoff.',
-      primary:'The defense-earned Charge remains ready and Finish Turn still guarantees Release.',secondaryOutcome:'Every other player action before Release adds one paid action-delay step; AP is the natural limit.',
+      primary:'The defense-earned Charge remains ready until the player manually releases it.',secondaryOutcome:'Every other player action before Release adds one paid action-delay step; AP is the natural limit.',
       hook:'Action-order, AP sequencing and final-command artifacts.',promise:'While Release is ready, other actions add paid Charge value before the automatic final command.',
-      summaryTr:'Release hazırken önce kullandığın her başka saldırı son vuruşu güçlendirir; Finish Turn yine otomatik serbest bırakır.'}
+      summaryTr:'Release hazırken önce kullandığın her başka saldırı son vuruşu güçlendirir; saldırı yalnız skile tekrar basınca serbest kalır.'}
   ].map(Object.freeze))})
 ]);
 const SHARPSHOOT_CHARGE_PRIMARY_BLUEPRINT_BY_ROUTE_ID=Object.freeze(Object.fromEntries(
@@ -14657,16 +14680,16 @@ function buildSharpshootChargePrimaryTreeContracts(){
       qualityProfile:family.specProfile,promise:'Keep delayed Charge Primary and add a paid '+
         family.secondary+' Secondary expression without changing the commit/defend/Release cycle.',
       mechanics:{primaryOutput:'DELAYED_PREPARED_RELEASE',secondaryOutput:family.secondary,
-        chargeRule:'COMMIT_ENDS_ACTIVATION_RELEASES_NEXT_PLAYER_PHASE',
-        releaseRule:'ZERO_AP_ZERO_RESOLVE_FINISH_TURN_AUTO_RELEASE',
+        chargeRule:'COMMIT_LOCKS_COMMANDS_DEFEND_BANK_MANUAL_RELEASE',
+        releaseRule:'ZERO_AP_ZERO_RESOLVE_PLAYER_TRIGGERED_RELEASE',
         markRule:'BASE_MARK_AFTER_RELEASE'},baselineAttack:{hits:1,markGain:1,resolveCost:1},
       runtimeReadiness:'MATERIALIZED'}));
     family.twists.forEach((row,index)=>{
       const visibleContacts=row.pattern==='SEQUENTIAL',mechanics={
         primaryOutput:'DELAYED_PREPARED_RELEASE',secondaryOutput:family.secondary,
         relationship:row.relationship,relationshipPowerAxis:row.axis,
-        chargeRule:'COMMIT_ENDS_ACTIVATION_RELEASES_NEXT_PLAYER_PHASE',
-        releaseRule:'ZERO_AP_ZERO_RESOLVE_FINISH_TURN_AUTO_RELEASE',
+        chargeRule:'COMMIT_LOCKS_COMMANDS_DEFEND_BANK_MANUAL_RELEASE',
+        releaseRule:'ZERO_AP_ZERO_RESOLVE_PLAYER_TRIGGERED_RELEASE',
         markRule:'INHERIT_RELEASE_MARK',visibleContactsCreateChain:visibleContacts||undefined};
       if(family.specPattern!=='SINGLE'&&row.pattern==='SINGLE')
         mechanics.deliveryInheritanceRule='CONVERT_PARENT_DELIVERY_VALUE_TO_DIRECT';
@@ -14759,9 +14782,9 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     qualityProfile:{DIRECT_DAMAGE:.25,MARK_GAIN:.10,CHARGE_RELEASE:.65},
     promise:'Commit the whole move now, survive one enemy phase, then release one free heavy arrow whose uncapped payoff reads every successful Parry and Perfect Dodge from that phase.',
     mechanics:{primaryOutput:'DELAYED_PREPARED_RELEASE',secondaryOutput:'NONE',
-      chargeRule:'COMMIT_ENDS_ACTIVATION_RELEASES_NEXT_PLAYER_PHASE',
+      chargeRule:'COMMIT_LOCKS_COMMANDS_DEFEND_BANK_MANUAL_RELEASE',
       defenseRule:'PARRY_TWO_DODGE_ONE_NO_LOSS_ON_HIT',markRule:'BASE_MARK_AFTER_RELEASE',
-      releaseRule:'ZERO_AP_ZERO_RESOLVE_FINISH_TURN_AUTO_RELEASE'},
+      releaseRule:'ZERO_AP_ZERO_RESOLVE_PLAYER_TRIGGERED_RELEASE'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
   ...buildSharpshootChargePrimaryTreeContracts(),
   skillAttributeRouteContract({id:'affliction_mark_spec',depth:2,parentId:'affliction_primary_form',
@@ -20821,7 +20844,7 @@ function buildMarkBurstChargeDetonationTwistContracts(){
   for(const t of MARK_BURST_CHARGE_DETONATION_TWIST_DEFINITIONS){
     const sequence=t.key==='primer',mechanics={primaryOutput:'GUARANTEED_PREPARED_RELEASE',
       secondaryOutput:'DYNAMIC_DETONATION',relationship:t.engine,detonationEngine:t.engine,
-      chargeRule:'PREPARE_FREE_NEXT_PHASE_NO_DEFENSE_BANK',
+      chargeRule:'PREPARE_LOCK_DEFEND_BANK_MANUAL_RELEASE',
       detonationRule:sequence?'FIRST_CONTACT_DYNAMIC_PACKAGE':'FINAL_CONTACT_DYNAMIC_PACKAGE',
       chainRule:sequence?'NATURAL_CHAIN_PER_REAL_CONTACT':'ONE_NATURAL_CONTACT'},shared={
       skillId:'mark_burst',formSlot:6,specializationSlot:1,primaryAttributeId:'CHARGE',
@@ -20837,7 +20860,7 @@ function buildMarkBurstChargeDetonationTwistContracts(){
         payloadPolicy:'READ_ONCE_PER_ACTION',rejectedPattern:sequence?'SINGLE':'SEQUENTIAL'},
       twistDesign:{resourceFlow:t.key==='follow'?'PRIMARY_TO_SECONDARY':'PARALLEL',
         pairSpecific:true,playerDecision:t.promise,
-        primaryOutcome:'Keep guaranteed preparation and free next-phase Release without a defense bank.',
+        primaryOutcome:'Keep guaranteed preparation, bank defense Charge and let the player trigger the free Release manually.',
         secondaryOutcome:'Preserve dynamic real Mark consumption; added outputs have their own Quality receipt.',
         synergyHook:t.engine+' changes preparation, attack order or finite cross-action carry.'},
       stableCausality:MARK_BURST_STABLE_EXTERNAL_SECONDARY_CAUSALITY,
@@ -21210,7 +21233,7 @@ function buildMarkBurstChargeFocusTwistContracts(){
   for(const t of MARK_BURST_CHARGE_FOCUS_TWIST_DEFINITIONS){
     const split=t.key==='split',mechanics={primaryOutput:'GUARANTEED_PREPARED_RELEASE',
       secondaryOutput:'RESERVED_AND_NEW_DEFENSE_BANK',relationship:t.engine,detonationEngine:t.engine,
-      chargeRule:'RESERVE_BANK_COMMIT_DEFEND_FREE_RELEASE'},shared={
+      chargeRule:'RESERVE_BANK_COMMIT_DEFEND_MANUAL_RELEASE'},shared={
       skillId:'mark_burst',formSlot:6,specializationSlot:6,primaryAttributeId:'CHARGE',secondaryAttributeId:'CHARGE',
       powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:split?'SEQUENTIAL':'SINGLE',
       deliveryTiming:'DELAYED_RELEASE',contacts:1,deliveryScaling:{mode:'NONE'},
@@ -21263,7 +21286,7 @@ const MARK_BURST_CHARGE_SPEC_DEFINITIONS=Object.freeze([
     summary:'Ücretsiz tek ağır Release destekleyici iki-tick yara bırakır. Charge yarayı ayrıca büyütmez; Bleed Crit atmaz ve Chain üretmez.'},
   {key:'focus',secondary:'CHARGE',label:'Birikimli Salım',recipe:'BOW_CHARGE_WEIGHT',
     profile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,CHARGE_RELEASE:.49,DEFENSE_TEMPER:.21},
-    summary:'Primary savunma başarısından bağımsız garanti hazırlık hasarı verir. Secondary eski Charge bankasını rezerve eder ve yeni savunma kazancını ekler; ücretsiz Release toplam bankayı tek Secondary oranıyla bir kez harcar. Ek Charge Power statı yoktur.'}
+    summary:'Primary garanti hazırlık hasarı verir ve savunmada yeni Charge biriktirir. Secondary eski Charge bankasını da rezerve eder ve aynı savunma kazancına ekler; ücretsiz Release yalnız oyuncu bastığında toplam bankayı bir kez harcar. Ek Charge Power statı yoktur.'}
 ].map(entry=>Object.freeze({...entry,id:'burst_charge_'+entry.key+'_spec',profile:Object.freeze(entry.profile)})));
 function buildMarkBurstChargeSpecializations(){
   return MARK_BURST_CHARGE_SPEC_DEFINITIONS.map((entry,index)=>{
@@ -21277,7 +21300,7 @@ function buildMarkBurstChargeSpecializations(){
       qualityProfile:entry.profile,promise:entry.summary,
       mechanics:{primaryOutput:'DELAYED_CHARGE_RELEASE',secondaryOutput:entry.secondary,
         relationship:entry.secondary==='CHARGE'?'RESERVE_BANK_AND_DEFEND':'PARALLEL_CHARGE_'+entry.secondary,
-        chargeRule:entry.secondary==='CHARGE'?'RESERVE_BANK_COMMIT_DEFEND_FREE_RELEASE':'COMMIT_DEFEND_FREE_RELEASE',
+        chargeRule:entry.secondary==='CHARGE'?'RESERVE_BANK_COMMIT_DEFEND_MANUAL_RELEASE':'COMMIT_DEFEND_BANK_MANUAL_RELEASE',
         detonationRule:'FINAL_CONTACT_DYNAMIC_BASE_PACKAGE',apexContractVersion:3,
         chainRule:chain?'ONE_PER_VISIBLE_CONTACT_LIVE_READ':'ONE_NATURAL_CONTACT'},
       baselineAttack:{hits:1,markGain:0,resolveCost:1,markRule:markRule({mode:'CONSUME',
@@ -21293,7 +21316,7 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
     deliveryTiming:'IMMEDIATE',contacts:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.35,DETONATION_CONSUMPTION:.35},
+    qualityProfile:{DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.325,DETONATION_CONSUMPTION:.325},
     promise:'Fire one heavy arrow that never creates Mark and converts an uncapped Quality-paid number of existing Marks into full-value contact damage.',
     mechanics:{primaryOutput:'MARK_DETONATION',relationship:'PURE_DETONATION',
       detonationRule:'CONTACT_CONSUME',consumptionRule:'QUALITY_SCALED_UNCAPPED',
@@ -21334,7 +21357,7 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     primaryAttributeId:'POSTURE',secondaryAttributeId:'DETONATION',powerBudget:1,
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     deliveryScaling:{mode:'WEIGHT',powerAxis:'DELIVERY_WEIGHT',effectOwner:'POSTURE'},
-    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.25,POSTURE_DAMAGE:.45,
+    qualityProfile:{DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.295,POSTURE_DAMAGE:.305,
       DELIVERY_WEIGHT:.15},
     promise:'Keep the heavy Posture arrow primary while feeding the Secondary share into the same uncapped Detonation potency-and-capacity curve.',
     mechanics:{primaryOutput:'BREAK_PRESSURE',secondaryOutput:'DYNAMIC_DETONATION_PACKAGE',
@@ -21446,9 +21469,9 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     powerBudget:1,deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',
     deliveryTiming:'DELAYED_RELEASE',contacts:1,deliveryScaling:{mode:'NONE'},
     qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.10,CHARGE_RELEASE:.70},
-    promise:'Commit now, then release one free heavy arrow next player phase with guaranteed Quality-paid preparation damage and shared Base Detonation; no defense success or Charge bank required.',
+    promise:'Commit now, lock the remaining commands, bank defense Charge, then release one free heavy arrow only when the player chooses; Quality still guarantees part of the prepared impact.',
     mechanics:{primaryOutput:'DELAYED_CHARGE_RELEASE',relationship:'PURE_CHARGE',
-      detonationRule:'DYNAMIC_BASE_PACKAGE_ON_RELEASE',chargeRule:'COMMIT_DEFEND_FREE_RELEASE',
+      detonationRule:'DYNAMIC_BASE_PACKAGE_ON_RELEASE',chargeRule:'COMMIT_DEFEND_BANK_MANUAL_RELEASE',
       deliveryIntent:'ONE_DELAYED_HEAVY_ARROW'},
     baselineAttack:{hits:1,markGain:0,resolveCost:1,
       markRule:markRule({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:10,
@@ -21458,8 +21481,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     primaryAttributeId:'CRITICAL',secondaryAttributeId:'DETONATION',powerBudget:1,
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.30,CRIT_CHANCE:.20,
-      CRIT_PRECISION:.15,CRIT_POWER:.20},
+    qualityProfile:{DIRECT_DAMAGE:.285,DETONATION_DAMAGE:.265,CRIT_CHANCE:.25,
+      CRIT_PRECISION:.20},
     promise:'Keep the complete precision-Crit engine dominant and feed the Secondary share into the same uncapped Detonation potency-and-capacity curve; the package still cannot Crit.',
     mechanics:{primaryOutput:'CHANCE_PRECISION_AND_POWER',secondaryOutput:'MARK_DETONATION',
       relationship:'PARALLEL_CRITICAL_AND_DETONATION',criticalRule:'DIRECT_HEALTH_ONLY',
@@ -21543,7 +21566,7 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     primaryAttributeId:'CHAIN',secondaryAttributeId:'DETONATION',powerBudget:1,
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SEQUENTIAL',deliveryTiming:'IMMEDIATE',contacts:1,
     deliveryScaling:{mode:'CONTACT_COUNT',powerAxis:'DELIVERY_CONTACTS',effectOwner:'CHAIN'},
-    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.30,CHAIN_SCALING:.35,
+    qualityProfile:{DIRECT_DAMAGE:.25,DETONATION_DAMAGE:.225,CHAIN_SCALING:.325,
       DELIVERY_CONTACTS:.20},
     promise:'Keep the live Chain cadence dominant and feed the Secondary share into the same uncapped final-contact Detonation potency-and-capacity curve.',
     mechanics:{primaryOutput:'LIVE_CHAIN_CADENCE',secondaryOutput:'MARK_DETONATION',
@@ -21660,7 +21683,7 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     parentId:'detonation_primary_form',formSlot:1,slot:1,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'DETONATION',powerBudget:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.45,DETONATION_CONSUMPTION:.35},
+    qualityProfile:{DIRECT_DAMAGE:.30,DETONATION_DAMAGE:.35,DETONATION_CONSUMPTION:.35},
     promise:'Keep one heavy impact and concentrate the complete relationship packet into stronger, deeper Mark Detonation.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'MARK_DETONATION',
       relationship:'PURE_DETONATION_FOCUS',detonationRule:'FULL_VALUE_CONTACT_CONSUME'},
@@ -21685,8 +21708,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     parentId:'detonation_primary_form',formSlot:1,slot:3,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'POSTURE',powerBudget:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
-      POSTURE_DAMAGE:.30},
+    qualityProfile:{DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.225,DETONATION_CONSUMPTION:.225,
+      POSTURE_DAMAGE:.20},
     promise:'Keep Detonation dominant and add conservative light-bow Posture impact to the same single contact.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'POSTURE_DAMAGE',
       relationship:'PARALLEL_DETONATION_POSTURE',postureRule:'LIGHT_WEAPON_SECONDARY_EXPRESSION'},
@@ -21697,8 +21720,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     parentId:'detonation_primary_form',formSlot:1,slot:4,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'CRITICAL',powerBudget:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
-      CRIT_CHANCE:.30},
+    qualityProfile:{DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.225,DETONATION_CONSUMPTION:.225,
+      CRIT_CHANCE:.20},
     promise:'Add bounded local Crit chance to the direct arrow while keeping the inherited Detonation payload outside the Crit multiplier.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'LOCAL_CRITICAL',
       relationship:'PARALLEL_DETONATION_CRITICAL',criticalRule:'DIRECT_CONTACT_ONLY_FLAT_CHANCE'},
@@ -21709,8 +21732,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     parentId:'detonation_primary_form',formSlot:1,slot:5,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'AFFLICTION',powerBudget:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
-      AFFLICTION_APPLICATION:.20,AFFLICTION_POTENCY:.15},
+    qualityProfile:{DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.225,DETONATION_CONSUMPTION:.225,
+      AFFLICTION_APPLICATION:.20},
     promise:'Keep the Mark payoff intact and add one modest two-turn Bleed wound through the same physical arrow.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'BLEED_PAYLOAD',
       relationship:'PARALLEL_DETONATION_BLEED',afflictionRule:'ONE_WOUND_TWO_TICKS',
@@ -21722,8 +21745,8 @@ const MARK_BURST_ROUTE_CONTRACTS=Object.freeze([
     parentId:'detonation_primary_form',formSlot:1,slot:6,
     primaryAttributeId:'DETONATION',secondaryAttributeId:'CHARGE',powerBudget:1,
     deliveryScaling:{mode:'NONE'},
-    qualityProfile:{DIRECT_DAMAGE:.20,DETONATION_DAMAGE:.25,DETONATION_CONSUMPTION:.25,
-      DEFENSE_TEMPER:.30},
+    qualityProfile:{DIRECT_DAMAGE:.35,DETONATION_DAMAGE:.225,DETONATION_CONSUMPTION:.225,
+      DEFENSE_TEMPER:.20},
     promise:'Resolve immediately and spend the best banked defense score on direct impact while inherited Detonation resolves independently.',
     mechanics:{primaryOutput:'MARK_DETONATION',secondaryOutput:'DEFENSE_TEMPER',
       relationship:'PARALLEL_DETONATION_CHARGE',chargeRule:'BEST_PHASE_BANK_CONSUME_ON_USE',
@@ -22273,11 +22296,11 @@ const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
   if(!chargeForm||chargeForm.primaryAttributeId!=='CHARGE'||
      chargeForm.baseAttributeId!=='MARK'||chargeForm.delivery.pattern!=='SINGLE'||
      chargeForm.delivery.timing!=='DELAYED_RELEASE'||chargeForm.delivery.contactCount!==1||
-     chargeForm.mechanics.chargeRule!=='COMMIT_ENDS_ACTIVATION_RELEASES_NEXT_PLAYER_PHASE'||
+     chargeForm.mechanics.chargeRule!=='COMMIT_LOCKS_COMMANDS_DEFEND_BANK_MANUAL_RELEASE'||
      chargeForm.qualityProfile.DIRECT_DAMAGE!==.25||
      chargeForm.qualityProfile.MARK_GAIN!==.10||
      chargeForm.qualityProfile.CHARGE_RELEASE!==.65)
-    throw new Error('F6 Charge Form must commit now and release guaranteed preparation next phase without a defense bank');
+    throw new Error('F6 Charge Form must commit now, bank defense Charge and wait for manual Release');
   const chainSecondaries=new Set(chainSpecs.map(route=>route.secondaryAttributeId));
   if(chainSpecs.length!==6||chainSecondaries.size!==sharpshootPalette.length||
      sharpshootPalette.some(id=>!chainSecondaries.has(id))||
@@ -22942,7 +22965,7 @@ const SHARPSHOOT_CHARGE_PRIMARY_TREE_DEBUG_SUMMARY_TR=Object.freeze(Object.fromE
       'Sharpshoot temel Markını ve görünen her gerçek temasın Chain sonucunu korur; yeni davranış yalnız kendi Quality bütçesinden ödenir.'
   ])));
 const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
-  charge_primary_form:'Şimdi 1 AP ve 1 Resolve ödeyip saldırmadan savunmaya geçer. Sonraki oyuncu fazında 0 AP ve 0 Resolve ile garanti Quality hazırlık bonuslu ağır ok bırakır; savunma başarısı gerekmez ve Primary Charge biriktirmez. Temel Mark ve doğal Chain korunur. Finish Turn önce hazır Releasei yapar.',
+  charge_primary_form:'Şimdi 1 AP ve 1 Resolve öder, diğer hareketleri kilitler; Finish Turne oyuncu basar. Savunmada Dodge/Parry Charge biriktirir. Sonraki oyuncu fazında 0 AP ve 0 Resolve ağır ok yalnız skile tekrar basılınca bırakılır; hazır Release saklanabilir. Temel Mark ve doğal Chain korunur.',
   ...SHARPSHOOT_CHARGE_PRIMARY_TREE_DEBUG_SUMMARY_TR,
   critical_primary_form:'Tek hassas ok kendine ait Crit ihtimaliyle vurur. Crit gelmeyen her gerçek temas aynı hareketin sonraki denemelerine kalıcı Precision ekler; Crit gerçekleşince Precision sıfırlanır. Sharpshootun ücretli temel Markı ve bir gerçek Chain teması korunur.',
   affliction_primary_form:'Tek ağır dikenli ok, diğer Formlardan daha düşük anlık hasar verir ve gücünün çoğunu sonraki iki savunma fazında ayrı ayrı vuran Bleede taşır. Yara sınırsız birikir; Sharpshootun temel Markı ile tek gerçek Chain teması korunur.',
@@ -24516,12 +24539,14 @@ function skillLinearOutputProgress(power,powerPerUnit,precision=1){
     spent:Number(spent.toFixed(4)),reserve:Number(reserve.toFixed(4)),next:null,needed:null,progress:1});
 }
 /* Detonation is one Attribute motor, regardless of where its power came from.
-   Base, Primary and Secondary receipts all feed the same scalar. The joint curve
-   maps that scalar to monotonically increasing potency and an uncapped integer
-   consumption capacity. Root-on-root growth keeps their combined full-reserve
-   output approximately linear without imposing a gameplay ceiling. */
+   Base, Primary and Secondary receipts all feed the same scalar. Consumption
+   uses the exact same six-power output cadence as Sharpshoot Mark generation:
+   equal paid Attribute power therefore creates and can detonate equal counts.
+   Potency grows slowly and monotonically on top, preserving an uncapped payoff
+   without letting the newly linear consumption count multiply a root curve. */
 const MARK_BURST_DETONATION_POWER_CURVE=Object.freeze({
-  version:2,capacityPowerUnit:2,potencyPerRootPower:1.6
+  version:3,capacityPowerUnit:SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN,
+  potencyPerLogPower:.75
 });
 function markBurstDetonationUnifiedPower(axes){
   return Math.max(0,Number(axes&&axes.DETONATION_DAMAGE)||0)+
@@ -24531,10 +24556,11 @@ function materializeMarkBurstDetonationMotor(command,paidPower){
   if(!command||command.baseAttributeId!=='DETONATION')
     throw new Error('Mark Burst Detonation motor needs its immutable Base Attribute');
   const curve=MARK_BURST_DETONATION_POWER_CURVE,power=Math.max(0,Number(paidPower)||0),
-    root=Math.sqrt(power),baseRule=BASE_TURN_SKILL_BY_ID.mark_burst.markRule,
-    capacity=1+Math.floor(root/Math.sqrt(curve.capacityPowerUnit)+1e-9),
+    baseRule=BASE_TURN_SKILL_BY_ID.mark_burst.markRule,
+    capacityProgress=skillRepeatedThresholdProgress(power,curve.capacityPowerUnit),
+    capacity=1+capacityProgress.rank,
     damagePerMark=Number((baseRule.damagePerMark+
-      root*curve.potencyPerRootPower).toFixed(6));
+      Math.log1p(power)*curve.potencyPerLogPower).toFixed(6));
   command.markRule=markRule({...command.markRule,mode:'CONSUME',timing:'ACTION',
     cap:capacity,damagePerMark,curve:'FULL',delivery:'LAST'});
   command.markDetonation=true;command.markDetonationCapacity=capacity;
@@ -24542,7 +24568,7 @@ function materializeMarkBurstDetonationMotor(command,paidPower){
   command.synthesisDetonationCurveVersion=curve.version;
   return Object.freeze({power:Number(power.toFixed(4)),capacity,damagePerMark,
     capped:false,capacityPowerUnit:curve.capacityPowerUnit,
-    potencyPerRootPower:curve.potencyPerRootPower});
+    capacityReserve:capacityProgress.reserve,potencyPerLogPower:curve.potencyPerLogPower});
 }
 function normalizeMarkBurstDetonationCapacity(command,coreCapacity){
   const total=Math.max(1,Math.floor(Number(coreCapacity)||1)),rule=command&&command.markRule;
@@ -24562,6 +24588,38 @@ function normalizeMarkBurstDetonationCapacity(command,coreCapacity){
   for(let index=0;index<indices.length;index++)pattern[indices[index]]=base+(index<remainder?1:0);
   command.markDetonationCapPattern=pattern;
   command.markRule=markRule({...rule,cap:Math.max(1,...pattern)});return command;
+}
+/* Mark Burst is Sharpshoot's payoff partner. Before pair-specific Twist logic,
+   both skills must express the same resource count from the same rarity path:
+   one Mark that the matching Sharpshoot route creates buys one Mark that this
+   route can detonate. This reference is synthesis-time only and is cached by
+   both skill compilers; combat never performs a second synthesis. */
+const SHARPSHOOT_SYNTHESIS_COMMAND_CACHE=new Map();
+function markBurstSharpshootParityCapacity(routes,rarities){
+  const form=routes&&routes[0],spec=(routes||[]).find(entry=>entry.depth===2)||null;
+  if(!form)return 1;
+  const primary=form.primaryAttributeId==='DETONATION'?'MARK':form.primaryAttributeId,
+    secondary=spec?(spec.secondaryAttributeId==='DETONATION'?'MARK':spec.secondaryAttributeId):null,
+    referenceForm=SHARPSHOOT_MARK_ROUTE_CONTRACTS.find(entry=>entry.depth===1&&
+      entry.primaryAttributeId===primary),referenceSpec=spec&&
+      SHARPSHOOT_MARK_ROUTE_CONTRACTS.find(entry=>entry.depth===2&&
+        entry.parentId===referenceForm?.id&&entry.primaryAttributeId===primary&&
+        entry.secondaryAttributeId===secondary);
+  if(!referenceForm||spec&&!referenceSpec)
+    throw new Error('Missing Sharpshoot parity route for Mark Burst '+form.id+
+      (spec?' > '+spec.id:''));
+  const referenceRoutes=spec?[referenceForm,referenceSpec]:[referenceForm],path=
+      referenceRoutes.map((entry,index)=>Object.freeze({routeId:entry.id,
+        rarity:rarities[index],depth:entry.depth})),ledger=compileSkillQualityLedger(path,
+        SHARPSHOOT_MARK_ROUTE_BY_ID,{includeStructural:true}),allocation=primary==='MARK'?
+      compileSharpshootCumulativeIdentityAllocation(referenceRoutes,ledger):primary==='CHAIN'?
+      compileSharpshootChainIdentityAllocation(referenceRoutes,ledger):primary==='POSTURE'?
+      compileSharpshootPostureIdentityAllocation(referenceRoutes,ledger):primary==='CRITICAL'?
+      compileSharpshootCriticalIdentityAllocation(referenceRoutes,ledger):primary==='AFFLICTION'?
+      compileSharpshootAfflictionIdentityAllocation(referenceRoutes,ledger):ledger,markPower=
+      Math.max(0,allocation.axisPowerCredits.MARK_GAIN||0),progress=
+      skillRepeatedThresholdProgress(markPower,SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN);
+  return Math.max(1,(BASE_TURN_SKILL_BY_ID.sharpshoot.markGain||1)+progress.rank);
 }
 /* Relationship mechanics may still buy discrete event topology. This helper is
    intentionally not the core Detonation capacity curve. */
@@ -24789,7 +24847,11 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
     twistRoute=routes.find(entry=>entry.depth===3)||null;
   command.damage=Number(((definition.damage||0)+directPower).toFixed(3));
   const detonation=materializeMarkBurstDetonationMotor(command,detonationPower),
-    coreDetonationCapacity=detonation.capacity;
+    parityDetonationCapacity=markBurstSharpshootParityCapacity(routes,rarities);
+  /* Form and Specialization are the exact builder/payoff contract. Twist and
+     Apex may deliberately buy more capacity, but can never fall below it. */
+  const coreDetonationCapacity=routes.length<=2?parityDetonationCapacity:
+    Math.max(detonation.capacity,parityDetonationCapacity);
   reserve.DETONATION_DAMAGE=0;reserve.DETONATION_CONSUMPTION=0;
   command.markDetonation=true;command.markGain=0;command.hits=delivery.contacts;
   command.hitDamages=delivery.contacts>1?
@@ -24836,7 +24898,9 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
     reserve.AFFLICTION=0;
   }else if(primary==='CHARGE'){
     command.chargeMode='DELAYED_PRIMARY';
-    command.preparedRelease={damage:Math.max(0,axes.CHARGE_RELEASE||0)};
+    const primaryChargePower=Math.max(0,axes.CHARGE_RELEASE||0);
+    command.preparedRelease={damage:primaryChargeGuaranteedDamage(primaryChargePower)};
+    command.chargeBankDamagePerPoint=primaryChargeBankRate(primaryChargePower);
     command.defenseTemperDamagePerCharge=0;
     command.chargeSplitAcrossContacts=false;reserve.CHARGE_RELEASE=0;
   }
@@ -24888,10 +24952,11 @@ function synthesizeMarkBurstFormRoute(route,rarity='COMMON',specialization=null,
       amount:Number((afflictionPower/BLEED_STATUS.totalDamageFactor).toFixed(6))});
     reserve.AFFLICTION=0;
   }else if(specialization&&secondary==='CHARGE'&&primary==='CHARGE'){
-    // Same attribute, two native roles: the old bank cannot be priced at the
-    // new defense's Primary rate or consumed a second time by another move.
-    command.chargeBankDamagePerPoint=Number((Math.max(0,axes.DEFENSE_TEMPER||0)/
-      preparedChargeBankReference()).toFixed(6));
+    // Pure Charge keeps the universal paid Primary bank expression, then adds
+    // its separately paid Secondary mastery layer without duplicating either.
+    command.chargeBankDamagePerPoint=Number((command.chargeBankDamagePerPoint+
+      Math.max(0,axes.DEFENSE_TEMPER||0)/preparedChargeBankReference()).toFixed(6));
+    command.chargePureMastery=true;
     reserve.DEFENSE_TEMPER=0;
   }else if(specialization&&secondary==='CHARGE'){
     command.chargeMode='FULL_RELEASE';command.defenseTemperDamagePerCharge=Number((
@@ -28094,10 +28159,12 @@ function commandExpectedPreparedRelationships(command){
 }
 function commandExpectedDefenseTemperPower(command){
   const envelope=SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE,
-    charge=command&&command.chargeBankDamagePerPoint>0?preparedChargeBankReference():envelope.expectedCharge;
+    charge=commandChargeMode(command)==='DELAYED_PRIMARY'?
+      (command&&command.chargePureMastery?preparedChargeBankReference():DEFENSE_CHARGE.expectedSpend):
+      envelope.expectedCharge;
   return commandExpectedPreparedFocusPower(command)+commandExpectedPreparedAfflictionPower(command)+commandExpectedPreparedCriticalPower(command)+commandExpectedPreparedPosturePower(command)+commandExpectedPreparedChainPower(command)+commandExpectedPreparedDetonationPower(command)+commandExpectedCriticalChargePower(command)+commandDefenseTemperRate(command)*charge+
     commandPreparationDamage(command)+commandExpectedPreparedRelationships(command)+
-    commandReservedChargeBonus(command,preparedChargeBankReference())+
+    commandReservedChargeBonus(command,charge)+
     (command&&command.chargeCritIncludesRelease?commandPreparationDamage(command)*
       commandExpectedLocalCritChance(command)*Math.max(0,
         (command.critDamageMultiplier||CFG.CRIT_DAMAGE_MULT)-1):0)+
@@ -28379,7 +28446,6 @@ function sharpshootMarkHistoryNode(route,rarity,receipt,index){
    never share mutable combat command objects between the lab, draft and battle. */
 const SHARPSHOOT_STABLE_RAW_DAMAGE_BY_PATH=new Map(),
   SHARPSHOOT_STABLE_RANK_FLOOR_BY_PATH=new Map();
-const SHARPSHOOT_SYNTHESIS_COMMAND_CACHE=new Map();
 function cloneSharpshootSynthesisCommand(command){
   const copy={...command};
   for(const key of ['tags','mutationIds','mutationGroups','evolutionMutationIds','evolutionHistory',
@@ -31989,8 +32055,11 @@ function synthesizeSharpshootChargePath(formRarity='COMMON',specializationId=nul
   transformSharpshoot(command,{name:finalRoute.name,damage:directDamage/hits,hits,
     hitInterval:hits>1?.48:0,
     markGain,cost:1,addsChain:true,chainGainPerHit:1,consumeChain:false,extraChainBonus:0,
-    chargeMode:'DELAYED_PRIMARY',defenseTemperDamagePerCharge:0,preparedRelease:{damage:chargePower},
-    chargeBankDamagePerPoint:Math.max(0,axis.DEFENSE_TEMPER||0)/preparedChargeBankReference(),
+    chargeMode:'DELAYED_PRIMARY',defenseTemperDamagePerCharge:0,
+    preparedRelease:{damage:primaryChargeGuaranteedDamage(chargePower)},
+    chargeBankDamagePerPoint:primaryChargeBankRate(chargePower)+
+      Math.max(0,axis.DEFENSE_TEMPER||0)/preparedChargeBankReference(),
+    chargePureMastery:finalRoute.secondaryAttributeId==='CHARGE',
     chargeCritIncludesRelease:critPower>0,
     chargeSplitAcrossContacts:pattern==='SEQUENTIAL',
     chainScalingTiming:'LIVE',impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',
@@ -32145,9 +32214,9 @@ function synthesizeSharpshootChargePath(formRarity='COMMON',specializationId=nul
         parentCharge:commandDefenseTemperRate(parent),score:childScore,parentScore}));
   }
   command.evolutionText=[
-    'Charge Compiler v'+SHARPSHOOT_CHARGE_FORM_COMPILER_VERSION+': pay now, skip the attack and defend once.',
-    'Primary preparation pays a Quality-scaled bonus independently of defense success.',
-    'Next player phase releases for 0 AP / 0 Resolve; Finish Turn releases it automatically.',
+    'Charge Compiler v'+SHARPSHOOT_CHARGE_FORM_COMPILER_VERSION+': pay now, lock other moves and end the turn manually.',
+    'Primary preparation keeps a guaranteed share and banks Dodge/Parry Charge during defense.',
+    'Next player phase releases for 0 AP / 0 Resolve only when you press this skill again; READY can be held.',
     'Release keeps one real Chain contact, +'+markGain+' Mark and '+
       damagePart(commandPreparationDamage(command))+' guaranteed preparation damage.',
     SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR[finalRoute.id]||''
@@ -32162,7 +32231,8 @@ const SHARPSHOOT_CHARGE_FORM_AUDIT=(()=>{
   const ladder=SKILL_RARITY_ORDER.map(rarity=>synthesizeSharpshootChargeForm(rarity));
   if(ladder.some(command=>!command||command.chargeMode!=='DELAYED_PRIMARY'||command.hits!==1||
        command.markGain<1||totalCommandChainGain(command)!==1||command.cost!==1||
-       !(commandPreparationDamage(command)>0)||commandCollectsDefenseCharge(command))||
+       !(commandPreparationDamage(command)>0)||!(command.chargeBankDamagePerPoint>0)||
+       !commandCollectsDefenseCharge(command))||
      ladder.some((command,index)=>index&&(
        commandDirectDamageTotal(command)+1e-6<commandDirectDamageTotal(ladder[index-1])||
        commandPreparationDamage(command)+1e-6<commandPreparationDamage(ladder[index-1])))||
@@ -35946,6 +36016,55 @@ const MARK_BURST_UNIFIED_DETONATION_MOTOR_AUDIT=(()=>{
   return Object.freeze({passed:true,capped:false,curveVersion:
     MARK_BURST_DETONATION_POWER_CURVE.version,curveRows:Object.freeze(curveRows),rows});
 })();
+/* Builder/payoff parity is executable. Base power, Primary identity power and
+   Secondary identity power all buy the same number of resource units: one
+   Sharpshoot Mark created equals one Mark Burst Mark that can be detonated. */
+const MARK_BURST_SHARPSHOOT_OUTPUT_PARITY_AUDIT=(()=>{
+  const powerRows=[0,1,5.999,6,12,60,600].map(power=>{
+      const command=createRunSkill(BASE_TURN_SKILL_BY_ID.mark_burst),result=
+        materializeMarkBurstDetonationMotor(command,power),marks=1+
+        skillRepeatedThresholdProgress(power,SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN).rank;
+      return Object.freeze({power,marks,capacity:result.capacity});
+    }),primaryRows=[],secondaryRows=[],primaryPairs=Object.freeze([
+      ['mark_focus_spec','detonation_focus_spec'],['mark_chain_spec','detonation_chain_spec'],
+      ['mark_posture_spec','detonation_posture_spec'],['mark_critical_spec','detonation_critical_spec'],
+      ['mark_affliction_spec','detonation_affliction_spec'],['mark_charge_spec','detonation_charge_spec']
+    ]),secondaryPairs=Object.freeze([
+      [synthesizeSharpshootChainPath,'chain_mark_spec','chain_primary_form','burst_chain_detonation_spec'],
+      [synthesizeSharpshootPosturePath,'posture_mark_spec','posture_primary_form','burst_posture_detonation_spec'],
+      [synthesizeSharpshootCriticalPath,'critical_mark_spec','critical_primary_form','burst_critical_detonation_spec'],
+      [synthesizeSharpshootAfflictionPath,'affliction_mark_spec','affliction_primary_form','burst_affliction_detonation_spec'],
+      [synthesizeSharpshootChargePath,'charge_mark_spec','charge_primary_form','burst_charge_detonation_spec']
+    ]);
+  for(const formRarity of SKILL_RARITY_ORDER){
+    const builder=synthesizeSharpshootMarkPath(formRarity),payoff=
+      synthesizeMarkBurstDetonationPath(formRarity);
+    primaryRows.push(Object.freeze({formRarity,marks:builder.markGain,
+      capacity:payoff.markDetonationCoreCapacity}));
+    for(const specializationRarity of SKILL_RARITY_ORDER){
+      for(const [builderSpec,payoffSpec] of primaryPairs){
+        const primaryBuilder=synthesizeSharpshootMarkPath(formRarity,builderSpec,
+            specializationRarity),primaryPayoff=synthesizeMarkBurstDetonationPath(formRarity,
+            payoffSpec,specializationRarity);
+        primaryRows.push(Object.freeze({formRarity,specializationRarity,builderSpec,payoffSpec,
+          marks:primaryBuilder.markGain,capacity:primaryPayoff.markDetonationCoreCapacity}));
+      }
+      for(const [synthesizer,builderSpec,formId,payoffSpec] of secondaryPairs){
+        const secondaryBuilder=synthesizer(formRarity,builderSpec,specializationRarity),
+          secondaryPayoff=synthesizeMarkBurstFormRoute(MARK_BURST_ROUTE_BY_ID[formId],formRarity,
+            MARK_BURST_ROUTE_BY_ID[payoffSpec],specializationRarity);
+        secondaryRows.push(Object.freeze({formRarity,specializationRarity,builderSpec,payoffSpec,
+          marks:secondaryBuilder.markGain,capacity:secondaryPayoff.markDetonationCoreCapacity}));
+      }
+    }
+  }
+  const failures=[...powerRows,...primaryRows,...secondaryRows].filter(row=>
+    row.marks!==row.capacity);
+  if(failures.length)throw new Error('Sharpshoot generation / Mark Burst Detonation parity drifted: '+
+    JSON.stringify(failures));
+  return Object.freeze({passed:true,powerRows:Object.freeze(powerRows),
+    primaryRows:Object.freeze(primaryRows),secondaryRows:Object.freeze(secondaryRows)});
+})();
 const MARK_BURST_CRITICAL_DETONATION_CLOSURE_AUDIT=(()=>{
   const specId='burst_critical_detonation_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
@@ -37114,7 +37233,11 @@ const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
       maxSiblingSimilarity:.82,signatureEngineIds:Object.freeze(Object.values(expectedModes))}),
     identityAudit=auditTwistIdentitySet(twists.map(route=>Object.freeze({id:route.id,
       deliveryPattern:route.delivery.pattern,identity:route.twistIdentity})),brief),
-    rows=[],apexRows=[],score=(command,marks=2)=>Number(
+    /* Capacity is now intentionally symmetric with the uncapped Sharpshoot
+       builder. Price the payoff against a real prepared reserve; two Marks made
+       higher-rarity capacity invisible and could report a false regression. */
+    rows=[],apexRows=[],score=(command,marks=Math.max(8,
+      Number(command&&command.markDetonationCoreCapacity)||0))=>Number(
       stableEvolutionGuardrailValue(command,marks,0).toFixed(3)),
     capacity=command=>command.markDetonationCapacity===MARK_ALL?MARK_ALL:
       Math.max(1,Number(command.markDetonationCapacity)||0),
@@ -37188,7 +37311,10 @@ const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
       row.twistRarity==='COMMON'),standardScores=standard.map(row=>row.score),
     siblingSpread=Number(((Math.max(...standardScores)-Math.min(...standardScores))/
       Math.max(1,standardScores.reduce((sum,value)=>sum+value,0)/standardScores.length)).toFixed(4));
-  if(rows.length!==256||apexRows.length!==4096||siblingSpread>.40)
+  /* Total Detonation spends the entire reserve while its siblings preserve
+     Marks or buy event topology. Its conditional ceiling may sit modestly above
+     the reusable branches, but a wider gap still fails the family audit. */
+  if(rows.length!==256||apexRows.length!==4096||siblingSpread>.42)
     throw new Error('Detonation/Detonation closure size or sibling power drifted: '+
       JSON.stringify({twistCards:rows.length,apexCards:apexRows.length,siblingSpread,standard}));
   return Object.freeze({passed:true,capped:false,twists:twists.length,apexes:apexes.length,
@@ -38554,7 +38680,8 @@ const SKILL_TREE_DESIGN_AUDIT=(()=>{
       !primedConversion.consumedTotal||!primedConversion.chainGain)
     throw new Error('F5 must convert Mark that its own previous use can prime');
   if(!heavy||heavy.markGain<1||commandChargeMode(heavy)!=='DELAYED_PRIMARY'||
-     !(commandPreparationDamage(heavy)>0)||commandCollectsDefenseCharge(heavy)||heavy.addsChain!==true||heavy.cost!==1)
+     !(commandPreparationDamage(heavy)>0)||!(heavy.chargeBankDamagePerPoint>0)||
+     !commandCollectsDefenseCharge(heavy)||heavy.addsChain!==true||heavy.cost!==1)
     throw new Error('F6 must commit a delayed Charge release while preserving Sharpshoot Mark and Chain');
   return Object.freeze({passes:6,formSpread,specializationSpread,twists:twists.length,
     apexesReviewed,lineagesReviewed,spectrum});
@@ -38758,7 +38885,7 @@ function hasCombatAlly(){return pack>0&&packTypes.length>0;}
 function companionProfile(){return COMPANION_COMBAT[packTypes[0]]||COMPANION_COMBAT.wolf;}
 function activeTurnActorId(){return boss&&boss.partyActor==='ally'&&hasCombatAlly()?'ally':'knight';}
 function selectTurnActor(id){
-  if(!boss||(id==='ally'&&!hasCombatAlly()))return false;
+  if(!boss||primaryChargePreparationLocked()||(id==='ally'&&!hasCombatAlly()))return false;
   boss.partyActor=id;boss.playerMenu='root';
   skillTooltipIndex=-1;SFX.swipe();return true;
 }
@@ -38766,7 +38893,8 @@ function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile
 function turnCommandApCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.apCost||1);}
 function turnCommandResolveCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.cost||0);}
 function turnCommandAvailable(command){
-  return !!(boss&&command&&(boss.ap||0)>=turnCommandApCost(command)&&
+  return !!(boss&&command&&!primaryChargePreparationLocked()&&
+    (boss.ap||0)>=turnCommandApCost(command)&&
     (boss.resolve||0)>=turnCommandResolveCost(command));
 }
 function hasAffordableTurnSkill(){
@@ -39169,9 +39297,9 @@ function distributedChargeEngineFrom(command){
 function commandChargeCombatText(command){
   if(!commandUsesDefenseCharge(command))return '';
   const mode=commandChargeMode(command),rate=commandDefenseTemperRate(command),parts=[mode==='DELAYED_PRIMARY'?
-    'Primary hazırlık bonusu savunma başarısından bağımsızdır; tek başına Charge bankası açmaz.':
+    'Primary hazırlığın garanti payını korur; savunmada Perfect Dodge +1, Parry +2 Charge biriktirir.':
     'Perfect Dodge +1, Parry +2 Charge verir; Break ayrıca Charge vermez. Banka tek savunma fazının en iyi sonucunu saklar ve gameplay sınırı yoktur.'];
-  if(mode==='DELAYED_PRIMARY')parts.push('Şimdi AP/Resolve ödenir ve saldırmadan savunmaya geçilir. Sonraki oyuncu fazında 0 AP / 0 Resolve Release, Quality kaynaklı +'+damagePart(commandPreparationDamage(command))+' hazırlık hasarıyla vurur. Parry/Dodge yapmasan da bonus gelir. Finish Turn önce Release yapar.');
+  if(mode==='DELAYED_PRIMARY')parts.push('Şimdi AP/Resolve ödenir; diğer hareketler kilitlenir ve Finish Turne sen basarsın. Sonraki oyuncu fazında 0 AP / 0 Resolve Release yalnız bu skile tekrar bastığında vurur; hazır saldırıyı saklayabilirsin. Garanti hazırlık +'+damagePart(commandPreparationDamage(command))+'; her Charge ayrıca +'+damagePart(command.chargeBankDamagePerPoint)+' hasar verir.');
   else if(mode==='FULL_RELEASE')parts.push('Bütün banka tüketilir; Charge başına +'+
     damagePart(rate)+' taban hasar.');
   else if(mode==='POSTURE_RELEASE')parts.push('Bütün banka tek seferde tüketilir; Charge başına +'+
@@ -39473,19 +39601,19 @@ function armPrimaryChargeRelease(command,actorId,apCost,cost){
   if(!boss||actorId!=='knight'||pendingPrimaryChargeRelease())return false;
   boss.ap-=apCost;boss.resolve-=cost;
   boss.pendingChargeRelease={baseId:command.baseId||command.id,
-    command:cloneSharpshootSynthesisCommand(command),status:'DEFENDING',charge:0,
-    reservedBank:command.chargeBankDamagePerPoint>0?consumeBossCharge():0,
+    command:cloneSharpshootSynthesisCommand(command),status:'ARMED',charge:0,
+    reservedBank:consumeBossCharge(),
     dodges:0,parries:0,streak:0,maxStreak:0,streakBroken:false,actionSteps:0,
     bleedAtArm:bossBleed(),preparedDetonation:snapshotPreparedDetonation(command,actorId),
     preparedPosture:command.chargePosture?{breakSeen:false,breakSkillId:null}:null,
     preparedAffliction:snapshotPreparedAffliction(command,actorId),
     preparedFocus:snapshotPreparedFocus(command,actorId)};
-  boss.playerMenu='root';
-  floater(VW/2,304,'CHARGE ARMED — DEFEND','#7fc9ff',20);
+  boss.playerMenu='skills';
+  floater(VW/2,304,'CHARGE ARMED — FINISH WHEN READY','#7fc9ff',18);
   SFX.relic();
-  return endPlayerTurn();
+  return true;
 }
-function releasePrimaryCharge(autoFinish=false){
+function releasePrimaryCharge(){
   const pending=pendingPrimaryChargeRelease();
   if(!pending||pending.status!=='READY'||!isPlayerTurn())return false;
   pending.status='RELEASING';
@@ -39509,7 +39637,7 @@ function releasePrimaryCharge(autoFinish=false){
       {chain:0,actions:0,skills:[]},
     dodges:safeDefenseCharge(pending.dodges),
     parries:safeDefenseCharge(pending.parries),maxStreak:safeDefenseCharge(pending.maxStreak),
-    actionSteps:safeDefenseCharge(pending.actionSteps),finishAfterRelease:autoFinish});
+    actionSteps:safeDefenseCharge(pending.actionSteps),finishAfterRelease:false});
 }
 function releaseChargeAftershock(){
   const pending=boss&&boss.pendingChargeAftershock;
@@ -39533,14 +39661,12 @@ function beginPlayerTurn(fromBreak=false){
     boss.lastDefenseFlawless=boss.defenseTookDamage!==true;
     const pending=pendingPrimaryChargeRelease();
     if(pending&&pending.status==='DEFENDING'){
-      const pure=pending.command.chargeBankDamagePerPoint>0;
-      pending.charge=pure?safeDefenseCharge(boss.defenseChargeProgress):0;
+      pending.charge=defenseChargeBankResult(pending.charge,boss.defenseChargeProgress);
       pending.preparedWoundDamage=Math.max(0,Number(pending.command.preparedRelease&&
         pending.command.preparedRelease.oldWoundDamage)||0)*Math.max(0,pending.bleedAtArm||0);
-      pending.status='READY';
-      if(pure)boss.defenseChargeProgress=0;
-      else finalizeDefenseChargePhase(fromBreak);
-      floater(VW/2-112,278,'RELEASE READY'+(pure?' · CHARGE '+pendingPrimaryChargeTotal(pending):''),'#7fc9ff',14);
+      pending.status=primaryChargeStatusAfterDefense(pending.status);
+      boss.defenseChargeProgress=0;
+      floater(VW/2-112,278,'RELEASE READY · CHARGE '+pendingPrimaryChargeTotal(pending),'#7fc9ff',14);
     }else finalizeDefenseChargePhase(fromBreak);
     finalizeDetonationDefenseFuse(fromBreak);
     // Refund is a separate paid receipt, after max(old bank, defense gain), not part of that comparison.
@@ -39571,7 +39697,9 @@ function beginPlayerTurn(fromBreak=false){
 }
 function endPlayerTurn(){
   if(!isTurnCombat()||(boss.phase!=='player'&&boss.phase!=='playerResolve')) return false;
-  if(boss.phase==='player'&&primaryChargeReleaseReady())return releasePrimaryCharge(true);
+  const pendingCharge=pendingPrimaryChargeRelease();
+  if(boss.phase==='player'&&pendingCharge)
+    pendingCharge.status=primaryChargeStatusAfterFinish(pendingCharge.status);
   skillTooltipIndex=-1;
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
@@ -40763,7 +40891,7 @@ function performPlayerAction(command,options=null){
     breakActionIndex=boss.playerTurnBreak===true?Math.max(0,
       Math.floor(Number(boss.breakActionsTaken)||0)):-1;
   if(!primaryRelease&&commandChargeMode(command)==='DELAYED_PRIMARY'){
-    if(primaryChargeReleaseReady(command))return releasePrimaryCharge(false);
+    if(primaryChargeReleaseReady(command))return releasePrimaryCharge();
     if(pendingPrimaryChargeRelease()){SFX.duck();return false;}
     if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
     return armPrimaryChargeRelease(command,actorId,apCost,cost);
@@ -41151,13 +41279,17 @@ function handlePlayerTurnTap(pt){
     const skills=activeTurnSkills();
     for(let i=0;i<skills.length;i++) if(pointInRect(pt,TURN_SKILL_BTNS[i])){
       const skill=skills[i];
+      if(!turnCommandAvailable(skill)){SFX.duck();return false;}
       return performPlayerAction(skill);
     }
     return false;
   }
   if(pointInRect(pt,TURN_ROOT_FINISH_BTN)){SFX.duck();return endPlayerTurn();}
-  if(pointInRect(pt,TURN_FIGHT_BTN))
-    return performPlayerAction(fightCommand(activeTurnActorId()));
+  if(pointInRect(pt,TURN_FIGHT_BTN)){
+    const fight=fightCommand(activeTurnActorId());
+    if(!turnCommandAvailable(fight)){SFX.duck();return false;}
+    return performPlayerAction(fight);
+  }
   if(pointInRect(pt,TURN_SKILL_BTN)&&hasAffordableTurnSkill()){
     boss.playerMenu='skills';SFX.swipe();return true;
   }
@@ -45998,21 +46130,31 @@ const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
 const CHARGE_PRIMARY_RUNTIME_AUDIT=(()=>{
   const echoer={chargeChainEchoDamagePerChainPerCharge:.5},uncapped=
       commandChargeChainEchoDamage(echoer,4,10000),
-    primary={chargeMode:'DELAYED_PRIMARY',preparedRelease:{damage:8}},
-    pure={...primary,chargeBankDamagePerPoint:3},
+    primaryPower=8,primary={chargeMode:'DELAYED_PRIMARY',preparedRelease:{damage:
+      primaryChargeGuaranteedDamage(primaryPower)},chargeBankDamagePerPoint:
+      primaryChargeBankRate(primaryPower)},
+    pure={...primary,chargeBankDamagePerPoint:primary.chargeBankDamagePerPoint+3},
     chargeCommand={defenseTemperDamagePerCharge:2,chargePowerPerPoint:3,
-      chargeAftershockRate:1.5};
+      chargeAftershockRate:1.5},armed=primaryChargeStatusAfterFinish('ARMED'),ready=
+      primaryChargeStatusAfterDefense(armed),withheld=primaryChargeStatusAfterFinish(ready);
   if(commandChargeChainEchoDamage(echoer,4,0)!==0||
      commandChargeChainEchoDamage(echoer,4,1)!==2||uncapped!==20000||
      commandDefenseTemperBonus(chargeCommand,4)!==8||
      stableDamage(4*chargeCommand.chargePowerPerPoint)!==12||
      stableDamage(4*chargeCommand.chargeAftershockRate)!==6||
-     commandCollectsDefenseCharge(primary)||!commandCollectsDefenseCharge(pure)||
-     commandChargeReleaseBonus(primary,0)!==8||commandChargeReleaseBonus(primary,10000)!==8||
-     commandChargeReleaseBonus(pure,0)!==8||commandChargeReleaseBonus(pure,4)!==20)
+      !commandCollectsDefenseCharge(primary)||!commandCollectsDefenseCharge(pure)||
+      commandChargeReleaseBonus(primary,0)!==stableDamage(primaryPower*.55)||
+      commandChargeReleaseBonus(primary,2)!==primaryPower||
+      !(commandChargeReleaseBonus(primary,10000)>primaryPower)||
+      commandChargeReleaseBonus(pure,0)!==stableDamage(primaryPower*.55)||
+      commandChargeReleaseBonus(pure,4)!==stableDamage(primaryPower*.55+4*(3+
+        primaryChargeBankRate(primaryPower)))||armed!=='DEFENDING'||ready!=='READY'||
+      withheld!=='DEFENDING'||primaryChargeStatusAfterDefense('READY')!=='READY')
     throw new Error('F6 delayed Release runtime arithmetic drifted');
   return Object.freeze({passed:true,preservedChainEcho:2,uncappedTenThousand:uncapped,
-    baseRelease:8,paidMastery:12,aftershock:6,guaranteedPreparation:true,separateBank:true});
+    baseRelease:commandPreparationDamage(primary),paidMastery:12,aftershock:6,
+    guaranteedPreparation:true,primaryBank:true,separatePureMastery:true,
+    manualLifecycle:Object.freeze(['ARMED','DEFENDING','READY','DEFENDING'])});
 })();
 function uiConfirm(){
   if(mode==='menu'){ debugBossStart=false; debugMiniStart=false; debugMiniMoves=false; }
@@ -46483,7 +46625,7 @@ function drawPlayerTurnUI(){
     if(!hasCombatAlly())g.fillText('AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,450,578);
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
     g.fillText('HOLD FIGHT · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,130,600);
-    const fightEnabled=boss.ap>0,
+    const fightEnabled=boss.ap>0&&!primaryChargePreparationLocked(),
       fight=fightCommand(actorId),fightDamage=turnCommandDamageBreakdown(fight).total,
       fightSub=actorId==='ally'
         ?'1AP · '+fight.name+' · '+fightDamage+' DMG · +1R'
@@ -46632,7 +46774,9 @@ function drawDefenseChargeStatus(actor){
     woundLabel=tick&&tick.meter>0?' · TICKTE HARCANIR':refund>0?' · İADE +'+refund:
       tick&&(tick.feed>0||tick.parry>0)?' · YARAYI BESLER':'';
   if(!(value>0)&&!dynamo&&!woundLabel&&!pending&&!prepFollow&&!prepCarry&&!escort&&!transfer&&!pressure&&!critAfter&&!barbs&&!focusCarry)return;
-  const releaseLabel=pending?' · '+(pending.status==='DEFENDING'?'PREPARE':'RELEASE')+
+  const pendingLabel=pending&&(pending.status==='ARMED'?'ARMED':pending.status==='DEFENDING'?
+      'DEFENDING':pending.status==='READY'?'RELEASE READY':'RELEASING'),
+    releaseLabel=pending?' · '+pendingLabel+
     (pending.reservedBank>0?' · BANKA '+pending.reservedBank:''):'';
   const x=VW/2-160,y=163,label=(pending?'HAZIRLIK +'+damagePart(commandPreparationDamage(pending.command)+
       (pending.preparedDetonation?.bonus||0)+(pending.preparedFocus?.carry||0)+

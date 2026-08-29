@@ -125,7 +125,7 @@ globalThis.__globalChainAudit=(()=>{
         pending.status='READY';pending.charge=4;pending.dodges=1;pending.parries=1;
         pending.maxStreak=2;pending.actionSteps=1;
         boss.phase='player';boss.state='idle';boss.ap=boss.resolve=100;
-        check(releasePrimaryCharge(false),'Release did not start',r.id);
+        check(releasePrimaryCharge(),'Release did not start',r.id);
       }
       const a=boss.turnAction;actions++;
       while(a.hitIndex<a.hits)resolveTurnActionHit(a);

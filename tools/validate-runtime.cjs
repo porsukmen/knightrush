@@ -1490,7 +1490,7 @@ try{
             pending.status='READY';pending.charge=4;pending.dodges=1;pending.parries=1;
             pending.maxStreak=2;pending.actionSteps=1;
             boss.phase='player';boss.state='idle';boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
-            started=releasePrimaryCharge(false);chargeRoutes++;
+            started=releasePrimaryCharge();chargeRoutes++;
           }else immediateRoutes++;
           if(started!==true)throw new Error('action did not start');
           if(!boss.turnAction||boss.phase!=='playerResolve')

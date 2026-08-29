@@ -24,7 +24,7 @@ globalThis.__chargeCriticalAudit=(()=>{
   const inspect=c=>{
     const f=c.chargeCritical,s=snap(c),ledger={totalQuality:c.synthesisQuality,receipts:c.synthesisQualityReceipts};
     check(f&&Object.isFrozen(f)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
-      !commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&!c.chargeBankDamagePerPoint,
+      commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&c.chargeBankDamagePerPoint>0,
       'Primary/bank contract drift',s);
     check(!c.markGain&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.breakPowerBonus&&
       !c.posture&&!c.extraChainBonus&&!c.consumeChain&&!commandBleedAmount(c)&&
@@ -68,8 +68,10 @@ globalThis.__chargeCriticalAudit=(()=>{
       a.t=.1;drawBowMechanicCue(a,a.bowTimeline,{from:{x:100,y:200},to:{x:300,y:200}});
       drawDefenseChargeStatus(boss);updateTurnAction(100);actions++;finishPlayerAction();return a;},
     ready=(c,gain=0)=>{const hp=boss.hp,mark=bossMark();check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
-      check(pendingPrimaryChargeRelease()&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
+      check(pendingPrimaryChargeRelease()?.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
         'Prepare fired or detonated');
+      check(endPlayerTurn()&&pendingPrimaryChargeRelease()?.status==='DEFENDING',
+        'Prepare did not wait for manual Finish Turn');
       for(let i=0;i<gain;i++)recordDefenseChargeSuccess(1,'DODGE');
       check(beginPlayerTurn(),'Missing ready phase');phases++;boss.ap=100;boss.resolve=1000;},
     release=(crit=true)=>{const ap=boss.ap,resolve=boss.resolve;check(releasePrimaryCharge(),'Release failed');
@@ -153,7 +155,10 @@ globalThis.__chargeCriticalAudit=(()=>{
   // Artçı and a new ready preparation can coexist. Support cannot consume that
   // preparation or the player's first-attack condition, including defense Break.
   reset();ready(compile(aftershock));release(true);const next=compile(aim,3);
-  check(performPlayerAction(next),'Next Prepare failed');boss.postureMax=100;boss.posture=99.99;
+  check(performPlayerAction(next),'Next Prepare failed');
+  check(endPlayerTurn()&&pendingPrimaryChargeRelease()?.status==='DEFENDING',
+    'Next Prepare did not enter defense manually');
+  boss.postureMax=100;boss.posture=99.99;
   applyBossPosture(1,'parry');phases++;
   check(boss.playerTurnBreak&&primaryChargeReleaseReady()&&boss.turnAction?.freeFollowUp,
     'Defense Break did not release support alongside ready preparation');

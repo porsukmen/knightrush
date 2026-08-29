@@ -355,13 +355,14 @@ The older completed Sharpshoot contract below is a neighbouring reference, not t
 
 ## Charge output contract
 
-- Charge Primary pays its normal AP/Resolve immediately, deals no damage and ends the current
-  Knight activation. It guarantees Quality-paid preparation damage on next phase's Release.
-  Primary does NOT earn, read or consume a defense Charge bank. Defense success is not required.
-- The next player phase exposes the same move as a zero-AP, zero-Resolve Release. The player may
-  use other commands first, but Finish Turn must auto-Release it before opening a new enemy phase,
-  so a prepared shot can never be carried indefinitely. A zero-success defense still releases
-  the complete prepared attack, including its guaranteed bonus. Ordinary global Break rules apply.
+- Charge Primary pays its normal AP/Resolve immediately and deals no damage. Preparing locks every
+  combat command; only Finish Turn remains available. During defense, Perfect Dodge banks `1` and
+  Parry banks `2`. Quality buys a guaranteed preparation share plus a paid per-Charge share, so a
+  normal two-point defense result preserves the old expected value while stronger play can exceed it.
+- After defense the same move becomes a zero-AP, zero-Resolve Release. It is never fired by Finish
+  Turn or phase transition: the player must press it. The player may use other commands first, skip
+  the Release, or carry it through another defense phase; the stored result uses the better completed
+  phase rather than adding phases together. A zero-success defense still keeps the guaranteed share.
 - Charge Secondary never delays its inherited move.
 - Charge Secondary starts a defense phase at `0`: Perfect Dodge gives `1`, Parry gives `2`,
   and Break itself gives no Charge. Ending a defense phase stores the better of that phase and
@@ -374,9 +375,9 @@ The older completed Sharpshoot contract below is a neighbouring reference, not t
   Break rules may multiply it. It cannot refund AP/Resolve. Mark conversion, Mark resonance,
   retention, Break interaction, and phase distribution exist only when a Twist/Apex explicitly
   pays for that relationship from its Quality wallet.
-- Pure Charge/Charge opens both native roles: guaranteed Primary preparation plus the paid
-  Secondary bank. Prepare reserves the old bank; Release spends old plus new defense Charge
-  exactly once at the SAME Secondary rate. The Primary bonus is separate, never per Charge.
+- Pure Charge/Charge adds a separately paid Secondary mastery layer on top of the Primary's
+  guaranteed preparation and native defense-bank rate. Prepare reserves the old bank; Release
+  spends old plus new defense Charge exactly once. The guaranteed Primary bonus is separate.
   The reserved bank cannot be spent by another skill. A mixed Primary does not interfere with
   an independently equipped Secondary's bank. Legacy explicitly paid defense-event Twists may
   read events but do not open native Charge collection.

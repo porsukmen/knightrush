@@ -24,7 +24,7 @@ globalThis.__chargeChainAudit=(()=>{
     const f=c.chargeChain,s=snap(c),ledger={totalQuality:c.synthesisQuality,receipts:c.synthesisQualityReceipts},
       primary=skillRoleContactMagnitude({primaryAttributeId:'CHAIN',mechanics:{}},ledger);
     check(f&&Object.isFrozen(f)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
-      !commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&!c.chargeBankDamagePerPoint,
+      commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&c.chargeBankDamagePerPoint>0,
       'Primary role/bank drift',s);
     check(!c.markGain&&!c.critChance&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.posture&&
       !c.extraChainBonus&&!c.consumeChain&&!commandBleedAmount(c),'Third attribute leaked',s);
@@ -71,11 +71,12 @@ globalThis.__chargeChainAudit=(()=>{
         drawDefenseChargeStatus(boss);updateTurnAction(100);actions++;finishPlayerAction();result.push(a);}
       check(!boss.turnAction,'Follow-up recursion');return result;},
     ready=(c,gain=0)=>{const hp=boss.hp,mark=bossMark();check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
-      const p=pendingPrimaryChargeRelease();check(p&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
+      const p=pendingPrimaryChargeRelease();check(p&&p.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
         'Prepare fired or detonated');
+      check(endPlayerTurn()&&p.status==='DEFENDING','Prepare did not wait for manual Finish Turn');
       for(let i=0;i<gain;i++)recordDefenseChargeSuccess(1,'DODGE');
       check(beginPlayerTurn(),'Missing next phase');phases++;boss.ap=100;boss.resolve=1000;return p;},
-    release=(auto=false)=>{const ap=boss.ap,resolve=boss.resolve;check(releasePrimaryCharge(auto),'Free Release failed');
+    release=()=>{const ap=boss.ap,resolve=boss.resolve;check(releasePrimaryCharge(),'Free Release failed');
       const result=drain();check(boss.ap===ap&&boss.resolve===resolve&&!pendingPrimaryChargeRelease()&&bossCharge()===0,
         'Release spent AP/Resolve or gained defense Charge');return result;},
     attack=c=>{boss.ap=100;boss.resolve=1000;check(performPlayerAction(c),'Attack failed');return drain();},
@@ -123,10 +124,11 @@ globalThis.__chargeChainAudit=(()=>{
     const extra=attack(plain)[1];check(extra&&near(commandDirectDamageTotal(extra.command),c.chargeChain.escortDamage),
       'Same-skill/late escort condition leaked',i);
   }
-  // Next prepare does not use the ticket; its automatic Release does, then ends phase.
+  // Next prepare does not use the ticket; the manual Release does. The player still ends the phase explicitly.
   reset();const e=compile(escort);ready(e);release();const old=boss.preparedChainEscort;
   ready(compile(rise));check(boss.preparedChainEscort===old,'Prepare consumed escort');
-  const automatic=release(true);check(automatic.length===2&&boss.phase==='dodge','Auto-finish lost escort/phase');
+  const manual=release();check(manual.length===2&&boss.phase==='player','Manual Release lost escort or ended phase');
+  check(endPlayerTurn()&&boss.phase==='dodge','Finish Turn did not end released Charge phase');
   // Wait reads actual attacks performed while READY, not defense or its own arrows.
   for(let i=0;i<=4;i++)for(const scenario of ['early','one','same','different']){
     const c=compile(wait,i),f=c.chargeChain;reset(0);ready(c,5);

@@ -51,10 +51,12 @@ Sentez katmanı şunları hesaplar; rarity başına elle kart kopyalanmaz:
 
 ## Bir move ailesi üretme rutini
 
-Charge rol ayrımı: **Primary prepare → sonraki tur ücretsiz, garanti Quality bonuslu saldırı**;
-savunmada Charge kazanmaz. **Secondary savunmada Charge biriktirir → normal saldırıda harcar**;
-prepare istemez. **Saf Charge/Charge ikisini açar**: garanti hazırlık hasarı + aynı Secondary
-oranıyla bir kez harcanan eski/yeni banka. Bir rolü diğerine ücretsiz ekleme.
+Charge rol ayrımı: **Primary prepare → komutları kilitle → Finish Turn → savunmada Charge biriktir
+→ sonraki oyuncu fazında oyuncu istediğinde ücretsiz Release**. Hazır Release Finish Turn ile
+otomatik atılmaz ve daha sonraki savunma fazına taşınabilir. **Secondary savunmada Charge
+biriktirir → normal saldırıda harcar**; prepare istemez. **Saf Charge/Charge**, Primary'nin
+garanti hazırlık+banka oranına ayrıca ücretli Secondary banka ustalığı ekler. Bir rolü diğerine
+ücretsiz ekleme.
 
 Global Chain kuralı: Primary ve Secondary gerçek çoklu temas üretir; Secondary artık tek-ok
 veya yalnız pasif katsayı rotası olamaz. Ortak `skillRoleContactMagnitude` kullanılır; Chain dışı

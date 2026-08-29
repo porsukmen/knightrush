@@ -98,7 +98,7 @@ PASS: `node tools/validate-runtime.cjs KnightRush.html --charge-focus --charge-s
 F6S6: 101 current-rank/high-parent kart / 81 gercek action / 75 faz; dort ayri core,
 komsu benzerligi .80 < .86. Common referans fark %0.84; Apex referans butceleri esit.
 Eski/yeni/0/1/120/240 Charge, 100 Chain'de gercek HP, yeniden seri, tum Apexler,
-cross-skill devir, recursion, basarisiz komut, rezerv izolasyonu ve auto-Release PASS.
+cross-skill devir, recursion, basarisiz komut, rezerv izolasyonu ve manuel Release PASS.
 Specs 36 kart / 44 action / 43 faz; Charge/Chain 100 kart / 121 action / 77 faz PASS.
 Son yalniz-gorsel idle-bow eklemesi izole gercek-function pose kontrolunden gecti:
 bos/birikimli/devir/reset/olum/savunma-animasyonu onceligi. Combat motoru degismedigi icin
@@ -317,9 +317,23 @@ DPS esitligi veya playtest onayi degildir. Genis matris/browser/playtest/commit/
 
 F6S2 daha sonra tamamlandi; guncel sira icin yukaridaki son aile kaydini kullan.
 
-## Onceki duzeltme: Charge Primary / Secondary motor ayrimi (2026-08-28)
+## Guncel duzeltme: Charge Primary manuel Release ve savunma bankasi (2026-08-29)
 
-Kullanici duzeltmesi: **Primary savunmada Charge kazanmaz.** Simdi hazirlanir, sonraki oyuncu
+Kullanici karari onceki kaydi gecersiz kilar: butun Charge Primary rotalari hazirlandiktan sonra
+komutlari kilitler, Finish Turn ile savunmaya gecer, Perfect Dodge `+1` / Parry `+2` Charge toplar
+ve sonraki oyuncu fazinda **yalniz oyuncu ayni skille bastiginda** bedelsiz Release yapar. Finish
+Turn hazir Release'i otomatik atmaz; oyuncu isterse tasir ve sonraki tamamlanan savunma fazlarinda
+en iyi banka sonucu korunur. Saf Charge/Charge buna ayrica ucretli banka ustaligi ekler.
+
+Detonation kapasitesi de Sharpshoot kaynak sozlesmesine baglandi: ayni rarity/history yolunda Base,
+Primary veya Secondary Mark uretimi kac Mark aciyorsa Mark Burst es rolu ayni sayida Mark patlatir.
+Form/Spec esligi executable audit ile korunur; Twist/Apex kendi ucretli kapasitesini ekleyebilir ama
+bu tabanin altina inemez.
+
+## Gecersiz onceki karar: Charge Primary / Secondary motor ayrimi (2026-08-28)
+
+Bu bolum tarihsel kayittir ve yukaridaki 2026-08-29 karariyla gecersizdir. Eski karar:
+**[GECERSIZ] Primary savunmada Charge kazanmaz.** Eski uygulamada hazirlanir, sonraki oyuncu
 fazinda ucretsiz ve garanti Quality bonuslu vurur. Secondary Parry/Perfect Dodge ile banka
 acar ve normal saldirida harcar. Saf Charge/Charge iki mekanigi birlestirir.
 
@@ -338,7 +352,7 @@ eski yara ticki Charge uretmek yerine ucretli hazirlik hasarina doner.
 Hedefli PASS: `--charge-specs --affliction-specs --affliction-charge`.
 F6 36 kart / 44 action / 43 savunma fazi: sifir ve 12 savunma basarisinda karma Primary ayni
 hasar, saf rotada banka artisi; Mark Burst ve Sharpshoot alti Spec, uc legacy payload sentinel,
-rezerv izolasyonu, bedelsiz/otomatik Release, reset, Crit, Bleed ve gercek Chain denetlendi.
+rezerv izolasyonu ve artik kullanilmayan bedelsiz/otomatik Release, reset, Crit, Bleed ve gercek Chain denetlendi.
 F5 36 kart / 16 action; F5S6 80 kart / 57 action / 60 faz. Genis matris/browser/push yok.
 
 F6S1 Charge/Detonation Twist/Apex tasarimi onaylanip implement edildi; guncel kayit yukaridadir.

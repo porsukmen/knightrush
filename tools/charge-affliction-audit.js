@@ -23,7 +23,7 @@ globalThis.__chargeAfflictionAudit=(()=>{
   const inspect=c=>{
     const f=c.chargeAffliction,s=snap(c),ledger={totalQuality:c.synthesisQuality,receipts:c.synthesisQualityReceipts};
     check(f&&Object.isFrozen(f)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
-      !commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&!c.chargeBankDamagePerPoint,'Primary/bank drift',s);
+      commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&c.chargeBankDamagePerPoint>0,'Primary/bank drift',s);
     check(!c.markGain&&!c.critChance&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.breakPowerBonus&&
       !c.posture&&!c.extraChainBonus&&!c.consumeChain&&c.afflictionSplitPerContact,'Third attribute/native wound drift',s);
     check(c.markDetonationHitIndex===c.hits-1&&commandMarkPlan(c,10000).consumedTotal===s.capacity&&
@@ -59,8 +59,10 @@ globalThis.__chargeAfflictionAudit=(()=>{
       drawDefenseChargeStatus(boss);updateTurnAction(100);actions++;finishPlayerAction();return a;},
     prepare=c=>{boss.ap=100;boss.resolve=1000;const hp=boss.hp,mark=bossMark(),bleed=bossBleed();
       check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
-      check(pendingPrimaryChargeRelease()&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===hp&&
-        bossMark()===mark&&near(bossBleed(),bleed),'Prepare fired, wounded or detonated');},
+      check(pendingPrimaryChargeRelease()?.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&boss.hp===hp&&
+        bossMark()===mark&&near(bossBleed(),bleed),'Prepare fired, wounded or detonated');
+      check(endPlayerTurn()&&pendingPrimaryChargeRelease()?.status==='DEFENDING',
+        'Prepare did not wait for manual Finish Turn');},
     ready=(c,gain=0)=>{prepare(c);for(let i=0;i<gain;i++)recordDefenseChargeSuccess(1,'DODGE');
       check(beginPlayerTurn(),'Missing ready phase');phases++;boss.ap=100;boss.resolve=1000;},
     release=()=>{const ap=boss.ap,resolve=boss.resolve;check(releasePrimaryCharge(),'Release failed');

@@ -31,7 +31,7 @@ globalThis.__chargeDetonationAudit=(()=>{
         const c=compile(t,a,rank),f=c.chargeDetonation,s=snap(c),route=MARK_BURST_ROUTE_BY_ID[c.activeAttributeRouteId];
         cards++;if(a)compare(c,common);if(previous)compare(c,previous);previous=c;ranks.push({rank,apex:a,twist:t.id,...s});
         check(f&&f.engine===t.engine&&Object.isFrozen(f)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
-          !commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&!c.chargeBankDamagePerPoint,
+          commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&c.chargeBankDamagePerPoint>0,
           'Charge role or immutable payload drift',s);
         check(!c.markGain&&!c.critChance&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.posture&&
           !c.extraChainBonus&&!c.consumeChain&&!commandBleedAmount(c),'Third attribute leaked',s);
@@ -78,8 +78,9 @@ globalThis.__chargeDetonationAudit=(()=>{
       updateTurnAction(100);actions++;finishPlayerAction();return a;},
     ready=(c,{gain=0,markAfter=null}={})=>{
       const hp=boss.hp,mark=bossMark();check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
-      const p=pendingPrimaryChargeRelease();check(p&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
+      const p=pendingPrimaryChargeRelease();check(p&&p.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark,
         'Prepare did damage/consumed Mark');
+      check(endPlayerTurn()&&p.status==='DEFENDING','Prepare did not wait for manual Finish Turn');
       for(let i=0;i<gain;i++)recordDefenseChargeSuccess(1,'DODGE');
       check(beginPlayerTurn(),'Prepare did not reach next player phase');phases++;
       if(markAfter!==null)boss.mark=markAfter;boss.ap=100;boss.resolve=1000;

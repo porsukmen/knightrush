@@ -24,8 +24,13 @@ globalThis.__chargeFocusAudit=(()=>{
   const inspect=c=>{
     const f=c.chargeFocus,s=snap(c),ledger={totalQuality:c.synthesisQuality,receipts:c.synthesisQualityReceipts},
       paid=Object.entries(c.synthesisAxisCredits).reduce((sum,[key,v])=>sum+(key.startsWith('PREP_FOCUS_')?v:0),0),
-      expressed=commandExpectedPreparedFocusPower(c)+commandPreparationDamage(c)-c.synthesisAxisCredits.CHARGE_RELEASE+
-        (c.hits-1)*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN;
+      /* Native Primary preparation/bank is priced by CHARGE_RELEASE itself.
+         Only fallback power redirected into guaranteed preparation belongs to
+         the additional relationship receipt. */
+      expressed=commandExpectedPreparedFocusPower(c)+
+        (c.hits-1)*SKILL_GUARDRAIL_POWER_VALUES.CHAIN_GAIN+
+        commandPreparationDamage(c)+2*primaryChargeBankRate(c.synthesisAxisCredits.CHARGE_RELEASE||0)-
+        (c.synthesisAxisCredits.CHARGE_RELEASE||0);
     check(f&&Object.isFrozen(f)&&Object.isFrozen(c.preparedRelease)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
       commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&s.bank>0,'Primary/pure bank drift',s);
     check(!c.markGain&&!c.critChance&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.breakPowerBonus&&
@@ -73,9 +78,10 @@ globalThis.__chargeFocusAudit=(()=>{
       const hp=boss.hp,mark=bossMark(),ap=boss.ap,resolve=boss.resolve;
       check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
       const p=pendingPrimaryChargeRelease();
-      check(p&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark&&boss.ap<ap&&boss.resolve<resolve,
+      check(p&&p.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&boss.hp===hp&&bossMark()===mark&&boss.ap<ap&&boss.resolve<resolve,
         'Prepare fired/did not pay');
       check(p.reservedBank===(commandCollectsDefenseCharge(c)?old:0),'Old bank not reserved',c.activeAttributeRouteId);
+      check(endPlayerTurn()&&p.status==='DEFENDING','Prepare did not wait for manual Finish Turn');
       return p;},
     ready=(c,old=0,events=[])=>{const p=prepare(c,old);
       for(const [kind,gain] of events)recordDefenseChargeSuccess(gain,kind);
@@ -181,8 +187,11 @@ globalThis.__chargeFocusAudit=(()=>{
   attack(secondary);check(pendingPrimaryChargeTotal()===7,'Secondary stole reserved bank');
   check(release().chargeSpent===7,'Secondary changed Release spend');
   // The free automatic end-turn path is still functional.
-  reset();ready(pc,3);check(endPlayerTurn()&&boss.turnAction?.primaryChargeRelease,'Auto Release failed');
-  drain();check(!pendingPrimaryChargeRelease(),'Auto Release remained pending');
+  reset();ready(pc,3);const held=pendingPrimaryChargeRelease();
+  check(endPlayerTurn()&&!boss.turnAction&&held?.status==='DEFENDING','Finish Turn auto-fired READY Release');
+  check(beginPlayerTurn()&&held?.status==='READY','Held Release did not return READY');phases++;
+  check(releasePrimaryCharge(),'Manual held Release failed');drain();
+  check(!pendingPrimaryChargeRelease(),'Manual Release remained pending');
   return {passed:!failures.length,twists:4,apexes:16,cards,actions,phases,spread:spread(rows),apexSpreads,
     identity:{passed:identity.passed,distinctCores:identity.distinctCores,maximumSimilarity:identity.maximumSimilarity,neighborSimilarity},
     rows,failures};

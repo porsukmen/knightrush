@@ -24,7 +24,7 @@ globalThis.__chargePostureAudit=(()=>{
   const inspect=c=>{
     const f=c.chargePosture,s=snap(c),ledger={totalQuality:c.synthesisQuality,receipts:c.synthesisQualityReceipts};
     check(f&&Object.isFrozen(f)&&commandChargeMode(c)==='DELAYED_PRIMARY'&&
-      !commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&!c.chargeBankDamagePerPoint,
+      commandCollectsDefenseCharge(c)&&!commandDefenseTemperRate(c)&&c.chargeBankDamagePerPoint>0,
       'Primary/bank contract drift',s);
     check(!c.markGain&&!c.critChance&&!c.critPrecisionGain&&!c.critDamageStatUnlocked&&!c.breakPowerBonus&&
       !c.extraChainBonus&&!c.consumeChain&&!commandBleedAmount(c),'Third attribute/pure stat leaked',s);
@@ -63,8 +63,10 @@ globalThis.__chargePostureAudit=(()=>{
       drawDefenseChargeStatus(boss);updateTurnAction(100);actions++;finishPlayerAction();return a;},
     prepare=c=>{const hp=boss.hp,mark=bossMark(),posture=boss.posture;
       check(performPlayerAction(c),'Prepare failed',c.activeAttributeRouteId);
-      check(pendingPrimaryChargeRelease()&&boss.phase==='dodge'&&!boss.turnAction&&
-        boss.hp===hp&&bossMark()===mark&&boss.posture===posture,'Prepare fired or changed resources');},
+      check(pendingPrimaryChargeRelease()?.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&
+        boss.hp===hp&&bossMark()===mark&&boss.posture===posture,'Prepare fired or changed resources');
+      check(endPlayerTurn()&&pendingPrimaryChargeRelease()?.status==='DEFENDING',
+        'Prepare did not wait for manual Finish Turn');},
     ready=(c,gain=0)=>{prepare(c);for(let i=0;i<gain;i++)recordDefenseChargeSuccess(1,'DODGE');
       check(beginPlayerTurn(),'Missing ready phase');phases++;boss.ap=100;boss.resolve=1000;},
     release=()=>{const ap=boss.ap,resolve=boss.resolve;check(releasePrimaryCharge(),'Release failed');const a=drain();

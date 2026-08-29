@@ -25,8 +25,8 @@ globalThis.__chargeSpecsAudit=(()=>{
       for(const receipt of receipts)check(near(receipt.baseAttributePowerAllocation,receipt.powerBudget*.1)&&
         near(Object.values(receipt.powerAllocation).reduce((a,b)=>a+b,0),receipt.powerBudget),
         'Base share/Quality conservation drift',s);
-      check(s.preparation>0&&s.rate===0&&commandCollectsDefenseCharge(c)===pure&&
-        (s.bank>0)===pure&&!c.chargePowerPerPoint&&!c.critDamageStatUnlocked&&!c.critPrecisionGain&&
+      check(s.preparation>0&&s.rate===0&&commandCollectsDefenseCharge(c)&&s.bank>0&&
+        !c.chargePowerPerPoint&&!c.critDamageStatUnlocked&&!c.critPrecisionGain&&
         !c.breakPowerBonus&&!c.chargeAfflictionPerCharge&&!c.chargePosturePerPoint,
         'Unapproved stat/relationship or missing pure bank',s);
       check((s.crit>0)===(r.secondaryAttributeId==='CRITICAL')&&s.crit<=1&&
@@ -36,18 +36,17 @@ globalThis.__chargeSpecsAudit=(()=>{
         (r.secondaryAttributeId==='CHAIN'?c.hits>=2&&c.chargeSplitAcrossContacts&&
           c.deliveryPattern==='SEQUENTIAL':c.hits===1&&c.deliveryPattern==='SINGLE'),
         'Chain contact/scaling contract drift',s);
-      check(plan.consumedTotal===s.capacity&&s.capacity>=(r.secondaryAttributeId==='DETONATION'?2:1)&&
+      check(plan.consumedTotal===s.capacity&&s.capacity>=1&&
         plan.markDamageByHit.slice(0,-1).every(n=>n===0)&&
         near(plan.markDamageByHit.at(-1),s.capacity*s.detonation),'Final dynamic Detonation lost',s);
       check(timeline.recipe.id===MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID[r.id]&&
         timeline.contacts.length===c.hits&&timeline.releases.length===c.hits&&timeline.firstRelease>0,
         'Bow recipe/contact mismatch',s);
-      if(pure)check(near(c.chargeBankDamagePerPoint*preparedChargeBankReference(),
-        c.synthesisAxisCredits.DEFENSE_TEMPER),'Secondary bank spent the Primary wallet',s);
-      if(r.secondaryAttributeId==='CRITICAL')check(near(
-        commandExpectedLocalCritPower(c)+commandExpectedDefenseTemperPower(c)-
-          commandPreparationDamage(c),
-        c.synthesisAxisCredits.CRIT_CHANCE),'Crit did not price the whole release',s);
+      if(pure)check(c.chargePureMastery===true&&c.chargeBankDamagePerPoint>
+        primaryChargeBankRate(c.synthesisAxisCredits.CHARGE_RELEASE||0),
+        'Pure Charge did not add its paid mastery above the Primary bank',s);
+      if(r.secondaryAttributeId==='CRITICAL')check(c.chargeCritIncludesRelease&&
+        commandExpectedLocalCritPower(c)>0,'Crit did not price the whole release',s);
     };
   let cards=0,actions=0,phases=0;
   check(defs.length===6&&MARK_BURST_ROUTE_CONTRACTS.filter(r=>r.depth===2&&r.parentId===form.id).length===6,
@@ -96,20 +95,23 @@ globalThis.__chargeSpecsAudit=(()=>{
     boss.ap=5;boss.resolve=100;boss.charge=bank;
     boss.chargeEnabled=commandCollectsDefenseCharge(c)||withSecondary;chainStacks=0;
     check(performPlayerAction(c)===true,'Prepare failed',c.activeAttributeRouteId);
-    const pending=pendingPrimaryChargeRelease(),pure=c.chargeBankDamagePerPoint>0;
-    check(pending&&boss.phase==='dodge'&&!boss.turnAction&&boss.hp===boss.maxhp&&bossMark()===mark&&
-      boss.ap===4&&boss.resolve===100-c.cost&&bossCharge()===(pure?0:bank)&&
-      pending.reservedBank===(pure?bank:0),'Prepare cost/damage/reservation drift',snap(c));
+    const pending=pendingPrimaryChargeRelease(),pure=c.chargePureMastery===true;
+    check(pending&&pending.status==='ARMED'&&boss.phase==='player'&&!boss.turnAction&&
+      boss.hp===boss.maxhp&&bossMark()===mark&&boss.ap===4&&boss.resolve===100-c.cost&&
+      bossCharge()===0&&pending.reservedBank===bank&&!turnCommandAvailable(c),
+      'Prepare cost/damage/lock/reservation drift',snap(c));
     check(releasePrimaryCharge()===false,'Release allowed before defense');
+    check(endPlayerTurn()===true&&boss.phase==='dodge'&&pending.status==='DEFENDING',
+      'Finish Turn did not enter defense without firing');
     for(let i=0;i<Math.floor(gain/2);i++)recordDefenseChargeSuccess(2,'PARRY');
     if(gain%2)recordDefenseChargeSuccess(1,'DODGE');
     check(boss.defenseChargeProgress===(boss.chargeEnabled?gain:0)&&
-      pendingPrimaryChargeTotal()===(pure?gain+bank:0),
+      pendingPrimaryChargeTotal()===gain+bank,
       'Charge counting/cap drift',{bank,gain,pure});
     drawDefenseChargeStatus(boss);
     check(beginPlayerTurn(false)===true,'Defense did not finish');phases++;
-    check(pending.status==='READY'&&pending.charge===(pure?gain:0)&&boss.defenseChargeProgress===0&&
-      bossCharge()===(pure?0:withSecondary?Math.max(bank,gain):bank),'Defense ownership/bank settlement drift');
+    check(pending.status==='READY'&&pending.charge===gain&&boss.defenseChargeProgress===0&&
+      bossCharge()===0,'Defense ownership/bank settlement drift');
     if(interleave){
       const secondary=compile('burst_affliction_charge_spec');
       check(performPlayerAction(secondary)===true,'Intervening Secondary failed');
@@ -119,14 +121,20 @@ globalThis.__chargeSpecsAudit=(()=>{
     }
     const ap=boss.ap,resolve=boss.resolve,oldRandom=Math.random;
     try{Math.random=()=>roll;
-      check((auto?endPlayerTurn():releasePrimaryCharge(false))===true,'Free release failed');
-      const action=boss.turnAction,expected=commandChargeReleaseBonus(c,pure?gain+bank:0,mark,false);
-      check(action&&near(action.chargeBonus,expected)&&action.chargeSpent===(pure?gain+bank:0)&&
+      if(auto){
+        check(endPlayerTurn()===true&&boss.phase==='dodge'&&pending.status==='DEFENDING'&&
+          !boss.turnAction,'Finish Turn auto-fired a READY Release');
+        recordDefenseChargeSuccess(1,'DODGE');
+        check(beginPlayerTurn(false)===true&&pending.status==='READY'&&pending.charge===gain,
+          'Withheld Release did not preserve the better completed defense phase');phases++;
+      }
+      check(releasePrimaryCharge()===true,'Free manual release failed');
+      const action=boss.turnAction,expected=commandChargeReleaseBonus(c,gain+bank,mark,false);
+      check(action&&near(action.chargeBonus,expected)&&action.chargeSpent===gain+bank&&
         boss.ap===ap&&boss.resolve===resolve&&!pendingPrimaryChargeRelease(),
         'Release price/Charge packet drift',{expected,actual:action&&action.chargeBonus});
       drain();
       check(!pendingPrimaryChargeRelease()&&releasePrimaryCharge()===false,'Release could be repeated');
-      if(auto)check(boss.phase==='dodge','Finish Turn did not release before new defense');
       const result={damage:boss.maxhp-boss.hp,bank:bossCharge(),mark:bossMark(),bleed:bossBleed(),
         later:bossBleedLater(),posture:boss.posture,critical:action.anyCritical,
         chain:chainStacks,bonus:action.chargeBonus};
@@ -145,10 +153,10 @@ globalThis.__chargeSpecsAudit=(()=>{
   for(const def of defs){
     const c=compile(def.id),empty=release(c,{gain:0}),successful=release(c,{gain:12}),
       full=release(c,{bank:3,gain:4,mark:10000});
-    check(def.secondary==='CHARGE'?successful.damage>empty.damage:near(successful.damage,empty.damage),
-      'Native Primary depended on defense success',{id:def.id,empty,successful});
+    check(successful.damage>empty.damage,
+      'Native Primary failed to express earned defense Charge',{id:def.id,empty,successful});
     check(empty.damage>0&&full.damage>empty.damage&&full.mark===10000-c.markDetonationCoreCapacity&&
-      full.chain===c.hits&&full.bank===(def.secondary==='CHARGE'?0:3),
+      full.chain===c.hits&&full.bank===0,
       'Native delayed output/resources lost',{id:def.id,empty,full});
     if(def.secondary==='AFFLICTION'){
       check(near(full.bleed,commandBleedAmount(c))&&near(full.later,full.bleed),
@@ -172,14 +180,14 @@ globalThis.__chargeSpecsAudit=(()=>{
       stableDamage(commandDirectDamageTotal(crit)+normal.bonus)),
     'Critical did not multiply direct + Charge only',{normal,critical});
   const mixed=release(compile('burst_charge_detonation_spec'),{bank:3,gain:4,withSecondary:true});
-  check(mixed.bank===4,'Prepared Primary stole another skill Secondary bank');
+  check(mixed.bank===0,'Prepared Primary failed to reserve/spend its own old and new bank');
   // Both skills use the corrected native motor, including the bare Form.
   for(const spec of [null,...SHARPSHOOT_CHARGE_PRIMARY_BLUEPRINTS.map(row=>row.specId)]){
     const c=synthesizeSharpshootChargePath('COMMON',spec,'COMMON'),
       empty=release(c,{gain:0}),earned=release(c,{gain:12});
-    check(commandPreparationDamage(c)>0&&commandDefenseTemperRate(c)===0&&
-      (spec==='charge_focus_spec'?earned.damage>empty.damage:near(earned.damage,empty.damage)),
-      'Sharpshoot native Primary still uses defense Charge',{spec,empty,earned});
+    check(commandPreparationDamage(c)>0&&commandCollectsDefenseCharge(c)&&
+      earned.damage>empty.damage,
+      'Sharpshoot native Primary failed to use defense Charge',{spec,empty,earned});
   }
   for(const [spec,twist] of [['charge_mark_spec','charge_mark_conversion_twist'],
     ['charge_posture_spec','charge_posture_impact_twist'],

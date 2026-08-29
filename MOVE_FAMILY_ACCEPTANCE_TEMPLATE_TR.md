@@ -23,7 +23,7 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 - Native direct/hazirlik/banka/Detonation parent-rank ilerlemesi; %10 Base / saf %100 kimlik;
   iliski+temas+guvence butcesi bagimsiz sayimla korunur. Genel Charge carpani/ucuncu attribute yok.
 - Eski banka Prepare'da ayrilir; eski+yeni bir kez harcanir. 0/1/120/240 Charge ve aradaki
-  Secondary saldirisinin rezervi calamamasi; bedelsiz manuel ve otomatik Release.
+  Secondary saldirisinin rezervi calamamasi; bedelsiz yalniz manuel Release ve Finish Turn ile tasima.
 - T1 eski/yeni banka ve guvence; 1 Charge kazanmak sifir-banka guvencesinden daha zayif degil.
 - T2 ilk-ok hazirlik / banka dagilimi, final dinamik Detonation; temas basina Chain ve 100
   Chain'de gercek HP. Ek Salim iki Chain rolunden yavas, tum-gecmis-Legendary sentinel dahil.
@@ -130,11 +130,12 @@ Bir aile ancak butun kapilar gectikten sonra tamamlanmis sayilir.
 
 - Alti onayli Spec, ortak factory/compiler; Twist/Apex bu kaydin kapsaminda degildir.
 - Hedefli `--charge-specs`: 36 kart, 44 gercek action, 43 savunma fazi.
-- Prepare maliyeti ve sifir hasar, sonraki tur bedelsiz Release, Finish Turn auto-release,
+- Prepare maliyeti ve sifir hasar, komut kilidi, savunmada Primary banka, sonraki tur bedelsiz
+  ve yalniz oyuncu basinca Release; hazir Release'i Finish Turn ile tasiyabilme,
   eski bankanin prepare'da izole edilmesi, aradaki Secondary ile cift harcanmamasi, reset,
   sifir/yuksek Charge, local Crit, iki-tick Bleed, dinamik Detonation ve gercek Chain delivery.
-- Mark Burst ve Sharpshoot karma/bare Primary: sifir ve 12 basarida ayni garanti hazirlik bonusu;
-  banka acilmaz. Uc legacy hazirlik payload'i sifir savunma basarisinda da calisir.
+- Mark Burst ve Sharpshoot karma/bare Primary: sifir basarida garanti hazirlik payi, Parry/Dodge
+  ile uncapped banka payi. Uc legacy hazirlik payload'i sifir savunma basarisinda da calisir.
 - Pure Charge: garanti Primary bonusu + eski/yeni Charge icin ayni ucretli Secondary oran.
   Fiyat referansi 4, gameplay cap degil. Normal Secondary max-bankalama degismedi.
 - Referans rarity spreadleri %4.43 / %8.02 / %2.86 / %6.12; playtest sonucu degildir.
