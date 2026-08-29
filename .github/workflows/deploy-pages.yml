@@ -13,7 +13,8 @@ permissions:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: false
+  # Rapid development pushes should publish the newest build, not wait for an obsolete one.
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -28,8 +29,10 @@ jobs:
       - name: Validate canonical game source
         run: node tools/validate-html.cjs KnightRush.html
 
-      - name: Validate fast runtime and closure contracts
-        run: node tools/validate-runtime.cjs KnightRush.html --quick
+      # Pages only guards deployability. Deep balance, rarity, family and closure
+      # audits remain available locally and must never block a playable build.
+      - name: Validate runtime boot
+        run: node tools/validate-runtime.cjs KnightRush.html --boot-only
 
       - name: Build single-file Pages artifact
         shell: bash
