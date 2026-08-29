@@ -371,6 +371,11 @@ The older completed Sharpshoot contract below is a neighbouring reference, not t
 - Only a command with `DEFENSE_TEMPER` consumes the bank. Other skills, Fight and companions
   cannot spend it unless an explicit Twist opens a priced phase engine. A normal full-release
   command empties the bank; retention Apexes may restore only a priced fraction of what was spent.
+- **No silent partial spend:** a cash-out commits the complete bank. Contact count, remaining
+  Posture, Mark count, Crit count, or another resource may shape where the output goes, but may not
+  make surplus Charge invisible. An economy move must reserve/consume the complete bank first and
+  explicitly return its unused or Quality-priced retained portion. Returned Charge is visible,
+  cannot exceed the committed bank, and cannot recursively create another refund.
 - Secondary Charge converts the consumed bank into base damage, so ordinary Chain, Crit and
   Break rules may multiply it. It cannot refund AP/Resolve. Mark conversion, Mark resonance,
   retention, Break interaction, and phase distribution exist only when a Twist/Apex explicitly
@@ -386,9 +391,9 @@ The older completed Sharpshoot contract below is a neighbouring reference, not t
   accumulated Quality and shared formulas, never per-rarity tables or runtime caps.
 
 The current Mark/Charge family demonstrates four valid flexible relationships: full immediate
-release, Charge-to-Mark simultaneous packet, preserved-Mark/Charge resonance, and a one-Charge-per-
-offensive-action phase engine. These are examples for the generator, not four mandatory slots for
-future attribute pairs.
+release, Charge-to-Mark simultaneous packet, preserved-Mark/Charge resonance, and a full-bank
+reserved phase engine that spends one point per offensive action then returns the unused reserve.
+These are examples for the generator, not four mandatory slots for future attribute pairs.
 
 ## Mark resource contract
 
@@ -826,11 +831,12 @@ The runtime gate must cover all materialized Sharpshoot routes, not a hand-picke
   adds no Charge. The bank stores the best unspent single-phase result, has no gameplay cap, and is
   consumed only by an explicit Charge command or its authored distributed phase engine.
 - T1 releases the full bank as base damage. T2 converts the full bank into a simultaneous conditional
-  Mark packet. T3 preserves starting Mark and multiplies its read by consumed Charge. T4 spends one
-  Charge per offensive action and carries fractional Mark progress across the phase.
+  Mark packet. T3 preserves starting Mark and multiplies its read by consumed Charge. T4 reserves the
+  complete bank, spends one point per offensive action, carries fractional Mark progress, and visibly
+  returns every unused reserved point at Finish Turn.
 - T1/T2/T3 consume the complete bank. Retention Apexes may restore only a Quality-priced fraction of
-  the amount actually spent. T4 clears its temporary engine at phase end while leaving unspent banked
-  Charge intact. None of these paths refunds AP or Resolve.
+  the amount actually spent. T4 commits the complete bank to its temporary engine and returns its
+  unused internal reserve when the phase ends. None of these paths refunds AP or Resolve.
 - All four Twists declare explicit flexible-design metadata. Their player decisions and combined
   Delivery/synergy signatures must remain unique; this four-route set is not a global slot template.
 - Runtime validation covers `256` Form/Spec/Twist rarity histories, four Apex role families per Twist,
@@ -1158,7 +1164,8 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
   bankasını kullanır; Break ekstra Charge üretmez.
 - T1 bütün bankayı tüketip tek toplam hasarı seri Chain oklarına böler. T2 bütün bankayı final gerçek
   temas sonrası bonus Chain'e çevirir. T3 action-start Chain'i koruyup harcanan Charge ile tek
-  snapshotta Rezonans hasarı üretir. T4 görünür temas sayısı kadar Charge harcar ve fazlasını saklar.
+  snapshotta Rezonans hasarı üretir. T4 bütün bankayı tüketir ve tek toplam Charge paketini görünür
+  temaslar arasında böler; temas sayısı harcamayı sınırlamaz.
 - Hiçbir multihit aynı Charge noktasını birden fazla kez kullanamaz. Charge→Chain yalnız final
   temastan sonra uygulanır; aynı saldırının önceki hasarını geriye dönük büyütmez.
 - Animasyon kimlikleri güvenilir Charge volley, ağır Charge patlaması, rezonans echo ve hızlı ölçülü
@@ -1427,9 +1434,9 @@ It must also positively accept compatible neighbouring overlap such as `Chain ->
 - Her Twist dört ayrı gameplay kararıdır. Her Apex parent mekaniği ve delivery ailesini koruyup sırasıyla ilişki, Posture, Secondary veya temiz impact yönünü büyütür.
 - Posture/Mark; ağır marka, Break→Mark, sonraki Posture→Mark izi ve eşzamanlı scatter olarak ayrılır. Posture/Chain; breaker volley, başlangıç Chain→Posture, Break→Chain ve canlı Chain echo olarak ayrılır.
 - Saf Posture; crusher, sıralı temas, gecikmeli temassız fracture ve başarısız Break primerı kullanır. Crit; tek roll, bağımsız temas rolleri, ortak packet rollü ve Crit→Posture fracture kullanır.
-- Affliction; ağır wound, sıralı wound, mevcut Bleed→Posture okuması ve eşzamanlı packet kullanır. Charge; can hasarı release, Posture release, yalnız gereken Charge harcaması ve temassız Posture echo kullanır.
+- Affliction; ağır wound, sıralı wound, mevcut Bleed→Posture okuması ve eşzamanlı packet kullanır. Charge; can hasarı release, Posture release, bütün bankayı commit edip kullanılmayanı açıkça iade eden ölçülü Break ve temassız Posture echo kullanır.
 - Görünen her temas `+1 Chain` ve gerçek payload payı üretir. Temassız Mark/Chain/Posture olayları temas gibi gösterilmez. Eşzamanlı packet kendi içinde açtığı Break'i sonraki pelletlerin Bleed bonusu için kullanamaz.
-- Crit direct Health ve direct Posture'u birlikte çarpar. Bleed Break bonusu `%25`tir. Measured Charge barı kırmak için gerekeni harcar, yetmezse bütün bankayı kullanır ve fazlayı saklar.
+- Crit direct Health ve direct Posture'u birlikte çarpar. Bleed Break bonusu `%25`tir. Measured Charge bütün bankayı commit eder, barı kırmak için gerekeni uygular ve fazlayı görünür `CHARGE RETURN` ile geri verir.
 - Twist/Apex makbuzları parent Form/Spec bütçesini yeniden dağıtmaz. Rank yükselirken sahip olunan damage, Base Mark, direct Posture veya delivery gerilemez; hiçbir scaling kanalında authored gameplay cap/diminishing bulunmaz.
 - Ağır, volley, packet, echo, affliction ve charge hareketleri mekanikle eşleşen Bow recipe kullanır. Tam 508 kartlık closure ve 24 imza mekaniği yalnız geliştirme validatorında çalışır; oyun boot maliyetine eklenmez.
 - `--posture-balance` ayrı geliştirme kapısıdır: 18 temsili full-history örneğinde 108 Twist kardeş, 432 Apex kardeş, 24 Apex rol grubu ve altı komşu aileyi denetler. Twist/Apex maksimum spread `%20`, ortalama `%10`; komşu aile maksimum spread `%20`, ortalama `%12`yi aşamaz.

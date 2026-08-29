@@ -333,8 +333,11 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 
 - Savunma fazi `0` Charge ile baslar; Perfect Dodge `+1`, Parry `+2` verir. Break ekstra Charge
   vermez. Banka fazlari toplamaz, eski banka ile yeni fazin buyugunu saklar ve gameplay cap kullanmaz.
+- Charge cash-out bütün bankayı commit eder. Bir mekanik daha azını kullanıyorsa önce tam rezervasyon
+  yapmalı, kullanılmayan kısmı görünür iade etmeli; sessiz kısmi harcama kabul edilmez.
 - T1 bankayi tek hasar salimina, T2 kosullu Mark packetine, T3 korunmus Mark x Charge okumasina,
-  T4 ise faz boyunca aksiyon basina bir Charge harcayan motora cevirir.
+  T4 ise bütün bankayı faz motoruna rezerve eder, aksiyon başına bir Charge kullanır ve Finish
+  Turn'de kullanılmayan rezervi görünür biçimde geri verir.
 - Dort Twist ayni global slot kalibindan uretilmez. Her birinin kaynak yonu, oyuncu karari,
   Primary/Secondary sonucu ve sinerji kancasi metadata ile test edilir.
 - Common T2 referans `2 Charge` ile en az bir gorunur kosullu Mark vermeli; Common T4 iki aksiyonda
@@ -478,7 +481,8 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 
 - [x] Tam sayım `4 Twist / 16 Apex`; her Twist tam dört Apex taşır.
 - [x] T1 Tam Boşaltım, T2 Zincir Ateşleme, T3 Rezonans ve T4 Ölçülü Atış kimliğini korur.
-- [x] Bir Charge noktası bir kez harcanır; multihit bankayı çoğaltmaz ve temas fazlası Charge korunur.
+- [x] Bir Charge noktası bir kez harcanır; multihit bankayı çoğaltmaz. T4 bütün bankayı harcar ve
+  tek toplam Charge paketini gerçek temaslara böler; temas sayısı harcamayı sınırlamaz.
 - [x] Charge→Chain final temastan sonra çalışır; aynı saldırıyı geriye dönük prime etmez. Rezonans yalnız action-start Chain snapshotını okur.
 - [x] Dört rota mekaniklerine uygun ayrı animasyon recipe'si kullanır ve Apexler parent recipe ailesini korur.
 - [x] Common kardeş güç oranı `1.20`yi aşmaz; bütün Apexler parent/rank ilerlemesi ve ayrı runtime kanıtı taşır.
@@ -680,7 +684,9 @@ Delivery kaynak olaylari, canli onceki-temas okumasi, Quality odemesi ve capsiz 
 - [ ] Break→Mark/Chain, sonraki Posture→Mark, Crit→Posture, Bleed→Posture ve Charge→Posture ilişkileri Quality ile ölçeklenir ve guardrail hesabında fiyatlanır.
 - [ ] Shared packet Crit tek roll, sequential Crit temas başına roll yapar; Crit Health ve direct Posture'u birlikte çarpar.
 - [ ] Simultaneous Bleed packet kendi içinde açtığı Break'i sömürmez; sequential Bleed sonraki gerçek temaslarda kullanabilir.
-- [ ] Measured Charge yalnız Break için gereken bankayı harcar; full release ve delayed echo rotaları bütün bankayı bir kez tüketir.
+- [ ] Measured Charge bütün bankayı commit eder, yalnız Break için gereken kısmı uygular ve
+  kullanılmayan kısmı görünür biçimde geri verir; full release ve delayed echo rotaları bütün
+  bankayı bir kez tüketir.
 - [ ] Apex parent delivery/mekaniğini korur; rank ve parent çıktıları gerilemez, gameplay cap veya diminishing eklenmez.
 - [ ] `node tools/validate-runtime.cjs KnightRush.html --quick` içindeki F3 closure ve mechanic kapıları geçer.
 - [ ] `node tools/validate-runtime.cjs KnightRush.html --posture-balance` 18 temsili rarity geçmişinde Twist/Apex kardeşlerini, komşu aileleri ve Apex rollerini geçirir.
@@ -921,8 +927,9 @@ T4 ayni-action native pay okumasiyla ayrilir; yeni meter veya artifact bagimlili
 
 - [ ] Tam sayım `4 Twist / 16 Apex`; her Apex `Apex Design V2` taşır.
 - [ ] Mark Burst hiçbir rotada Mark üretmez ve sıfır Charge ile parent Detonation çalışmaya devam eder.
-- [ ] T1 bütün bankayı harcar; T2 yalnız eşleşen Chargeı harcar; T3 yalnız gerçekten harcanmış
-  bankadan iade yapar; T4 bankayı finite bir sonraki-savunma füzesine çevirir.
+- [ ] T1 ve T2 bütün bankayı harcar; T2 yalnız eşleşen alt kümeyle yankı üretir ve kalan Chargeın
+  temiz etkisini korur. T3 yalnız gerçekten harcanmış bankadan iade yapar; T4 bankayı finite bir
+  sonraki-savunma füzesine çevirir.
 - [ ] T2 yankıları, T4 savunma pulseları fiziksel temas değildir; Chain/Crit/Mark üretmez ve recursion açmaz.
 - [ ] T4 Perfect Dodge başına 1, Parry başına en fazla 2 fuse Charge harcar. Başarısız savunma
   yalnız streaki sıfırlar; Break iadesi kalan fuse Chargeı aşamaz.

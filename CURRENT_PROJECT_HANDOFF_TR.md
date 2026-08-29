@@ -3,20 +3,39 @@
 Guncel durum: 2026-08-29. Bu dosya sohbet gecmisinin yerine gecen kisa durum belgesidir.
 Yeni bir AI once bu dosyayi, sonra asagidaki zorunlu belgeleri okumadan skill tasarlamamali.
 
+## Guncel Charge banka sozlesmesi — 2026-08-29
+
+Cagatay'in playtest geri bildirimiyle savunmada biriken Charge icin genel bir hata bulundu:
+bazi hareketler bankanin yalniz 1 puanini, gorunen ok sayisi kadarini veya baska bir kaynakla
+eslesen kismini kullanip kalani sessizce yok sayiyordu. Bu davranis artik yasaktir.
+
+Hard rule: Charge cash-out yapan hareket butun bankayi commit eder. Kaynak ekonomisi olan bir
+hareket bankanin yalniz bir kismini gercekten uygulayacaksa once butun bankayi rezerve eder,
+kullanilmayan kismi acik bir `CHARGE RETURN` olayi ile geri verir. Sessiz kismi harcama yoktur.
+Gelecekteki savunma olaylarini okuyan reactive motorlar bankayi kismi harcamis sayilmaz.
+
+Mevcut dort ozel davranis:
+
+1. Temasli/olculu volley butun bankayi tuketir; tek toplam Charge paketi gorunen oklar arasinda
+   bolunur. Az ok, fazla Charge'i silmez ve cok ok ayni bankayi kopyalamaz.
+2. Detonation esleme hareketi butun bankayi tuketir. Mark ile eslesen alt kume echo uretir;
+   eslesmeyen Charge normal temiz Charge hasarini verir. Ozel Apex ayrica overflow premiumu
+   verebilir.
+3. Posture olculu hareketi butun bankayi commit eder, Break bosluguna gereken puani uygular ve
+   kullanilmayan puanlari ayni aksiyonda gorunur bicimde geri verir.
+4. Faz motoru butun bankayi rezerve eder, her offensive action rezervden 1 puan kullanir ve
+   Finish Turn'de kalan rezervi gorunur bicimde geri verir.
+
+Bu bolum asagidaki eski `yalniz 1 Charge`, `temas sayisi kadar harca` veya `fazlasi sessizce
+korunur` notlarinin yerine gecer.
+
 ## Kisa yayin kapisi — 2026-08-29
 
-Kullanici uzun Sharpshoot kontrolunun yayini bekletmesini istemedi. Pages workflow'undan
-yalniz `--adjacent` F2 rarity-history matrisi kaldirildi. HTML/JS kaynak dogrulamasi,
-mevcut `--quick` runtime/closure kapisi ve tek dosya artifact dogrulamasi aynen korunur.
-`--adjacent` araci silinmedi; yalniz ilgili F2 degisikligi icin ayrica onaylanan manuel
-incelemede kullanilabilir. Her push'ta veya yeni Mark Burst ailesinde otomatik kosulmaz.
-Bu karar asagidaki eski "quick + adjacent yayin kapisi" notlarinin yerine gecer.
-
-e3f4bc8 checkpointi GitHub'a gonderildi. Run 33210388283 build VE deploy SUCCESS:
-https://github.com/porsukmen/knightrush/actions/runs/33210388283
-Quick 57 saniye, eski F2 matrisi 23 dakika 49 saniye surdu. Pages yayini 29 Agustos
-00:21 Turkiye saatinde tamamlandi. Bu workflow degisikligi oyun dosyasini degistirmez;
-ayni oyun icin uzun yerel testi yeniden kosmaya gerek yoktur.
+Pages yalniz yayinlanabilirligi denetler: HTML/JS parse, `--boot-only` runtime acilisi ve
+tek dosya artifact karsilastirmasi. `--quick`, `--adjacent`, rarity, balance ve closure
+taramalari Pages'i artik bekletmez; ihtiyac olan aile icin yerelde hedefli calistirilir.
+Workflow commit'i `8ed611a Simplify Pages deployment checks`tir. Bu karar asagidaki eski
+`quick + adjacent` veya `quick yayin kapisi` notlarinin yerine gecer.
 
 ## Yayin oncesi genel kontrol — 2026-08-28
 
@@ -837,7 +856,8 @@ F2S6 kimlikleri:
 2. Zincir Atesleme: harcanan Charge final temastan sonra bonus Chain verir; ayni actioni buyutmez.
 3. Rezonans: action-start Chain ile harcanan Charge tek snapshotta bonus hasar verir; yeni Chain
    geriye donuk okunmaz.
-4. Olculu Atis: her gercek ok en fazla 1 Charge harcar; temas sayisini asan Charge korunur.
+4. Olculu Atis: butun banka bir kez harcanir; tek toplam Charge paketi gercek oklar arasinda
+   bolunur ve temas sayisi banka katkisini sinirlamaz.
 
 Her Twist dort Apex tasir (`4 / 4 / 4 / 4 = 16`). Apexler Charge gucu, dusuk-kaynak guvencesi,
 temas/zamanlama ve temiz direct hasar ifadelerini parent motorunu degistirmeden ayirir.

@@ -71,9 +71,11 @@ Setlenen ilk davranışlar:
 - **Charge Primary:** maliyetini hazırlarken öder, Knight activation'ını kapatır ve
   sonraki player phase'de 0 AP/0 ek Resolve Release'e dönüşür. **Charge Secondary:** ana
   hareketi geciktirmez; boss phase savunma performansıyla aynı skill'in sonraki kullanımını
-  temper eder. Fazı bitirmek `1`, her Perfect Dodge/Parry `+1`, defense Break en az `2`
-  bankalar; maksimum `3`tür. Banka kullanılmazsa kaybolmaz, yalnız Charge Secondary move'u
-  kullandığında tek seferde tüketilir. Parti geldiğinde Charge bütün party phase'ini silemez.
+  temper eder. Savunma fazı `0` ilerlemeyle başlar; Perfect Dodge `+1`, Parry `+2` Charge
+  verir, Break doğrudan Charge vermez. Banka gameplay cap taşımaz; eski banka ile yeni
+  savunma ilerlemesinin büyüğü saklanır. Cash-out bütün bankayı commit eder. Ekonomi rotası
+  kullanmadığı kısmı sessizce saklayamaz, görünür biçimde iade eder. Parti geldiğinde Charge
+  bütün party phase'ini silemez.
 
 ### Doğrudan temas ve Chain görünürlük kuralı
 

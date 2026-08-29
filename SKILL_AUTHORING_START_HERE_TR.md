@@ -58,6 +58,10 @@ biriktirir → normal saldırıda harcar**; prepare istemez. **Saf Charge/Charge
 garanti hazırlık+banka oranına ayrıca ücretli Secondary banka ustalığı ekler. Bir rolü diğerine
 ücretsiz ekleme.
 
+Charge banka hard rule: Bir cash-out bütün bankayı commit eder. Ok/temas/Mark/Posture sayısı
+fazla Chargeı sessizce yok sayamaz. Ekonomik hareket bütün bankayı önce rezerve eder ve
+kullanmadığı ya da ücretli retention ile sakladığı kısmı görünür `CHARGE RETURN` olarak iade eder.
+
 Global Chain kuralı: Primary ve Secondary gerçek çoklu temas üretir; Secondary artık tek-ok
 veya yalnız pasif katsayı rotası olamaz. Ortak `skillRoleContactMagnitude` kullanılır; Chain dışı
 destek okları `skillSupportArrowMagnitude` ile daha yavaş büyür. Secondary generic Chain hasar
@@ -186,8 +190,8 @@ yeniden eklenen Markı ikinci tickte gerçekten tüketir; T3A4 aktif yara boyunc
 başlangıcını bir ücretli pulse'a çevirir. Bu aile `Apex Design V2` yüzeysellik kapısının referansıdır.
 
 Mark Burst F1S6 Detonation/Charge referansı da `4 Twist / 16 Apex` ile materializedir. T1 bütün
-bankayı Detonation ile aynı ağır darbeye boşaltır; T2 yalnız patlatılan Markla eşleşen Chargeı
-harcayıp finite yankı üretir; T3 harcanmış bankanın ücretli bölümünü Marklarla geri taşır; T4
+bankayı Detonation ile aynı ağır darbeye boşaltır; T2 bütün bankayı harcar, eşleşen Mark/Charge
+çiftlerinden finite yankı üretir ve eşleşmeyen Chargeın temiz etkisini korur; T3 harcanmış bankanın ücretli bölümünü Marklarla geri taşır; T4
 bankayı sonraki savunmada Dodge/Parry başarılarının tükettiği finite pulse havuzuna çevirir.
 Sıfır Charge parent Detonationı kilitleyemez. Temassız yankı ve savunma pulseları Chain/Crit/Mark
 üretemez; hiçbir iade gerçekten harcanmış bankayı aşamaz.
@@ -238,8 +242,8 @@ temas acmaz ve final ok base `1 Mark x 10 Detonation` davranisini korur.
 
 Mark Burst F2S6 Chain/Charge `4 Twist / 16 Apex` ile materializedir. Tam Bosaltim butun Chargei
 bir kez harcayip tek bonus paketi ok dizisine boler. Zincir Atesleme bonus Chaini yalniz finalden
-sonra verir. Rezonans action-start Chain ile harcanan Chargei tek snapshotta okur. Olculu Atis her
-gercek okta en fazla 1 Charge harcar ve fazlayi korur. Butun rotalarda final ok base
+sonra verir. Rezonans action-start Chain ile harcanan Chargei tek snapshotta okur. Olculu Atis
+butun bankayi harcar ve tek toplam paketi gercek oklar arasinda boler. Butun rotalarda final ok base
 `1 Mark x 10 Detonation` davranisini ve temas basina tam `+1 Chain` motorunu korur.
 
 Mark Burst F3 Posture Formunun alti Specialization rotasi materializedir. Posture/Detonation tek

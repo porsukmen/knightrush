@@ -9565,6 +9565,12 @@ function resolveBossWoundMovePulse(){
    active phase, so uncapped synthesis does not add frame cost. */
 const DEFENSE_CHARGE=Object.freeze({perfectDodgeGain:1,parryGain:2,expectedSpend:2,
   labPreviewCycle:8});
+/* A move may never silently ignore part of a banked defense score. Immediate
+   cash-outs commit the complete bank. Economy moves also commit it first, then
+   return an explicit, visible remainder. Reactive modes read future defense
+   events instead of pretending to be partial bank spends. */
+const CHARGE_BANK_CONTRACT=Object.freeze({version:2,defaultPolicy:'COMMIT_FULL_BANK',
+  economyPolicy:'COMMIT_THEN_EXPLICIT_RETURN',rule:'NO_SILENT_PARTIAL_SPEND'});
 const CHAIN_PHASE_POLICY=Object.freeze({defenseToPlayer:'CARRY',playerToDefense:'RESET'});
 function chainAfterPlayerPhase(){return 0;}
 const CHAIN_PHASE_POLICY_AUDIT=(()=>{
@@ -12858,7 +12864,7 @@ function skillAttributeRouteContract(data){
         'IMPACT_WITH_ECHOES','SIMULTANEOUS_CONTACT_PACKET','PER_CONTACT_INDEPENDENT_ROLLS',
         'SHARED_ACTION_ROLL','SPLIT_TOTAL_ACROSS_CONTACTS','VISIBLE_PAYLOAD_PER_CONTACT',
         'READ_PAID_CONSUMPTION','READ_PRESERVED_RESOURCE','CRIT_CONDITIONAL_PAYLOAD','OUTCOME_FORK',
-        'SPEND_ALL_CHARGE_ON_CONTACT','SPEND_MATCHED_CHARGE_ONLY',
+        'SPEND_ALL_CHARGE_ON_CONTACT','SPEND_ALL_CHARGE_PAIR_MATCHED_SUBSET',
         'SPEND_THEN_RETAIN_PAID_SHARE','FINITE_SUCCESS_TRIGGERED_PULSES']);
     if(!deliveryDecision||typeof deliveryDecision.reason!=='string'||!deliveryDecision.reason||
        !allowedResourcePolicies.has(deliveryDecision.resourcePolicy)||
@@ -13297,15 +13303,15 @@ function buildSharpshootChainChargeFamilyContracts(){
         promise:'Consume Charge into one echoed release whose damage scales from preserved action-start Chain.'},
       {id:'chain_charge_metered_twist',slot:4,pattern:'SEQUENTIAL',
         profile:{DIRECT_DAMAGE:.20,CHAIN_SCALING:.45,DEFENSE_TEMPER:.15,CHARGE_CONTACT_RELEASE:.20},
-        relationshipAxis:'CHARGE_CONTACT_RELEASE',relationship:'CHARGE_SPENDS_PER_CONTACT',
-        rule:'SPEND_UP_TO_ONE_CHARGE_PER_VISIBLE_CONTACT',payloadPolicy:'VISIBLE_PAYLOAD_PER_CONTACT',
+        relationshipAxis:'CHARGE_CONTACT_RELEASE',relationship:'CHARGE_FULL_BANK_ACROSS_CONTACTS',
+        rule:'COMMIT_FULL_BANK_SPLIT_ACROSS_VISIBLE_CONTACTS',payloadPolicy:'VISIBLE_PAYLOAD_PER_CONTACT',
         rejected:'SINGLE',flow:'COUPLED_LOOP',
-        reason:'Visible ordered contacts can spend a matching number of Charge without deleting the rest of the bank.',
-        decision:'Meter the bank across this volley and preserve surplus Charge for another action.',
+        reason:'Visible ordered contacts divide one complete uncapped Charge cash-out without multiplying it.',
+        decision:'Commit the complete bank and choose a volley that can visibly carry its full payload.',
         primaryOutcome:'Every arrow reads and creates live Chain normally.',
-        secondaryOutcome:'At most one Charge is spent for each visible contact; unneeded Charge remains banked.',
-        hook:'Charge-retention, contact-count and action-order artifacts.',
-        promise:'Spend only the Charge supported by visible arrows, empower the volley, and preserve every surplus point.'}
+        secondaryOutcome:'Every banked Charge contributes; the one total packet is divided across visible contacts.',
+        hook:'Full-cash-out, contact-count and action-order artifacts.',
+        promise:'Consume the complete bank and divide all of its paid power across the live volley.'}
   ]});
 }
 /* F3 Posture families use the same compact authoring seam as F2, but Posture
@@ -13597,12 +13603,12 @@ function buildSharpshootPostureFamilyTreeContracts(){
         hook:'Charge-to-Break, single-impact and defense-skill artifacts.',promise:'Convert the complete defense bank into extra Posture on one crushing arrow.'},
       {id:'posture_charge_measured_twist',slot:3,pattern:'SINGLE',
         profile:{DIRECT_DAMAGE:.15,MARK_GAIN:.10,POSTURE_DAMAGE:.45,DEFENSE_TEMPER:.10,CHARGE_POSTURE_CONTROL:.20},
-        relationshipAxis:'CHARGE_POSTURE_CONTROL',relationship:'MEASURED_CHARGE_BREAK',rule:'SPEND_ONLY_CHARGE_NEEDED_TO_BREAK',
+        relationshipAxis:'CHARGE_POSTURE_CONTROL',relationship:'MEASURED_CHARGE_BREAK',rule:'COMMIT_FULL_BANK_RETURN_UNUSED_FOR_BREAK_GAP',
         postureRule:'CHARGE_AUGMENTED_POSTURE',payloadPolicy:'READ_ONCE_PER_ACTION',rejected:'SEQUENTIAL',flow:'COUPLED_LOOP',
-        reason:'One impact can calculate the visible remaining bar before spending only the required bank.',
-        decision:'Preserve surplus Charge by paying only what the current Break gap needs.',
-        primaryOutcome:'Base Posture is applied first in the deterministic Break-gap calculation.',secondaryOutcome:'Only required Charge is consumed; if the bank cannot Break, all available Charge is spent.',
-        hook:'Charge-retention, precise-Break and resource-efficiency artifacts.',promise:'Spend only the Charge required to cross the current Break gap and preserve every surplus point.'},
+        reason:'One impact can commit the bank, calculate the visible Break gap and explicitly return unused Charge.',
+        decision:'Commit the whole bank for a precise Break attempt and recover the part the gap did not need.',
+        primaryOutcome:'Base Posture is applied first in the deterministic Break-gap calculation.',secondaryOutcome:'The whole bank is committed; only useful Charge applies Posture and every unused point visibly returns.',
+        hook:'Charge-return, precise-Break and resource-efficiency artifacts.',promise:'Commit the complete bank, cross the Break gap, then explicitly return every unused point.'},
       {id:'posture_charge_echo_twist',slot:4,pattern:'SINGLE',
         profile:{DIRECT_DAMAGE:.15,MARK_GAIN:.10,POSTURE_DAMAGE:.45,DEFENSE_TEMPER:.15,CHARGE_POSTURE_RELATION:.15},
         relationshipAxis:'CHARGE_POSTURE_RELATION',relationship:'CHARGE_POSTURE_ECHO',rule:'FULL_CHARGE_TO_DELAYED_POSTURE',
@@ -16492,12 +16498,12 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     twistDesign:{resourceFlow:'COUPLED_LOOP',pairSpecific:true,
       playerDecision:'Open with Sharpshoot and distribute the bank across the rest of this attack phase.',
       primaryOutcome:'Every empowered action supports the Mark build.',
-      secondaryOutcome:'Charge is spent one point per offensive action instead of all at once.',
+      secondaryOutcome:'The complete bank is reserved; offensive actions spend it one point at a time and Finish Turn returns the unused reserve.',
       synergyHook:'Action ordering, other equipped skills and on-action artifacts.'},
-    promise:'Spend one Charge on this quick Mark arrow, then let later offensive actions spend one each for damage and Mark support.',
+    promise:'Reserve the complete bank, spend one point per offensive action, then explicitly return every unused point at Finish Turn.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
       relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',markRule:'NET_OUTPUT_REQUIRED',
-      chargeRule:'ONE_PER_ACTION_PHASE_ENGINE',chargeMode:'DISTRIBUTED'},
+      chargeRule:'RESERVE_FULL_BANK_ONE_PER_ACTION_RETURN_UNUSED',chargeMode:'DISTRIBUTED'},
     baselineAttack:{hits:1,markGain:1,resolveCost:1},runtimeReadiness:'MATERIALIZED'}),
 
   skillAttributeRouteContract({id:'mark_charge_release_power_apex',depth:4,
@@ -16616,7 +16622,7 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.15,MARK_GAIN:.15,DEFENSE_TEMPER:.55,CHARGE_DISTRIBUTION:.10,CHARGE_ACTION_MARK:.05},
-    promise:'Keep the phase engine and maximize the opening arrow that spends its first Charge.',
+    promise:'Keep the reserved phase engine and maximize the opening arrow that spends its first committed Charge.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
       relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_OPENING',
       markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
@@ -16626,7 +16632,7 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     primaryAttributeId:'MARK',secondaryAttributeId:'CHARGE',powerBudget:1,
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,CHARGE_DISTRIBUTION:.60,CHARGE_ACTION_MARK:.15},
-    promise:'Keep one Charge per action and maximize the packet-safe damage shared with later offensive actions.',
+    promise:'Keep one reserved Charge per action and maximize the packet-safe damage shared with later offensive actions.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
       relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_SHARED_DAMAGE',
       markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
@@ -16647,7 +16653,7 @@ const SHARPSHOOT_MARK_ROUTE_CONTRACTS=Object.freeze([
     deliveryProfileId:'OWNER_BOW',deliveryPattern:'SINGLE',deliveryTiming:'IMMEDIATE',contacts:1,
     qualityProfile:{DIRECT_DAMAGE:.10,MARK_GAIN:.15,CHARGE_DISTRIBUTION:.15,CHARGE_ACTION_MARK:.10,
       CHARGE_FINAL_RELEASE:.50},
-    promise:'Keep the phase engine and make the action that spends the final banked Charge its strongest release.',
+    promise:'Keep the phase engine and make the action that spends the final reserved Charge its strongest release.',
     mechanics:{primaryOutput:'MARK_GENERATE',secondaryOutput:'DEFENSE_TEMPER',
       relationship:'DISTRIBUTED_CHARGE_MARK_ENGINE',refinement:'DISTRIBUTION_FINAL_RELEASE',
       markRule:'NET_OUTPUT_REQUIRED',chargeMode:'DISTRIBUTED'},
@@ -17664,15 +17670,15 @@ const MARK_BURST_CHAIN_CHARGE_TWIST_DEFINITIONS=Object.freeze([
     engine:'CHARGE_CONTACT_METER',recipe:'BOW_CHARGE_QUICK',
     profile:Object.freeze({DIRECT_DAMAGE:.15,DETONATION_DAMAGE:.10,CHAIN_SCALING:.25,
       DELIVERY_CONTACTS:.15,DEFENSE_TEMPER:.10,CHARGE_CONTACT_RELEASE:.25}),
-    relationship:'ONE_CHARGE_MAX_PER_REAL_CONTACT',
-    promise:'Spend at most one Charge on each real arrow and preserve banked Charge beyond the visible contact count.',
+    relationship:'FULL_CHARGE_PACKET_ACROSS_REAL_CONTACTS',
+    promise:'Consume the complete Charge bank and divide its one paid packet across every real arrow in the volley.',
     apexes:Object.freeze([
       Object.freeze({key:'SHARP_METER',label:'stronger damage on each charged arrow',
         profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.20,
           DELIVERY_CONTACTS:.10,DEFENSE_TEMPER:.10,CHARGE_CONTACT_RELEASE:.40}),
         decisionClass:'OUTPUT_MASTERY',effectiveDecision:false,
         evidence:['chargeContactDamagePerCharge','chargeSpent']}),
-      Object.freeze({key:'WIDE_METER',label:'more real Charge-spending contacts',
+      Object.freeze({key:'WIDE_METER',label:'more real Charge-carrying contacts',
         profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.10,CHAIN_SCALING:.15,
           DELIVERY_CONTACTS:.40,DEFENSE_TEMPER:.10,CHARGE_CONTACT_RELEASE:.15}),
         decisionClass:'ROTATION_CHANGE',effectiveDecision:true,
@@ -18333,13 +18339,13 @@ const MARK_BURST_DETONATION_CHARGE_TWIST_DEFINITIONS=Object.freeze([
     recipe:'BOW_DETONATION_ECHO',engine:'DETONATION_CHARGE_PAIR',
     profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.20,
       DEFENSE_TEMPER:.15,DETONATION_CHARGE_PAIR_ECHO:.35}),
-    relationship:'MATCHED_CHARGE_MARK_ECHO',payloadPolicy:'SPEND_MATCHED_CHARGE_ONLY',
+    relationship:'MATCHED_CHARGE_MARK_ECHO',payloadPolicy:'SPEND_ALL_CHARGE_PAIR_MATCHED_SUBSET',
     rejectedPattern:'SIMULTANEOUS_PACKET',resourceFlow:'COUPLED_LOOP',
-    promise:'Detonate the inherited paid Mark count, pair as many of those Marks as possible with banked Charge, spend only the matched Charge, and echo each paid pair once.',
-    playerDecision:'Align the two reserves precisely; unmatched Charge survives for another move while matched pairs buy efficient echoes.',
+    promise:'Detonate the inherited paid Mark count and consume the complete Charge bank; matched Mark/Charge pairs echo while unmatched Charge keeps normal clean impact.',
+    playerDecision:'Align the two reserves for more echoes; extra Charge is still consumed and contributes its normal clean impact.',
     primaryOutcome:'Unpaired paid Marks still perform their inherited Detonation and never require Charge to function.',
-    secondaryOutcome:'Only Charge matched to a detonated Mark is spent and creates a finite non-contact echo.',
-    synergyHook:'Exact resource preparation, partial bank preservation and Detonation-event artifacts.',
+    secondaryOutcome:'The complete bank is spent; only the matched subset creates the finite non-contact echo.',
+    synergyHook:'Exact resource preparation, full-bank cash-out and Detonation-event artifacts.',
     identity:Object.freeze({version:1,input:'DETONATION',trigger:'ON_FINAL_CONTACT',operation:'LAYER',
       output:'DIRECT_DAMAGE',timing:'LATER_IN_ACTION',deliveryPurpose:'MECHANIC_REQUIRED',
       engineIds:['DETONATION_CHARGE_PAIR'],
@@ -18400,7 +18406,7 @@ const MARK_BURST_DETONATION_CHARGE_APEX_DEFINITIONS=Object.freeze({
     Object.freeze({key:'DEEP_PAIR',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
       evidence:['detonationChargeEchoPerPair'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
         DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,DETONATION_CHARGE_PAIR_ECHO:.45}),
-      decision:'Keep exact pairing and maximize the finite echo generated by each matched pair.',delta:'The same paired-resource rotation produces a larger delayed echo without changing which Charge is preserved.'}),
+      decision:'Keep exact pairing and maximize the finite echo generated by each matched pair.',delta:'The same full-bank rotation produces a larger delayed echo while unmatched Charge keeps normal clean impact.'}),
     Object.freeze({key:'WIDE_PAIR',kind:'RESOURCE_EXPRESSION',decisionClass:'RESOURCE_WINDOW',changes:true,
       evidence:['markDetonationCapacity','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
         DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.40,DEFENSE_TEMPER:.10,
@@ -18410,12 +18416,12 @@ const MARK_BURST_DETONATION_CHARGE_APEX_DEFINITIONS=Object.freeze({
       evidence:['detonationChargeMarkSurplusEcho','consumedMark','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
         DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
         DETONATION_CHARGE_PAIR_ECHO:.20,DETONATION_MARK_SURPLUS:.25}),
-      decision:'Fire when detonated Marks outnumber Charge so the Mark remainder reinforces the final echo.',delta:'A Mark-heavy mismatch becomes a deliberate state instead of dead setup while unmatched Charge preservation remains unchanged.'}),
+      decision:'Fire when detonated Marks outnumber Charge so the Mark remainder reinforces the final echo.',delta:'A Mark-heavy mismatch becomes a deliberate state instead of dead setup while the complete Charge bank is still consumed.'}),
     Object.freeze({key:'CHARGE_REMAINDER',kind:'BEHAVIORAL_CAPSTONE',decisionClass:'STATE_RESPONSE',changes:true,
       evidence:['detonationChargeSurplusDamage','bossCharge','chargeSpent'],profile:Object.freeze({DIRECT_DAMAGE:.10,
         DETONATION_DAMAGE:.20,DETONATION_CONSUMPTION:.15,DEFENSE_TEMPER:.10,
         DETONATION_CHARGE_PAIR_ECHO:.20,DETONATION_CHARGE_SURPLUS:.25}),
-      decision:'Keep surplus Charge in the bank but let its visible reserve add clean impact to this arrow.',delta:'A Charge-heavy mismatch now offers immediate damage without spending the unmatched bank, changing the preferred resource balance.'})]),
+      decision:'Build surplus Charge beyond the available Mark pairs and turn that unmatched part into stronger clean impact.',delta:'A Charge-heavy mismatch gains an additional paid overflow premium after the complete bank is consumed.'})]),
   DETONATION_CHARGE_CAPACITOR:Object.freeze([
     Object.freeze({key:'DEEP_CAPACITOR',kind:'NUMERIC_MASTERY',decisionClass:'OUTPUT_MASTERY',changes:false,
       evidence:['detonationChargeRetentionPerMark'],profile:Object.freeze({DIRECT_DAMAGE:.10,DETONATION_DAMAGE:.20,
@@ -22827,7 +22833,7 @@ function buildSharpshootChainSecondaryDebugSummaries(){
     chain_charge_volley_twist:'Savunmada kazanılan Chargeın tamamı tüketilir ve tek toplam hasar seri Chain oklarına bölünür. Çoklu temas aynı bankayı çoğaltmaz.',
     chain_charge_burst_twist:'Kısa ok dizisinin her teması Chain üretir; ağır final temasından sonra tüketilen Charge bankası ayrıca görünür bonus Chaine dönüşür.',
     chain_charge_resonance_twist:'Başlangıç Chaini korunur ve tüketilen her Chargeın hasarını büyütür. Tek release sonrası echolar bu hazırlanmış iki kaynaklı payoffu taşır.',
-    chain_charge_metered_twist:'Her görünür ok en fazla bir Charge harcar; ok sayısını aşan Charge bankada kalır. Oyuncu tam boşaltma yerine kaynak yönetimini seçer.'
+    chain_charge_metered_twist:'Bütün Charge bankası tüketilir ve tek toplam güç paketi görünür oklar arasında bölünür. Daha fazla gerçek temas paketi çoğaltmadan dağılımını değiştirir.'
   },refinements={relation:'Twistin Primary–Secondary ilişkisini en fazla güçlendirir.',
     chain:'Aynı mekaniği ve deliveryyi koruyup Chain hasarı tarafını büyütür.',
     posture:'Aynı ilişkiyi koruyup toplam light-bow Posture çıktısını büyütür.',
@@ -22870,7 +22876,7 @@ const SHARPSHOOT_POSTURE_TWIST_SUMMARY_TR=Object.freeze({
   posture_affliction_packet_twist:'Eşzamanlı dikenli pelletler bir toplam Posture paketi ile bir mantıksal Bleed paketini gerçek paylara böler. Uygulama yoğunluğu artar fakat paket kendi açtığı Breakten yararlanmaz.',
   posture_charge_tempered_twist:'Savunmada biriken bütün Charge tek ağır okun can hasarına bir kez eklenir. Posture paketi normal kalır; iyi savunma Break yerine güvenilir anlık hasara çevrilir.',
   posture_charge_crushing_twist:'Bütün Charge bankası can hasarı yerine tek okun Posture baskısına çevrilir. Her Charge ücretli Posture ekler ve banka yalnız bir kez tüketilir.',
-  posture_charge_measured_twist:'Sistem mevcut Break boşluğunu okur ve yalnız o boşluğu kapatmak için gereken Chargeı tüketir. Banka yetmiyorsa tamamı harcanır; yetiyorsa kullanılmayan bütün Charge korunur.',
+  posture_charge_measured_twist:'Sistem bütün Charge bankasını önce rezerve eder, mevcut Break boşluğunu kapatacak kısmı uygular ve kullanılmayan her puanı açıkça geri verir.',
   posture_charge_echo_twist:'Bütün Charge bir kez tüketilir; ağır ok ilk Posture payını, ardından hasarsız ve Chainsiz bir şok dalgası kalan Charge Postureunu uygular. İkinci olay sahte projectile değildir.'
 });
 const SHARPSHOOT_POSTURE_DEBUG_SUMMARY_TR=Object.freeze(Object.fromEntries(
@@ -23143,7 +23149,7 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   mark_charge_release_twist:'Birikmiş Chargeın tamamını tek ağır oka boşaltır. Güvenilir Mark üretimini korurken iyi savunmayı doğrudan ve anlık hasara çeviren sade devam rotasıdır.',
   mark_charge_packet_twist:'Chargeı eşzamanlı bir işaret paketine dönüştürür. Paket toplam 1 Chain üretir; doğrudan hasardan vazgeçmeden iyi savunmayı sonraki Mark tüketen skill için kuruluma yatırır.',
   mark_charge_resonance_twist:'Başlangıç Marklarını tüketmeden okur; her Mark, harcanan her Chargeın hasar katkısını büyütür. Büyük Mark rezervi ile iyi savunmayı aynı ağır atışta birleştirir.',
-  mark_charge_distribution_twist:'İlk hızlı ok 1 Charge harcar ve kalan bankayı oyuncu fazındaki sonraki saldırılara açar. Her saldırı yalnızca 1 Charge kullanır; çoklu vuruş bonusu çoğaltmaz.',
+  mark_charge_distribution_twist:'Bütün Charge bankası faz motoruna rezerve edilir. Her saldırı rezervden 1 Charge kullanır; Finish Turnda kullanılmayan puanlar açıkça geri döner ve çoklu vuruş bonusu çoğaltmaz.',
   mark_charge_release_power_apex:'Tek ağır boşaltımı korur ve her Chargeın doğrudan hasar katkısını en fazla büyütür. Mark miktarından çok savunma başarısının anlık karşılığını önceler.',
   mark_charge_release_mark_apex:'Bütün Chargeı hasara boşaltmaya devam eder fakat Apex gücünü okun garanti Mark paketine verir. Sonraki Mark tüketen hareketi en iyi hazırlayan boşaltım varyantıdır.',
   mark_charge_release_reserve_apex:'Ağır atış Charge bankasını kullanır, ardından ödediği güce göre harcanan Chargeın bir bölümünü geri saklar. Aynı oyuncu fazında ikinci kullanım ihtimali yaratır.',
@@ -23157,7 +23163,7 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   mark_charge_resonance_mark_apex:'İki kaynaklı rezonans hasarını korur ve vuruştan sonra bırakılan garanti Markı büyütür. Bir sonraki rezonans kullanımının Primary kaynağını kendi hazırlar.',
   mark_charge_resonance_reserve_apex:'Markları tüketmeden rezonans kurar ve harcanan Chargeın fiyatlanmış bir bölümünü geri saklar. Yüksek kurulumun tek atıştan sonra tamamen sıfırlanmasını önler.',
   mark_charge_distribution_opening_apex:'Faz motorunu korur ve ilk Chargeı kullanan Sharpshoot okunun hasarını büyütür. Diğer skillere geçmeden önce daha güçlü bir açılış sağlar.',
-  mark_charge_distribution_shared_apex:'Her saldırının yalnızca 1 Charge tüketmesi kuralını korur ve sonraki saldırılara verilen paket-başı hasarı en fazla büyütür. Çoklu hit bu bonusu kopyalayamaz.',
+  mark_charge_distribution_shared_apex:'Rezerve edilmiş bankadan saldırı başına 1 Charge kullanma kuralını korur ve sonraki saldırılara verilen paket-başı hasarı en fazla büyütür. Finish Turnda kullanılmayan rezerv geri döner.',
   mark_charge_distribution_mark_apex:'Charge ile güçlenen her saldırının bir kez bıraktığı Mark desteğini büyütür. Diğer üç skilli geçici olarak Sharpshootun Primary Mark planına bağlar.',
   mark_charge_distribution_final_apex:'Dağıtılmış Charge motorunu korur; bankadaki son Chargeı harcayan mevcut saldırıya ekstra hasar verir. Yeni bir vuruş üretmeden fazın bitiriş kararını ödüllendirir.'
 });
@@ -23321,7 +23327,7 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   burst_chain_charge_discharge_twist:'Başlangıçtaki bütün Charge bir kez harcanır; tek toplam Charge hasarı gerçek Chain oklarına bölünür.',
   burst_chain_charge_ignition_twist:'Başlangıç Chargeı bir kez harcanır; ücretli bonus Chain yalnız final temastan sonra gelir ve sonraki hamleyi hazırlar.',
   burst_chain_charge_resonance_twist:'Başlangıç Chaini ve harcanan Charge bir kez snapshotlanır. Yeni Chain aynı saldırının Rezonans paketini geriye dönük büyütmez.',
-  burst_chain_charge_metered_twist:'Her gerçek ok en fazla 1 Charge harcar. Ok sayısını aşan Charge korunur ve hiçbir Charge noktası iki teması beslemez.',
+  burst_chain_charge_metered_twist:'Bütün Charge bankası tek seferde tüketilir; toplam ücretli paket gerçek oklar arasında bölünür. Hiçbir Charge noktası kopyalanmaz veya temas sayısı yüzünden yok sayılmaz.',
   detonation_focus_spec:'Tek ağır okta Detonationa tamamen yoğunlaşır; Mark başına hasar ve tüketim kapasitesi parentın üstüne çıkar.',
   detonation_chain_spec:'Kısa bir ok dizisi Chain kurar ve canlı okur; parenttan gelen bütün Mark tüketimi yalnız son okun Detonationında gerçekleşir.',
   detonation_posture_spec:'Tek Detonation okuna light-bow seviyesinde ek Posture darbesi koyar; Mark tüketimi Posturea çevrilmez.',
@@ -23345,7 +23351,7 @@ const MARK_BURST_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   detonation_wound_fuse_twist:'Marklar temasta patlar; tüketilen payloadın ücretli bir kısmı yaranın iki savunma tickine finite Detonation yankısı olarak bağlanır.',
   detonation_bleed_packet_twist:'Qualitynin verdiği toplam tüketim kapasitesi eşzamanlı temaslara dağıtılır; her temas tek toplam Bleed paketinden pozitif pay taşır ve bütün paket 1 Chain üretir.',
   detonation_charge_discharge_twist:'Tek ağır ok bütün Charge bankasını harcar. Parent Detonation eksiksiz kalır; harcanan Charge ile gerçekten patlatılan Markların çarpımı anlık darbeyi büyütür.',
-  detonation_charge_pair_twist:'Parent kapasitesi kadar Mark patlar; yalnız bu Markslarla eşleşen Charge harcanır ve eşleşmeler temassız bir Detonation yankısı üretir. Eşleşmeyen Charge korunur.',
+  detonation_charge_pair_twist:'Parent kapasitesi kadar Mark patlar ve bütün Charge bankası tüketilir. Eşleşen Mark–Charge çiftleri temassız yankı üretir; eşleşmeyen Charge normal temiz hasarını korur.',
   detonation_charge_capacitor_twist:'Bütün Charge tek oka gider; gerçekten patlatılan Marklar harcanmış bankanın ücretli bir bölümünü geri yükler. Ana amaç tek jackpot yerine sürdürülebilir rotasyondur.',
   detonation_charge_defense_fuse_twist:'Ok Markları şimdi patlatır ve harcanan Chargeı sonraki savunmaya finite füze olarak kurar. Perfect Dodge 1, Parry 2 füze Chargeı harcayıp temassız pulse üretir.',
   burst_posture_chain_rally_twist:'Kısa gerçek ok dizisi Posture ile Break açarsa, yalnız sonraki oklar ücretli ek Chain üretir. Her ok global canlı %5 Chain kuralını kullanır.',
@@ -30400,7 +30406,7 @@ function synthesizeSharpshootPosturePath(formRarity='COMMON',specializationId=nu
       (Math.max(.05,critChance)*SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE),
     posturePerExistingBleed=Math.max(0,axes.BLEED_POSTURE_READ||0)/
       (4*SKILL_GUARDRAIL_POWER_VALUES.POSTURE_DAMAGE),
-    chargeMode=finalRoute.mechanics.chargePostureRule==='SPEND_ONLY_CHARGE_NEEDED_TO_BREAK'?
+    chargeMode=finalRoute.mechanics.chargePostureRule==='COMMIT_FULL_BANK_RETURN_UNUSED_FOR_BREAK_GAP'?
       'POSTURE_MEASURED':finalRoute.mechanics.chargePostureRule==='FULL_CHARGE_TO_POSTURE'?
       'POSTURE_RELEASE':finalRoute.mechanics.chargePostureRule==='FULL_CHARGE_TO_DELAYED_POSTURE'?
       'POSTURE_ECHO':chargeRate>0?'FULL_RELEASE':'NONE',
@@ -31403,7 +31409,7 @@ function synthesizeSharpshootChainSecondaryPath(specializationId,formRarity='COM
        relationship==='CRIT_FEEDS_LIVE_CHAIN'?'BOW_CRIT_REWARD':'BOW_CRIT_VOLLEY'):
       isCharge?(relationship==='CHARGE_BURSTS_INTO_CHAIN'?'BOW_CHARGE_WEIGHT':
         relationship==='CHAIN_AMPLIFIES_CHARGE_RELEASE'?'BOW_CHARGE_ECHO':
-        relationship==='CHARGE_SPENDS_PER_CONTACT'?'BOW_CHARGE_QUICK':'BOW_CHARGE'):
+        relationship==='CHARGE_FULL_BANK_ACROSS_CONTACTS'?'BOW_CHARGE_QUICK':'BOW_CHARGE'):
       relationship==='CHAIN_DEEPENS_BLEED'?'BOW_AFFLICTION_WEIGHT':
         delivery.pattern==='SIMULTANEOUS_PACKET'?'BOW_AFFLICTION_PACKET':'BOW_AFFLICTION';
   transformSharpshoot(command,{name:finalRoute.name,damage:hitDamages[0],hitDamages,hits,
@@ -31430,13 +31436,13 @@ function synthesizeSharpshootChainSecondaryPath(specializationId,formRarity='COM
     defenseTemperDamagePerCharge:isCharge?chargeProgress.output:0,
     chargeMode:isCharge?(relationship==='CHARGE_BURSTS_INTO_CHAIN'?'CHAIN_BURST':
       relationship==='CHAIN_AMPLIFIES_CHARGE_RELEASE'?'CHAIN_RESONANCE':
-      relationship==='CHARGE_SPENDS_PER_CONTACT'?'CONTACT_RELEASE':'FULL_RELEASE'):null,
+      relationship==='CHARGE_FULL_BANK_ACROSS_CONTACTS'?'CONTACT_RELEASE':'FULL_RELEASE'):null,
     chargeSplitAcrossContacts:isCharge&&delivery.pattern!=='SINGLE',
     chargeChainPerCharge:isCharge&&relationship==='CHARGE_BURSTS_INTO_CHAIN'?
       chargeChainPerCharge:0,
     chargeDamagePerChainPerCharge:isCharge&&relationship==='CHAIN_AMPLIFIES_CHARGE_RELEASE'?
       chargeDamagePerChainPerCharge:0,
-    chargeContactDamagePerCharge:isCharge&&relationship==='CHARGE_SPENDS_PER_CONTACT'?
+    chargeContactDamagePerCharge:isCharge&&relationship==='CHARGE_FULL_BANK_ACROSS_CONTACTS'?
       chargeContactDamagePerCharge:0,
     impactDelay:0,duration:undefined,animationProfile:'BOW_SHOT',projectileStyle:null,
     bowAnimationRecipeId:bowRecipe,deliveryMagnitude,
@@ -33281,7 +33287,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
       'Twist: action-start Mark is preserved; every Mark and every consumed Charge add +'+
         damagePart(command.chargeDamagePerMarkPerCharge)+' base damage together.':
     finalRoute.mechanics.relationship==='DISTRIBUTED_CHARGE_MARK_ENGINE'?
-      'Twist: spend one Charge per offensive action this phase; each spend adds +'+
+      'Twist: reserve the complete bank; spend one reserved Charge per offensive action and return every unused point at Finish Turn. Each spend adds +'+
         damagePart(command.chargeDistributedDamagePerCharge)+' damage and +'+
         damagePart(command.chargeDistributedMarkPerAction)+' carried Mark progress once per action.':
     finalRoute.mechanics.relationship==='BARBED_BLEED_BASELINE'?
@@ -39235,9 +39241,10 @@ function commandChargeContactPayload(command,total,spent,hits,index){
   }
   if(commandChargeMode(command)==='CONTACT_RELEASE'){
     if(!paid)return 0;
+    const active=Math.min(count,paid);
     const selected=command&&command.chargeContactPlacement==='FINAL'?
-      index>=count-paid:index<paid;
-    return selected?payload/paid:0;
+      index>=count-active:index<active;
+    return selected?payload/active:0;
   }
   if(!command||!command.chargeSplitAcrossContacts)return index===0?payload:0;
   if(command.chargeBonusPlacement==='FINAL')return index===count-1?payload:0;
@@ -39288,11 +39295,31 @@ function postureChargeConductorParryGain(command){
       SHARPSHOOT_CHARGE_SECONDARY_ENVELOPE.breakActiveShare*.5;
   return Math.max(0,Math.floor(power/Math.max(.001,cost)+1e-9));
 }
-function distributedChargeEngineFrom(command){
+function distributedChargeEngineFrom(command,committedCharge=0){
+  const committed=safeDefenseCharge(committedCharge);
   return {damagePerAction:commandDefenseTemperRate(command)+
       Math.max(0,Number(command&&command.chargeDistributedDamagePerCharge)||0),
     markPerAction:Math.max(0,Number(command&&command.chargeDistributedMarkPerAction)||0),
-    finalDamage:Math.max(0,Number(command&&command.chargeFinalDamagePerCharge)||0),markCarry:0};
+    finalDamage:Math.max(0,Number(command&&command.chargeFinalDamagePerCharge)||0),
+    markCarry:0,committedCharge:committed,remainingCharge:committed};
+}
+function returnUnusedDistributedCharge(show=true){
+  const engine=boss&&boss.distributedChargeEngine;if(!engine)return 0;
+  const returned=restoreBossCharge(safeDefenseCharge(engine.remainingCharge));
+  boss.distributedChargeEngine=null;
+  if(show&&returned)floater(VW/2-112,326,'CHARGE RETURN +'+returned,'#7fc9ff',14);
+  return returned;
+}
+function fullBankPairPlan(available,matchable){
+  const committed=safeDefenseCharge(available),paired=Math.min(committed,
+    safeDefenseCharge(matchable));
+  return Object.freeze({committed,spent:committed,paired,surplus:committed-paired,returned:0});
+}
+function measuredChargeReturnPlan(available,needed){
+  const committed=safeDefenseCharge(available),spent=Math.min(committed,
+    safeDefenseCharge(needed));
+  return Object.freeze({committed,spent,paired:0,surplus:committed-spent,
+    returned:committed-spent});
 }
 function commandChargeCombatText(command){
   if(!commandUsesDefenseCharge(command))return '';
@@ -39304,7 +39331,7 @@ function commandChargeCombatText(command){
     damagePart(rate)+' taban hasar.');
   else if(mode==='POSTURE_RELEASE')parts.push('Bütün banka tek seferde tüketilir; Charge başına +'+
     damagePart(command.chargePosturePerPoint)+' Posture verir, ek can hasarı vermez.');
-  else if(mode==='POSTURE_MEASURED')parts.push('Yalnız mevcut barı kırmak için gereken Charge tüketilir; yetmiyorsa bütün banka harcanır, fazlası korunur. Charge başına +'+
+  else if(mode==='POSTURE_MEASURED')parts.push('Bütün banka önce rezerve edilir; yalnız Break boşluğunu kapatan Charge uygulanır ve kullanılmayan kısım açıkça geri döner. Kullanılan Charge başına +'+
     damagePart(command.chargePosturePerPoint)+' Posture.');
   else if(mode==='POSTURE_ECHO')parts.push('Bütün banka tüketilir; Charge Posture gücü temas ve gecikmeli temassız şok dalgası arasında bölünür. Charge başına +'+
     damagePart(command.chargePosturePerPoint)+' Posture.');
@@ -39314,22 +39341,22 @@ function commandChargeCombatText(command){
   else if(mode==='MARK_RESONANCE')parts.push('Bütün banka tüketilir; her Charge +'+
     damagePart(rate)+' taban hasar ve her başlangıç Markı × Charge için +'+
     damagePart(command.chargeDamagePerMarkPerCharge)+' hasar verir. Marklar tüketilmez.');
-  else if(mode==='DISTRIBUTED')parts.push('Bu oyuncu fazındaki her saldırı 1 Charge tüketir; saldırı paketi başına +'+
+  else if(mode==='DISTRIBUTED')parts.push('Bütün banka faz motoruna rezerve edilir. Bu oyuncu fazındaki her saldırı rezervden 1 Charge tüketir; Finish Turnda kullanılmayan rezerv açıkça geri döner. Saldırı paketi başına +'+
     damagePart(rate+Math.max(0,Number(command.chargeDistributedDamagePerCharge)||0))+
     ' taban hasar ve '+damagePart(command.chargeDistributedMarkPerAction)+' biriken Mark payı verir.');
   else if(mode==='CHAIN_BURST')parts.push('Bütün banka tüketilir; Charge başına +'+
     damagePart(command.chargeChainPerCharge)+' Chain ilerlemesi son temastan sonra uygulanır.');
   else if(mode==='CHAIN_RESONANCE')parts.push('Bütün banka tüketilir; her Charge ve her action-start Chain birlikte +'+
     damagePart(command.chargeDamagePerChainPerCharge)+' taban hasar üretir. Chain tüketilmez.');
-  else if(mode==='CONTACT_RELEASE')parts.push('Görünür temas sayısı kadar Charge tüketilir; fazlası bankada kalır. Harcanan Charge başına +'+
-    damagePart(commandDefenseTemperRate(command)+command.chargeContactDamagePerCharge)+' toplam taban hasar volley içine bölünür.');
+  else if(mode==='CONTACT_RELEASE')parts.push('Bütün banka tüketilir; Charge paketinin tamamı görünür volley temasları arasında bölünür. Charge başına +'+
+    damagePart(commandDefenseTemperRate(command)+command.chargeContactDamagePerCharge)+' toplam taban hasar uygulanır.');
   else if(mode==='CRITICAL_HUNT')parts.push('Bütün banka bir kez tüketilir ve toplam Charge hasarı gerçekleşen oklar arasında bölünür. Volley ilk Critte durur; ek ok sayısı başlangıç Chargeından fazla olamaz.');
   else if(mode==='BLEED_RELEASE')parts.push('Bütün banka bir kez tüketilir; her Charge doğrudan darbe yerine iki ticklik yarayı büyütür.');
   else if(mode==='LIVE_WOUND')parts.push('Banka saldırıda tüketilmez; yara aktifken Perfect Dodge ve Parry bir sonraki Bleed tickini besler.');
   else if(mode==='BLEED_METER')parts.push('Banka saldırıda tüketilmez; her Bleed ticki o anda bulunan bütün Chargeı kendi hasarına çevirir.');
   else if(mode==='DEFENSE_RUPTURE')parts.push('Banka saldırıda tüketilmez; savunma fazındaki yeni performans faz sonunda tek yara yırtılmasına dönüşür.');
   else if(mode==='DETONATION_FULL_DISCHARGE')parts.push('Bütün Charge tüketilir; gerçekten patlatılan Mark × harcanan Charge çarpımı tek ağır darbenin ücretli gücünü artırır.');
-  else if(mode==='DETONATION_PAIRED_ECHO')parts.push('Patlatılan Marklarla eşleşen Charge harcanır ve her eşleşme temassız bir Detonation yankısı üretir; eşleşmeyen Charge korunur.');
+  else if(mode==='DETONATION_PAIRED_ECHO')parts.push('Bütün banka tüketilir. Markla eşleşen Charge temassız Detonation yankısı üretir; eşleşmeyen Charge normal temiz Charge hasarını korur.');
   else if(mode==='DETONATION_CAPACITOR')parts.push('Bütün banka saldırıya gider; patlatılan Marklar yalnız gerçekten harcanmış Chargeın ücretli bir bölümünü geri taşır.');
   else if(mode==='DETONATION_DEFENSE_FUSE')parts.push('Bütün banka finite bir sonraki-savunma füzesine çevrilir: Perfect Dodge 1, Parry 2 Charge harcayıp temassız pulse üretir.');
   if(mode==='DELAYED_PRIMARY'&&command.chargeBankDamagePerPoint>0)parts.push(
@@ -39704,7 +39731,7 @@ function endPlayerTurn(){
   if(boss.hp<=0){ resolveVolley(); return; }
   const endedBreak=boss.playerTurnBreak===true;
   clearPlayerMarkTrail();
-  boss.distributedChargeEngine=null;
+  returnUnusedDistributedCharge();
   if(endedBreak){
     boss.posture=0;boss.breakEntryZ=undefined;boss.breakSource=null;
     boss.pendingBreak=null;boss.playerTurnBreak=false;boss.breakDamageBonus=0;
@@ -41102,15 +41129,17 @@ function performPlayerAction(command,options=null){
   }
   if(actorId==='knight'&&!primaryRelease){
     let engine=boss.distributedChargeEngine;
-    if(chargeMode==='DISTRIBUTED'&&bossCharge()>0){
-      const carry=engine&&Number(engine.markCarry)||0;
-      engine=distributedChargeEngineFrom(command);engine.markCarry=carry;
+    if(chargeMode==='DISTRIBUTED'&&!engine&&bossCharge()>0){
+      const committed=consumeBossCharge();
+      engine=distributedChargeEngineFrom(command,committed);
       boss.distributedChargeEngine=engine;
+      floater(VW/2-112,300,'CHARGE COMMITTED ×'+committed,'#7fc9ff',14);
     }
-    if(engine&&bossCharge()>0){
-      chargeSpent=consumeBossCharge(1);distributedChargeAction=chargeSpent>0;
+    if(engine&&safeDefenseCharge(engine.remainingCharge)>0){
+      chargeSpent=1;engine.remainingCharge=safeDefenseCharge(engine.remainingCharge-1);
+      distributedChargeAction=true;
       chargeBonus=stableDamage(engine.damagePerAction+
-        (bossCharge()===0?engine.finalDamage:0));
+        (engine.remainingCharge===0?engine.finalDamage:0));
       engine.markCarry+=engine.markPerAction;
       chargeMarkBonus=Math.max(0,Math.floor(engine.markCarry+1e-9));
       engine.markCarry-=chargeMarkBonus;
@@ -41119,12 +41148,10 @@ function performPlayerAction(command,options=null){
       chargeBonus=commandChargeReleaseBonus(command,chargeSpent,startingMark,
         boss.playerTurnBreak===true,plannedConsumedMark);
     }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_PAIRED_ECHO'){
-      chargePaired=Math.min(startingCharge,plannedConsumedMark);
-      const spendSurplus=command.detonationChargeSurplusDamage>0,
-        spend=spendSurplus?startingCharge:chargePaired;
-      chargeSpent=consumeBossCharge(spend);
+      const plan=fullBankPairPlan(bossCharge(),plannedConsumedMark);
+      chargeSpent=consumeBossCharge();chargePaired=plan.paired;
       chargeBonus=stableDamage(chargeSpent*commandDefenseTemperRate(command)+
-        Math.max(0,chargeSpent-chargePaired)*Math.max(0,
+        plan.surplus*Math.max(0,
           Number(command.detonationChargeSurplusDamage)||0));
     }else if(commandUsesDefenseCharge(command)&&chargeMode==='DETONATION_CAPACITOR'){
       chargeSpent=consumeBossCharge();chargePaired=Math.min(chargeSpent,plannedConsumedMark);
@@ -41140,10 +41167,13 @@ function performPlayerAction(command,options=null){
         gap=Math.max(0,(boss.postureMax||CFG.BOSS_POSTURE_MAX)-(boss.posture||0)-
           bossPosturePrimerBonus(basePosture)),
         perPoint=Math.max(0,Number(command.chargePosturePerPoint)||0),
-        needed=perPoint>0?Math.max(0,Math.ceil((gap-basePosture)/perPoint-1e-9)):0;
-      chargeSpent=consumeBossCharge(needed>0?Math.min(bossCharge(),needed):0);
+        needed=perPoint>0?Math.max(0,Math.ceil((gap-basePosture)/perPoint-1e-9)):0,
+        plan=measuredChargeReturnPlan(bossCharge(),needed);
+      consumeBossCharge();
+      chargeSpent=plan.spent;
+      chargeRetained=restoreBossCharge(plan.returned);
     }else if(commandUsesDefenseCharge(command)&&chargeMode==='CONTACT_RELEASE'){
-      chargeSpent=consumeBossCharge(Math.min(bossCharge(),actionHits));
+      chargeSpent=consumeBossCharge();
       chargeBonus=stableDamage(chargeSpent*(commandDefenseTemperRate(command)+
         Math.max(0,Number(command.chargeContactDamagePerCharge)||0)));
       chargeRetained=0;
@@ -41260,7 +41290,8 @@ function performPlayerAction(command,options=null){
   if(chargeSpent)floater(VW/2,344,chargeMode==='DETONATION_DEFENSE_FUSE'?
     'DEFENSE FUSE ARMED ×'+chargeSpent:
     'CHARGE ×'+chargeSpent+' · BASE +'+damagePart(chargeBonus),'#7fc9ff',15);
-  if(chargeRetained)floater(VW/2,326,(startingCharge===0?'COLD START':'CAPACITOR')+
+  if(chargeRetained)floater(VW/2,326,(chargeMode==='POSTURE_MEASURED'?'MEASURED RETURN':
+    startingCharge===0?'COLD START':'CAPACITOR')+
     ' · CHARGE +'+chargeRetained,'#7fc9ff',14);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×'+damagePart(
     activeBreakDamageMultiplier(true)),'#ffe37a',16);
@@ -46118,14 +46149,25 @@ const BLEED_SYSTEM_AUDIT=(()=>{
 })();
 const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
   const command={defenseTemperDamagePerCharge:2},
-    stacked=combatTurnHitDamageBreakdown(10+commandDefenseTemperBonus(command,3),0,0,0,true,.05,true,1.5);
+    stacked=combatTurnHitDamageBreakdown(10+commandDefenseTemperBonus(command,3),0,0,0,true,.05,true,1.5),
+    contactCommand={chargeMode:'CONTACT_RELEASE'},contactPayload=24,
+    contactTotal=Array.from({length:3},(_,index)=>commandChargeContactPayload(
+      contactCommand,contactPayload,8,3,index)).reduce((sum,value)=>sum+value,0),
+    distributed=distributedChargeEngineFrom({defenseTemperDamagePerCharge:2},8),
+    paired=fullBankPairPlan(8,3),measured=measuredChargeReturnPlan(8,3);
   if(commandDefenseTemperBonus(command,0)!==0||commandDefenseTemperBonus(command,2)!==4||
      commandDefenseTemperBonus(command,3)!==6||commandDefenseTemperBonus(command,20)!==40||
      commandExpectedDefenseTemperPower(command)!==4||defenseChargeBankResult(0,1)!==1||
-     defenseChargeBankResult(0,2)!==2||defenseChargeBankResult(3,1)!==3||stacked.final!==36)
-    throw new Error('Charge Secondary must price ×2, preserve the best phase and scale without a gameplay cap');
+     defenseChargeBankResult(0,2)!==2||defenseChargeBankResult(3,1)!==3||stacked.final!==36||
+     CHARGE_BANK_CONTRACT.rule!=='NO_SILENT_PARTIAL_SPEND'||contactTotal!==contactPayload||
+     distributed.committedCharge!==8||distributed.remainingCharge!==8||
+     paired.spent!==8||paired.paired!==3||paired.surplus!==5||paired.returned!==0||
+     measured.committed!==8||measured.spent!==3||measured.returned!==5)
+    throw new Error('Charge must scale uncapped and commit the full bank or explicitly return its unused remainder');
   return Object.freeze({expected:commandDefenseTemperBonus(command,2),
-    uncappedTwenty:commandDefenseTemperBonus(command,20),critBreak:stacked.final});
+    uncappedTwenty:commandDefenseTemperBonus(command,20),critBreak:stacked.final,
+    bankContract:CHARGE_BANK_CONTRACT.rule,contactPayload,distributedReserved:
+      distributed.remainingCharge,paired:Object.freeze(paired),measured:Object.freeze(measured)});
 })();
 const CHARGE_PRIMARY_RUNTIME_AUDIT=(()=>{
   const echoer={chargeChainEchoDamagePerChainPerCharge:.5},uncapped=
@@ -48525,7 +48567,7 @@ function skillLabCompactSynthesisMechanics(command){
   else if(command.markDetonationEventMode==='CHAIN_CHARGE_RESONANCE')
     lines.push('Oynanış: Başlangıç Chaini × harcanan Charge tek Rezonans paketini büyütür; yeni Chain okunmaz.');
   else if(command.markDetonationEventMode==='CHARGE_CONTACT_METER')
-    lines.push('Oynanış: Her uygun ok en fazla 1 Charge harcar; temas sayısını aşan Charge korunur.');
+    lines.push('Oynanış: Bütün Charge bankası harcanır; tek toplam ücretli güç paketi gerçek oklar arasında bölünür. Temas sayısı Charge katkısını sınırlamaz.');
   else if(command.markDetonationEventMode==='POSTURE_DETONATION_PRESSURE')
     lines.push('Oynanış: Saldırı başındaki Posture oranı ortak Detonation paketini büyütür; fiziksel temas ve Quality kapasitesi değişmez.');
   else if(command.markDetonationEventMode==='POSTURE_DETONATION_OVERFLOW')
@@ -48579,7 +48621,7 @@ function skillLabCompactSynthesisMechanics(command){
   else if(command.markDetonationEventMode==='DETONATION_CHARGE_DISCHARGE')
     lines.push('Oynanış: Bütün Charge harcanır; patlatılan Mark × Charge ilişkisi tek ağır okun anlık hasarını büyütür.');
   else if(command.markDetonationEventMode==='DETONATION_CHARGE_PAIR')
-    lines.push('Oynanış: Patlatılan Markla eşleşen Charge harcanır ve eşleşme temassız yankı üretir; eşleşmeyen Charge korunur.');
+    lines.push('Oynanış: Bütün Charge harcanır; Markla eşleşen kısım temassız yankı üretir, eşleşmeyen kısım normal temiz Charge hasarını korur.');
   else if(command.markDetonationEventMode==='DETONATION_CHARGE_CAPACITOR')
     lines.push('Oynanış: Banka harcanır; patlatılan Marklar gerçekten harcanmış Chargeın ücretli bir bölümünü geri taşır.');
   else if(command.markDetonationEventMode==='DETONATION_CHARGE_DEFENSE_FUSE')

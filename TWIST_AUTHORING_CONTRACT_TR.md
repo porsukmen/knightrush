@@ -122,8 +122,10 @@ Primary ve Secondary aynıysa sistem otomatik bedava güç eklemez. Önce o attr
 görünür ve ücretli bir ustalık fiili aranır. Varsa yalnız rota makbuzundaki Secondary payını kullanır;
 yoksa temiz sayısal güçte kalmak yeni bir anlamsız engine uydurmaktan daha doğrudur.
 
-Charge Primary yalnız garanti Quality bonuslu gecikmeli saldırıdır; savunma Charge'ı Secondary'ye
-aittir. Saf Charge/Charge ikisini açar. Eski Sharpshoot Twistlerinde ücretli `Charge Power` da vardır.
+Charge Primary garanti Quality bonuslu gecikmeli saldırıyı açar ve savunma performansından oluşan
+bankayı Release sırasında kullanabilir. Charge Secondary aynı savunma bankasını gecikmesiz hareketin
+ek katmanı olarak kullanır. Saf Charge/Charge iki rolü birlikte açar ve aynı-attribute ustalığı için
+ayrıca ücretli ilişki katmanı taşır. Eski Sharpshoot Twistlerinde ücretli `Charge Power` da vardır.
 Dört Twist aynı katsayının kopyası
 değildir: anlık Release yoğunluğu, sonraki hand artçı oku, hatasız savunma streaki ve action-order
 geciktirmesi. Üçü de aynı kaynakla çalışsa bile farklı trigger, timing ve oyuncu kararı taşır.
