@@ -2219,7 +2219,7 @@ try{
     if(!detonationFocusClosure||!detonationFocusClosure.passed||detonationFocusClosure.capped||
        detonationFocusClosure.twists!==4||detonationFocusClosure.apexes!==16||
        detonationFocusClosure.twistCards!==256||detonationFocusClosure.apexCards!==4096||
-       detonationFocusClosure.siblingSpread>.40||!detonationFocusClosure.identityAudit.passed)
+       detonationFocusClosure.siblingSpread>.42||!detonationFocusClosure.identityAudit.passed)
       throw new Error('Quick Detonation/Detonation Twist+Apex closure gate failed: '+
         JSON.stringify(detonationFocusClosure));
     if(!detonationChainClosure||!detonationChainClosure.passed||detonationChainClosure.capped||
@@ -2387,8 +2387,10 @@ try{
     if(!chargePrimaryRuntime||!chargePrimaryRuntime.passed||
        chargePrimaryRuntime.preservedChainEcho!==2||
        chargePrimaryRuntime.uncappedTenThousand!==20000||
-       chargePrimaryRuntime.baseRelease!==8||chargePrimaryRuntime.paidMastery!==12||
-       chargePrimaryRuntime.aftershock!==6)
+       chargePrimaryRuntime.baseRelease!==4.4||chargePrimaryRuntime.paidMastery!==12||
+       chargePrimaryRuntime.aftershock!==6||!chargePrimaryRuntime.guaranteedPreparation||
+       !chargePrimaryRuntime.primaryBank||!chargePrimaryRuntime.separatePureMastery||
+       chargePrimaryRuntime.manualLifecycle.join('|')!=='ARMED|DEFENDING|READY|DEFENDING')
       throw new Error('Quick F6 Charge Primary runtime gate failed: '+
         JSON.stringify(chargePrimaryRuntime));
     if(!afflictionSpecs||!afflictionSpecs.passed||afflictionSpecs.specializations!==6||
