@@ -46325,12 +46325,25 @@ const HEART_INTERIOR_CELLS=(()=>{
     [3,[2,3,4,5,6,7,8,9,10,11,12,13]],[4,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
     [5,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],[6,[2,3,4,5,6,7,8,9,10,11,12,13]],
     [7,[3,4,5,6,7,8,9,10,11,12]],[8,[4,5,6,7,8,9,10,11]],
-    [9,[5,6,7,8,9,10]],[10,[6,7,8,9]],[11,[7,8,9]],[12,[8]]
+    [9,[5,6,7,8,9,10]],[10,[6,7,8,9]],[11,[7,8]],[12,[7,8]]
   ];
   return Object.freeze(rows.flatMap(([y,xs])=>xs.map(x=>Object.freeze({x,y}))));
 })();
-const HEART_FILL_ORDER=Object.freeze([...HEART_INTERIOR_CELLS].sort((a,b)=>
-  a.x-b.x||Math.abs(a.y-6.5)-Math.abs(b.y-6.5)||a.y-b.y));
+function heartBiteDistance(cell,anchor){
+  const dx=(cell.x-anchor.x)*.9,dy=cell.y-anchor.y;
+  return dx*dx+dy*dy;
+}
+/* Damage carves four readable 25-cell bites instead of draining as a bar:
+   upper-left, lower-right, lower-left, then the remaining upper-right quarter. */
+const HEART_REMOVAL_ORDER=(()=>{
+  let remaining=[...HEART_INTERIOR_CELLS];const order=[];
+  for(const anchor of [{x:0,y:0},{x:15,y:13},{x:0,y:13},{x:15,y:0}]){
+    const bite=[...remaining].sort((a,b)=>heartBiteDistance(a,anchor)-heartBiteDistance(b,anchor)||
+      a.y-b.y||a.x-b.x).slice(0,25),keys=new Set(bite.map(p=>p.x+','+p.y));
+    order.push(...bite);remaining=remaining.filter(p=>!keys.has(p.x+','+p.y));
+  }
+  return Object.freeze(order);
+})();
 const HEART_CELL_KEYS=new Set(HEART_INTERIOR_CELLS.map(p=>p.x+','+p.y));
 const HEART_OUTLINE_CELLS=(()=>{
   const outline=new Map();
@@ -46346,8 +46359,8 @@ function buildHeartSprite(fillUnits){
   const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
   c.fillStyle='#15090d';for(const p of HEART_OUTLINE_CELLS)c.fillRect(p.x,p.y,1,1);
   c.fillStyle='#3a141b';for(const p of HEART_INTERIOR_CELLS)c.fillRect(p.x,p.y,1,1);
-  const filled=new Set(HEART_FILL_ORDER.slice(0,fillUnits).map(p=>p.x+','+p.y));
-  for(const p of HEART_INTERIOR_CELLS)if(filled.has(p.x+','+p.y)){
+  const removed=new Set(HEART_REMOVAL_ORDER.slice(0,100-fillUnits).map(p=>p.x+','+p.y));
+  for(const p of HEART_INTERIOR_CELLS)if(!removed.has(p.x+','+p.y)){
     c.fillStyle=p.y<4?'#ff6b70':p.x<5?'#e94a52':'#d83442';c.fillRect(p.x,p.y,1,1);
   }
   return sprite;
@@ -46388,7 +46401,7 @@ function drawPlayerVitalsHUD(){
 }
 const HEART_RENDER_AUDIT=(()=>{
   if(HEART_INTERIOR_CELLS.length!==100||HEART_SPRITES.length!==101||
-     HEART_FILL_ORDER.length!==100)
+     HEART_REMOVAL_ORDER.length!==100||new Set(HEART_REMOVAL_ORDER).size!==100)
     throw new Error('Heart sprite must contain exactly 100 logical health cells and 101 cached states');
   return Object.freeze({logicalCells:100,cachedStates:101});
 })();
