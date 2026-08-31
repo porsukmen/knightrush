@@ -46321,11 +46321,11 @@ function drawCharSel(){
 const HEART_SPRITE_W=16,HEART_SPRITE_H=14;
 const HEART_INTERIOR_CELLS=(()=>{
   const rows=[
-    [1,[3,4,5,10,11,12]],[2,[2,3,4,5,6,9,10,11,12,13]],
+    [1,[3,4,5,10,11,12]],[2,[2,3,4,5,6,7,8,9,10,11,12,13]],
     [3,[2,3,4,5,6,7,8,9,10,11,12,13]],[4,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
     [5,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],[6,[2,3,4,5,6,7,8,9,10,11,12,13]],
     [7,[3,4,5,6,7,8,9,10,11,12]],[8,[4,5,6,7,8,9,10,11]],
-    [9,[5,6,7,8,9,10]],[10,[6,7,8,9]],[11,[7,8]],[12,[7,8]]
+    [9,[5,6,7,8,9,10]],[10,[6,7,8,9]],[11,[7,8]]
   ];
   return Object.freeze(rows.flatMap(([y,xs])=>xs.map(x=>Object.freeze({x,y}))));
 })();
@@ -46333,16 +46333,25 @@ function heartBiteDistance(cell,anchor){
   const dx=(cell.x-anchor.x)*.9,dy=cell.y-anchor.y;
   return dx*dx+dy*dy;
 }
-/* Damage carves four readable 25-cell bites instead of draining as a bar:
-   upper-left, lower-right, lower-left, then the remaining upper-right quarter. */
+function orderedHeartQuarter(cells,anchor){
+  return [...cells].sort((a,b)=>heartBiteDistance(a,anchor)-heartBiteDistance(b,anchor)||
+    a.y-b.y||a.x-b.x);
+}
+/* Every side owns exactly 50 cells. Splitting each side's vertical order at 25
+   makes real quarters: 25 damage removes one complete quarter, never a vague
+   diagonal slice. Inside that quarter the bite still travels edge-to-centre. */
 const HEART_REMOVAL_ORDER=(()=>{
-  let remaining=[...HEART_INTERIOR_CELLS];const order=[];
-  for(const anchor of [{x:0,y:0},{x:15,y:13},{x:0,y:13},{x:15,y:0}]){
-    const bite=[...remaining].sort((a,b)=>heartBiteDistance(a,anchor)-heartBiteDistance(b,anchor)||
-      a.y-b.y||a.x-b.x).slice(0,25),keys=new Set(bite.map(p=>p.x+','+p.y));
-    order.push(...bite);remaining=remaining.filter(p=>!keys.has(p.x+','+p.y));
-  }
-  return Object.freeze(order);
+  const splitSide=side=>{
+    const vertical=[...side].sort((a,b)=>a.y-b.y||a.x-b.x);
+    return {upper:vertical.slice(0,25),lower:vertical.slice(25)};
+  },left=splitSide(HEART_INTERIOR_CELLS.filter(p=>p.x<8)),
+    right=splitSide(HEART_INTERIOR_CELLS.filter(p=>p.x>=8));
+  return Object.freeze([
+    ...orderedHeartQuarter(right.upper,{x:15,y:0}),
+    ...orderedHeartQuarter(right.lower,{x:15,y:13}),
+    ...orderedHeartQuarter(left.lower,{x:0,y:13}),
+    ...orderedHeartQuarter(left.upper,{x:0,y:0})
+  ]);
 })();
 const HEART_CELL_KEYS=new Set(HEART_INTERIOR_CELLS.map(p=>p.x+','+p.y));
 const HEART_OUTLINE_CELLS=(()=>{
@@ -49620,9 +49629,12 @@ function drawHealthLab(){
   g.font='10px monospace';g.fillStyle='#aeb2c2';
   g.fillText('−1 / −2 bypass shields so individual fill cells can be inspected.',VW/2,608);
   g.fillText('HIT 1♥ uses multiplier and consumes one shield first.',VW/2,624);
-  g.fillText('REAL HUD SIZE',VW/2,666);
-  drawHeartHealth(198,680,Math.min(s.currentUnits,400),Math.min(s.maxHearts,4),1,4);
-  drawShieldCharges(215,697,s.shieldCharges,1);
+  g.fillText('REAL HUD SIZE · 4 HEARTS PER ROW',VW/2,666);
+  const previewColumns=Math.min(4,s.maxHearts),previewWidth=previewColumns*(HEART_SPRITE_W+1)-1,
+    previewX=Math.round((VW-previewWidth)/2),previewShieldY=
+      drawHeartHealth(previewX,680,s.currentUnits,s.maxHearts,1,4);
+  const previewShieldWidth=Math.min(4,s.shieldCharges)*11+(s.shieldCharges>4?24:0);
+  drawShieldCharges(Math.round((VW-previewShieldWidth)/2),previewShieldY,s.shieldCharges,1);
 }
 
 function drawDebugCfg(){
