@@ -166,7 +166,7 @@ const CFG = {
   MINIBOSS_AT     : 0.60,  // fraction of loop distance where the stage miniboss waits
   MINIBOSS_DODGE_ATKS:3,    // early minibosses are short duels; later stages add turns
   MINIBOSS_COUNTERS:2,      // early taming asks for two clean counters, then scales upward
-                           // fewer counters = it simply flees; you lose nothing (a hit still kills)
+                           // fewer counters = it simply flees; wounds use the shared heart-health contract
 
   /* --- score --- */
   BOSS_SCORE      : 1000,  // per boss kill, multiplied by loop number
@@ -789,6 +789,7 @@ function handleAction(a,pt,parryIntent=null){
   if(mode==='bosslabselect'){ if(a==='tap'&&pt) bossLabSelectTap(pt); return; }
   if(mode==='bosslabmoves'){ if(a==='tap'&&pt) bossLabMovesTap(pt); return; }
   if(mode==='skilllab'){ if(a==='tap'&&pt) skillLabTap(pt); return; }
+  if(mode==='healthlab'){ if(a==='tap'&&pt) healthLabTap(pt); return; }
   if(mode==='score'){ if(a==='tap'||a==='up') uiConfirm(); return; }
   if(mode==='charsel'){
     if(a==='left'){ charSel=Math.max(0,charSel-1); SFX.swipe(); }
@@ -7716,9 +7717,37 @@ const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
   gallop:0, alive:true,
+  currentHealthUnits:400,maxHealthUnits:400,shieldCharges:0,
+  damageTakenModifierProduct:1,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
   attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, invuln:0,
 };
+const PLAYER_HEALTH_CONTRACT=Object.freeze({
+  unitsPerHeart:100,
+  rule:'INTEGER_FIXED_POINT_HEALTH',
+  shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
+});
+function characterMaxHealthUnits(character=playerChar){
+  return Math.max(1,Math.round(character.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart));
+}
+function playerDamageTakenMultiplier(character=playerChar){
+  return Math.max(0,character.damageTakenMultiplier*player.damageTakenModifierProduct);
+}
+function incomingPlayerDamageUnits(baseHeartDamage=1,character=playerChar){
+  if(!(baseHeartDamage>0))return 0;
+  return Math.max(1,Math.round(baseHeartDamage*PLAYER_HEALTH_CONTRACT.unitsPerHeart*
+    playerDamageTakenMultiplier(character)));
+}
+function setPlayerDamageTakenModifier(product=1){
+  player.damageTakenModifierProduct=Math.max(.0001,Number.isFinite(product)?product:1);
+}
+function syncPlayerVitals(fullHeal=false){
+  const previousMax=player.maxHealthUnits||0;
+  player.maxHealthUnits=characterMaxHealthUnits();
+  if(fullHeal||!Number.isFinite(player.currentHealthUnits))player.currentHealthUnits=player.maxHealthUnits;
+  else player.currentHealthUnits=clamp(player.currentHealthUnits,0,player.maxHealthUnits);
+  if(fullHeal||previousMax<=0)player.shieldCharges=0;
+}
 const DEBUG_PARRY_INPUT_HOLD=.32;
 let debugParryInputMark=null,debugParryFreezeEnabled=false,debugParryInputFrozen=false;
 let debugHitboxesEnabled=false,debugSnapshotsEnabled=true,debugParryStaggerEnabled=false,
@@ -7887,7 +7916,11 @@ function counterDmg(){
 /* ============================== damage / death / shield ============================== */
 let debugRun=false, godMode=false, debugBossStart=false, debugMiniStart=false,
     debugMiniMoves=false, debugLoop=1, debugSel={},skillLabSession=null;
-function damagePlayer(reason,unstoppable=false){
+function playerDamageLabel(units){
+  const hearts=units/PLAYER_HEALTH_CONTRACT.unitsPerHeart;
+  return (Number.isInteger(hearts)?hearts:hearts.toFixed(2).replace(/0+$/,'').replace(/\.$/,''))+' HEART';
+}
+function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   const chargedDefense=boss&&boss.pendingChargeRelease;
   if(chargedDefense&&chargedDefense.status==='DEFENDING')chargedDefense.streakBroken=true;
   if(activeSkillLabCombat()){
@@ -7906,7 +7939,8 @@ function damagePlayer(reason,unstoppable=false){
     hazards=[]; return; }
   if(!unstoppable&&player.invuln>0) return;
   resetDetonationDefenseFuseStreak();
-  if(!unstoppable&&consumeShield()){         // execution finishers bypass shields
+  const damageUnits=unstoppable?player.currentHealthUnits:incomingPlayerDamageUnits(baseHeartDamage);
+  if(!unstoppable&&consumeShield(damageUnits>=player.currentHealthUnits)){ // execution finishers bypass shields
     player.invuln=1.2; SFX.shield(); flash('#9ecbff',.5); shake(8,.3); stopTime(.09);
     burst(laneX(player.x,1),PLAYER_Y-40,22,['#9ecbff','#ffffff'],220,120,4,.8);
     floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE!','#9ecbff',20);
@@ -7915,6 +7949,14 @@ function damagePlayer(reason,unstoppable=false){
   chainStacks=0;                             // only an actual wound breaks the chain
   if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
   resetPreparedFocusStreak();
+  player.currentHealthUnits=Math.max(0,player.currentHealthUnits-damageUnits);
+  if(player.currentHealthUnits>0){
+    player.invuln=.8;
+    SFX.hit();flash('#ff4d3a',.48);shake(9,.32);stopTime(.1);
+    burst(laneX(player.x,1),PLAYER_Y-40,20,['#ff4d3a','#8f9bb0','#ffffff'],220,170,4,.75);
+    floater(laneX(player.x,1),PLAYER_Y-96,'-'+playerDamageLabel(damageUnits),'#ff7a82',17);
+    return;
+  }
   player.alive=false; deathReason=reason;
   SFX.hit(); SFX.dead(); flash('#ff4d3a',.8); shake(14,.5); stopTime(.22);
   burst(laneX(player.x,1),PLAYER_Y-40,30,['#ff4d3a','#8f9bb0','#3f7bff'],260,240,4,1);
@@ -43020,7 +43062,7 @@ function updateBoss(dt){
     }
     return;
   }
-  if(st==='finisher'){                       /* volley failed → one undodgeable claw. shield may eat it. */
+  if(st==='finisher'){                       /* volley failed → authored execution; bypasses ordinary shields */
     if(T>=0.45&&!boss._finRoar){ boss._finRoar=true; SFX.roar(); shake(7,.35); }
     if(activeBossDefinition().stagedFinisher){
       const marks=[1.29,1.63,2.05], lanes=[0,2,1];
@@ -44307,7 +44349,7 @@ function startMiniboss(lane,direct=false){
     state:'intro', stateT:0, attack:null, hazardLanes:[], hurtT:0,
     atkTimer:encounterAttackDelay(), lastIds:[],
     /* a counter duel: it attacks MINIBOSS_DODGE_ATKS times — land MINIBOSS_COUNTERS counters and it falls.
-       fall short and it simply flees (no penalty). a hit still kills you, as always. */
+       Fall short and it simply flees; wounds use the same persistent heart-health pool as the run. */
     attacksLeft:minibossAttackCount(), counters:0, _stg:0,
   });
   obstacles=[]; pickups=[];                  // WIPE the lanes: coins, weapons, obstacles — a clean duel
@@ -45931,7 +45973,9 @@ function syncArtifactCache(){
   for(const r of relics) if(r) equippedArtifactTypes.add(r.type);
 }
 function hasRelic(t){ return equippedArtifactTypes.has(t); }
-function consumeShield(){
+function consumeShield(wouldBeLethal=false){
+  if(player.shieldCharges>0){ player.shieldCharges--; return true; }
+  if(!wouldBeLethal)return false;
   for(const r of relics) if(r&&r.type==='shield'&&r.charged){ r.charged=false; return true; }
   return false;
 }
@@ -46018,7 +46062,7 @@ let bossKills=0, bossScoreRun=0, overkillRun=0, deathReason='';
 let bestScore=0, newBestThisRun=false, paused=false;
 let scoreShown=0;               // the HUD's racing counter chases the continuous score target
 let env='forest';               // 'forest' during the run · 'cave' for the bear's lair
-const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skilllab']);
+const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skilllab','healthlab']);
 function setMode(m){
   /* Automated and hands-on debug sessions are always silent. This overlay never
      changes the player's own mute preference and is released on the normal menu. */
@@ -46085,7 +46129,8 @@ function resetRun(){
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9,invuln:0});
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9,invuln:0,shieldCharges:0,damageTakenModifierProduct:1});
+  syncPlayerVitals(true);
   knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
   skillCritPrecision.clear();skillDetonationPrecisionEcho.clear();
   skillCritChainLoadedReserve.clear();
@@ -46093,19 +46138,37 @@ function resetRun(){
 /* --- riders: pick your knight before the run --- */
 const CHARS=[
   {name:'SER JONATHAN SMITH',desc:'the fallen · a royal knight',specialId:'knight_rush',
-   rigId:'ser_jonathan',feather:'#268ee8',horse:'#714326',chubby:false,globalCritChance:0},
+   rigId:'ser_jonathan',feather:'#268ee8',horse:'#714326',chubby:false,globalCritChance:0,
+   maxHearts:4,damageTakenMultiplier:1},
   {name:'BIG GUSTAV', desc:'the stout · twice the knight',    specialId:'knight_rush',
-   feather:'#b06be0', horse:'#9a9aa6', chubby:true,globalCritChance:0},
+   feather:'#b06be0', horse:'#9a9aa6', chubby:true,globalCritChance:0,
+   maxHearts:4,damageTakenMultiplier:1},
   {name:'UMUTCAN',    desc:'the kürt · sponsor of knightrush', feather:'#3a2a1a', horse:'#6a4a2e',
-   specialId:'knight_rush',chubby:true, monkey:true, caveman:true,globalCritChance:0},
+   specialId:'knight_rush',chubby:true, monkey:true, caveman:true,globalCritChance:0,
+   maxHearts:4,damageTakenMultiplier:1},
 ];
 for(const character of CHARS){
   if(!CHARACTER_SPECIALS.has(character.specialId))
     throw new Error('Character '+character.name+' has unknown special '+character.specialId);
   if(!Number.isFinite(character.globalCritChance)||character.globalCritChance<0||character.globalCritChance>1)
     throw new Error('Character '+character.name+' global Crit chance must be between 0 and 1');
+  if(!Number.isInteger(character.maxHearts)||character.maxHearts<1)
+    throw new Error('Character '+character.name+' maxHearts must be a positive integer');
+  if(!Number.isFinite(character.damageTakenMultiplier)||character.damageTakenMultiplier<=0)
+    throw new Error('Character '+character.name+' damageTakenMultiplier must be greater than zero');
 }
 let charSel=0, playerChar=CHARS[0];
+const PLAYER_HEALTH_SYSTEM_AUDIT=(()=>{
+  const jonathan=CHARS[0],saved=player.damageTakenModifierProduct;
+  player.damageTakenModifierProduct=1;
+  if(characterMaxHealthUnits(jonathan)!==400||incomingPlayerDamageUnits(1,jonathan)!==100)
+    throw new Error('Heart health must use exactly 100 integer units per heart');
+  player.damageTakenModifierProduct=.5;
+  const armored=incomingPlayerDamageUnits(1,{...jonathan,damageTakenMultiplier:1.5});
+  player.damageTakenModifierProduct=saved;
+  if(armored!==75)throw new Error('Character and defense damage multipliers must compose before one final rounding');
+  return Object.freeze({unitsPerHeart:100,jonathanMax:400,oneAndHalfAtHalfDefense:75});
+})();
 const CRITICAL_SYSTEM_AUDIT=(()=>{
   const command={id:'__crit_audit',hits:3,critChance:.20,critPrecisionGain:.10,
       critDamageMultiplier:CFG.CRIT_DAMAGE_MULT},rolls=[.90,.90,.05],
@@ -46251,6 +46314,85 @@ function drawCharSel(){
   g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,648);
 }
 
+/* ---------- fixed-point heart + shield HUD ----------
+   Each interior cell is one health unit. The 100 cached fill states make a
+   two-point wound visibly remove exactly two logical pixels without rebuilding
+   sprites every frame. Canvas nearest-neighbour scaling keeps them sharp. */
+const HEART_SPRITE_W=16,HEART_SPRITE_H=14;
+const HEART_INTERIOR_CELLS=(()=>{
+  const rows=[
+    [1,[3,4,5,10,11,12]],[2,[2,3,4,5,6,9,10,11,12,13]],
+    [3,[2,3,4,5,6,7,8,9,10,11,12,13]],[4,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
+    [5,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],[6,[2,3,4,5,6,7,8,9,10,11,12,13]],
+    [7,[3,4,5,6,7,8,9,10,11,12]],[8,[4,5,6,7,8,9,10,11]],
+    [9,[5,6,7,8,9,10]],[10,[6,7,8,9]],[11,[7,8,9]],[12,[8]]
+  ];
+  return Object.freeze(rows.flatMap(([y,xs])=>xs.map(x=>Object.freeze({x,y}))));
+})();
+const HEART_FILL_ORDER=Object.freeze([...HEART_INTERIOR_CELLS].sort((a,b)=>
+  a.x-b.x||Math.abs(a.y-6.5)-Math.abs(b.y-6.5)||a.y-b.y));
+const HEART_CELL_KEYS=new Set(HEART_INTERIOR_CELLS.map(p=>p.x+','+p.y));
+const HEART_OUTLINE_CELLS=(()=>{
+  const outline=new Map();
+  for(const p of HEART_INTERIOR_CELLS)for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+    const x=p.x+ox,y=p.y+oy,key=x+','+y;
+    if(x>=0&&x<HEART_SPRITE_W&&y>=0&&y<HEART_SPRITE_H&&!HEART_CELL_KEYS.has(key))
+      outline.set(key,Object.freeze({x,y}));
+  }
+  return Object.freeze([...outline.values()]);
+})();
+function buildHeartSprite(fillUnits){
+  const sprite=document.createElement('canvas');sprite.width=HEART_SPRITE_W;sprite.height=HEART_SPRITE_H;
+  const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
+  c.fillStyle='#15090d';for(const p of HEART_OUTLINE_CELLS)c.fillRect(p.x,p.y,1,1);
+  c.fillStyle='#3a141b';for(const p of HEART_INTERIOR_CELLS)c.fillRect(p.x,p.y,1,1);
+  const filled=new Set(HEART_FILL_ORDER.slice(0,fillUnits).map(p=>p.x+','+p.y));
+  for(const p of HEART_INTERIOR_CELLS)if(filled.has(p.x+','+p.y)){
+    c.fillStyle=p.y<4?'#ff6b70':p.x<5?'#e94a52':'#d83442';c.fillRect(p.x,p.y,1,1);
+  }
+  return sprite;
+}
+const HEART_SPRITES=Object.freeze(Array.from({length:101},(_,units)=>buildHeartSprite(units)));
+function heartRowsForCount(count,perRow){return Math.max(1,Math.ceil(count/perRow));}
+function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4){
+  const oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
+  const stepX=(HEART_SPRITE_W+1)*scale,stepY=(HEART_SPRITE_H+1)*scale;
+  for(let i=0;i<maxHearts;i++){
+    const fill=clamp(Math.round(currentUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,100);
+    g.drawImage(HEART_SPRITES[fill],x+(i%perRow)*stepX,y+Math.floor(i/perRow)*stepY,
+      HEART_SPRITE_W*scale,HEART_SPRITE_H*scale);
+  }
+  g.imageSmoothingEnabled=oldSmooth;
+  return y+heartRowsForCount(maxHearts,perRow)*stepY;
+}
+const SHIELD_SPRITE=(()=>{
+  const sprite=document.createElement('canvas');sprite.width=10;sprite.height=12;
+  const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
+  c.fillStyle='#10283d';c.fillRect(1,1,8,7);c.fillRect(2,8,6,2);c.fillRect(4,10,2,1);
+  c.fillStyle='#9ecbff';c.fillRect(2,2,6,5);c.fillRect(3,7,4,2);c.fillRect(4,9,2,1);
+  c.fillStyle='#d9f0ff';c.fillRect(3,2,2,5);c.fillStyle='#3f7baf';c.fillRect(6,3,2,4);
+  return sprite;
+})();
+function drawShieldCharges(x,y,count,scale=1){
+  if(count<=0)return;
+  const shown=Math.min(4,count),oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
+  for(let i=0;i<shown;i++)g.drawImage(SHIELD_SPRITE,x+i*(11*scale),y,10*scale,12*scale);
+  g.imageSmoothingEnabled=oldSmooth;
+  if(count>4){g.textAlign='left';g.font='bold '+(8*scale)+'px monospace';g.fillStyle='#9ecbff';
+    g.fillText('×'+count,x+shown*11*scale+2,y+10*scale);}
+}
+function drawPlayerVitalsHUD(){
+  const maxHearts=Math.max(1,Math.round(player.maxHealthUnits/PLAYER_HEALTH_CONTRACT.unitsPerHeart));
+  const shieldY=drawHeartHealth(7,106,player.currentHealthUnits,maxHearts,1,4);
+  drawShieldCharges(9,shieldY-1,player.shieldCharges,1);
+}
+const HEART_RENDER_AUDIT=(()=>{
+  if(HEART_INTERIOR_CELLS.length!==100||HEART_SPRITES.length!==101||
+     HEART_FILL_ORDER.length!==100)
+    throw new Error('Heart sprite must contain exactly 100 logical health cells and 101 cached states');
+  return Object.freeze({logicalCells:100,cachedStates:101});
+})();
+
 /* ---------- HUD ---------- */
 function drawHUD(){
   g.save(); g.translate(0,uiTop);           // keep the HUD clear of phone notches / islands
@@ -46280,10 +46422,11 @@ function drawHUD(){
   g.fillStyle='#ff4d3a'; g.fillRect(bx+bw-3,by-3,5,13);
   /* relic slots */
   for(let i=0;i<5;i++) drawRelicSlot(14+i*43,66,38,relics[i]);
+  drawPlayerVitalsHUD();
   /* active tamed-miniboss chip */
   if(pack>0){ g.font='11px monospace'; g.textAlign='left'; g.fillStyle='#9ecbff';
     const ally=packEncounter(0);
-    g.fillText(ally.allyIcon+' the '+ally.id+' runs with you',16,124); }
+    g.fillText(ally.allyIcon+' the '+ally.id+' runs with you',16,154); }
   /* pause button (top-right, under the weapon counts) */
   if(GAMEPLAY_MODES.includes(mode)){
     g.fillStyle='#00000077'; g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y,PAUSE_BTN.w,PAUSE_BTN.h);
@@ -46339,7 +46482,7 @@ function drawHUD(){
     if(isPlayerTurn()) drawPlayerTurnUI();
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
-    g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,140);
+    g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,170);
     if(boss&&mode==='boss'&&!boss._moveLab&&!activeSkillLabCombat()&&boss.state!=='dying'){
       g.fillStyle='#3a101088'; g.fillRect(VW-128,150,112,36);
       g.strokeStyle='#ff4d3a'; g.lineWidth=2; g.strokeRect(VW-128,150,112,36);
@@ -49360,6 +49503,115 @@ function drawSkillLabCombatOverlay(){
     '  /  PARRY '+stats.parries+'  /  HIT '+stats.hits+
     (bossChargeEnabled()?'  /  CHG '+liveCharge:''),VW/2,384);
 }
+const HEALTH_LAB_MULTIPLIERS=Object.freeze([.25,.5,.75,1,1.25,1.5,2,3]);
+const HEALTH_LAB_BUTTONS=Object.freeze([
+  {id:'hit',x:12,y:334,w:100,h:40,label:'HIT 1♥',col:'#ff7a82'},
+  {id:'damage1',x:120,y:334,w:62,h:40,label:'−1',col:'#ff7a82'},
+  {id:'damage2',x:190,y:334,w:62,h:40,label:'−2',col:'#ff7a82'},
+  {id:'damage25',x:260,y:334,w:92,h:40,label:'−25',col:'#ff7a82'},
+  {id:'damage100',x:360,y:334,w:108,h:40,label:'−100',col:'#ff7a82'},
+  {id:'heal1',x:12,y:382,w:62,h:40,label:'+1',col:'#c0f79a'},
+  {id:'heal2',x:82,y:382,w:62,h:40,label:'+2',col:'#c0f79a'},
+  {id:'heal25',x:152,y:382,w:82,h:40,label:'+25',col:'#c0f79a'},
+  {id:'heal100',x:242,y:382,w:96,h:40,label:'+100',col:'#c0f79a'},
+  {id:'full',x:346,y:382,w:122,h:40,label:'FULL',col:'#c0f79a'},
+  {id:'heartDown',x:12,y:466,w:105,h:42,label:'HEART −',col:'#e8e2d0'},
+  {id:'heartUp',x:125,y:466,w:105,h:42,label:'HEART +',col:'#e8e2d0'},
+  {id:'multDown',x:250,y:466,w:105,h:42,label:'MULT −',col:'#ffe37a'},
+  {id:'multUp',x:363,y:466,w:105,h:42,label:'MULT +',col:'#ffe37a'},
+  {id:'shieldDown',x:68,y:540,w:118,h:42,label:'SHIELD −',col:'#9ecbff'},
+  {id:'shieldUp',x:194,y:540,w:118,h:42,label:'SHIELD +',col:'#9ecbff'},
+  {id:'reset',x:320,y:540,w:92,h:42,label:'RESET',col:'#b08ae0'}
+]);
+let healthLabState=null;
+function openHealthLab(){
+  healthLabState={maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:2,
+    message:'100 HEALTH = 100 RED CELLS'};
+  setMode('healthlab');SFX.relic();
+}
+function healthLabSetCurrent(value){
+  healthLabState.currentUnits=clamp(Math.round(value),0,healthLabState.maxHearts*100);
+}
+function healthLabExact(delta){
+  healthLabSetCurrent(healthLabState.currentUnits+delta);
+  healthLabState.message=(delta<0?'REMOVED ':'RESTORED ')+Math.abs(delta)+' EXACT CELL'+(Math.abs(delta)===1?'':'S');
+}
+function healthLabApplyHit(){
+  if(healthLabState.shieldCharges>0){healthLabState.shieldCharges--;
+    healthLabState.message='SHIELD ABSORBED THE WHOLE HIT';return;}
+  const damage=Math.max(1,Math.round(100*healthLabState.damageMultiplier));
+  healthLabSetCurrent(healthLabState.currentUnits-damage);
+  healthLabState.message='1 HEART HIT × '+healthLabState.damageMultiplier+' = '+damage+' DAMAGE';
+}
+function healthLabCycleMultiplier(direction){
+  let index=HEALTH_LAB_MULTIPLIERS.indexOf(healthLabState.damageMultiplier);
+  index=clamp(index+direction,0,HEALTH_LAB_MULTIPLIERS.length-1);
+  healthLabState.damageMultiplier=HEALTH_LAB_MULTIPLIERS[index];
+  healthLabState.message='DAMAGE TAKEN MULTIPLIER ×'+healthLabState.damageMultiplier;
+}
+function healthLabTap(pt){
+  if(pt.x>16&&pt.x<108&&pt.y>28&&pt.y<66){healthLabState=null;setMode('debugcfg');SFX.duck();return;}
+  const button=HEALTH_LAB_BUTTONS.find(b=>pt.x>b.x&&pt.x<b.x+b.w&&pt.y>b.y&&pt.y<b.y+b.h);
+  if(!button)return;
+  switch(button.id){
+    case'hit':healthLabApplyHit();break;
+    case'damage1':healthLabExact(-1);break;case'damage2':healthLabExact(-2);break;
+    case'damage25':healthLabExact(-25);break;case'damage100':healthLabExact(-100);break;
+    case'heal1':healthLabExact(1);break;case'heal2':healthLabExact(2);break;
+    case'heal25':healthLabExact(25);break;case'heal100':healthLabExact(100);break;
+    case'full':healthLabSetCurrent(healthLabState.maxHearts*100);healthLabState.message='FULL HEALTH';break;
+    case'heartDown':if(healthLabState.maxHearts>1){healthLabState.maxHearts--;
+      healthLabSetCurrent(healthLabState.currentUnits);healthLabState.message='MAX HEARTS '+healthLabState.maxHearts;}break;
+    case'heartUp':healthLabState.maxHearts++;healthLabSetCurrent(healthLabState.currentUnits+100);
+      healthLabState.message='MAX HEARTS '+healthLabState.maxHearts;break;
+    case'multDown':healthLabCycleMultiplier(-1);break;case'multUp':healthLabCycleMultiplier(1);break;
+    case'shieldDown':healthLabState.shieldCharges=Math.max(0,healthLabState.shieldCharges-1);
+      healthLabState.message='SHIELDS '+healthLabState.shieldCharges;break;
+    case'shieldUp':healthLabState.shieldCharges++;healthLabState.message='SHIELDS '+healthLabState.shieldCharges;break;
+    case'reset':healthLabState={maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:2,
+      message:'RESET · 100 HEALTH = 100 RED CELLS'};break;
+  }
+  SFX.swipe();
+}
+function drawHealthLabButton(button){
+  g.fillStyle='#090b12dd';g.fillRect(button.x,button.y,button.w,button.h);
+  g.strokeStyle=button.col;g.lineWidth=2;g.strokeRect(button.x,button.y,button.w,button.h);
+  g.textAlign='center';g.font='bold 12px monospace';g.fillStyle=button.col;
+  g.fillText(button.label,button.x+button.w/2,button.y+25);
+}
+function drawHealthLab(){
+  const s=healthLabState||{maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:0,message:''};
+  g.fillStyle='#05070cf2';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.fillStyle='#090b12';g.fillRect(0,0,VW,620);
+  g.strokeStyle='#ff6b70';g.lineWidth=2;g.strokeRect(16,28,92,38);
+  g.textAlign='center';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.fillText('◄ BACK',62,52);
+  g.font='bold 22px monospace';g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB',VW/2,58);
+  g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('ONE HEART = EXACTLY 100 LOGICAL FILL CELLS',VW/2,78);
+  const scale=s.maxHearts<=6?3:s.maxHearts<=12?2:1,
+    perRow=Math.max(1,Math.floor((VW-24)/((HEART_SPRITE_W+1)*scale))),
+    inFirstRow=Math.min(s.maxHearts,perRow),rowWidth=inFirstRow*(HEART_SPRITE_W+1)*scale-scale,
+    heartsX=Math.round((VW-rowWidth)/2);
+  const shieldY=drawHeartHealth(heartsX,100,s.currentUnits,s.maxHearts,scale,perRow)+8;
+  const shieldsWidth=Math.min(4,s.shieldCharges)*11*2+(s.shieldCharges>4?38:0);
+  drawShieldCharges(Math.round((VW-shieldsWidth)/2),shieldY,s.shieldCharges,2);
+  g.textAlign='center';g.font='bold 16px monospace';g.fillStyle='#e8e2d0';
+  g.fillText(s.currentUnits+' / '+(s.maxHearts*100)+' HEALTH',VW/2,270);
+  const lastHeart=s.currentUnits<=0?0:((s.currentUnits-1)%100)+1;
+  g.font='11px monospace';g.fillStyle='#ff9aa0';
+  g.fillText('VISIBLE PARTIAL HEART: '+lastHeart+'/100  ·  DAMAGE MULT ×'+s.damageMultiplier+
+    '  ·  SHIELDS '+s.shieldCharges,VW/2,294);
+  g.fillStyle='#ffe37a';g.fillText(s.message,VW/2,316);
+  for(const button of HEALTH_LAB_BUTTONS)drawHealthLabButton(button);
+  g.font='bold 11px monospace';g.fillStyle='#8b8fa0';g.fillText('EXACT PIXEL TESTS',VW/2,328);
+  g.fillText('CHARACTER FOUNDATION',VW/2,450);g.fillText('TEMPORARY HIT SHIELDS',VW/2,530);
+  g.font='10px monospace';g.fillStyle='#aeb2c2';
+  g.fillText('−1 / −2 bypass shields so individual fill cells can be inspected.',VW/2,608);
+  g.fillText('HIT 1♥ uses multiplier and consumes one shield first.',VW/2,624);
+  g.fillText('REAL HUD SIZE',VW/2,666);
+  drawHeartHealth(198,680,Math.min(s.currentUnits,400),Math.min(s.maxHearts,4),1,4);
+  drawShieldCharges(215,697,s.shieldCharges,1);
+}
+
 function drawDebugCfg(){
   g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
@@ -49395,12 +49647,14 @@ function drawDebugCfg(){
   g.fillStyle=debugMiniMoves?'#c9f74a':'#8b8fa0'; g.fillText((debugMiniMoves?'✓ ':'□ ')+'MINI MOVES',168+labW/2,324);
   g.strokeStyle='#9ecbff';g.strokeRect(324,302,labW,34);
   g.fillStyle='#9ecbff';g.fillText('SKILL LAB ▶',324+labW/2,324);
+  g.strokeStyle='#ff6b70';g.strokeRect(VW/2-labW/2,342,labW,34);
+  g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB ▶',VW/2,364);
   /* relic toggles */
-  g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,348);
+  g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,390);
   const keys=ARTIFACT_IDS;
   for(let i=0;i<keys.length;i++){
     const d=ARTIFACT_DEFS[keys[i]], on=!!debugSel[keys[i]];
-    const col=i%2, row=(i/2)|0, x=14+col*230, y=360+row*40;
+    const col=i%2, row=(i/2)|0, x=14+col*230, y=402+row*40;
     g.fillStyle=on?'rgba(255,227,122,0.12)':'rgba(0,0,0,0.4)'; g.fillRect(x,y,222,34);
     g.strokeStyle=on?d.col:'#3a3a44'; g.lineWidth=on?2:1; g.strokeRect(x,y,222,34);
     g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle=on?d.col:'#8b8fa0';
@@ -49434,9 +49688,10 @@ function debugCfgTap(pt){
   if(pt.x>12&&pt.x<156&&pt.y>302&&pt.y<336){ setMode('bosslabselect'); SFX.relic(); return; }
   if(pt.x>168&&pt.x<312&&pt.y>302&&pt.y<336){ selectDebugFight('miniMoves'); return; }
   if(pt.x>324&&pt.x<468&&pt.y>302&&pt.y<336){ openSkillLab(); return; }
+  if(pt.x>VW/2-72&&pt.x<VW/2+72&&pt.y>342&&pt.y<376){ openHealthLab(); return; }
   const keys=ARTIFACT_IDS;
   for(let i=0;i<keys.length;i++){
-    const col=i%2, row=(i/2)|0, x=14+col*230, y=360+row*40;
+    const col=i%2, row=(i/2)|0, x=14+col*230, y=402+row*40;
     if(pt.x>x&&pt.x<x+222&&pt.y>y&&pt.y<y+34){ debugSel[keys[i]]=!debugSel[keys[i]]; SFX.coin(); return; }
   }
 }
@@ -49657,7 +49912,7 @@ function drawMinibossIntro(){
   g.font='14px monospace'; g.fillStyle='#e8e2d0';
   if(w.stateT>0.7) g.fillText('counter it '+countersNeeded()+' times (perfect dodges) to TAME it',VW/2,428);
   if(w.stateT>1.05) g.fillText('a tamed beast fights beside you until the stage boss falls',VW/2,448);
-  if(w.stateT>1.4) g.fillText('fall short and it flees — but one hit still kills',VW/2,468);
+  if(w.stateT>1.4) g.fillText('fall short and it flees — wounds carry through the run',VW/2,468);
 }
 
 /* ============================== update per mode ============================== */
@@ -49667,7 +49922,7 @@ function update(dt){
   updateAmbient(dt);
   updateArenaFx(dt);
   updateScoreShown(dt);
-  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='skilllab'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
+  if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='skilllab'||mode==='healthlab'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
   if(mode==='dying'){ if(modeT>1.4){ commitFinalScore(); setMode('score'); } return; }
 
   updatePlayer(dt);
@@ -49912,7 +50167,7 @@ function render(){
   for(const d of dr) d.draw(d.ref,stage);
 
   drawTelegraphs();
-  if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
+  if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='healthlab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
     if(player.alive) drawPlayer();
     drawPackAllies();
     drawProjectiles();
@@ -49943,6 +50198,7 @@ function render(){
     else if(mode==='changelog') drawChangelog();
     else if(mode==='debugcfg') drawDebugCfg();
     else if(mode==='skilllab') drawSkillLab();
+    else if(mode==='healthlab') drawHealthLab();
     else if(mode==='bosslabselect') drawBossLabSelect();
     else if(mode==='bosslabmoves') drawBossLabMoves();
     else if(mode==='charsel') drawCharSel();
