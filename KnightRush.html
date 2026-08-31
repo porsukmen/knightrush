@@ -46318,20 +46318,19 @@ function drawCharSel(){
    Each interior cell is one health unit. The 100 cached fill states make a
    two-point wound visibly remove exactly two logical pixels without rebuilding
    sprites every frame. Canvas nearest-neighbour scaling keeps them sharp. */
-const HEART_SPRITE_W=14,HEART_SPRITE_H=14;
+const HEART_SPRITE_W=16,HEART_SPRITE_H=13;
 const HEART_INTERIOR_CELLS=(()=>{
   const rows=[
-    [1,[2,3,4,9,10,11]],
-    [2,[1,2,3,4,9,10,11,12]],
-    [3,[1,2,3,4,5,6,7,8,9,10,11,12]],
-    [4,[1,2,3,4,5,6,7,8,9,10,11,12]],
-    [5,[1,2,3,4,5,6,7,8,9,10,11,12]],
-    [6,[1,2,3,4,5,6,7,8,9,10,11,12]],
-    [7,[2,3,4,5,6,7,8,9,10,11]],
-    [8,[3,4,5,6,7,8,9,10]],
-    [9,[3,4,5,6,7,8,9,10]],
-    [10,[4,5,6,7,8,9]],
-    [11,[5,6,7,8]],[12,[6,7]]
+    [1,[2,3,4,5,6,9,10,11,12,13]],
+    [2,[2,3,4,5,6,7,8,9,10,11,12,13]],
+    [3,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
+    [4,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
+    [5,[2,3,4,5,6,7,8,9,10,11,12,13]],
+    [6,[3,4,5,6,7,8,9,10,11,12]],
+    [7,[4,5,6,7,8,9,10,11]],
+    [8,[4,5,6,7,8,9,10,11]],
+    [9,[5,6,7,8,9,10]],
+    [10,[6,7,8,9]],[11,[7,8]]
   ];
   return Object.freeze(rows.flatMap(([y,xs])=>xs.map(x=>Object.freeze({x,y}))));
 })();
@@ -46348,10 +46347,10 @@ function orderedHeartQuarter(cells,anchor){
    vertical/horizontal cut, while sub-quarter wounds still bite inward. */
 const HEART_REMOVAL_ORDER=(()=>{
   const quarters=[
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=7&&p.y<=5),anchor:{x:13,y:0}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=7&&p.y>=6),anchor:{x:13,y:13}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<7&&p.y>=6),anchor:{x:0,y:13}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<7&&p.y<=5),anchor:{x:0,y:0}}
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=8&&p.y<=4),anchor:{x:15,y:0}},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=8&&p.y>=5),anchor:{x:15,y:12}},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<8&&p.y>=5),anchor:{x:0,y:12}},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<8&&p.y<=4),anchor:{x:0,y:0}}
   ];
   if(quarters.some(quarter=>quarter.cells.length!==25))
     throw new Error('Each heart quadrant must own exactly 25 health cells');
@@ -46379,7 +46378,10 @@ function buildHeartSprite(fillUnits){
   c.fillStyle='#3a141b';for(const p of HEART_INTERIOR_CELLS)c.fillRect(p.x,p.y,1,1);
   const removed=new Set(HEART_REMOVAL_ORDER.slice(0,100-fillUnits).map(p=>p.x+','+p.y));
   for(const p of HEART_INTERIOR_CELLS)if(!removed.has(p.x+','+p.y)){
-    c.fillStyle=p.y<4?'#ff6b70':p.x<5?'#e94a52':'#d83442';c.fillRect(p.x,p.y,1,1);
+    const key=p.x+','+p.y;
+    c.fillStyle=key==='3,2'||key==='3,3'||key==='4,2'?'#ffdadd':
+      p.x>=12?'#bd2937':p.y===1?'#ff5963':'#ec3544';
+    c.fillRect(p.x,p.y,1,1);
   }
   return sprite;
 }
