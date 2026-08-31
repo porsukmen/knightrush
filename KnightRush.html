@@ -7713,20 +7713,22 @@ function spawnObstacle(z){
 }
 
 /* ============================== PLAYER ============================== */
+const PLAYER_HEALTH_CONTRACT=Object.freeze({
+  unitsPerHeart:144,
+  quarterHeartUnits:36,
+  rule:'INTEGER_FIXED_POINT_HEALTH_ONE_UNIT_PER_VISIBLE_HEART_CELL',
+  shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
+});
 const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
   gallop:0, alive:true,
-  currentHealthUnits:400,maxHealthUnits:400,shieldCharges:0,
+  currentHealthUnits:576,maxHealthUnits:576,shieldCharges:0,
   damageTakenModifierProduct:1,
+  heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
   attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, invuln:0,
 };
-const PLAYER_HEALTH_CONTRACT=Object.freeze({
-  unitsPerHeart:100,
-  rule:'INTEGER_FIXED_POINT_HEALTH',
-  shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
-});
 function characterMaxHealthUnits(character=playerChar){
   return Math.max(1,Math.round(character.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart));
 }
@@ -7747,6 +7749,12 @@ function syncPlayerVitals(fullHeal=false){
   if(fullHeal||!Number.isFinite(player.currentHealthUnits))player.currentHealthUnits=player.maxHealthUnits;
   else player.currentHealthUnits=clamp(player.currentHealthUnits,0,player.maxHealthUnits);
   if(fullHeal||previousMax<=0)player.shieldCharges=0;
+  if(fullHeal)player.heartFlashStartedAt=-Infinity;
+}
+const HEART_HIT_FLASH_DURATION=.5;
+function beginPlayerHeartFlash(fromUnits,toUnits){
+  player.heartFlashFromUnits=fromUnits;player.heartFlashToUnits=toUnits;
+  player.heartFlashStartedAt=perfNow;
 }
 const DEBUG_PARRY_INPUT_HOLD=.32;
 let debugParryInputMark=null,debugParryFreezeEnabled=false,debugParryInputFrozen=false;
@@ -7949,7 +7957,10 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   chainStacks=0;                             // only an actual wound breaks the chain
   if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
   resetPreparedFocusStreak();
-  player.currentHealthUnits=Math.max(0,player.currentHealthUnits-damageUnits);
+  const healthBeforeHit=player.currentHealthUnits,
+    healthAfterHit=Math.max(0,healthBeforeHit-damageUnits);
+  player.currentHealthUnits=healthAfterHit;
+  beginPlayerHeartFlash(healthBeforeHit,healthAfterHit);
   if(player.currentHealthUnits>0){
     player.invuln=.8;
     SFX.hit();flash('#ff4d3a',.48);shake(9,.32);stopTime(.1);
@@ -46129,7 +46140,10 @@ function resetRun(){
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9,invuln:0,shieldCharges:0,damageTakenModifierProduct:1});
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,
+    parryAnim:0,swordCombo:null,lastParry:-9,invuln:0,shieldCharges:0,
+    damageTakenModifierProduct:1,heartFlashStartedAt:-Infinity,
+    heartFlashFromUnits:0,heartFlashToUnits:0});
   syncPlayerVitals(true);
   knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
   skillCritPrecision.clear();skillDetonationPrecisionEcho.clear();
@@ -46161,13 +46175,13 @@ let charSel=0, playerChar=CHARS[0];
 const PLAYER_HEALTH_SYSTEM_AUDIT=(()=>{
   const jonathan=CHARS[0],saved=player.damageTakenModifierProduct;
   player.damageTakenModifierProduct=1;
-  if(characterMaxHealthUnits(jonathan)!==400||incomingPlayerDamageUnits(1,jonathan)!==100)
-    throw new Error('Heart health must use exactly 100 integer units per heart');
+  if(characterMaxHealthUnits(jonathan)!==576||incomingPlayerDamageUnits(1,jonathan)!==144)
+    throw new Error('Heart health must use exactly 144 integer units per heart');
   player.damageTakenModifierProduct=.5;
   const armored=incomingPlayerDamageUnits(1,{...jonathan,damageTakenMultiplier:1.5});
   player.damageTakenModifierProduct=saved;
-  if(armored!==75)throw new Error('Character and defense damage multipliers must compose before one final rounding');
-  return Object.freeze({unitsPerHeart:100,jonathanMax:400,oneAndHalfAtHalfDefense:75});
+  if(armored!==108)throw new Error('Character and defense damage multipliers must compose before one final rounding');
+  return Object.freeze({unitsPerHeart:144,jonathanMax:576,oneAndHalfAtHalfDefense:108});
 })();
 const CRITICAL_SYSTEM_AUDIT=(()=>{
   const command={id:'__crit_audit',hits:3,critChance:.20,critPrecisionGain:.10,
@@ -46315,116 +46329,138 @@ function drawCharSel(){
 }
 
 /* ---------- fixed-point heart + shield HUD ----------
-   Each interior cell is one health unit. The 100 cached fill states make a
-   two-point wound visibly remove exactly two logical pixels without rebuilding
-   sprites every frame. Canvas nearest-neighbour scaling keeps them sharp. */
-const HEART_SPRITE_W=16,HEART_SPRITE_H=13;
+   Exact corrected mask authored by Altar in kalp.png: 144 filled cells, divided
+   by the authored x=12 / y=5 cut lines into four literal 36-cell quarters.
+   All 145 states are cached once; ordinary HUD drawing only blits a tiny canvas. */
+const HEART_SPRITE_W=24,HEART_SPRITE_H=13,HEART_SPLIT_X=12,HEART_SPLIT_Y=5;
 const HEART_INTERIOR_CELLS=(()=>{
   const rows=[
-    [1,[2,3,4,5,6,9,10,11,12,13]],
-    [2,[2,3,4,5,6,7,8,9,10,11,12,13]],
-    [3,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
-    [4,[1,2,3,4,5,6,7,8,9,10,11,12,13,14]],
-    [5,[2,3,4,5,6,7,8,9,10,11,12,13]],
-    [6,[3,4,5,6,7,8,9,10,11,12]],
-    [7,[4,5,6,7,8,9,10,11]],
-    [8,[4,5,6,7,8,9,10,11]],
-    [9,[5,6,7,8,9,10]],
-    [10,[6,7,8,9]],[11,[7,8]]
+    [0,[[6,9],[14,17]]],
+    [1,[[5,10],[13,18]]],
+    [2,[[4,19]]],[3,[[3,20]]],[4,[[3,20]]],
+    [5,[[4,19]]],[6,[[5,18]]],[7,[[6,17]]],
+    [8,[[7,16]]],[9,[[8,15]]],[10,[[9,14]]],
+    [11,[[10,13]]],[12,[[11,12]]]
   ];
-  return Object.freeze(rows.flatMap(([y,xs])=>xs.map(x=>Object.freeze({x,y}))));
+  return Object.freeze(rows.flatMap(([y,ranges])=>ranges.flatMap(([from,to])=>
+    Array.from({length:to-from+1},(_,i)=>Object.freeze({x:from+i,y})))));
 })();
-function heartBiteDistance(cell,anchor){
+function heartBiteDistance(cell,front){
+  const anchor=front.anchor||front,delay=front.delay||0;
   const dx=(cell.x-anchor.x)*.9,dy=cell.y-anchor.y;
-  return dx*dx+dy*dy;
+  return dx*dx+dy*dy+delay;
 }
-function orderedHeartQuarter(cells,anchor){
-  return [...cells].sort((a,b)=>heartBiteDistance(a,anchor)-heartBiteDistance(b,anchor)||
+function orderedHeartQuarter(cells,...fronts){
+  const biteScore=cell=>Math.min(...fronts.map(front=>heartBiteDistance(cell,front)));
+  return [...cells].sort((a,b)=>biteScore(a)-biteScore(b)||
     a.y-b.y||a.x-b.x);
 }
-/* The mask is authored so each geometric quadrant contains exactly 25 cells.
-   Therefore every 25 damage removes a literal Zelda-style quarter with a sharp
-   vertical/horizontal cut, while sub-quarter wounds still bite inward. */
+/* Four hand-authored 36-cell sections preserve the exact drawn boundaries.
+   Top-right and bottom-left retain their clean corner bites. Bottom-right opens
+   from both the lower tip and right edge; top-left favours its upper corner but
+   starts nibbling the left edge early, avoiding an ugly untouched side wall. */
 const HEART_REMOVAL_ORDER=(()=>{
   const quarters=[
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=8&&p.y<=4),anchor:{x:15,y:0}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x>=8&&p.y>=5),anchor:{x:15,y:12}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<8&&p.y>=5),anchor:{x:0,y:12}},
-    {cells:HEART_INTERIOR_CELLS.filter(p=>p.x<8&&p.y<=4),anchor:{x:0,y:0}}
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.y<HEART_SPLIT_Y&&p.x>=HEART_SPLIT_X),
+      fronts:[{x:23,y:0}]},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.y>=HEART_SPLIT_Y&&p.x>=HEART_SPLIT_X),
+      /* Mirror the lower-left diagonal bite from the lower-right. A heavily
+         delayed side front only nudges a few right-edge cells earlier. */
+      fronts:[{x:23,y:12},{anchor:{x:21,y:5},delay:60}]},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.y>=HEART_SPLIT_Y&&p.x<HEART_SPLIT_X),
+      fronts:[{x:0,y:12}]},
+    {cells:HEART_INTERIOR_CELLS.filter(p=>p.y<HEART_SPLIT_Y&&p.x<HEART_SPLIT_X),
+      fronts:[{anchor:{x:2,y:0}},{anchor:{x:1,y:5},delay:6}]}
   ];
-  if(quarters.some(quarter=>quarter.cells.length!==25))
-    throw new Error('Each heart quadrant must own exactly 25 health cells');
-  return Object.freeze([
-    ...orderedHeartQuarter(quarters[0].cells,quarters[0].anchor),
-    ...orderedHeartQuarter(quarters[1].cells,quarters[1].anchor),
-    ...orderedHeartQuarter(quarters[2].cells,quarters[2].anchor),
-    ...orderedHeartQuarter(quarters[3].cells,quarters[3].anchor)
-  ]);
+  if(quarters.some(quarter=>quarter.cells.length!==PLAYER_HEALTH_CONTRACT.quarterHeartUnits))
+    throw new Error('Every authored heart quadrant must contain exactly 36 cells');
+  return Object.freeze(quarters.flatMap(quarter=>orderedHeartQuarter(quarter.cells,...quarter.fronts)));
 })();
-const HEART_CELL_KEYS=new Set(HEART_INTERIOR_CELLS.map(p=>p.x+','+p.y));
-const HEART_OUTLINE_CELLS=(()=>{
-  const outline=new Map();
-  for(const p of HEART_INTERIOR_CELLS)for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
-    const x=p.x+ox,y=p.y+oy,key=x+','+y;
-    if(x>=0&&x<HEART_SPRITE_W&&y>=0&&y<HEART_SPRITE_H&&!HEART_CELL_KEYS.has(key))
-      outline.set(key,Object.freeze({x,y}));
-  }
-  return Object.freeze([...outline.values()]);
-})();
-function buildHeartSprite(fillUnits){
+function buildHeartSprite(fillUnits,fillColor='#ff3154'){
   const sprite=document.createElement('canvas');sprite.width=HEART_SPRITE_W;sprite.height=HEART_SPRITE_H;
   const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
-  c.fillStyle='#15090d';for(const p of HEART_OUTLINE_CELLS)c.fillRect(p.x,p.y,1,1);
-  c.fillStyle='#3a141b';for(const p of HEART_INTERIOR_CELLS)c.fillRect(p.x,p.y,1,1);
-  const removed=new Set(HEART_REMOVAL_ORDER.slice(0,100-fillUnits).map(p=>p.x+','+p.y));
+  const removed=new Set(HEART_REMOVAL_ORDER.slice(0,
+    PLAYER_HEALTH_CONTRACT.unitsPerHeart-fillUnits).map(p=>p.x+','+p.y));
+  c.fillStyle=fillColor;
   for(const p of HEART_INTERIOR_CELLS)if(!removed.has(p.x+','+p.y)){
-    const key=p.x+','+p.y;
-    c.fillStyle=key==='3,2'||key==='3,3'||key==='4,2'?'#ffdadd':
-      p.x>=12?'#bd2937':p.y===1?'#ff5963':'#ec3544';
     c.fillRect(p.x,p.y,1,1);
   }
   return sprite;
 }
-const HEART_SPRITES=Object.freeze(Array.from({length:101},(_,units)=>buildHeartSprite(units)));
+const HEART_SPRITES=Object.freeze(Array.from({length:PLAYER_HEALTH_CONTRACT.unitsPerHeart+1},
+  (_,units)=>buildHeartSprite(units)));
+const HEART_FLASH_SPRITES=Object.freeze(Array.from({length:PLAYER_HEALTH_CONTRACT.unitsPerHeart+1},
+  (_,units)=>buildHeartSprite(units,'#fffafd')));
 function heartRowsForCount(count,perRow){return Math.max(1,Math.ceil(count/perRow));}
-function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4){
+function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4,flashState=null){
   const oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
   const stepX=(HEART_SPRITE_W+1)*scale,stepY=(HEART_SPRITE_H+1)*scale;
   for(let i=0;i<maxHearts;i++){
-    const fill=clamp(Math.round(currentUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,100);
+    const fill=clamp(Math.round(currentUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
+      PLAYER_HEALTH_CONTRACT.unitsPerHeart);
     g.drawImage(HEART_SPRITES[fill],x+(i%perRow)*stepX,y+Math.floor(i/perRow)*stepY,
       HEART_SPRITE_W*scale,HEART_SPRITE_H*scale);
+  }
+  const flashAge=flashState?perfNow-flashState.startedAt:Infinity;
+  if(flashAge>=0&&flashAge<HEART_HIT_FLASH_DURATION){
+    const progress=flashAge/HEART_HIT_FLASH_DURATION,
+      flashAlpha=progress<.55?1:Math.pow(1-(progress-.55)/.45,.72),
+      fromUnits=flashState.fromUnits,toUnits=flashState.toUnits;
+    const oldAlpha=g.globalAlpha;g.globalAlpha=oldAlpha*flashAlpha;
+    for(let i=0;i<maxHearts;i++){
+      const fromFill=clamp(Math.round(fromUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
+          PLAYER_HEALTH_CONTRACT.unitsPerHeart),
+        toFill=clamp(Math.round(toUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
+          PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+      if(fromFill===toFill||fromFill<=0)continue;
+      g.drawImage(HEART_FLASH_SPRITES[fromFill],x+(i%perRow)*stepX,y+Math.floor(i/perRow)*stepY,
+        HEART_SPRITE_W*scale,HEART_SPRITE_H*scale);
+    }
+    g.globalAlpha=oldAlpha;
   }
   g.imageSmoothingEnabled=oldSmooth;
   return y+heartRowsForCount(maxHearts,perRow)*stepY;
 }
 const SHIELD_SPRITE=(()=>{
-  const sprite=document.createElement('canvas');sprite.width=10;sprite.height=12;
+  const sprite=document.createElement('canvas');sprite.width=16;sprite.height=14;
   const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
-  c.fillStyle='#10283d';c.fillRect(1,1,8,7);c.fillRect(2,8,6,2);c.fillRect(4,10,2,1);
-  c.fillStyle='#9ecbff';c.fillRect(2,2,6,5);c.fillRect(3,7,4,2);c.fillRect(4,9,2,1);
-  c.fillStyle='#d9f0ff';c.fillRect(3,2,2,5);c.fillStyle='#3f7baf';c.fillRect(6,3,2,4);
+  c.fillStyle='#10283d';c.fillRect(1,1,14,8);c.fillRect(2,9,12,2);
+  c.fillRect(4,11,8,1);c.fillRect(6,12,4,1);
+  c.fillStyle='#9ecbff';c.fillRect(2,2,12,6);c.fillRect(3,8,10,2);
+  c.fillRect(5,10,6,1);c.fillRect(7,11,2,1);
+  c.fillStyle='#d9f0ff';c.fillRect(3,2,4,6);c.fillRect(5,8,3,2);
+  c.fillStyle='#3f7baf';c.fillRect(11,3,2,5);c.fillRect(9,8,3,1);
   return sprite;
 })();
+function shieldRowWidth(count,scale=1){
+  const shown=Math.min(4,count),step=(SHIELD_SPRITE.width+2)*scale;
+  return shown?shown*step-2*scale+(count>4?38:0):0;
+}
 function drawShieldCharges(x,y,count,scale=1){
   if(count<=0)return;
-  const shown=Math.min(4,count),oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
-  for(let i=0;i<shown;i++)g.drawImage(SHIELD_SPRITE,x+i*(11*scale),y,10*scale,12*scale);
+  const shown=Math.min(4,count),step=(SHIELD_SPRITE.width+2)*scale,
+    oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
+  for(let i=0;i<shown;i++)g.drawImage(SHIELD_SPRITE,x+i*step,y,
+    SHIELD_SPRITE.width*scale,SHIELD_SPRITE.height*scale);
   g.imageSmoothingEnabled=oldSmooth;
   if(count>4){g.textAlign='left';g.font='bold '+(8*scale)+'px monospace';g.fillStyle='#9ecbff';
-    g.fillText('×'+count,x+shown*11*scale+2,y+10*scale);}
+    g.fillText('×'+count,x+shown*step+2,y+10*scale);}
 }
 function drawPlayerVitalsHUD(){
   const maxHearts=Math.max(1,Math.round(player.maxHealthUnits/PLAYER_HEALTH_CONTRACT.unitsPerHeart));
   const heartsPerRow=Math.max(1,Math.floor((VW-24)/(HEART_SPRITE_W+1))),
-    shieldY=drawHeartHealth(12,50,player.currentHealthUnits,maxHearts,1,heartsPerRow);
+    shieldY=drawHeartHealth(12,50,player.currentHealthUnits,maxHearts,1,heartsPerRow,{
+      startedAt:player.heartFlashStartedAt,fromUnits:player.heartFlashFromUnits,
+      toUnits:player.heartFlashToUnits});
   drawShieldCharges(14,shieldY-1,player.shieldCharges,1);
 }
 const HEART_RENDER_AUDIT=(()=>{
-  if(HEART_INTERIOR_CELLS.length!==100||HEART_SPRITES.length!==101||
-     HEART_REMOVAL_ORDER.length!==100||new Set(HEART_REMOVAL_ORDER).size!==100)
-    throw new Error('Heart sprite must contain exactly 100 logical health cells and 101 cached states');
-  return Object.freeze({logicalCells:100,cachedStates:101});
+  const units=PLAYER_HEALTH_CONTRACT.unitsPerHeart;
+  if(HEART_INTERIOR_CELLS.length!==units||HEART_SPRITES.length!==units+1||
+     HEART_FLASH_SPRITES.length!==units+1||
+     HEART_REMOVAL_ORDER.length!==units||new Set(HEART_REMOVAL_ORDER).size!==units)
+    throw new Error('Heart sprite must contain exactly 144 logical health cells and 145 cached states');
+  return Object.freeze({logicalCells:units,cachedStates:units+1});
 })();
 
 /* ---------- HUD ---------- */
@@ -49542,12 +49578,12 @@ const HEALTH_LAB_BUTTONS=Object.freeze([
   {id:'hit',x:12,y:334,w:100,h:40,label:'HIT 1♥',col:'#ff7a82'},
   {id:'damage1',x:120,y:334,w:62,h:40,label:'−1',col:'#ff7a82'},
   {id:'damage2',x:190,y:334,w:62,h:40,label:'−2',col:'#ff7a82'},
-  {id:'damage25',x:260,y:334,w:92,h:40,label:'−25',col:'#ff7a82'},
-  {id:'damage100',x:360,y:334,w:108,h:40,label:'−100',col:'#ff7a82'},
+  {id:'damageQuarter',x:260,y:334,w:92,h:40,label:'−36',col:'#ff7a82'},
+  {id:'damageHeart',x:360,y:334,w:108,h:40,label:'−144',col:'#ff7a82'},
   {id:'heal1',x:12,y:382,w:62,h:40,label:'+1',col:'#c0f79a'},
   {id:'heal2',x:82,y:382,w:62,h:40,label:'+2',col:'#c0f79a'},
-  {id:'heal25',x:152,y:382,w:82,h:40,label:'+25',col:'#c0f79a'},
-  {id:'heal100',x:242,y:382,w:96,h:40,label:'+100',col:'#c0f79a'},
+  {id:'healQuarter',x:152,y:382,w:82,h:40,label:'+36',col:'#c0f79a'},
+  {id:'healHeart',x:242,y:382,w:96,h:40,label:'+144',col:'#c0f79a'},
   {id:'full',x:346,y:382,w:122,h:40,label:'FULL',col:'#c0f79a'},
   {id:'heartDown',x:12,y:466,w:105,h:42,label:'HEART −',col:'#e8e2d0'},
   {id:'heartUp',x:125,y:466,w:105,h:42,label:'HEART +',col:'#e8e2d0'},
@@ -49559,12 +49595,14 @@ const HEALTH_LAB_BUTTONS=Object.freeze([
 ]);
 let healthLabState=null;
 function openHealthLab(){
-  healthLabState={maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:2,
-    message:'100 HEALTH = 100 RED CELLS'};
+  healthLabState={maxHearts:4,currentUnits:576,damageMultiplier:1,shieldCharges:2,
+    heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
+    message:'144 HEALTH = 144 RED CELLS'};
   setMode('healthlab');SFX.relic();
 }
 function healthLabSetCurrent(value){
-  healthLabState.currentUnits=clamp(Math.round(value),0,healthLabState.maxHearts*100);
+  healthLabState.currentUnits=clamp(Math.round(value),0,
+    healthLabState.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
 }
 function healthLabExact(delta){
   healthLabSetCurrent(healthLabState.currentUnits+delta);
@@ -49573,8 +49611,12 @@ function healthLabExact(delta){
 function healthLabApplyHit(){
   if(healthLabState.shieldCharges>0){healthLabState.shieldCharges--;
     healthLabState.message='SHIELD ABSORBED THE WHOLE HIT';return;}
-  const damage=Math.max(1,Math.round(100*healthLabState.damageMultiplier));
+  const damage=Math.max(1,Math.round(PLAYER_HEALTH_CONTRACT.unitsPerHeart*healthLabState.damageMultiplier)),
+    before=healthLabState.currentUnits;
   healthLabSetCurrent(healthLabState.currentUnits-damage);
+  healthLabState.heartFlashFromUnits=before;
+  healthLabState.heartFlashToUnits=healthLabState.currentUnits;
+  healthLabState.heartFlashStartedAt=perfNow;
   healthLabState.message='1 HEART HIT × '+healthLabState.damageMultiplier+' = '+damage+' DAMAGE';
 }
 function healthLabCycleMultiplier(direction){
@@ -49590,20 +49632,25 @@ function healthLabTap(pt){
   switch(button.id){
     case'hit':healthLabApplyHit();break;
     case'damage1':healthLabExact(-1);break;case'damage2':healthLabExact(-2);break;
-    case'damage25':healthLabExact(-25);break;case'damage100':healthLabExact(-100);break;
+    case'damageQuarter':healthLabExact(-PLAYER_HEALTH_CONTRACT.quarterHeartUnits);break;
+    case'damageHeart':healthLabExact(-PLAYER_HEALTH_CONTRACT.unitsPerHeart);break;
     case'heal1':healthLabExact(1);break;case'heal2':healthLabExact(2);break;
-    case'heal25':healthLabExact(25);break;case'heal100':healthLabExact(100);break;
-    case'full':healthLabSetCurrent(healthLabState.maxHearts*100);healthLabState.message='FULL HEALTH';break;
+    case'healQuarter':healthLabExact(PLAYER_HEALTH_CONTRACT.quarterHeartUnits);break;
+    case'healHeart':healthLabExact(PLAYER_HEALTH_CONTRACT.unitsPerHeart);break;
+    case'full':healthLabSetCurrent(healthLabState.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+      healthLabState.message='FULL HEALTH';break;
     case'heartDown':if(healthLabState.maxHearts>1){healthLabState.maxHearts--;
       healthLabSetCurrent(healthLabState.currentUnits);healthLabState.message='MAX HEARTS '+healthLabState.maxHearts;}break;
-    case'heartUp':healthLabState.maxHearts++;healthLabSetCurrent(healthLabState.currentUnits+100);
+    case'heartUp':healthLabState.maxHearts++;healthLabSetCurrent(healthLabState.currentUnits+
+      PLAYER_HEALTH_CONTRACT.unitsPerHeart);
       healthLabState.message='MAX HEARTS '+healthLabState.maxHearts;break;
     case'multDown':healthLabCycleMultiplier(-1);break;case'multUp':healthLabCycleMultiplier(1);break;
     case'shieldDown':healthLabState.shieldCharges=Math.max(0,healthLabState.shieldCharges-1);
       healthLabState.message='SHIELDS '+healthLabState.shieldCharges;break;
     case'shieldUp':healthLabState.shieldCharges++;healthLabState.message='SHIELDS '+healthLabState.shieldCharges;break;
-    case'reset':healthLabState={maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:2,
-      message:'RESET · 100 HEALTH = 100 RED CELLS'};break;
+    case'reset':healthLabState={maxHearts:4,currentUnits:576,damageMultiplier:1,shieldCharges:2,
+      heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
+      message:'RESET · 144 HEALTH = 144 RED CELLS'};break;
   }
   SFX.swipe();
 }
@@ -49614,25 +49661,28 @@ function drawHealthLabButton(button){
   g.fillText(button.label,button.x+button.w/2,button.y+25);
 }
 function drawHealthLab(){
-  const s=healthLabState||{maxHearts:4,currentUnits:400,damageMultiplier:1,shieldCharges:0,message:''};
+  const s=healthLabState||{maxHearts:4,currentUnits:576,damageMultiplier:1,shieldCharges:0,
+    heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,message:''};
   g.fillStyle='#05070cf2';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.fillStyle='#090b12';g.fillRect(0,0,VW,620);
   g.strokeStyle='#ff6b70';g.lineWidth=2;g.strokeRect(16,28,92,38);
   g.textAlign='center';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.fillText('◄ BACK',62,52);
   g.font='bold 22px monospace';g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB',VW/2,58);
-  g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('ONE HEART = EXACTLY 100 LOGICAL FILL CELLS',VW/2,78);
+  g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('ONE HEART = EXACTLY 144 LOGICAL FILL CELLS',VW/2,78);
   const scale=s.maxHearts<=6?3:s.maxHearts<=12?2:1,
     perRow=Math.max(1,Math.floor((VW-24)/((HEART_SPRITE_W+1)*scale))),
     inFirstRow=Math.min(s.maxHearts,perRow),rowWidth=inFirstRow*(HEART_SPRITE_W+1)*scale-scale,
     heartsX=Math.round((VW-rowWidth)/2);
-  const shieldY=drawHeartHealth(heartsX,100,s.currentUnits,s.maxHearts,scale,perRow)+8;
-  const shieldsWidth=Math.min(4,s.shieldCharges)*11*2+(s.shieldCharges>4?38:0);
-  drawShieldCharges(Math.round((VW-shieldsWidth)/2),shieldY,s.shieldCharges,2);
+  const healthLabFlash={startedAt:s.heartFlashStartedAt,fromUnits:s.heartFlashFromUnits,
+      toUnits:s.heartFlashToUnits},
+    shieldY=drawHeartHealth(heartsX,100,s.currentUnits,s.maxHearts,scale,perRow,healthLabFlash)+8;
+  const shieldsWidth=shieldRowWidth(s.shieldCharges,scale);
+  drawShieldCharges(Math.round((VW-shieldsWidth)/2),shieldY,s.shieldCharges,scale);
   g.textAlign='center';g.font='bold 16px monospace';g.fillStyle='#e8e2d0';
-  g.fillText(s.currentUnits+' / '+(s.maxHearts*100)+' HEALTH',VW/2,270);
-  const lastHeart=s.currentUnits<=0?0:((s.currentUnits-1)%100)+1;
+  g.fillText(s.currentUnits+' / '+(s.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart)+' HEALTH',VW/2,270);
+  const lastHeart=s.currentUnits<=0?0:((s.currentUnits-1)%PLAYER_HEALTH_CONTRACT.unitsPerHeart)+1;
   g.font='11px monospace';g.fillStyle='#ff9aa0';
-  g.fillText('VISIBLE PARTIAL HEART: '+lastHeart+'/100  ·  DAMAGE MULT ×'+s.damageMultiplier+
+  g.fillText('VISIBLE PARTIAL HEART: '+lastHeart+'/144  ·  DAMAGE MULT ×'+s.damageMultiplier+
     '  ·  SHIELDS '+s.shieldCharges,VW/2,294);
   g.fillStyle='#ffe37a';g.fillText(s.message,VW/2,316);
   for(const button of HEALTH_LAB_BUTTONS)drawHealthLabButton(button);
@@ -49643,7 +49693,7 @@ function drawHealthLab(){
   g.fillText('HIT 1♥ uses multiplier and consumes one shield first.',VW/2,624);
   g.fillText('REAL HUD SIZE · TOP-LEFT TO RIGHT',VW/2,666);
   const previewPerRow=Math.max(1,Math.floor((VW-24)/(HEART_SPRITE_W+1))),previewShieldY=
-      drawHeartHealth(12,680,s.currentUnits,s.maxHearts,1,previewPerRow);
+      drawHeartHealth(12,680,s.currentUnits,s.maxHearts,1,previewPerRow,healthLabFlash);
   drawShieldCharges(14,previewShieldY,s.shieldCharges,1);
 }
 
