@@ -636,6 +636,10 @@ const SKILL_LAB_COMBAT_BACK=Object.freeze({x:164,y:245,w:70,h:32});
 const SKILL_LAB_COMBAT_HP=Object.freeze({x:241,y:245,w:70,h:32});
 const SKILL_LAB_COMBAT_TURN=Object.freeze({x:318,y:245,w:70,h:32});
 const SKILL_LAB_COMBAT_HUD=Object.freeze({x:395,y:245,w:70,h:32});
+const SKILL_LAB_COMBAT_HEAL=Object.freeze({x:54,y:285,w:112,h:32});
+const SKILL_LAB_COMBAT_SHIELD=Object.freeze({x:184,y:285,w:112,h:32});
+const SKILL_LAB_COMBAT_VOLATILE_SHIELD=Object.freeze({x:314,y:285,w:112,h:32});
+const SKILL_LAB_SPEED_SLIDER=Object.freeze({x:118,y:406,w:244,h:36,min:.65,max:1.60});
 /* drawHUD pins the Rush meter to the physical bottom of the logical viewport
    even when safe-area translation moves the rest of the HUD. Keep its tap target
    in that final screen space so tall-phone padding cannot desynchronise input. */
@@ -1152,12 +1156,15 @@ addEventListener('touchstart',e=>{e.preventDefault();
   }
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
   tStart={x:t.clientX,y:t.clientY,done:levelHold};
+  if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   armTapIntent(tStart,t.clientX,t.clientY);
   armSkillTooltipHold(tStart,t.clientX,t.clientY);
   armSkillLabTooltipHold(tStart,t.clientX,t.clientY);
 },{passive:false});
 addEventListener('touchmove',e=>{ e.preventDefault();
-  const t=e.changedTouches[0];noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
+  const t=e.changedTouches[0];
+  if(updateSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
+  noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
 },{passive:false});
 addEventListener('gesturestart',e=>e.preventDefault());
 addEventListener('gesturechange',e=>e.preventDefault());
@@ -1188,11 +1195,15 @@ addEventListener('mousedown',e=>{
   }
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
   tStart={x:e.clientX,y:e.clientY,done:levelHold};
+  if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   armTapIntent(tStart,e.clientX,e.clientY);
   armSkillTooltipHold(tStart,e.clientX,e.clientY);
   armSkillLabTooltipHold(tStart,e.clientX,e.clientY);
 });
-addEventListener('mousemove',e=>{ if(mDown){noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);} });
+addEventListener('mousemove',e=>{ if(mDown){
+  if(updateSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
+  noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);
+} });
 addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(!tStart) return;
@@ -1433,8 +1444,9 @@ function parryFlickerOn(reaction){
   return q<profile.reboundEnd&&Math.floor(q*profile.flickers*2)%2===0;
 }
 const particles=[], floaters=[];
-/* generic particle: {x,y,vx,vy,life,maxLife,size,col,grav,glow,behindBoss}
-   Arena emissions opt into the background layer; combat feedback stays in front. */
+/* generic particle: {x,y,vx,vy,life,maxLife,size,col,grav,glow,behindBoss,behindPlayer}
+   Arena emissions opt into the background layer. Shield-impact silhouettes use
+   the actor layer: over the boss/world but under Jonathan and his held shield. */
 function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
   for(let i=0;i<n;i++){ const a=rnd(TAU), s=rnd(spd*0.3,spd);
     particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-40,life,maxLife:life,
@@ -1469,6 +1481,80 @@ function parrySparkCloud(x,y,profile=PARRY_STAGGER){
       col:pick(cols),grav:70});
   }
 }
+const NORMAL_SHIELD_SPARK_COLORS=Object.freeze([
+  '#ffffff','#e9f6ff','#9ecbff','#5fa7e8','#ffe37a'
+]);
+const VOLATILE_SHIELD_SPARK_COLORS=Object.freeze([
+  '#f8efff','#e4c5ff','#c995ff','#a85ae8','#7832b5'
+]);
+function shieldSparkColor(volatileRatio=0){
+  return pick(Math.random()<clamp(Number(volatileRatio)||0,0,1)
+    ?VOLATILE_SHIELD_SPARK_COLORS:NORMAL_SHIELD_SPARK_COLORS);
+}
+let shieldParticleMaskCache=null;
+function shieldParticleMask(){
+  if(shieldParticleMaskCache)return shieldParticleMaskCache;
+  const data=SHIELD_SPRITE.getContext('2d').getImageData(0,0,
+    SHIELD_SPRITE.width,SHIELD_SPRITE.height).data,cells=[];
+  for(let y=0;y<SHIELD_SPRITE.height;y++)for(let x=0;x<SHIELD_SPRITE.width;x++)
+    if(data[(y*SHIELD_SPRITE.width+x)*4+3]>0)cells.push(Object.freeze({x,y}));
+  shieldParticleMaskCache=Object.freeze(cells);return shieldParticleMaskCache;
+}
+/* A real shield-shaped spark plate exists for one frame at contact, then its
+   individual pixels expand upward and sideways. Shield Cycle uses every mask
+   cell; ordinary Bash samples a lighter but still recognisable silhouette. */
+function emitShieldImpactSparkSilhouette(x,y,strong=false,volatileRatio=0){
+  const mask=shieldParticleMask(),scale=strong?3.15:2.65,
+    stride=strong?1:4,phase=Math.floor(perfNow*1000)%stride,
+    centreX=(SHIELD_SPRITE.width-1)*.5,centreY=(SHIELD_SPRITE.height-1)*.5,
+    sampleCount=Math.ceil((mask.length-phase)/stride);
+  let volatileSparks=Math.round(sampleCount*clamp(volatileRatio,0,1)),
+    remainingSparks=sampleCount;
+  for(let index=phase;index<mask.length;index+=stride){
+    const volatileSpark=Math.random()<volatileSparks/remainingSparks,
+      cell=mask[index],nx=(cell.x-centreX)/Math.max(1,centreX),
+      ny=(cell.y-centreY)/Math.max(1,centreY),life=rnd(strong?.42:.28,strong?.72:.46),
+      speed=strong?rnd(64,126):rnd(38,78);
+    if(volatileSpark)volatileSparks--;
+    remainingSparks--;
+    particles.push({kind:'shieldImpactSilhouette',behindPlayer:true,
+      x:x+(cell.x-centreX)*scale,y:y+(cell.y-centreY)*scale,
+      vx:nx*speed+rnd(-strong*10-5,strong*10+5),
+      vy:-speed*(.52+Math.max(0,-ny)*.34)+rnd(-18,8),
+      life,maxLife:life,size:scale*(strong?1.08:.96),
+      col:shieldSparkColor(volatileSpark?1:0),grav:strong?95:115,hold:strong?.055:.04});
+  }
+}
+/* Shield Cycle owns a denser, directional contact burst. Unlike the wide
+   parry disc, these sparks continue through the bash vector and climb, so the
+   impact reads as a shield explosion rather than another parry. Each spark
+   samples the real volatile/normal shield ratio: mixed stacks therefore make
+   mixed clouds without falsely turning the whole explosion purple. Visual
+   count grows logarithmically with extreme stacks to remain render-safe. */
+function shieldBurstSparkCloud(x,y,shieldCount=1,volatileCount=0){
+  shieldCount=Math.max(1,Math.floor(Number(shieldCount)||1));
+  volatileCount=clamp(Math.floor(Number(volatileCount)||0),0,shieldCount);
+  const knightX=laneX(player.x,1),knightY=PLAYER_Y-jumpHeight()-58;
+  let dx=x-knightX,dy=y-knightY,len=Math.hypot(dx,dy);
+  if(len<1){dx=0;dy=-1;len=1;}
+  const forwardX=dx/len,forwardY=dy/len,normalX=-forwardY,normalY=forwardX,
+    count=84+Math.round(Math.log2(1+shieldCount)*10),
+    volatileRatio=volatileCount/shieldCount;
+  let volatileSparks=Math.round(count*volatileRatio),remainingSparks=count;
+  for(let i=0;i<count;i++){
+    /* Sampling without replacement keeps the requested ratio exact while
+       still scattering purple sparks naturally through a mixed cloud. */
+    const volatileSpark=Math.random()<volatileSparks/remainingSparks,
+      forward=rnd(135,335),side=rnd(-112,112),rise=rnd(34,118),life=rnd(.42,.78);
+    if(volatileSpark)volatileSparks--;
+    remainingSparks--;
+    particles.push({kind:'shieldBurstSpark',behindPlayer:true,x:x+rnd(-5,5),y:y+rnd(-5,5),
+      vx:forwardX*forward+normalX*side,
+      vy:forwardY*forward+normalY*side-rise,
+      life,maxLife:life,size:rnd(2.2,5.8),col:shieldSparkColor(volatileSpark?1:0),
+      grav:rnd(70,145)});
+  }
+}
 function floater(x,y,txt,col='#ffe37a',size=18){
   floaters.push({x,y,txt,col,size,life:1,maxLife:1});
 }
@@ -1476,38 +1562,26 @@ function updateJuice(dt){
   shakeT-=dt; if(shakeT<=0) shakeMag=0;
   flashA=Math.max(0,flashA-dt*2.4);
   for(let i=particles.length-1;i>=0;i--){ const p=particles[i];
+    if(p.hold>0){p.hold=Math.max(0,p.hold-dt);continue;}
     p.life-=dt; if(p.life<=0){particles.splice(i,1);continue;}
     p.vy+=(p.grav||0)*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; }
   for(let i=floaters.length-1;i>=0;i--){ const f=floaters[i];
     f.life-=dt*0.9; f.y-=34*dt; if(f.life<=0) floaters.splice(i,1); }
-  updateSlashes(dt);
+  updateHudShieldShatters(dt);
 }
-/* Claw-slash streaks are simulated with the rest of JUICE and only drawn here.
-   Keeping state changes out of render makes pause and hit-stop true freezes. */
+/* Retired feedback channel. The old three-line slash appeared over every hit
+   and fought the authored weapon/shield animations. Call sites remain harmless
+   while older move definitions are migrated; no slash is created or drawn. */
 const slashes=[];
-function spawnSlash(x,y,ang,col){ slashes.push({x,y,ang,col:col||'#e8e2d0',t:0}); }
-function updateSlashes(dt){
-  for(let i=slashes.length-1;i>=0;i--){ const sl=slashes[i]; sl.t+=dt/0.22;
-    if(sl.t>=1) slashes.splice(i,1);
-  }
-}
-function drawSlashes(){
-  for(const sl of slashes){
-    const a=1-sl.t, len=46+sl.t*46;
-    g.save(); g.translate(sl.x,sl.y); g.rotate(sl.ang); g.globalAlpha=a;
-    g.fillStyle=sl.col;
-    g.fillRect(-len/2,-2,len,3.4);            // three parallel claw rakes
-    g.fillRect(-len/2+7,-9,len*0.8,2.8);
-    g.fillRect(-len/2+4,6,len*0.85,2.8);
-    g.restore(); g.globalAlpha=1;
-  }
-}
-function drawParticles(behindBoss=false){
-  for(const p of particles){ if(!!p.behindBoss!==behindBoss) continue; const a=p.life/p.maxLife;
+function spawnSlash(){/* intentionally retired */}
+function drawParticles(behindBoss=false,behindPlayer=false){
+  for(const p of particles){
+    if(!!p.behindBoss!==behindBoss||!!p.behindPlayer!==behindPlayer)continue;
+    const a=p.life/p.maxLife;
     g.globalAlpha=a; g.fillStyle=p.col;
     g.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size); }
   g.globalAlpha=1;
-  if(behindBoss) return;                    // text feedback always owns the front layer
+  if(behindBoss||behindPlayer)return;       // text feedback always owns the front layer
   if(pausePhotoMode) return;                // screenshot mode keeps effects but removes text UI
   for(const f of floaters){ const a=clamp(f.life/f.maxLife,0,1);
     g.globalAlpha=a; g.font=`bold ${f.size}px monospace`; g.textAlign='center';
@@ -1605,6 +1679,48 @@ function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=
   rigSegment(sx,sy,ex,ey,2.05*depth,upper);rigJoint(ex,ey,1.85*depth,joint);
   rigSegment(ex,ey,hx,hy,1.65*depth,lower);if(hand)rigJoint(hx,hy,1.55*depth,joint);
 }
+function rigPolygon(points,col){
+  g.fillStyle=col;g.beginPath();
+  for(let i=0;i<points.length;i++){
+    const point=points[i];if(i)g.lineTo(point[0]*U,point[1]*U);else g.moveTo(point[0]*U,point[1]*U);
+  }
+  g.closePath();g.fill();
+}
+/* Jonathan's personal shield is royal rather than a direct copy of another
+   crest. The broad silver rim and blue kite silhouette stay readable at HUD
+   scale. Its handle exists only on the inner face; while mounted, that face is
+   physically between the shield and Jonathan's back and therefore invisible. */
+function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1){
+  const faceCos=Math.cos(clamp(turn,0,1)*Math.PI),faceWidth=Math.max(.10,Math.abs(faceCos)),
+    front=faceCos>=0,outer=[[-3.45,-4.15],[3.45,-4.15],[4.15,-2.85],[3.65,1.35],
+      [0,4.85],[-3.65,1.35],[-4.15,-2.85]],
+    inner=[[-2.72,-3.38],[2.72,-3.38],[3.28,-2.38],[2.88,1.02],
+      [0,3.92],[-2.88,1.02],[-3.28,-2.38]];
+  g.save();g.translate(cx*U,cy*U);g.rotate(tilt);g.scale(scale*faceWidth,scale);
+  rigPolygon(outer,front?'#d5e0e7':'#7c8994');
+  rigPolygon(inner,front?'#234f88':'#27313a');
+  if(front){
+    /* A small original crimson wing/chevron emblem survives the rear camera
+       without turning the shield into noisy miniature line art. */
+    rigPolygon([[-2.35,-1.65],[-.55,-.35],[0,.72],[-1.2,.18],[-2.55,-.72]],'#c7444e');
+    rigPolygon([[2.35,-1.65],[.55,-.35],[0,.72],[1.2,.18],[2.55,-.72]],'#c7444e');
+    rigPolygon([[-1.05,1.05],[0,2.75],[1.05,1.05],[0,1.62]],'#c7444e');
+    rigJoint(0,-.52,1.35,'#d6ad43');rigJoint(0,-.52,.58,'#ffe37a');
+    px(-2.85,-3.05,5.7,.52,'#73a2ce');
+  }else{
+    /* The grip and arm straps are on the inner face. They are revealed only
+       after the edge-on turn, which prevents the hand from crossing the plate. */
+    rigSegment(-2.25,-1.55,2.25,-1.55,.72,'#765038');
+    rigSegment(-2.05,1.35,2.05,1.35,.72,'#765038');
+    rigSegment(-.72,-1.2,-.72,1.05,.62,'#b48555');
+    rigSegment(.72,-1.2,.72,1.05,.62,'#b48555');
+    rigJoint(0,-.05,1.05,'#443126');
+  }
+  if(faceWidth<=.14){
+    g.fillStyle='#edf4f7';g.fillRect(-.23*U,-3.9*U,.46*U,7.9*U);
+  }
+  g.restore();
+}
 
 /* SER JONATHAN SMITH — first production rider rig.
    Silver armour and the long blue plume preserve the Fallen Knights silhouette.
@@ -1613,12 +1729,14 @@ function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=
 function drawSerJonathanRider(x,y,scale,o){
   o=o||{};const gal=(o.gallop||0)*TAU,air=o.air||0,duck=o.duck||0,
     leap=air>0?Math.sin(air*Math.PI):0,
+    shield=o.shieldAction||null,shieldActive=!!(shield&&shield.active),
+    shieldLunge=shieldActive?shield.lunge:0,
     bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
-    riderBob=air>0?-leap*.24:Math.sin(gal*2+.9)*.34,
+    riderBob=(air>0?-leap*.24:Math.sin(gal*2+.9)*.34)-shieldLunge*.24,
     atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
-    bow=o.bowAction||null,bowActive=!!(bow&&bow.visible>0),
+    bow=o.bowAction||null,bowActive=!shieldActive&&!!(bow&&bow.visible>0),
     counter=clamp(o.counter||0,0,1),swordClock=Math.max(atk,parry),
-    swordActive=!bowActive&&(swordClock>0||!!combo),
+    swordActive=!bowActive&&!shieldActive&&(swordClock>0||!!combo),
     attackProgress=swordActive?1-swordClock:0,
     baseCut=swordClock>0?(attackProgress<.58
       ?easeInOut(clamp(attackProgress/.58,0,1))
@@ -1665,8 +1783,8 @@ function drawSerJonathanRider(x,y,scale,o){
   rigSegment(9+tail*.48,25.7+bob,9+tail,29.2+bob,2.5,mane);
   rigSegment(8.65,15.2+bob,8.8+tail*.38,25.6+bob,.65,tailL);
   px(7.8+tail,27.5+bob,2.5,2.15,mane);
-  const headLift=air>0?(-1.35*Math.sin(Math.PI*clamp(air/.55,0,1))+
-    .85*easeInOut(clamp((air-.68)/.32,0,1))):Math.sin(gal*2+.35)*.14;
+  const headLift=(air>0?(-1.35*Math.sin(Math.PI*clamp(air/.55,0,1))+
+    .85*easeInOut(clamp((air-.68)/.32,0,1))):Math.sin(gal*2+.35)*.14)-shieldLunge*.35;
   /* Only the narrow BACK of the neck, crown and ears survive above the saddle.
      A broad head here resembles a forward-facing muzzle at this resolution. */
   rigQuad(6.7,13+bob,7.25,5.2+bob+headLift,10.75,5.2+bob+headLift,11.3,13+bob,horseD);
@@ -1700,7 +1818,7 @@ function drawSerJonathanRider(x,y,scale,o){
     headDepthScale=lerp(1,SER_JONATHAN_DUCK_HEAD_SCALE,duckFold),
     plumeLengthScale=lerp(1,1.08,duckFold),plumeWidthScale=lerp(1,.98,duckFold),
     shoulderX=9-swordTurn*.25,
-    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y+riderBob,duckFold),
+    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y+riderBob,duckFold)-shieldLunge*1.45,
     headX=shoulderX-swordTurn*.2,
     headY=lerp(shoulderY-5.4,SER_JONATHAN_DUCK_HEAD_Y+riderBob,duckFold);
 
@@ -1711,6 +1829,67 @@ function drawSerJonathanRider(x,y,scale,o){
       rightElbowX=shoulderX+4.9*depthScale,rightElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
       rightHandX=lerp(11.1,10.65,duckFold),rightHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
       swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0;
+  const restingLeftElbowX=leftElbowX,restingLeftElbowY=leftElbowY,
+    restingLeftHandX=leftHandX,restingLeftHandY=leftHandY;
+  const mountedShieldScale=1.05,activeShieldScale=1.13;
+  let shieldCenterX=9,shieldCenterY=shoulderY+4.35,shieldTurn=0,shieldTilt=-.04,
+    shieldScale=mountedShieldScale,shieldGripFrontAlpha=0;
+  if(shieldActive){
+    const forward=shield.forward,reach=shield.reach,detach=shield.detach,
+      flip=shield.flip,drive=shield.drive,retreat=shield.retreat,
+      remount=shield.remount,settle=shield.settle,
+      backX=9,backY=shoulderY+4.35,pullX=4.25,pullY=shoulderY+1.05,
+      readyX=4.65,readyY=shoulderY-1.45,strikeX=6.15,strikeY=shoulderY-5.75;
+    if(remount>0){
+      shieldCenterX=lerp(readyX,backX,remount);shieldCenterY=lerp(readyY,backY,remount);
+    }else if(retreat>0){
+      shieldCenterX=lerp(strikeX,readyX,retreat);shieldCenterY=lerp(strikeY,readyY,retreat);
+    }else{
+      /* A single cubic path has no zero-velocity pause at the old detach and
+         flip boundaries. Pull and ready are directional controls rather than
+         separate poses the animation must stop on. */
+      shieldCenterX=cubic(backX,pullX,readyX,strikeX,forward);
+      shieldCenterY=cubic(backY,pullY,readyY,strikeY,forward);
+    }
+    shieldTurn=flip*(1-remount);
+    /* Unmount and remount are opposite physical turns: Jonathan opens the
+       plate toward his LEFT, then rolls it back toward his RIGHT before it
+       settles on his back.  Reusing the left orbit for both phases made the
+       return look like the shield passed through his arm. */
+    if(remount>0)shieldCenterX+=Math.sin(Math.PI*remount)*1.38;
+    else shieldCenterX-=Math.sin(Math.PI*shieldTurn)*1.38;
+    shieldTilt=remount>0?lerp(.08,-.04,remount):retreat>0?lerp(-.10,.08,retreat):
+      cubic(-.04,.025,.075,-.10,forward);
+    shieldScale=remount>0?lerp(activeShieldScale,mountedShieldScale,remount):
+      lerp(mountedShieldScale,activeShieldScale,
+        retreat>0?1:forward);
+    const hiddenGripX=6.05,hiddenGripY=shoulderY+4.15,
+      gripX=shieldCenterX,gripY=shieldCenterY-.05,
+      reachedHandX=lerp(restingLeftHandX,hiddenGripX,reach),
+      reachedHandY=lerp(restingLeftHandY,hiddenGripY,reach),
+      /* Detach is a blend into a locked grip, not a new discrete hand pose. */
+      heldHandX=lerp(reachedHandX,gripX,detach),
+      heldHandY=lerp(reachedHandY,gripY,detach),
+      readyElbowX=leftShoulderX-4.35,readyElbowY=shoulderY-.35,
+      strikeElbowX=lerp(leftShoulderX,strikeX,.53)-1.25,
+      strikeElbowY=lerp(leftShoulderY,strikeY,.53)+1.45,
+      pullElbowX=leftShoulderX-5.25,pullElbowY=shoulderY+1.15;
+    leftHandX=lerp(heldHandX,restingLeftHandX,settle);
+    leftHandY=lerp(heldHandY,restingLeftHandY,settle);
+    if(remount>0){leftElbowX=lerp(readyElbowX,pullElbowX,remount);
+      leftElbowY=lerp(readyElbowY,pullElbowY,remount);}
+    else if(retreat>0){leftElbowX=lerp(strikeElbowX,readyElbowX,retreat);
+      leftElbowY=lerp(strikeElbowY,readyElbowY,retreat);}
+    else{
+      leftElbowX=cubic(restingLeftElbowX,pullElbowX,readyElbowX,
+        strikeElbowX,forward);
+      leftElbowY=cubic(restingLeftElbowY,pullElbowY,readyElbowY,
+        strikeElbowY,forward);
+    }
+    leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
+    leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
+    shieldGripFrontAlpha=smoothStep(clamp((shieldTurn-.48)/.34,0,1))*(1-settle);
+  }
   let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
   if(bowActive){
     const raise=bow.raise||0,draw=bow.drawAmount||0,recoil=bow.recoil||0;
@@ -1873,6 +2052,20 @@ function drawSerJonathanRider(x,y,scale,o){
   if(leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
   if(rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
   g.globalAlpha=1;
+
+  /* Mounted: only the royal outer face is visible and the grip is trapped
+     between plate and shield. During the clip the shield turns edge-on before
+     its inner face and gripping hand are allowed onto the foreground layer. */
+  drawSerJonathanShield(shieldCenterX,shieldCenterY,shieldTurn,shieldTilt,shieldScale);
+  if(shieldActive&&shieldGripFrontAlpha>.01){
+    g.globalAlpha=shieldGripFrontAlpha;
+    /* Once the inner face has turned toward camera, the entire gripping arm is
+       in front of the plate.  Redrawing only elbow-to-hand made the upper arm
+       disappear behind the shield and visually disconnect at the shoulder. */
+    drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
+      leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
+    g.globalAlpha=1;
+  }
 
   /* In the deep crouch the forearms become the visible support plane beneath the
      helmet. Their top faces reappear over the back plate while the upper arms stay
@@ -7719,11 +7912,17 @@ const PLAYER_HEALTH_CONTRACT=Object.freeze({
   rule:'INTEGER_FIXED_POINT_HEALTH_ONE_UNIT_PER_VISIBLE_HEART_CELL',
   shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
 });
+/* Health is implemented as a reusable character foundation, but the current
+   runner has not been rebuilt around it yet. Until that combat revamp, normal
+   runs keep the original one-hit rule; Health Lab remains fully functional. */
+const CURRENT_RUN_USES_HEALTH=false;
+function playerHeartHealthEnabled(){return CURRENT_RUN_USES_HEALTH||activeSkillLabCombat();}
 const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
   gallop:0, alive:true,
   currentHealthUnits:576,maxHealthUnits:576,shieldCharges:0,
+  volatileShieldCharges:0,volatileShieldPosture:0,
   damageTakenModifierProduct:1,
   heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
@@ -7748,7 +7947,8 @@ function syncPlayerVitals(fullHeal=false){
   player.maxHealthUnits=characterMaxHealthUnits();
   if(fullHeal||!Number.isFinite(player.currentHealthUnits))player.currentHealthUnits=player.maxHealthUnits;
   else player.currentHealthUnits=clamp(player.currentHealthUnits,0,player.maxHealthUnits);
-  if(fullHeal||previousMax<=0)player.shieldCharges=0;
+  if(fullHeal||previousMax<=0){player.shieldCharges=0;player.volatileShieldCharges=0;
+    player.volatileShieldPosture=0;}
   if(fullHeal)player.heartFlashStartedAt=-Infinity;
 }
 const HEART_HIT_FLASH_DURATION=.5;
@@ -7850,21 +8050,24 @@ function updatePlayer(dt){
 function drawPlayer(){
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
   const duck=player.duckT>=0?Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1)):0;
-  const rushLunge=characterSpecialLungeAmount(),jumpH=jumpHeight(),
-    y=PLAYER_Y-jumpH-rushLunge*68;
+  const rushLunge=characterSpecialLungeAmount(),shieldAction=activePlayerShieldPose(),
+    shieldLunge=shieldAction?shieldAction.lunge:0,jumpH=jumpHeight(),
+    y=PLAYER_Y-jumpH-rushLunge*68-shieldLunge*136,
+    shadowY=PLAYER_Y+4-shieldLunge*136;
   /* Ground contact belongs behind the hooves. Drawing the old shadow after the
      rider left a bright gap and made horse and Knight look suspended. */
   g.globalAlpha=0.32*(1-jumpH/CFG.JUMP_H*.78);g.fillStyle='#000';
-  g.beginPath();g.ellipse(laneX(player.x,1),PLAYER_Y+4,22-rushLunge*4,4.8,0,0,TAU);g.fill();g.globalAlpha=1;
+  g.beginPath();g.ellipse(laneX(player.x,1),shadowY,22-rushLunge*4-shieldLunge*2.5,
+    4.8-shieldLunge*.7,0,0,TAU);g.fill();g.globalAlpha=1;
   if(player.invuln>0 && (perfNow*14|0)%2===0) g.globalAlpha=0.45;   // shield i-frames blink
-  drawRider(laneX(player.x,1),y,1.02+rushLunge*.08,{
+  drawRider(laneX(player.x,1),y,1.02+rushLunge*.08-shieldLunge*.035,{
     gallop:player.gallop, lean, duck,
     air:player.jumpT>=0?clamp(player.jumpT/jumpDur(),0,1):0,
     rigId:playerChar.rigId,
     feather:playerChar.feather, horse:playerChar.horse, chubby:playerChar.chubby,
     monkey:playerChar.monkey, caveman:playerChar.caveman,
     attack:player.attackAnim, counter:player.counterAnim, parry:player.parryAnim,
-    swordCombo:player.swordCombo,bowAction:activePlayerBowPose(),
+    swordCombo:player.swordCombo,bowAction:activePlayerBowPose(),shieldAction,
   });
   g.globalAlpha=1;
 }
@@ -7931,24 +8134,14 @@ function playerDamageLabel(units){
 function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   const chargedDefense=boss&&boss.pendingChargeRelease;
   if(chargedDefense&&chargedDefense.status==='DEFENDING')chargedDefense.streakBroken=true;
-  if(activeSkillLabCombat()){
-    if(!unstoppable&&player.invuln>0)return;
-    if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
-    resetPreparedFocusStreak();
-    resetDetonationDefenseFuseStreak();
-    chainStacks=0;player.invuln=.45;
-    if(skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
-    SFX.hit();flash('#ff4d3a',.32);shake(8,.28);stopTime(.08);
-    burst(laneX(player.x,1),PLAYER_Y-40,18,['#ff4d3a','#8f9bb0','#ffffff'],210,160,4,.7);
-    floater(laneX(player.x,1),PLAYER_Y-96,'LAB HIT · CHAIN LOST','#ff7a82',17);
-    return;
-  }
+  const labFight=activeSkillLabCombat(),healthEnabled=playerHeartHealthEnabled();
   if(godMode){ resetDetonationDefenseFuseStreak(); flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
     hazards=[]; return; }
   if(!unstoppable&&player.invuln>0) return;
   resetDetonationDefenseFuseStreak();
   const damageUnits=unstoppable?player.currentHealthUnits:incomingPlayerDamageUnits(baseHeartDamage);
-  if(!unstoppable&&consumeShield(damageUnits>=player.currentHealthUnits)){ // execution finishers bypass shields
+  const wouldBeLethal=!healthEnabled||damageUnits>=player.currentHealthUnits;
+  if(!unstoppable&&consumeShield(wouldBeLethal)){ // execution finishers bypass shields
     player.invuln=1.2; SFX.shield(); flash('#9ecbff',.5); shake(8,.3); stopTime(.09);
     burst(laneX(player.x,1),PLAYER_Y-40,22,['#9ecbff','#ffffff'],220,120,4,.8);
     floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE!','#9ecbff',20);
@@ -7956,12 +8149,13 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   }
   chainStacks=0;                             // only an actual wound breaks the chain
   if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
+  if(labFight&&skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
   resetPreparedFocusStreak();
   const healthBeforeHit=player.currentHealthUnits,
-    healthAfterHit=Math.max(0,healthBeforeHit-damageUnits);
+    healthAfterHit=healthEnabled?Math.max(0,healthBeforeHit-damageUnits):0;
   player.currentHealthUnits=healthAfterHit;
   beginPlayerHeartFlash(healthBeforeHit,healthAfterHit);
-  if(player.currentHealthUnits>0){
+  if(healthEnabled&&player.currentHealthUnits>0){
     player.invuln=.8;
     SFX.hit();flash('#ff4d3a',.48);shake(9,.32);stopTime(.1);
     burst(laneX(player.x,1),PLAYER_Y-40,20,['#ff4d3a','#8f9bb0','#ffffff'],220,170,4,.75);
@@ -9953,7 +10147,159 @@ const WEAPON_SKILLS=new DefinitionRegistry('weapon skill');
 ].forEach(definition=>WEAPON_SKILLS.register(definition));
 Object.freeze(WEAPON_SKILLS.ids);Object.freeze(WEAPON_SKILLS.list);
 Object.freeze(WEAPON_SKILLS.byId);Object.freeze(WEAPON_SKILLS);
-const BASE_TURN_SKILLS=Object.freeze(WEAPON_SKILLS.list.map(definition=>definition.command)),
+/* Class skills deliberately do not inherit the weapon Form/Spec/Twist/Apex
+   compiler. They use a short fixed trunk, one Style choice, one Mastery and one
+   Capstone. This keeps their authoring and runtime cost small while retaining a
+   meaningful build branch. AP/Resolve values remain provisional until the
+   planned economy rework. */
+class ClassSkillDefinition{
+  constructor(data){
+    if(!data||typeof data.id!=='string'||!data.id||typeof data.classId!=='string'||!data.classId||
+       typeof data.name!=='string'||!data.name||!data.command)
+      throw new Error('ClassSkillDefinition needs id, class owner, name and command');
+    this.id=data.id;this.classId=data.classId;this.name=data.name;
+    this.command=Object.freeze({...data.command,id:data.id,name:data.name,source:'CLASS',skill:true,
+      classId:data.classId,identityId:data.identityId||data.id.toUpperCase(),
+      deliveryProfileId:data.command.deliveryProfileId||'OWNER_SHIELD',
+      deliveryPattern:data.command.deliveryPattern||'SINGLE',
+      deliveryTiming:data.command.deliveryTiming||'IMMEDIATE',
+      tags:Object.freeze((data.command.tags||[]).slice())});
+    Object.freeze(this);
+  }
+}
+const CLASS_SKILLS=new DefinitionRegistry('class skill');
+CLASS_SKILLS.register(new ClassSkillDefinition({id:'shield_bash',classId:'knight',name:'SHIELD BASH',
+  identityId:'SHIELD_BASH',command:{cost:1,damage:14,hits:1,posture:20,canCrit:false,
+    col:'#9ecbff',slash:-.38,tags:['class','melee','shield','posture']}}));
+Object.freeze(CLASS_SKILLS.ids);Object.freeze(CLASS_SKILLS.list);
+Object.freeze(CLASS_SKILLS.byId);Object.freeze(CLASS_SKILLS);
+
+function classSkillRouteNode(data){
+  return Object.freeze({kind:'EVOLUTION',type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
+    rarity:'FIXED',col:'#9ecbff',prototypeContract:true,classSkillRoute:true,...data,
+    parents:Object.freeze(data.parentId?[data.parentId]:[]),details:Object.freeze(data.details||[])});
+}
+const VOLATILE_SHIELD_POSTURE_DAMAGE=14;
+const SHIELD_BASH_ROUTES=Object.freeze([
+  classSkillRouteNode({id:'shield_bash_reinforced',skillId:'shield_bash',depth:1,parentId:null,
+    name:'REINFORCED BASH',styleId:'TRUNK',buildAspect:'SHIELD_BASH',
+    summary:'Strengthen the same physical bash before choosing a Style.',
+    debugSummaryTr:'Temel Shield Bash hareketini değiştirmeden 18 damage ve 26 posture seviyesine çıkarır.',
+    patch:{damage:18,posture:26}}),
+
+  classSkillRouteNode({id:'shield_bash_guard_style',skillId:'shield_bash',depth:2,
+    parentId:'shield_bash_reinforced',name:'GUARD STYLE',styleId:'GUARD',buildAspect:'SHIELD_GUARD',col:'#9ecbff',
+    summary:'Create one temporary hit shield after the bash.',
+    debugSummaryTr:'Vuruştan sonra 1 normal shield verir. Biriktirilen diğer shield kaynaklarına limit koymaz.',
+    patch:{classShieldGrant:1}}),
+  classSkillRouteNode({id:'shield_bash_posture_style',skillId:'shield_bash',depth:2,
+    parentId:'shield_bash_reinforced',name:'BREAK STYLE',styleId:'POSTURE',buildAspect:'SHIELD_BREAK',col:'#ffe37a',
+    summary:'Trade impact damage for much stronger Posture pressure.',
+    debugSummaryTr:'Direct damageyi biraz indirir; Shield Bash posture hasarını belirgin biçimde büyütür.',
+    patch:{damage:16,posture:38}}),
+  classSkillRouteNode({id:'shield_bash_setup_style',skillId:'shield_bash',depth:2,
+    parentId:'shield_bash_reinforced',name:'ARMOR SETUP',styleId:'SETUP',buildAspect:'SHIELD_SETUP',col:'#ff9a3a',
+    summary:'Dent armor for the next Weapon Skill this player phase.',
+    debugSummaryTr:'Kendi vuruşundan sonra kullanılan ilk Weapon Skillin direct damageini %15 artırır.',
+    patch:{damage:16,posture:24,classArmorExposeRate:.15,classArmorExposeMode:'NEXT_WEAPON'}}),
+  classSkillRouteNode({id:'shield_bash_cycle_style',skillId:'shield_bash',depth:2,
+    parentId:'shield_bash_reinforced',name:'SHIELD CYCLE',styleId:'CYCLE',buildAspect:'SHIELD_CYCLE',col:'#c995ff',
+    summary:'Detonate every existing shield, then rebuild one.',
+    debugSummaryTr:'Mevcut bütün shieldları tek birleşik patlamada damage ve posturea çevirir; sonra 1 normal shield verir.',
+    patch:{damage:14,posture:20,classShieldBurstDamage:8,classShieldBurstPosture:10,
+      classShieldGrant:1}}),
+
+  classSkillRouteNode({id:'shield_bash_guard_mastery',skillId:'shield_bash',depth:3,
+    parentId:'shield_bash_guard_style',name:'EMPTY GUARD',styleId:'GUARD',buildAspect:'SHIELD_GUARD',col:'#9ecbff',
+    summary:'An empty guard rebuilds two shields instead of one.',
+    debugSummaryTr:'Shield Bash başında hiç shield yoksa 2; mevcut shield varsa 1 shield verir.',
+    patch:{classShieldGrant:1,classShieldGrantIfEmpty:2}}),
+  classSkillRouteNode({id:'shield_bash_posture_mastery',skillId:'shield_bash',depth:3,
+    parentId:'shield_bash_posture_style',name:'FRACTURE WAVE',styleId:'POSTURE',buildAspect:'SHIELD_BREAK',col:'#ffe37a',
+    summary:'A visible aftershock delivers a second Posture packet.',
+    debugSummaryTr:'Ana 38 posture darbesinden sonra görünen ikinci bir shockwave 14 posture daha uygular.',
+    patch:{damage:16,posture:38,classPostureAftershock:14}}),
+  classSkillRouteNode({id:'shield_bash_setup_mastery',skillId:'shield_bash',depth:3,
+    parentId:'shield_bash_setup_style',name:'OPEN GUARD',styleId:'SETUP',buildAspect:'SHIELD_SETUP',col:'#ff9a3a',
+    summary:'Keep armor dented for every later Weapon Skill this phase.',
+    debugSummaryTr:'Armor düşüşü ilk saldırıda bitmez; oyuncu turunun kalanındaki bütün Weapon Skill direct damageine uygulanır.',
+    patch:{classArmorExposeRate:.15,classArmorExposeMode:'PHASE_WEAPONS'}}),
+  classSkillRouteNode({id:'shield_bash_cycle_mastery',skillId:'shield_bash',depth:3,
+    parentId:'shield_bash_cycle_style',name:'CHAIN REFORGE',styleId:'CYCLE',buildAspect:'SHIELD_CYCLE',col:'#c995ff',
+    summary:'Convert every shield through a stronger combined blast.',
+    debugSummaryTr:'Her patlayan shield 11 damage ve 13 posture ekler. Patlamalar Chain veya Crit için ayrı temas sayılmaz.',
+    patch:{classShieldBurstDamage:11,classShieldBurstPosture:13}}),
+
+  classSkillRouteNode({id:'shield_bash_guard_capstone',skillId:'shield_bash',depth:4,
+    parentId:'shield_bash_guard_mastery',name:'LIVING BULWARK',styleId:'GUARD',buildAspect:'SHIELD_GUARD',col:'#9ecbff',
+    summary:'Raise two shields and forge a third when the bash causes Break.',
+    debugSummaryTr:'Her kullanımda 2 shield verir; Shield Bash bossu Break ederse 1 tane daha verir.',
+    patch:{classShieldGrant:2,classShieldGrantIfEmpty:2,classShieldGrantOnBreak:1}}),
+  classSkillRouteNode({id:'shield_bash_posture_capstone',skillId:'shield_bash',depth:4,
+    parentId:'shield_bash_posture_mastery',name:'CASTLE CRASHER',styleId:'POSTURE',buildAspect:'SHIELD_BREAK',col:'#ffe37a',
+    summary:'Turn Posture that exceeds the Break threshold into health damage.',
+    debugSummaryTr:'Toplam 58 posture baskısının Break çizgisini aşan kısmının %60ını ek direct damagee çevirir.',
+    patch:{damage:16,posture:40,classPostureAftershock:18,classPostureOverflowDamageRate:.60}}),
+  classSkillRouteNode({id:'shield_bash_setup_capstone',skillId:'shield_bash',depth:4,
+    parentId:'shield_bash_setup_mastery',name:'TOTAL EXPOSURE',styleId:'SETUP',buildAspect:'SHIELD_SETUP',col:'#ff9a3a',
+    summary:'Expose all Weapon damage created during the remaining phase.',
+    debugSummaryTr:'Turun kalanında Weapon Skill direct damagei %20 artar; aynı skilllerin Mark Detonation paketi de armor düşüşünü kullanır.',
+    patch:{classArmorExposeRate:.20,classArmorExposeMode:'PHASE_WEAPONS',
+      classArmorExposeIncludesDetonation:true}}),
+  classSkillRouteNode({id:'shield_bash_cycle_capstone',skillId:'shield_bash',depth:4,
+    parentId:'shield_bash_cycle_mastery',name:'VOLATILE REFORGE',styleId:'CYCLE',buildAspect:'SHIELD_CYCLE',col:'#c06cff',
+    summary:'Rebuild a normal shield from empty; detonate an existing guard into one Volatile Shield.',
+    debugSummaryTr:'Elde shield yoksa 1 normal shield verir. En az 1 mevcut shield patlatırsa onların yerine 1 mor Volatile Shield bırakır; mor shield darbe emdiğinde bossa 14 posture patlaması yollar.',
+    patch:{classShieldGrant:1,classVolatileShieldGrant:1,
+      classVolatileBlockPosture:VOLATILE_SHIELD_POSTURE_DAMAGE}})
+]);
+const SHIELD_BASH_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
+  SHIELD_BASH_ROUTES.map(route=>[route.id,route])));
+const CLASS_SKILL_ROUTES=SHIELD_BASH_ROUTES;
+const CLASS_SKILL_ROUTE_BY_ID=SHIELD_BASH_ROUTE_BY_ID;
+const CLASS_SKILL_ROUTE_AUDIT=(()=>{
+  const reinforced=SHIELD_BASH_ROUTE_BY_ID.shield_bash_reinforced,
+    styles=SHIELD_BASH_ROUTES.filter(route=>route.depth===2),
+    mastery=SHIELD_BASH_ROUTES.filter(route=>route.depth===3),
+    capstones=SHIELD_BASH_ROUTES.filter(route=>route.depth===4),
+    volatileRoutes=SHIELD_BASH_ROUTES.filter(route=>
+      Math.max(0,Number(route.patch&&route.patch.classVolatileShieldGrant)||0)>0);
+  if(!reinforced||styles.length!==4||mastery.length!==4||capstones.length!==4||
+     SHIELD_BASH_ROUTES.some(route=>route.parentId&&!SHIELD_BASH_ROUTE_BY_ID[route.parentId]))
+    throw new Error('Shield Bash needs one trunk and four complete Style lineages');
+  if(volatileRoutes.length!==1||volatileRoutes[0].id!=='shield_bash_cycle_capstone'||
+     volatileRoutes[0].depth!==4)
+    throw new Error('Volatile Shield may exist only on the final Shield Cycle capstone');
+  return Object.freeze({passed:true,nodes:SHIELD_BASH_ROUTES.length,styles:styles.length});
+})();
+function classSkillRouteLineage(routeId){
+  const lineage=[];let route=CLASS_SKILL_ROUTE_BY_ID[routeId]||null,guard=0;
+  while(route&&guard++<8){lineage.unshift(route);route=route.parentId?
+    CLASS_SKILL_ROUTE_BY_ID[route.parentId]:null;}
+  return lineage;
+}
+function compileClassSkillRoute(routeId){
+  const route=CLASS_SKILL_ROUTE_BY_ID[routeId],definition=BASE_TURN_SKILL_BY_ID&&
+    BASE_TURN_SKILL_BY_ID.shield_bash;if(!route||!definition)return null;
+  const command=createRunSkill(definition),lineage=classSkillRouteLineage(routeId);
+  for(const layer of lineage)Object.assign(command,layer.patch||{});
+  command.name=route.name;command.col=route.col;command.classRouteId=route.id;
+  command.classStyleId=route.styleId;command.evolutionDepth=route.depth;
+  /* Every evolution remains the same physical Shield Bash clip. Route patches
+     may change payload and contact FX, never silently fall back to sword/bow. */
+  command.deliveryProfileId='OWNER_SHIELD';command.deliveryPattern='SINGLE';
+  command.deliveryTiming='IMMEDIATE';
+  command.evolutionMutationIds=lineage.map(layer=>layer.id);
+  command.mutationIds=command.evolutionMutationIds.slice();
+  command.evolutionName=route.name;command.evolutionType='STABLE';
+  command.evolutionText=lineage.map(layer=>layer.debugSummaryTr);
+  command.frameMutation=route;return command;
+}
+
+const BASE_TURN_SKILLS=Object.freeze([
+    ...WEAPON_SKILLS.list.map(definition=>definition.command),
+    ...CLASS_SKILLS.list.map(definition=>definition.command)
+  ]),
   BASE_TURN_SKILL_BY_ID=Object.freeze(Object.fromEntries(BASE_TURN_SKILLS.map(definition=>
     [definition.id,definition]))),
   BASE_TURN_SKILL_SLOT_BY_ID=Object.freeze(Object.fromEntries(BASE_TURN_SKILLS.map(
@@ -10352,6 +10698,8 @@ const SKILL_EVOLUTION_DEPTHS=Object.freeze({
 const SKILL_PROGRESSION_KINDS=Object.freeze(['EVOLUTION','MASTERY']);
 const SKILL_MASTERY_THEMES=Object.freeze(['REFINEMENT','RESONANCE','MUTATION']);
 function skillProgressionLabel(mutation){
+  if(mutation&&mutation.classSkillRoute)return ({1:'REINFORCEMENT',2:'STYLE',3:'MASTERY',4:'CAPSTONE'})[
+    mutation.depth]||'CLASS UPGRADE';
   return mutation&&mutation.kind==='MASTERY'?'MASTERY · '+mutation.theme:
     mutation&&SKILL_EVOLUTION_DEPTHS[mutation.depth]?SKILL_EVOLUTION_DEPTHS[mutation.depth].name:'UNKNOWN';
 }
@@ -23522,7 +23870,7 @@ const MARK_BURST_LAB_NODES=Object.freeze(MARK_BURST_ROUTE_CONTRACTS.map(route=>{
         '; Delivery parametresi Quality’den bedava güç almaz')+'.']),prototypeContract:true});
 }));
 const WEAPON_SKILL_PROTOTYPE_LAB_NODES=Object.freeze([
-  ...SHARPSHOOT_MARK_ALL_LAB_NODES,...MARK_BURST_LAB_NODES
+  ...SHARPSHOOT_MARK_ALL_LAB_NODES,...MARK_BURST_LAB_NODES,...CLASS_SKILL_ROUTES
 ]);
 const WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_ID=Object.freeze(Object.fromEntries(
   WEAPON_SKILL_PROTOTYPE_LAB_NODES.map(node=>[node.id,node])));
@@ -38507,11 +38855,14 @@ const DECIMAL_DAMAGE_SYSTEM_AUDIT=runDecimalDamageSystemSelfTests();
 const SKILL_MUTATIONS_BY_SKILL=(()=>{
   const index=Object.create(null),seenIds=new Set();
   for(const skill of BASE_TURN_SKILLS){
-    const identity=SKILL_IDENTITIES[skill.identityId];
-    if(!identity)throw new Error('Base skill '+skill.id+' needs a registered identity');
-    if(!identity.accepts(createRunSkill(skill)))throw new Error('Base skill '+skill.id+
-      ' violates its own identity '+identity.id);
-    validateStableSixCardFormPool(skill);
+    if(skill.source==='WEAPON'){
+      const identity=SKILL_IDENTITIES[skill.identityId];
+      if(!identity)throw new Error('Weapon skill '+skill.id+' needs a registered identity');
+      if(!identity.accepts(createRunSkill(skill)))throw new Error('Weapon skill '+skill.id+
+        ' violates its own identity '+identity.id);
+      validateStableSixCardFormPool(skill);
+    }else if(skill.source==='CLASS'&&!CLASS_SKILLS.has(skill.id))
+      throw new Error('Class skill '+skill.id+' needs a registered class definition');
     index[skill.id]=[];
   }
   for(const mutation of SKILL_MUTATIONS){
@@ -38949,10 +39300,18 @@ function selectTurnActor(id){
   skillTooltipIndex=-1;SFX.swipe();return true;
 }
 function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:runSkills;}
+function classSkillUsedThisPhase(command){
+  /* Skill Lab is a debug sandbox: keep AP/Resolve honest, but do not hide the
+     animation behind the class-skill once-per-phase production rule. */
+  if(activeSkillLabCombat())return false;
+  return !!(boss&&command&&command.source==='CLASS'&&boss.classSkillUseSerial&&
+    boss.classSkillUseSerial[command.baseId||command.id]===boss.playerPhaseSerial);
+}
 function turnCommandApCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.apCost||1);}
 function turnCommandResolveCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.cost||0);}
 function turnCommandAvailable(command){
   return !!(boss&&command&&!primaryChargePreparationLocked()&&
+    !classSkillUsedThisPhase(command)&&
     (boss.ap||0)>=turnCommandApCost(command)&&
     (boss.resolve||0)>=turnCommandResolveCost(command));
 }
@@ -39760,6 +40119,7 @@ function beginPlayerTurn(fromBreak=false){
   boss.breakActionsTaken=0;boss.playerPhaseAttackCount=0;
   boss.preparedCriticalPhase=null;
   boss.playerPhaseSerial=(boss.playerPhaseSerial||0)+1;
+  boss.classArmorExposure=null;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
   boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
   boss.partyActor='knight';boss.ap=boss.apMax;
@@ -39991,6 +40351,49 @@ function bowTurnActionGeometry(){
   return geometry;
 }
 function isBowTurnAction(action){return !!(action&&action.bowTimeline&&action.actorId==='knight');}
+/* Shield Bash is an authored prop transfer, not a reskinned sword swing. The
+   contact clock is deliberately late enough for the left hand to reach behind
+   the shield, unhook it, reveal its hidden inner grip and turn it before impact. */
+const SHIELD_BASH_TIMING=Object.freeze({
+  reachEnd:.24,detachEnd:.46,flipEnd:.68,impact:.94,holdEnd:1.04,
+  retreatEnd:1.28,remountEnd:1.52,recoveryEnd:1.66
+});
+const SHIELD_BASH_TIMELINE=Object.freeze({
+  contacts:Object.freeze([SHIELD_BASH_TIMING.impact]),
+  recoveryEnd:SHIELD_BASH_TIMING.recoveryEnd
+});
+function buildShieldBashTimeline(command,delivery){
+  if(!command||!delivery||delivery.animationProfile!=='SHIELD_IMPACT')return null;
+  const hits=Math.max(1,command.hits||1);
+  if(hits===1)return SHIELD_BASH_TIMELINE;
+  const contacts=Object.freeze(Array.from({length:hits},(_,index)=>
+    SHIELD_BASH_TIMING.impact+index*.12));
+  return Object.freeze({contacts,recoveryEnd:contacts.at(-1)+.72});
+}
+function isShieldTurnAction(action){
+  return !!(action&&action.shieldTimeline&&action.actorId==='knight');
+}
+const PLAYER_SHIELD_POSE_SCRATCH={active:false,t:0,forward:0,reach:0,detach:0,
+  flip:0,drive:0,retreat:0,remount:0,settle:0,lunge:0,impact:0};
+function activePlayerShieldPose(){
+  const action=boss&&boss.turnAction;if(!isShieldTurnAction(action))return null;
+  const t=action.t,T=SHIELD_BASH_TIMING,p=PLAYER_SHIELD_POSE_SCRATCH;
+  p.active=true;p.t=t;
+  /* One continuous forward gesture drives the whole prop transfer.  The
+     authored sub-actions overlap it instead of waiting for one another, so
+     reach -> unhook -> turn -> strike reads as one committed motion. */
+  p.forward=easeInOut(clamp(t/T.impact,0,1));
+  p.reach=easeInOut(clamp(t/(T.reachEnd+.07),0,1));
+  p.detach=easeInOut(clamp((t-.10)/(T.detachEnd-.10),0,1));
+  p.flip=easeInOut(clamp((t-.26)/(T.flipEnd-.26),0,1));
+  p.drive=easeInOut(clamp((t-.45)/(T.impact-.45),0,1));
+  p.retreat=easeInOut(clamp((t-T.holdEnd)/(T.retreatEnd-T.holdEnd),0,1));
+  p.remount=easeInOut(clamp((t-T.retreatEnd)/(T.remountEnd-T.retreatEnd),0,1));
+  p.settle=easeInOut(clamp((t-T.remountEnd)/(T.recoveryEnd-T.remountEnd),0,1));
+  p.lunge=p.drive*(1-p.retreat);
+  p.impact=Math.sin(Math.PI*clamp((t-(T.impact-.055))/(T.holdEnd-T.impact+.055),0,1));
+  return p;
+}
 const PLAYER_BOW_POSE_SCRATCH={visible:0,raise:0,drawAmount:0,recoil:0,recipe:null,chargeIntensity:0,preparedFocus:false};
 function preparedFocusIdleBowPose(pending,actor,pose=PLAYER_BOW_POSE_SCRATCH){
   if(!actor||actor.state==='dying'||actor.state==='finisher')return null;
@@ -40378,11 +40781,13 @@ function resolveTurnActionHit(action){
       Number(command.chargeCriticalDamageBonus)||0):0,
     breachJackpot=finalContact&&causedBreakBeforeContact&&critical&&!action.breakAtStart?
       Math.max(0,Number(command.postureCritBreachJackpot)||0):0,
-    rawBase=stableDamage(commandHitBase(command,index)+afflictionCriticalDirectBonus(command)+
+    armorContext=command.classArmorExposureContext,
+    armorDirectMultiplier=armorContext?1+Math.max(0,Number(armorContext.rate)||0):1,
+    rawBase=stableDamage((commandHitBase(command,index)+afflictionCriticalDirectBonus(command)+
       immediateChargeContactBonus+chargeCriticalBonus+preparedDetonationContactBonus(action,index)+
       preparedChainContactBonus(action,index)+
       preparedPostureContactBonus(action,index)+
-      breachJackpot+(!critical?focusBonus:0)),
+      breachJackpot+(!critical?focusBonus:0))*armorDirectMultiplier),
     markPayload=action.markPlan.markDamageByHit[index]||0,
     echoPayload=action.markPlan.echoDamageByHit[index]||0,
     existingWoundDetonation=index===action.hits-1?Math.max(0,
@@ -40476,7 +40881,8 @@ function resolveTurnActionHit(action){
       postureRatio*Math.max(0,Number(command.detonationAdaptiveDamageRate)||0)+
       pressureRate+executionRate+
       (selfOpenedBreak?Math.max(0,Number(command.detonationPostureBreakBonusRate)||0):0)+
-      detonationCritRate));
+      detonationCritRate)*(armorContext&&armorContext.includesDetonation?
+        1+Math.max(0,Number(armorContext.rate)||0):1));
   let damageResult,damage;
   if(orderedFuse){
     const directBroken=command.detonationAllDamageAfterPosture?
@@ -40552,10 +40958,13 @@ function resolveTurnActionHit(action){
     damage=stableCombatNumber(damage+afflictionDetonationBonus);
     damageResult={...damageResult,afflictionDetonation:afflictionDetonationBonus,exactFinal:damage,final:damage};
   }
-  const p=proj(boss.z),x=laneX(boss.x,p.t),y=p.y-70*p.s,
+  const shieldImpact=isShieldTurnAction(action),p=proj(boss.z),x=laneX(boss.x,p.t),
+    y=p.y-(shieldImpact?22:70)*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
   if(action.actorId==='ally')boss.allyAttackAnim=1;
   else if(isBowTurnAction(action)){
+    player.swordCombo=null;player.attackAnim=0;player.counterAnim=0;
+  }else if(shieldImpact){
     player.swordCombo=null;player.attackAnim=0;player.counterAnim=0;
   }else{
     if(action.hits>1)triggerPlayerSwordCombo(action,index);
@@ -40564,16 +40973,22 @@ function resolveTurnActionHit(action){
   }
   if(!isBowTurnAction(action)){
     if(command.id==='sharpshoot'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
+    else if(shieldImpact)SFX.shield();
     else SFX.slash();
   }
   const bowRecipe=isBowTurnAction(action)?action.bowTimeline.recipe:null,
-    impactScale=(bowRecipe?bowRecipe.impactScale:1)*
+    impactScale=(bowRecipe?bowRecipe.impactScale:shieldImpact?1.22:1)*
       (['PREP_DET_PRIMER','PREP_CHAIN_WAIT','PREP_POSTURE_BREACH','PREP_AFF_SEQUENCE'].includes(bowRecipe?.mechanicCue)?(finalContact?1.35:.75):1),
     impactColors=bowRecipe?[bowRecipe.impactColor,bowRecipe.glowColor,'#ffffff']:
+      shieldImpact?['#9ecbff','#d5e0e7','#ffe37a','#ffffff']:
       [command.col||'#ffffff','#ffffff','#ffe37a'];
-  spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
+  if(!shieldImpact)spawnSlash(x+rnd(-10,10),y+rnd(-7,7),angle,command.col||'#ffffff');
   burst(x,y,Math.round((action.hits>1?9:15)*impactScale),impactColors,
     (action.hits>1?150:205)*impactScale,75,Math.min(7,(action.hits>1?3.2:4.2)*impactScale),.5);
+  if(shieldImpact){
+    shake(6.5,.22);stopTime(.085);
+    burst(x,y+8,12,['#9ecbff','#ffe37a','#ffffff'],170,105,3.6,.42);
+  }
   if(bowRecipe){
     if(bowRecipe.impactShake>0)shake(bowRecipe.impactShake,.16);
     if(bowRecipe.hitStop>0)stopTime(bowRecipe.hitStop);
@@ -40823,6 +41238,13 @@ function resolveTurnActionHit(action){
         Math.max(0,Number(command.postureFractureFailureBonus)||0):0);
     if(posture)applyTurnSkillPosture(posture,{realSource:true,
       breakPower:command.breakPowerBonus});
+    const classAftershock=Math.max(0,Number(command.classPostureAftershock)||0);
+    if(classAftershock>0&&!boss.playerTurnBreak){
+      applyTurnSkillPosture(classAftershock,{realSource:true,
+        breakPower:command.breakPowerBonus});
+      burst(x,y,14,['#9ecbff','#ffe37a','#ffffff'],175,72,4,.48);
+      floater(x,y-118,'FRACTURE WAVE +'+damagePart(classAftershock)+' POSTURE','#ffe37a',14);
+    }
     if(critical&&command.critPostureEcho>0){
       const echo=command.critPostureEcho;
       applyTurnSkillPosture(echo);
@@ -40867,6 +41289,7 @@ function resolveTurnActionHit(action){
     }
     resolvePostureDetonationFinal(command,action,finalCausedBreak,postureBefore,postureMax,
       postureTotal,x,y);
+    resolveClassSkillFinal(action,finalCausedBreak,postureBefore,postureTotal,x,y);
     if(action.detonationPostureSeal>0||command.detonationPostureSealAmplification>0){
       installBossPostureSeal(action.detonationPostureSeal,
         command.detonationPostureSealAmplification,command.detonationPostureSealLayers,
@@ -40931,6 +41354,13 @@ function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
   boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
   action.t+=dt;
+  if(action.shieldTimeline&&!action.shieldUnhookCue&&action.t>=SHIELD_BASH_TIMING.detachEnd){
+    action.shieldUnhookCue=true;SFX.swipe();
+  }
+  if(action.shieldTimeline&&!action.shieldDriveCue&&action.t>=SHIELD_BASH_TIMING.flipEnd){
+    action.shieldDriveCue=true;
+    burst(laneX(player.x,1),PLAYER_Y+2,9,['#6a5a40','#8a744f','#b39a6b'],95,155,3.2,.46);
+  }
   if(action.bowTimeline)while(action.nextReleaseIndex<action.bowTimeline.releases.length&&
       action.t+1e-6>=action.bowTimeline.releases[action.nextReleaseIndex]){
     emitBowRelease(action,action.nextReleaseIndex);action.nextReleaseIndex++;
@@ -40958,6 +41388,104 @@ function updateTurnAction(dt){
     resolveTurnActionCriticalAftershot(action);
   if(action.detonationEchoTime!==null&&!action.detonationEchoResolved&&
      action.t+1e-6>=action.detonationEchoTime)resolveTurnActionDetonationEcho(action);
+  if(action.pendingClassShieldGrant&&!action.classShieldGrantResolved&&
+     action.t+1e-6>=action.pendingClassShieldGrant.grantAt)
+    resolvePendingClassShieldGrant(action);
+}
+function prepareClassSkillCommand(command){
+  if(!command||command.source!=='CLASS')return command;
+  const shieldAtStart=Math.max(0,Math.floor(Number(player.shieldCharges)||0)),
+    volatileAtStart=Math.min(shieldAtStart,Math.max(0,
+      Math.floor(Number(player.volatileShieldCharges)||0))),
+    burstCount=command.classShieldBurstDamage>0||command.classShieldBurstPosture>0?
+      shieldAtStart:0,prepared={...command,classShieldAtStart:shieldAtStart,
+        classShieldBurstCount:burstCount,classVolatileShieldAtStart:volatileAtStart};
+  if(burstCount){
+    prepared.damage=stableCombatNumber((command.damage||0)+burstCount*Math.max(0,
+      Number(command.classShieldBurstDamage)||0));
+    prepared.posture=stableCombatNumber((command.posture||0)+burstCount*Math.max(0,
+      Number(command.classShieldBurstPosture)||0));
+  }
+  return prepared;
+}
+function claimClassArmorExposure(command){
+  const exposure=boss&&boss.classArmorExposure;
+  if(!exposure||!command||command.source!=='WEAPON'||command.skill!==true||
+     exposure.phaseSerial!==boss.playerPhaseSerial)return command;
+  if(exposure.mode==='NEXT_WEAPON'&&exposure.consumed)return command;
+  if(exposure.mode==='NEXT_WEAPON')exposure.consumed=true;
+  return {...command,classArmorExposureContext:Object.freeze({rate:exposure.rate,
+    includesDetonation:exposure.includesDetonation===true})};
+}
+function resolveClassSkillFinal(action,causedBreak,postureBefore,nativePosture,x,y){
+  const command=action&&action.command;if(!command||command.source!=='CLASS')return;
+  const burstCount=Math.max(0,Math.floor(Number(command.classShieldBurstCount)||0)),
+    volatileAtStart=Math.min(burstCount,Math.max(0,
+      Math.floor(Number(command.classVolatileShieldAtStart)||0)));
+  if(burstCount){
+    /* Consumption belongs to physical contact, never to the button press.
+       This makes the world impact and the exact HUD shields disappear on the
+       same frame. */
+    emitHudShieldShatter(burstCount,volatileAtStart);
+    player.shieldCharges=0;player.volatileShieldCharges=0;player.volatileShieldPosture=0;
+    /* The directional cloud owns the color mix. A binary purple/non-purple
+       core would erase the actual composition of a mixed shield stack. */
+    emitShieldImpactSparkSilhouette(x,y,true,volatileAtStart/burstCount);
+    shieldBurstSparkCloud(x,y,burstCount,volatileAtStart);
+    spawnSlash(x,y,-.72,'#ffffff');
+    floater(x,y-124,'SHIELD BURST ×'+burstCount,
+      volatileAtStart>0?'#c995ff':'#9ecbff',16);
+  }else if(action.shieldTimeline)emitShieldImpactSparkSilhouette(x,y,false,0);
+  const overflowRate=Math.max(0,Number(command.classPostureOverflowDamageRate)||0),
+    authoredPosture=Math.max(0,Number(nativePosture)||0)+Math.max(0,
+      Number(command.classPostureAftershock)||0),gap=Math.max(0,
+      (boss.postureMax||CFG.BOSS_POSTURE_MAX)-Math.max(0,Number(postureBefore)||0)),
+    overflow=Math.max(0,authoredPosture-gap);
+  if(causedBreak&&overflowRate>0&&overflow>0){
+    const payload=stableCombatNumber(overflow*overflowRate),result=
+      combatTurnHitDamageBreakdown(0,payload,0,0,true,0,false,CFG.CRIT_DAMAGE_MULT);
+    hurtBoss(result.final,false,'shield_bash_overflow',false);
+    burst(x,y,15,['#ffe37a','#ffffff','#9ecbff'],180,74,4.5,.55);
+    floater(x,y-144,'POSTURE OVERFLOW · '+damagePart(result.final)+' DMG','#ffe37a',15);
+  }
+  if(command.classArmorExposeRate>0){
+    boss.classArmorExposure={phaseSerial:boss.playerPhaseSerial,
+      rate:Math.max(0,Number(command.classArmorExposeRate)||0),
+      mode:command.classArmorExposeMode||'NEXT_WEAPON',
+      includesDetonation:command.classArmorExposeIncludesDetonation===true,consumed:false};
+    floater(x,y-104,'ARMOR OPEN · +'+Math.round(boss.classArmorExposure.rate*100)+
+      '% WEAPON DMG','#ff9a3a',14);
+  }
+  let normal=Math.max(0,Math.floor(Number(command.classShieldGrant)||0));
+  if(command.classShieldAtStart===0&&command.classShieldGrantIfEmpty!==undefined)
+    normal=Math.max(normal,Math.max(0,Math.floor(Number(command.classShieldGrantIfEmpty)||0)));
+  if(causedBreak)normal+=Math.max(0,Math.floor(Number(command.classShieldGrantOnBreak)||0));
+  /* Volatile Reforge always leaves a guard: empty starts rebuild one normal
+     shield, while a real detonation replaces that normal grant with exactly
+     one purple shield. It never grants both from the same bash. */
+  const volatile=burstCount>0?Math.max(0,
+    Math.floor(Number(command.classVolatileShieldGrant)||0)):0;
+  if(volatile>0)normal=0;
+  if(normal||volatile)action.pendingClassShieldGrant={normal,volatile,
+    volatilePosture:Math.max(0,Number(command.classVolatileBlockPosture)||0),
+    /* A replacement from Shield Cycle appears on the exact HUD explosion
+       frame, behind its dispersing pixels. Non-burst guard routes still wait
+       for the physical remount because they have no destroyed icon to replace. */
+    grantAt:burstCount>0?action.t+HUD_SHIELD_SHATTER_CHARGE:
+      action.shieldTimeline?SHIELD_BASH_TIMING.remountEnd:action.t};
+}
+function resolvePendingClassShieldGrant(action){
+  const pending=action&&action.pendingClassShieldGrant;
+  if(!pending||action.classShieldGrantResolved)return false;
+  action.classShieldGrantResolved=true;
+  const x=laneX(player.x,1),y=PLAYER_Y-jumpHeight();
+  if(pending.normal){grantPlayerShields(pending.normal);
+    burst(x,y-48,13,['#ffffff','#ffe37a','#9ecbff'],130,64,3.4,.5);
+    floater(x,y-112,'SHIELD +'+pending.normal,'#9ecbff',15);}
+  if(pending.volatile){grantPlayerShields(pending.volatile,pending.volatilePosture);
+    burst(x,y-48,18,['#8d46d8','#c995ff','#ffffff'],170,80,4,.6);
+    floater(x,y-132,'VOLATILE SHIELD +'+pending.volatile,'#c995ff',16);}
+  return true;
 }
 function performPlayerAction(command,options=null){
   if(!isPlayerTurn()||!command) return false;
@@ -40977,6 +41505,12 @@ function performPlayerAction(command,options=null){
     return armPrimaryChargeRelease(command,actorId,apCost,cost);
   }
   if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
+  if(classSkillUsedThisPhase(command)){SFX.duck();return false;}
+  if(command.source==='CLASS'){
+    boss.classSkillUseSerial||(boss.classSkillUseSerial=Object.create(null));
+    boss.classSkillUseSerial[command.baseId||command.id]=boss.playerPhaseSerial;
+    command=prepareClassSkillCommand(command);
+  }else command=claimClassArmorExposure(command);
   const readyCharge=pendingPrimaryChargeRelease();
   if(readyCharge&&readyCharge.status==='READY'&&!primaryRelease&&!freeFollowUp)
     readyCharge.actionSteps=safeDefenseCharge((readyCharge.actionSteps||0)+1);
@@ -41261,11 +41795,15 @@ function performPlayerAction(command,options=null){
     bowGeometry=actorId==='knight'&&delivery.profileId==='OWNER_BOW'?bowTurnActionGeometry():null,
     bowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance,
       markPlan.markAtStart,boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX):null,
-    hitInterval=bowTimeline?bowTimeline.interval:command.hitInterval||0,
-    impactDelay=bowTimeline?bowTimeline.contacts[0]:Math.max(0,command.impactDelay||0),
+    shieldTimeline=actorId==='knight'?buildShieldBashTimeline(command,delivery):null,
+    hitInterval=bowTimeline?bowTimeline.interval:shieldTimeline&&shieldTimeline.contacts.length>1?
+      shieldTimeline.contacts[1]-shieldTimeline.contacts[0]:command.hitInterval||0,
+    impactDelay=bowTimeline?bowTimeline.contacts[0]:shieldTimeline?shieldTimeline.contacts[0]:
+      Math.max(0,command.impactDelay||0),
     /* An inherited Form duration may be shorter than a later five-hit Apex.
        Always preserve enough time for the authored final contact and recovery. */
-    lastContact=bowTimeline?bowTimeline.contacts.at(-1):impactDelay+(hits-1)*hitInterval,
+    lastContact=bowTimeline?bowTimeline.contacts.at(-1):shieldTimeline?
+      shieldTimeline.contacts.at(-1):impactDelay+(hits-1)*hitInterval,
     markPulseTimeline=buildMarkPulseTimeline(command,lastContact),
     postureWaveTimeline=buildPostureWaveTimeline(command,lastContact),
     detonationCascadeTimeline=buildDetonationCascadeTimeline(command,markPlan,lastContact),
@@ -41273,7 +41811,8 @@ function performPlayerAction(command,options=null){
     criticalAftershotTimeline=buildCriticalAftershotTimeline(command,lastContact),
     detonationEchoTime=markPlan.echoDamageTotal>0?lastContact+.24:null,
     duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,bowTimeline?bowTimeline.recoveryEnd:
-      lastContact+.34,markPulseTimeline?markPulseTimeline.times.at(-1)+.32:0,
+      shieldTimeline?shieldTimeline.recoveryEnd:lastContact+.34,
+      markPulseTimeline?markPulseTimeline.times.at(-1)+.32:0,
       postureWaveTimeline?postureWaveTimeline.times.at(-1)+.32:0,
       detonationCascadeTimeline?detonationCascadeTimeline.times.at(-1)+.36:0,
       criticalShrapnelTimeline?criticalShrapnelTimeline.times.at(-1)+.36:0,
@@ -41300,7 +41839,7 @@ function performPlayerAction(command,options=null){
   boss.playerPhaseAttackCount=Math.max(0,boss.playerPhaseAttackCount||0)+1;
   boss.playerActionTimer=duration;
   boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,impactDelay,
-    bowTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
+    bowTimeline,shieldTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
     attackSerial:boss.attackSerial,markGenerated:0,freeFollowUp,
     preparedDetonationFirst,preparedDetonationFollow,
     preparedDetonationSnapshot:options?.preparedDetonation||null,
@@ -41348,7 +41887,7 @@ function performPlayerAction(command,options=null){
     ' · CHARGE +'+chargeRetained,'#7fc9ff',14);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×'+damagePart(
     activeBreakDamageMultiplier(true)),'#ffe37a',16);
-  if(!bowTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
+  if(!bowTimeline&&!shieldTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
   return true;
 }
 function handlePlayerTurnTap(pt){
@@ -42352,7 +42891,8 @@ function comboStepRecoveryTime(move,attack){
   if(move&&move.comboRecoverTime) base=move.comboRecoverTime;
   else if(move&&typeof move.strike==='string'&&move.strike.startsWith('strike_turtle_bite')) base=.18;
   else if(move&&move.recoverAnim) base=.14;
-  return base*encounterAttackTempoRatio(attack,'recovery',bossCombatTier());
+  return base*encounterAttackTempoRatio(attack,'recovery',bossCombatTier())/
+    skillLabBossSpeedMultiplier();
 }
 /* One cadence object is shared by both encounter roles. Species own animation art
    and attacks, but boss/miniboss timing can no longer drift through copied values. */
@@ -42363,7 +42903,8 @@ function encounterAttackDelay(previousAttack=null){
   const scale=previousAttack
     ? encounterAttackTempoRatio(previousAttack,'travel',cycle)
     : encounterCadenceMultiplier(cycle);
-  return rnd(ENCOUNTER_PACING.idleMin,ENCOUNTER_PACING.idleMax)*scale;
+  return rnd(ENCOUNTER_PACING.idleMin,ENCOUNTER_PACING.idleMax)*scale/
+    skillLabBossSpeedMultiplier();
 }
 function fillMoveContactXs(actor,move,lanes,state,stateT,out){
   out.length=0;
@@ -42648,7 +43189,7 @@ function startBoss(definitionId=null){
     preparedCriticalAftershock:null,preparedCriticalLastAttack:null,preparedCriticalPhase:null,
     preparedAfflictionBarbs:null,preparedAfflictionLastAttack:null,preparedAfflictionTickPhase:null,
     preparedFocusCarry:null,
-    playerPhaseSerial:0,attackSerial:0,
+    playerPhaseSerial:0,attackSerial:0,classSkillUseSerial:Object.create(null),classArmorExposure:null,
     playerMarkTrailPerContact:0,lastMarkEvent:null,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
@@ -42883,14 +43424,15 @@ function applyEncounterTempo(attack,cycle,hesitationScale=1){
   const copy=Object.assign({},attack);
   const comboEase=openingComboMultiplier(attack,cycle);
   const tempoCycle=encounterAttackTempoCycle(attack,cycle);
-  copy.rec=(attack.rec||.8)*encounterTempoMultiplier('recovery',tempoCycle)*comboEase;
+  const labSpeed=skillLabBossSpeedMultiplier();
+  copy.rec=(attack.rec||.8)*encounterTempoMultiplier('recovery',tempoCycle)*comboEase/labSpeed;
   copy.steps=attack.steps.map(step=>{
     const referenceTravel=modelViabilityReferenceTravel(attack,step);
     const universallyScaled=step.travel*encounterTempoMultiplier('travel',tempoCycle)*comboEase;
-    const scaledTravel=Math.max(progressionTravelForStep(step,universallyScaled,referenceTravel),
+    const scaledTravel=Math.max(progressionTravelForStep(step,universallyScaled/labSpeed,referenceTravel),
       modelContactTravelFloor(step));
     return Object.assign({},step,{
-      tele:step.tele*encounterTempoMultiplier('tele',tempoCycle)*comboEase*hesitationScale,
+      tele:step.tele*encounterTempoMultiplier('tele',tempoCycle)*comboEase*hesitationScale/labSpeed,
       travel:scaledTravel,_viabilityReferenceTravel:referenceTravel,
       _parryReferenceTravel:parryViabilityReferenceTravel(attack,step)
     });
@@ -42963,9 +43505,17 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
    multi-hit action may survive the transition into the authored death state. */
 function defeatBoss(){
   if(!boss||boss.hp>0||boss.state==='dying')return false;
-  /* Skill Lab records lethal-scale builds without ever entering rewards, score or
-     death choreography. One HP keeps the real damage path and hit feedback live. */
-  if(boss.skillLabDummy){boss.hp=1;return false;}
+  /* Skill Lab uses the real lethal path and death presentation, but deliberately
+     bypasses run score, relics and reward routing when that presentation ends. */
+  if(boss.skillLabDummy){
+    skillLabSession.lastCombatResult='VICTORY';
+    floater(VW/2,300,'BOSS DEFEATED','#ffe37a',26);
+    SFX.win();flash('#ffe37a',.5);shake(12,.6);stopTime(.25);
+    boss.pendingBreak=null;boss.parryReaction=null;boss.knightRushRecovery=null;
+    boss.turnAction=null;boss.playerActionTimer=0;boss.state='dying';boss.stateT=0;boss._stg=0;
+    hazards=[];projectiles=[];packLeap=null;knightRushQueued=false;
+    return true;
+  }
   const overkill=Math.max(0,-boss.hp),pts=RUN_POLICY().bossScoreAt(loop),
     okPts=Math.round(overkill*CFG.OVERKILL_MULT);
   bossScoreRun+=pts;overkillRun+=okPts;bossKills++;
@@ -43066,6 +43616,7 @@ function updateBoss(dt){
       for(let i=0;i<14;i++) particles.push({x:bx+rnd(-40,40),y:p.y-rnd(20,90)*p.s,
         vx:rnd(-14,14),vy:rnd(-90,-40),life:1.4,maxLife:1.4,size:rnd(2,5),col:'#cfe0ff',grav:-16}); }
     if(T>2.5){
+      if(boss.skillLabDummy){leaveSkillLabCombat('VICTORY');return;}
       /* A tamed miniboss is now a run-long party member. Future encounters may
          offer swap/evolution choices; a stage boss no longer dismisses it. */
       if(hasRelic('idol')){ awardGold(40); floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
@@ -45795,6 +46346,28 @@ function skillEvolutionTap(pt){
 function activeSkillLabCombat(){
   return !!(skillLabSession&&skillLabSession.inCombat&&mode==='boss'&&boss&&boss.skillLabDummy);
 }
+function skillLabBossSpeedMultiplier(){
+  return skillLabSession&&skillLabSession.inCombat?
+    clamp(Number(skillLabSession.bossSpeed)||1,SKILL_LAB_SPEED_SLIDER.min,
+      SKILL_LAB_SPEED_SLIDER.max):1;
+}
+function setSkillLabBossSpeedFromPoint(pt,audible=false){
+  if(!skillLabSession||!pt)return false;
+  const slider=SKILL_LAB_SPEED_SLIDER,t=clamp((pt.x-slider.x)/slider.w,0,1),
+    raw=lerp(slider.min,slider.max,t);
+  skillLabSession.bossSpeed=Math.round(raw*20)/20;
+  if(audible)SFX.swipe();return true;
+}
+function beginSkillLabSpeedDrag(start,cx,cy){
+  if(!start||!activeSkillLabCombat()||!skillLabSession.combatHud)return false;
+  const pt=toGame(cx,cy);
+  if(!pointInRect(pt,SKILL_LAB_SPEED_SLIDER))return false;
+  start.skillLabSpeedDrag=true;start.done=true;setSkillLabBossSpeedFromPoint(pt,false);return true;
+}
+function updateSkillLabSpeedDrag(start,cx,cy){
+  if(!start||!start.skillLabSpeedDrag)return false;
+  setSkillLabBossSpeedFromPoint(toGame(cx,cy),false);return true;
+}
 function skillLabSeededRng(seed){
   let state=(seed>>>0)||0x6d2b79f5;
   return ()=>{
@@ -45826,7 +46399,7 @@ function openSkillLab(){
   resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;skillLabTooltipMutationId=null;
   skillLabSession={view:'draft',seed:((Math.random()*0xffffffff)>>>0)||1,
     choices:[],skillIndex:0,catalogPage:0,selectedMutationId:null,inCombat:false,
-    preset:'clean',combatHud:true,forceCritical:false,lastLog:null,pendingLog:null,
+    preset:'clean',combatHud:true,forceCritical:false,bossSpeed:1,lastLog:null,pendingLog:null,
     defenseStats:{hits:0,perfects:0,parries:0,phases:0}};
   setMode('skilllab');SFX.relic();
 }
@@ -45874,7 +46447,7 @@ function startSkillLabCombat(){
   skillLabSession.defenseStats={hits:0,perfects:0,parries:0,phases:0};
   startBoss('bear');
   boss.skillLabDummy=true;boss.entering=false;boss.x=boss.xTarget=1;boss.rise=1;
-  boss.maxhp=9999;boss.hp=boss.maxhp;boss.dealt=0;boss.turnCombat=true;
+  boss.maxhp=bossMaxHp();boss.hp=boss.maxhp;boss.dealt=0;boss.turnCombat=true;
   boss.apMax=CFG.TURN_AP_BASE;boss.resolveMax=CFG.TURN_RESOLVE_MAX;
   boss.state='idle';boss.stateT=0;boss.attack=null;boss.pendingBreak=null;
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;boss.turnAction=null;
@@ -45888,12 +46461,16 @@ function startSkillLabCombat(){
   boss.pendingChargeRelease=null;boss.pendingPostureChargeConductor=null;
   boss.pendingCriticalChargeDynamo=null;boss.criticalChargePrecisionEcho=null;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
+  player.alive=true;player.invuln=0;syncPlayerVitals(true);
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
 }
-function leaveSkillLabCombat(){
+function leaveSkillLabCombat(result='BUILD'){
   if(!skillLabSession)return false;
   skillTooltipIndex=-1;skillLabSession.inCombat=false;skillLabSession.pendingLog=null;
+  skillLabSession.lastCombatResult=result;
   boss=null;hazards=[];projectiles=[];particles.length=0;floaters.length=0;slashes.length=0;
+  hudShieldShatters.length=0;
+  player.alive=true;player.invuln=0;syncPlayerVitals(true);
   setMode('skilllab');SFX.duck();return true;
 }
 function applySkillLabPreset(id,audible=true){
@@ -45908,6 +46485,7 @@ function applySkillLabPreset(id,audible=true){
   }[id];
   if(!values)return false;
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
+  player.alive=true;syncPlayerVitals(true);
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
   boss.criticalBleedTrace=null;
   boss.afflictionDetonationFuse=null;
@@ -45930,6 +46508,7 @@ function applySkillLabPreset(id,audible=true){
   boss.playerPhaseAttackCount=0;boss.criticalFocusLastAttack={};
   boss.afflictionChargeState=null;boss.defenseTookDamage=false;boss.lastDefenseFlawless=false;
   boss.preparedDetonationFollow=null;boss.preparedDetonationCarry={};boss.playerPhaseSerial=0;boss.attackSerial=0;
+  boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
   boss.preparedChainEscort=null;
   boss.preparedPostureTransfer=null;boss.preparedPostureAftershock=null;
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;boss.preparedPostureLastAttack=null;
@@ -45944,6 +46523,7 @@ function resetSkillLabTurn(){
   /* Emergency lab reset: aborts the current simulation without manufacturing
      a fake defense result, Charge, Bleed tick, or Break reward. */
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
+  player.alive=true;syncPlayerVitals(true);
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
   boss.turnAction=null;boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
   boss.pendingChargeRelease=null;boss.pendingPostureChargeConductor=null;
@@ -45955,6 +46535,7 @@ function resetSkillLabTurn(){
   boss.playerPhaseAttackCount=0;boss.criticalFocusLastAttack={};
   boss.afflictionChargeState=null;boss.defenseTookDamage=false;boss.lastDefenseFlawless=false;
   boss.preparedDetonationFollow=null;boss.preparedDetonationCarry={};boss.playerPhaseSerial=0;boss.attackSerial=0;
+  boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
   boss.preparedChainEscort=null;
   boss.preparedPostureTransfer=null;boss.preparedPostureAftershock=null;
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;boss.preparedPostureLastAttack=null;
@@ -45984,8 +46565,35 @@ function syncArtifactCache(){
   for(const r of relics) if(r) equippedArtifactTypes.add(r.type);
 }
 function hasRelic(t){ return equippedArtifactTypes.has(t); }
+function grantPlayerShields(count,volatilePosture=0){
+  const gained=Math.max(0,Math.floor(Number(count)||0));if(!gained)return 0;
+  player.shieldCharges+=gained;
+  if(volatilePosture>0){player.volatileShieldCharges+=gained;
+    player.volatileShieldPosture=Math.max(player.volatileShieldPosture||0,volatilePosture);}
+  return gained;
+}
+function resolveVolatileShieldBlock(posture){
+  posture=Math.max(0,Number(posture)||0);if(!posture||!boss)return 0;
+  const p=proj(boss.z),bossX=laneX(boss.x,p.t),bossY=p.y-70*p.s,
+    playerX=laneX(player.x,1),playerY=PLAYER_Y-jumpHeight()-48;
+  burst(playerX,playerY,22,['#8d46d8','#c995ff','#ffffff'],210,105,4.5,.7);
+  burst(bossX,bossY,14,['#8d46d8','#c995ff','#ffffff'],170,70,4,.55);
+  spawnSlash(bossX,bossY,-.7,'#c995ff');
+  const applied=applyBossPosture(posture,'volatile_shield');
+  floater(bossX,bossY-104,'VOLATILE GUARD · POSTURE +'+damagePart(applied),'#c995ff',15);
+  return applied;
+}
 function consumeShield(wouldBeLethal=false){
-  if(player.shieldCharges>0){ player.shieldCharges--; return true; }
+  if(player.shieldCharges>0){
+    player.shieldCharges--;
+    if(player.volatileShieldCharges>0){
+      player.volatileShieldCharges--;
+      const posture=player.volatileShieldPosture;
+      if(!player.volatileShieldCharges)player.volatileShieldPosture=0;
+      resolveVolatileShieldBlock(posture);
+    }
+    return true;
+  }
   if(!wouldBeLethal)return false;
   for(const r of relics) if(r&&r.type==='shield'&&r.charged){ r.charged=false; return true; }
   return false;
@@ -46077,7 +46685,8 @@ const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skil
 function setMode(m){
   /* Automated and hands-on debug sessions are always silent. This overlay never
      changes the player's own mute preference and is released on the normal menu. */
-  SFX.setTestMuted(SILENT_TEST_MODES.has(m)||(debugRun&&m!=='menu'));
+  SFX.setTestMuted(SILENT_TEST_MODES.has(m)||(skillLabSession&&skillLabSession.inCombat)||
+    (debugRun&&m!=='menu'));
   mode=m;modeT=0;
 }
 function speed(){
@@ -46139,9 +46748,11 @@ function resetRun(){
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
+  hudShieldShatters.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,
     parryAnim:0,swordCombo:null,lastParry:-9,invuln:0,shieldCharges:0,
+    volatileShieldCharges:0,volatileShieldPosture:0,
     damageTakenModifierProduct:1,heartFlashStartedAt:-Infinity,
     heartFlashFromUnits:0,heartFlashToUnits:0});
   syncPlayerVitals(true);
@@ -46391,15 +47002,31 @@ const HEART_SPRITES=Object.freeze(Array.from({length:PLAYER_HEALTH_CONTRACT.unit
   (_,units)=>buildHeartSprite(units)));
 const HEART_FLASH_SPRITES=Object.freeze(Array.from({length:PLAYER_HEALTH_CONTRACT.unitsPerHeart+1},
   (_,units)=>buildHeartSprite(units,'#fffafd')));
+/* Same-size empty silhouette: it sits behind the red fill rather than growing
+   around its contour. Damage reveals it cell-for-cell; an empty heart remains. */
+const HEART_EMPTY_SPRITE=buildHeartSprite(PLAYER_HEALTH_CONTRACT.unitsPerHeart,'#421722');
 function heartRowsForCount(count,perRow){return Math.max(1,Math.ceil(count/perRow));}
+/* Pixel-art HUD sprites do not use the world's fractional scale. Each authored
+   1x1 cell becomes one whole backing-canvas pixel multiple, and every repeated
+   sprite starts on that same grid. This keeps every heart literally identical
+   instead of letting the browser round neighbouring hearts differently. */
+function hudRasterGrid(x,y,scale=1){
+  const matrix=g.getTransform(),baseScale=Math.max(.0001,Math.hypot(matrix.a,matrix.b)),
+    cellPx=Math.max(1,Math.round(baseScale*scale));
+  return {matrix,baseScale,cellPx,
+    x:Math.round(matrix.a*x+matrix.c*y+matrix.e),
+    y:Math.round(matrix.b*x+matrix.d*y+matrix.f)};
+}
 function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4,flashState=null){
-  const oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
-  const stepX=(HEART_SPRITE_W+1)*scale,stepY=(HEART_SPRITE_H+1)*scale;
+  const grid=hudRasterGrid(x,y,scale),cell=grid.cellPx,
+    stepX=(HEART_SPRITE_W+1)*cell,stepY=(HEART_SPRITE_H+1)*cell;
+  g.save();g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;
   for(let i=0;i<maxHearts;i++){
     const fill=clamp(Math.round(currentUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
-      PLAYER_HEALTH_CONTRACT.unitsPerHeart);
-    g.drawImage(HEART_SPRITES[fill],x+(i%perRow)*stepX,y+Math.floor(i/perRow)*stepY,
-      HEART_SPRITE_W*scale,HEART_SPRITE_H*scale);
+        PLAYER_HEALTH_CONTRACT.unitsPerHeart),drawX=grid.x+(i%perRow)*stepX,
+      drawY=grid.y+Math.floor(i/perRow)*stepY;
+    g.drawImage(HEART_EMPTY_SPRITE,drawX,drawY,HEART_SPRITE_W*cell,HEART_SPRITE_H*cell);
+    g.drawImage(HEART_SPRITES[fill],drawX,drawY,HEART_SPRITE_W*cell,HEART_SPRITE_H*cell);
   }
   const flashAge=flashState?perfNow-flashState.startedAt:Infinity;
   if(flashAge>=0&&flashAge<HEART_HIT_FLASH_DURATION){
@@ -46413,13 +47040,13 @@ function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4,flashState=
         toFill=clamp(Math.round(toUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
           PLAYER_HEALTH_CONTRACT.unitsPerHeart);
       if(fromFill===toFill||fromFill<=0)continue;
-      g.drawImage(HEART_FLASH_SPRITES[fromFill],x+(i%perRow)*stepX,y+Math.floor(i/perRow)*stepY,
-        HEART_SPRITE_W*scale,HEART_SPRITE_H*scale);
+      g.drawImage(HEART_FLASH_SPRITES[fromFill],grid.x+(i%perRow)*stepX,
+        grid.y+Math.floor(i/perRow)*stepY,HEART_SPRITE_W*cell,HEART_SPRITE_H*cell);
     }
     g.globalAlpha=oldAlpha;
   }
-  g.imageSmoothingEnabled=oldSmooth;
-  return y+heartRowsForCount(maxHearts,perRow)*stepY;
+  g.restore();
+  return y+heartRowsForCount(maxHearts,perRow)*stepY/grid.baseScale;
 }
 const SHIELD_SPRITE=(()=>{
   const sprite=document.createElement('canvas');sprite.width=16;sprite.height=14;
@@ -46432,19 +47059,33 @@ const SHIELD_SPRITE=(()=>{
   c.fillStyle='#3f7baf';c.fillRect(11,3,2,5);c.fillRect(9,8,3,1);
   return sprite;
 })();
+const VOLATILE_SHIELD_SPRITE=(()=>{
+  const sprite=document.createElement('canvas');sprite.width=16;sprite.height=14;
+  const c=sprite.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
+  c.fillStyle='#28133f';c.fillRect(1,1,14,8);c.fillRect(2,9,12,2);
+  c.fillRect(4,11,8,1);c.fillRect(6,12,4,1);
+  c.fillStyle='#b56cff';c.fillRect(2,2,12,6);c.fillRect(3,8,10,2);
+  c.fillRect(5,10,6,1);c.fillRect(7,11,2,1);
+  c.fillStyle='#f0ddff';c.fillRect(3,2,4,6);c.fillRect(5,8,3,2);
+  c.fillStyle='#6f35a8';c.fillRect(11,3,2,5);c.fillRect(9,8,3,1);
+  return sprite;
+})();
 function shieldRowWidth(count,scale=1){
-  const shown=Math.min(4,count),step=(SHIELD_SPRITE.width+2)*scale;
-  return shown?shown*step-2*scale+(count>4?38:0):0;
+  const shown=Math.min(4,count),baseScale=Math.max(.0001,Math.hypot(g.getTransform().a,g.getTransform().b)),
+    cell=Math.max(1,Math.round(baseScale*scale)),step=(SHIELD_SPRITE.width+2)*cell;
+  return shown?(shown*step-2*cell+(count>4?38*baseScale:0))/baseScale:0;
 }
-function drawShieldCharges(x,y,count,scale=1){
+function drawShieldCharges(x,y,count,scale=1,volatileCount=0){
   if(count<=0)return;
-  const shown=Math.min(4,count),step=(SHIELD_SPRITE.width+2)*scale,
-    oldSmooth=g.imageSmoothingEnabled;g.imageSmoothingEnabled=false;
-  for(let i=0;i<shown;i++)g.drawImage(SHIELD_SPRITE,x+i*step,y,
-    SHIELD_SPRITE.width*scale,SHIELD_SPRITE.height*scale);
-  g.imageSmoothingEnabled=oldSmooth;
-  if(count>4){g.textAlign='left';g.font='bold '+(8*scale)+'px monospace';g.fillStyle='#9ecbff';
-    g.fillText('×'+count,x+shown*step+2,y+10*scale);}
+  const shown=Math.min(4,count),grid=hudRasterGrid(x,y,scale),cell=grid.cellPx,
+    step=(SHIELD_SPRITE.width+2)*cell;
+  g.save();g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;
+  volatileCount=Math.min(shown,Math.max(0,Math.floor(Number(volatileCount)||0)));
+  for(let i=0;i<shown;i++)g.drawImage(i<volatileCount?VOLATILE_SHIELD_SPRITE:SHIELD_SPRITE,
+    grid.x+i*step,grid.y,SHIELD_SPRITE.width*cell,SHIELD_SPRITE.height*cell);
+  if(count>4){g.textAlign='left';g.font='bold '+(8*cell)+'px monospace';g.fillStyle='#9ecbff';
+    g.fillText('×'+count,grid.x+shown*step+2*cell,grid.y+10*cell);}
+  g.restore();
 }
 function drawPlayerVitalsHUD(){
   const maxHearts=Math.max(1,Math.round(player.maxHealthUnits/PLAYER_HEALTH_CONTRACT.unitsPerHeart));
@@ -46452,7 +47093,140 @@ function drawPlayerVitalsHUD(){
     shieldY=drawHeartHealth(12,50,player.currentHealthUnits,maxHearts,1,heartsPerRow,{
       startedAt:player.heartFlashStartedAt,fromUnits:player.heartFlashFromUnits,
       toUnits:player.heartFlashToUnits});
-  drawShieldCharges(14,shieldY-1,player.shieldCharges,1);
+  drawShieldCharges(14,shieldY-1,player.shieldCharges,1,player.volatileShieldCharges);
+  return {x:14,y:shieldY-1};
+}
+const HUD_SHIELD_SHATTER_CHARGE=.36,HUD_SHIELD_SHATTER_LIFE=1.08,
+  hudShieldShatters=[];
+function emitHudShieldExplosion(entry){
+  const ratio=clamp(entry.volatileRatio||0,0,1),fragments=[];
+  if(entry.overflow){
+    for(let spark=0;spark<22;spark++){
+      const angle=rnd(0,Math.PI*2),speed=rnd(62,160),life=rnd(.34,.58);
+      fragments.push({x:rnd(-3,3),y:rnd(-3,3),vx:Math.cos(angle)*speed,
+        vy:Math.sin(angle)*speed-rnd(25,75),life,maxLife:life,
+        size:rnd(1.8,3.8),col:shieldSparkColor(ratio),grav:rnd(105,180),hold:.04});
+    }
+    entry.fragments=fragments;return;
+  }
+  /* One particle per opaque sprite cell: before velocity advances, the cloud
+     is the shield silhouette itself; on following frames it breaks apart like
+     Jonathan's death pixels instead of shrinking or flying away as one icon. */
+  const mask=shieldParticleMask(),centreX=(SHIELD_SPRITE.width-1)*.5,
+    centreY=(SHIELD_SPRITE.height-1)*.5;
+  for(let index=0;index<mask.length;index++){
+    const cell=mask[index],nx=(cell.x-centreX)/Math.max(1,centreX),
+      ny=(cell.y-centreY)/Math.max(1,centreY),speed=rnd(48,126),life=rnd(.38,.7);
+    fragments.push({kind:'hudShieldPixel',
+      x:cell.x-centreX,y:cell.y-centreY,
+      vx:nx*speed*.42+rnd(-8,8),vy:ny*speed*.28-rnd(72,138),life,maxLife:life,
+      size:rnd(1.15,1.8),col:shieldSparkColor(ratio),grav:rnd(100,185),hold:.045});
+  }
+  entry.fragments=fragments;
+}
+function updateHudShieldShatters(dt){
+  for(let i=hudShieldShatters.length-1;i>=0;i--){
+    const entry=hudShieldShatters[i];entry.t+=dt;
+    if(!entry.exploded&&entry.t>=HUD_SHIELD_SHATTER_CHARGE){
+      entry.exploded=true;emitHudShieldExplosion(entry);
+    }
+    if(entry.fragments)for(const fragment of entry.fragments){
+      if(fragment.hold>0){fragment.hold=Math.max(0,fragment.hold-dt);continue;}
+      fragment.life=Math.max(0,fragment.life-dt);fragment.vy+=fragment.grav*dt;
+      fragment.x+=fragment.vx*dt;fragment.y+=fragment.vy*dt;
+    }
+    if(entry.t>=HUD_SHIELD_SHATTER_LIFE)hudShieldShatters.splice(i,1);
+  }
+}
+function drawHudShieldShatters(rowX,rowY){
+  /* The live icons and consumed ghosts must share one rasterized row origin.
+     Rasterizing every ghost's logical x independently made their spacing
+     contract on non-integer mobile view scales at the exact impact frame. */
+  const rowGrid=hudRasterGrid(rowX,rowY,1),rowCell=rowGrid.cellPx,
+    rowStep=(SHIELD_SPRITE.width+2)*rowCell;
+  for(const entry of hudShieldShatters){
+    const grid={x:rowGrid.x+entry.slot*rowStep,y:rowGrid.y},cellPx=rowCell;
+    if(entry.exploded){
+      if(!entry.fragments)continue;
+      g.save();g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;
+      const centreX=grid.x+SHIELD_SPRITE.width*cellPx*.5,
+        centreY=grid.y+SHIELD_SPRITE.height*cellPx*.5;
+      for(const fragment of entry.fragments){
+        if(fragment.life<=0)continue;
+        g.globalAlpha=clamp(fragment.life/fragment.maxLife,0,1);
+        g.fillStyle=fragment.col;
+        const size=Math.max(1,fragment.size*cellPx);
+        g.fillRect(centreX+fragment.x*cellPx-size*.5,
+          centreY+fragment.y*cellPx-size*.5,size,size);
+      }
+      g.restore();continue;
+    }
+    if(entry.overflow)continue;
+    const progress=clamp(entry.t/HUD_SHIELD_SHATTER_CHARGE,0,1),
+      sprite=entry.volatileRatio>=.5?VOLATILE_SHIELD_SPRITE:SHIELD_SPRITE,
+      palette=entry.volatileRatio>=.5?VOLATILE_SHIELD_SPARK_COLORS:
+        NORMAL_SHIELD_SPARK_COLORS,mask=shieldParticleMask(),
+      coverProgress=clamp(progress/.76,0,1),
+      burnLine=SHIELD_SPRITE.height-coverProgress*(SHIELD_SPRITE.height+1),
+      flicker=Math.floor(entry.t*28);
+    g.save();g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;
+    /* The icon never moves, scales or fades during ignition. Opaque sparks rise
+       from its bottom and physically cover every occupied shield pixel. */
+    g.globalAlpha=1;g.drawImage(sprite,grid.x,grid.y,
+      SHIELD_SPRITE.width*cellPx,SHIELD_SPRITE.height*cellPx);
+    for(let index=0;index<mask.length;index++){
+      const cell=mask[index];if(cell.y<burnLine)continue;
+      /* Each occupied pixel owns a different time-varying flame phase. The
+         palette flows upward through the mask instead of flashing as one flat
+         colour, producing chaotic mixing with no persistent particle objects. */
+      const flow=Math.floor((cell.y-entry.t*19)*1.7+cell.x*.63),
+        noise=Math.floor(sRnd(entry.seed+index*73+flicker*131)*palette.length),
+        edge=cell.y-burnLine<1.8,
+        visible=sRnd(entry.seed+index*29+flicker*197)<(edge?.58:.42);
+      if(!visible)continue;
+      g.fillStyle=palette[Math.abs(flow+noise+flicker)%palette.length];
+      /* Exactly one raster cell, anchored to the source-mask cell. Fire can
+         reveal the shield beneath it but can never enlarge its silhouette. */
+      g.fillRect(grid.x+cell.x*cellPx,grid.y+cell.y*cellPx,cellPx,cellPx);
+    }
+    /* A few slow embers detach from the filled silhouette. They rise rather
+       than orbit, keeping the read as a gentle burn before the violent break. */
+    for(let ember=0;ember<10;ember++){
+      const delay=sRnd(entry.seed+ember*67)*.19,
+        duration=.24+sRnd(entry.seed+ember*71)*.16,
+        age=(entry.t-delay)/duration;
+      if(age<=0||age>=1)continue;
+      const baseX=2+sRnd(entry.seed+ember*89)*(SHIELD_SPRITE.width-4),
+        drift=Math.sin(age*Math.PI*2+sRnd(entry.seed+ember*103)*6.28)*(.55+ember%3*.35),
+        ex=grid.x+(baseX+drift)*cellPx,
+        ey=grid.y+(SHIELD_SPRITE.height-1-age*(12+ember%4))*cellPx,
+        size=(ember%4===0?2:1.25)*cellPx;
+      g.globalAlpha=Math.sin(Math.PI*age);
+      g.fillStyle=palette[Math.abs(ember+flicker*2)%palette.length];
+      g.fillRect(ex-size*.5,ey-size*.5,size,size);
+    }
+    g.restore();
+  }
+}
+/* Preserve HUD-only ghost icons after logical consumption: sparks first gather
+   over the exact shield silhouette, then the icon pops and disperses. */
+function emitHudShieldShatter(count,volatileCount=0){
+  count=Math.max(0,Math.floor(Number(count)||0));if(!count)return;
+  const totalVolatile=clamp(Math.floor(Number(volatileCount)||0),0,count);
+  const shown=Math.min(4,count);
+  volatileCount=Math.min(shown,totalVolatile);
+  for(let i=0;i<shown;i++){
+    const volatileIcon=i<volatileCount;
+    hudShieldShatters.push({slot:i,volatileRatio:volatileIcon?1:0,t:0,
+      exploded:false,overflow:false,seed:Math.floor(perfNow*1000)+i*137});
+  }
+  if(count>shown){
+    const overflow=count-shown,
+      overflowVolatile=Math.max(0,totalVolatile-volatileCount),
+      volatileRatio=overflowVolatile/overflow;
+    hudShieldShatters.push({slot:shown,volatileRatio,t:0,exploded:false,overflow:true,
+      seed:Math.floor(perfNow*1000)+719});
+  }
 }
 const HEART_RENDER_AUDIT=(()=>{
   const units=PLAYER_HEALTH_CONTRACT.unitsPerHeart;
@@ -46492,7 +47266,14 @@ function drawHUD(){
   g.fillStyle='#ff4d3a'; g.fillRect(bx+bw-3,by-3,5,13);
   /* relic slots */
   for(let i=0;i<5;i++) drawRelicSlot(14+i*43,66,38,relics[i]);
-  drawPlayerVitalsHUD();
+  let shieldAnchor;
+  if(playerHeartHealthEnabled())shieldAnchor=drawPlayerVitalsHUD();
+  else{
+    shieldAnchor={x:14,y:50};
+    drawShieldCharges(shieldAnchor.x,shieldAnchor.y,player.shieldCharges,1,
+      player.volatileShieldCharges);
+  }
+  drawHudShieldShatters(shieldAnchor.x,shieldAnchor.y);
   /* active tamed-miniboss chip */
   if(pack>0){ g.font='11px monospace'; g.textAlign='left'; g.fillStyle='#9ecbff';
     const ally=packEncounter(0);
@@ -46618,6 +47399,20 @@ function skillButtonSubtitle(skill){
     return finish(skill.hits>1
       ?'1AP · '+skill.cost+'R · '+skill.hits+'×'+perHit+' · CHAIN +'+skill.hits
       :'1AP · '+skill.cost+'R · '+perHit+' DMG · MARK +1');
+  }
+  if(skill.source==='CLASS'){
+    const effects=[],posture=Math.max(0,Number(skill.posture)||0),
+      burstDamage=Math.max(0,Number(skill.classShieldBurstDamage)||0),
+      burstPosture=Math.max(0,Number(skill.classShieldBurstPosture)||0);
+    if(posture)effects.push(damagePart(posture)+' POST');
+    if(skill.classPostureAftershock)effects.push('WAVE +'+damagePart(skill.classPostureAftershock)+' POST');
+    if(burstDamage||burstPosture)effects.push('BURST EACH +'+damagePart(burstDamage)+' DMG / '+
+      damagePart(burstPosture)+' POST');
+    if(skill.classShieldGrant)effects.push('SHIELD +'+skill.classShieldGrant);
+    if(skill.classVolatileShieldGrant)effects.push('VOLATILE +'+skill.classVolatileShieldGrant);
+    if(skill.classArmorExposeRate)effects.push('ARMOR -'+Math.round(skill.classArmorExposeRate*100)+'%');
+    return finish('1AP · '+skill.cost+'R · '+healthDamageText(turnDamage(skill.damage))+' DMG'+
+      (effects.length?' · '+effects.join(' · '):''));
   }
   if(skill.source==='WEAPON'){
     const pending=pendingPrimaryChargeFor(skill);
@@ -46767,6 +47562,11 @@ function skillTooltipContent(command){
     'The second hit benefits from the Chain created by the first hit.',
     'This early companion skill has no extra status effect or Mark consumption.'
   ]};
+  if(command.source==='CLASS')return {paragraphs:[
+    'Kalkanla tek fiziksel darbe vurur; bu hareket oyuncu saldırı fazında yalnızca bir kez kullanılabilir.',
+    'Temel hareket '+damagePart(command.damage)+' damage ve '+damagePart(command.posture)+' posture uygular.',
+    'Class ağacı kısa ve sabittir: güçlendirme → stil → ustalık → capstone.'
+  ]};
   if(command.id.indexOf('fight_longbow')===0)return {paragraphs:[
     'A free Longbow attack. Its base damage gains 4 for every weapon level.',
     'Consume at most 1 Mark. That Mark adds 8 damage and is not multiplied by Chain.',
@@ -46821,7 +47621,8 @@ function drawSkillTooltip(){
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
   g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
-  const unavailable=boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
+  const unavailable=classSkillUsedThisPhase(command)?' · USED THIS PHASE':
+    boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
   g.fillText('AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
     (available?' · READY':unavailable),x+28,y+124);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';
@@ -47963,6 +48764,8 @@ function moveTreeSynthesisRarity(node){
     recipe?moveTreeSynthesisRarityByDepth[recipe.depth]:'COMMON';
 }
 function moveTreeSynthesisDisplayNode(node){
+  if(node&&node.classSkillRoute)return {...node,rarity:'FIXED',type:'STABLE',variant:'STABLE',
+    resultAspect:'STABLE',debugSummaryTr:node.debugSummaryTr,classRoutePreview:true};
   const route=weaponSkillRouteFromNode(node);
   if(route){
     const materialized=route.runtimeReadiness==='MATERIALIZED';
@@ -47978,11 +48781,13 @@ function moveTreeSynthesisDisplayNode(node){
 }
 function moveTreeSynthesisSelectedNode(){
   const selected=moveTreeNodeById(moveTreeSelectedId);
+  if(selected&&selected.classSkillRoute)return selected;
   const route=weaponSkillRouteFromNode(selected);
   if(route&&route.runtimeReadiness==='MATERIALIZED')return selected;
   return moveTreeSynthesisRecipe(selected)&&selected.depth<=2?selected:null;
 }
 function moveTreeSynthesisPreviewCommand(node){
+  if(node&&node.classSkillRoute)return compileClassSkillRoute(node.id);
   const route=weaponSkillRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
   if(route&&route.runtimeReadiness==='MATERIALIZED'){
     if(route.skillId==='mark_burst'){
@@ -48085,6 +48890,7 @@ function moveTreeForms(){
 }
 function moveTreeChildren(parent){
   if(!parent)return [];
+  if(parent.classSkillRoute)return CLASS_SKILL_ROUTES.filter(node=>node.parentId===parent.id);
   const route=weaponSkillRouteFromNode(parent);
   if(route)return weaponSkillLabRouteChildren(route.skillId,route.id);
   if(!parent.childPoolId)return [];
@@ -48214,6 +49020,7 @@ function drawMoveTree(){
   const forms=moveTreeForms(),form=forms[moveTreeFormIndex]||null,specs=moveTreeChildren(form),
     spec=moveTreeNodeById(moveTreeSpecId),twists=moveTreeChildren(spec),
     twist=moveTreeNodeById(moveTreeTwistId),apexes=moveTreeChildren(twist),
+    classTree=!!(form&&form.classSkillRoute),
     runPath=new Set((runSkill(moveTreeSkillId())||{}).evolutionMutationIds||[]);
   moveTreeHitNodes.length=0;moveTreePageButtons.length=0;
   g.save();g.fillStyle='#05070c';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -48231,11 +49038,13 @@ function drawMoveTree(){
   if(form){
     moveTreeHitNodes.push({node:form,rect:formRect});
     drawMoveTreeNode(form,formRect,form.id===moveTreeSelectedId,runPath.has(form.id));
-    g.font='bold 7px monospace';g.fillStyle='#8b8fa0';g.fillText('FORM '+(moveTreeFormIndex+1)+' / '+forms.length,VW/2,222);
+    g.font='bold 7px monospace';g.fillStyle='#8b8fa0';g.fillText(
+      classTree?'REINFORCEMENT · FIXED TRUNK':'FORM '+(moveTreeFormIndex+1)+' / '+forms.length,VW/2,222);
   }
   let visibleNodes=[],rects=[],childLabel='',expected=0,parentRect=formRect;
   if(!spec){
-    visibleNodes=specs;expected=SKILL_EVOLUTION_DEPTHS[2].poolFamilies;childLabel='SPECIALIZATIONS';
+    visibleNodes=specs;expected=classTree?specs.length:SKILL_EVOLUTION_DEPTHS[2].poolFamilies;
+    childLabel=classTree?'STYLES':'SPECIALIZATIONS';
     rects=moveTreeGridRects(expected,254);
   }else{
     const specRect={x:90,y:229,w:300,h:46};
@@ -48243,7 +49052,8 @@ function drawMoveTree(){
     moveTreeHitNodes.push({node:spec,rect:specRect});
     drawMoveTreeNode(spec,specRect,spec.id===moveTreeSelectedId,runPath.has(spec.id));
     if(!twist){
-      visibleNodes=twists;expected=SKILL_EVOLUTION_DEPTHS[3].poolFamilies;childLabel='TWISTS';
+      visibleNodes=twists;expected=classTree?twists.length:SKILL_EVOLUTION_DEPTHS[3].poolFamilies;
+      childLabel=classTree?'MASTERY':'TWISTS';
       rects=moveTreeGridRects(expected,319);parentRect=specRect;
     }else{
       const twistRect={x:90,y:294,w:300,h:46};
@@ -48251,8 +49061,9 @@ function drawMoveTree(){
       moveTreeHitNodes.push({node:twist,rect:twistRect});
       drawMoveTreeNode(twist,twistRect,twist.id===moveTreeSelectedId,runPath.has(twist.id));
       const authoredTwistRoute=weaponSkillRouteFromNode(twist);
-      visibleNodes=apexes;expected=authoredTwistRoute&&authoredTwistRoute.apexTarget||
-        SKILL_EVOLUTION_DEPTHS[4].poolFamilies;childLabel='APEX';
+      visibleNodes=apexes;expected=classTree?apexes.length:authoredTwistRoute&&
+        authoredTwistRoute.apexTarget||SKILL_EVOLUTION_DEPTHS[4].poolFamilies;
+      childLabel=classTree?'CAPSTONE':'APEX';
       /* Six Apex slots need three rows. Keep their grid entirely above the
          synthesis controls instead of letting the final row share text space. */
       rects=moveTreeGridRects(expected,MOVE_TREE_TWIST_LAYOUT.apexTop,
@@ -48277,7 +49088,7 @@ function drawMoveTree(){
   const navigationHintY=twist?MOVE_TREE_TWIST_LAYOUT.navigationHintY:synthesisNode?518:558;
   g.fillText(spec?'TAP THE PATH TO NAVIGATE · HOLD A MOVE FOR MECHANICS':
     'HOLD ANY AUTHORED MOVE FOR FULL MECHANICS',VW/2,navigationHintY);
-  if(synthesisNode){
+  if(synthesisNode&&!synthesisNode.classSkillRoute){
     const depthName=synthesisNode.depth===1?'FORM':synthesisNode.depth===2?'SPECIALIZATION':
       synthesisNode.depth===3?'TWIST':'APEX';
     g.textAlign='center';g.font='bold 8px monospace';g.fillStyle='#9ecbff';
@@ -49490,6 +50301,9 @@ function skillLabCombatTap(pt){
     if(pointInRect(pt,SKILL_LAB_COMBAT_HUD)){skillLabSession.combatHud=true;SFX.swipe();return true;}
     return false;
   }
+  if(pointInRect(pt,SKILL_LAB_SPEED_SLIDER)){
+    setSkillLabBossSpeedFromPoint(pt,true);return true;
+  }
   for(const preset of SKILL_LAB_COMBAT_PRESETS)if(pointInRect(pt,preset)){
     applySkillLabPreset(preset.id);return true;
   }
@@ -49510,44 +50324,66 @@ function skillLabCombatTap(pt){
   if(pointInRect(pt,SKILL_LAB_COMBAT_HP)){
     boss.hp=boss.maxhp;skillLabSession.lastLog=null;SFX.relic();return true;
   }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_HEAL)){
+    if(!isPlayerTurn()||boss.turnAction){SFX.duck();return true;}
+    const before=Math.max(0,Math.round(player.currentHealthUnits)||0),
+      maximum=Math.max(1,Math.round(player.maxHealthUnits)||1),
+      after=Math.min(maximum,before+PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+    player.currentHealthUnits=after;
+    if(after>before){SFX.relic();floater(76,uiTop+58,'HEALTH +'+
+      playerDamageLabel(after-before),'#ff7a82',13);}
+    else SFX.duck();
+    return true;
+  }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_SHIELD)){
+    if(!isPlayerTurn()||boss.turnAction){SFX.duck();return true;}
+    grantPlayerShields(1);SFX.shield();
+    floater(76,uiTop+76,'SHIELD +1','#9ecbff',13);return true;
+  }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_VOLATILE_SHIELD)){
+    if(!isPlayerTurn()||boss.turnAction){SFX.duck();return true;}
+    grantPlayerShields(1,VOLATILE_SHIELD_POSTURE_DAMAGE);SFX.shield();
+    burst(76,uiTop+76,12,VOLATILE_SHIELD_SPARK_COLORS,105,58,3,.45);
+    floater(76,uiTop+76,'VOLATILE +1','#c995ff',13);return true;
+  }
   if(pointInRect(pt,SKILL_LAB_COMBAT_TURN)){resetSkillLabTurn();return true;}
   if(pointInRect(pt,SKILL_LAB_COMBAT_HUD)){skillLabSession.combatHud=false;SFX.swipe();return true;}
   return false;
 }
 function drawSkillLabCombatLog(){
   const log=skillLabSession.pendingLog||skillLabSession.lastLog;
-  g.fillStyle='rgba(5,7,12,.87)';g.fillRect(10,285,460,78);
-  g.strokeStyle='#33465d';g.lineWidth=1.5;g.strokeRect(10.5,285.5,459,77);
+  g.fillStyle='rgba(5,7,12,.87)';g.fillRect(10,325,460,78);
+  g.strokeStyle='#33465d';g.lineWidth=1.5;g.strokeRect(10.5,325.5,459,77);
   g.textAlign='left';
   if(!log){
     g.font='bold 11px monospace';g.fillStyle='#8b8fa0';
-    g.fillText('USE FIGHT OR A SKILL — REAL RESULTS APPEAR HERE',22,318);
-    g.font='9px monospace';g.fillText('hold a combat button for the full damage formula',22,340);return;
+    g.fillText('USE FIGHT OR A SKILL — REAL RESULTS APPEAR HERE',22,358);
+    g.font='9px monospace';g.fillText('hold a combat button for the full damage formula',22,380);return;
   }
   const after=log.after||skillLabStateSnapshot(),before=log.before,
     total=log.hits.reduce((sum,hit)=>sum+hit.damage,0),
     hitLine=log.hits.map(hit=>'H'+hit.index+' '+healthDamageText(hit.damage,true)+
       (hit.critical?' CRIT':'')).join(' · ');
   g.font='bold 11px monospace';g.fillStyle='#9ecbff';
-  g.fillText(log.name+' · TOTAL '+healthDamageText(total,true)+(log.after?'':' · RESOLVING'),22,302);
-  g.font='9px monospace';g.fillStyle='#e8e2d0';g.fillText(hitLine||'waiting for contact…',22,318);
+  g.fillText(log.name+' · TOTAL '+healthDamageText(total,true)+(log.after?'':' · RESOLVING'),22,342);
+  g.font='9px monospace';g.fillStyle='#e8e2d0';g.fillText(hitLine||'waiting for contact…',22,358);
   g.fillStyle='#ffe37a';
   g.fillText('AP '+before.ap+'→'+after.ap+'  R '+before.resolve+'→'+after.resolve+
-    '  CHAIN '+before.chain+'→'+after.chain+'  MARK '+before.mark+'→'+after.mark,22,337);
+    '  CHAIN '+before.chain+'→'+after.chain+'  MARK '+before.mark+'→'+after.mark,22,377);
   g.fillStyle='#c995ff';
   g.fillText('POSTURE '+before.posture+'→'+after.posture+
     '  BLEED '+damagePart(before.bleed)+'>'+damagePart(before.bleedLater)+'→'+
     damagePart(after.bleed)+'>'+damagePart(after.bleedLater)+'  CHG '+before.charge+'→'+after.charge+
-    (after.broken?'  ·  BREAK BONUS ACTIVE':''),22,354);
+    (after.broken?'  ·  BREAK BONUS ACTIVE':''),22,394);
 }
 function drawSkillLabCombatOverlay(){
   if(!activeSkillLabCombat())return;
   if(!skillLabSession.combatHud){
     drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'SHOW LAB','#9ecbff');return;
   }
-  g.fillStyle='rgba(5,7,12,.9)';g.fillRect(4,195,472,198);
+  g.fillStyle='rgba(5,7,12,.9)';g.fillRect(4,195,472,275);
   g.textAlign='center';g.font='bold 10px monospace';g.fillStyle='#9ecbff';
-  g.fillText('SKILL LAB · LIVE BOSS SIMULATOR · REAL COMBAT CODE',VW/2,200);
+  g.fillText('SKILL LAB · REAL BOSS FIGHT · REAL HEALTH',VW/2,200);
   for(const preset of SKILL_LAB_COMBAT_PRESETS)
     drawSkillLabButton(preset,preset.label,preset.id==='broken'?'#ffe37a':'#9ecbff',true,
       skillLabSession.preset===preset.id);
@@ -49559,10 +50395,27 @@ function drawSkillLabCombatOverlay(){
     (skillLabSession.forceCritical?'CRIT ✓':'CRIT'),chargeLab?'#7fc9ff':'#ffcc4d',true,
     chargeLab?labCharge>0:skillLabSession.forceCritical);
   drawSkillLabButton(SKILL_LAB_COMBAT_BACK,'◀ BUILD','#e8e2d0');
-  drawSkillLabButton(SKILL_LAB_COMBAT_HP,'TARGET','#ff7a82');
+  drawSkillLabButton(SKILL_LAB_COMBAT_HP,'BOSS HP','#ff7a82');
   drawSkillLabButton(SKILL_LAB_COMBAT_TURN,boss.phase==='dodge'?'ABORT':'RESET','#c0f79a');
   drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'HIDE HUD','#8b8fa0');
+  const canEditVitals=isPlayerTurn()&&!boss.turnAction,
+    healthFull=player.currentHealthUnits>=player.maxHealthUnits;
+  drawSkillLabButton(SKILL_LAB_COMBAT_HEAL,'+ HEALTH',healthFull?'#6b5160':'#ff7a82',true,
+    canEditVitals&&!healthFull);
+  drawSkillLabButton(SKILL_LAB_COMBAT_SHIELD,'+ SHIELD',canEditVitals?'#9ecbff':'#516274',true,
+    canEditVitals);
+  drawSkillLabButton(SKILL_LAB_COMBAT_VOLATILE_SHIELD,'+ VOLATILE',
+    canEditVitals?'#c995ff':'#65516f',true,canEditVitals);
   drawSkillLabCombatLog();
+  const slider=SKILL_LAB_SPEED_SLIDER,speed=skillLabBossSpeedMultiplier(),
+    speedT=(speed-slider.min)/(slider.max-slider.min),knobX=slider.x+slider.w*speedT,
+    trackY=slider.y+25;
+  g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#ff9a3a';
+  g.fillText('BOSS SPEED ×'+speed.toFixed(2),VW/2,slider.y+10);
+  g.lineCap='square';g.lineWidth=4;g.strokeStyle='#ffffff35';
+  g.beginPath();g.moveTo(slider.x,trackY);g.lineTo(slider.x+slider.w,trackY);g.stroke();
+  g.strokeStyle='#ff9a3a';g.beginPath();g.moveTo(slider.x,trackY);g.lineTo(knobX,trackY);g.stroke();
+  g.fillStyle='#ffe37a';g.fillRect(Math.round(knobX)-4,trackY-8,8,16);
   const stats=skillLabSession.defenseStats||{hits:0,perfects:0,parries:0,phases:0},
     liveCharge=pendingBank?pendingPrimaryChargeTotal(pendingCharge):
       boss.phase==='dodge'?Math.max(bossCharge(),boss.defenseChargeProgress||0):bossCharge();
@@ -49571,7 +50424,7 @@ function drawSkillLabCombatOverlay(){
   g.fillText((boss.phase==='dodge'?'BOSS ACTIVE':'PLAYER ACTIVE')+
     '  /  PHASE '+stats.phases+'  /  PERFECT '+stats.perfects+
     '  /  PARRY '+stats.parries+'  /  HIT '+stats.hits+
-    (bossChargeEnabled()?'  /  CHG '+liveCharge:''),VW/2,384);
+    (bossChargeEnabled()?'  /  CHG '+liveCharge:''),VW/2,461);
 }
 const HEALTH_LAB_MULTIPLIERS=Object.freeze([.25,.5,.75,1,1.25,1.5,2,3]);
 const HEALTH_LAB_BUTTONS=Object.freeze([
@@ -50008,7 +50861,13 @@ function update(dt){
   updateArenaFx(dt);
   updateScoreShown(dt);
   if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='skilllab'||mode==='healthlab'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
-  if(mode==='dying'){ if(modeT>1.4){ commitFinalScore(); setMode('score'); } return; }
+  if(mode==='dying'){
+    if(modeT>1.1){
+      if(skillLabSession&&skillLabSession.inCombat)leaveSkillLabCombat('DEFEAT');
+      else{commitFinalScore();setMode('score');}
+    }
+    return;
+  }
 
   updatePlayer(dt);
   if(mode==='run'){
@@ -50216,10 +51075,12 @@ function render(){
   g.save();
   g.beginPath(); g.rect(0,-PAD_TOP,VW,VH+PAD_TOT); g.clip();
   /* screen shake offset (inside the clip so shakes can't leak either) */
+  let renderShakeX=0,renderShakeY=0;
   if(shakeMag>0){
     const shakeFrame=(perfNow*60)|0;
-    g.translate(lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1701)),
-      lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702)));
+    renderShakeX=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1701));
+    renderShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
+    g.translate(renderShakeX,renderShakeY);
   }
 
   if(env==='cave'){ stage.arena(); }
@@ -50252,6 +51113,9 @@ function render(){
   for(const d of dr) d.draw(d.ref,stage);
 
   drawTelegraphs();
+  /* Shield Bash contact fire belongs behind Jonathan and the physical shield,
+     while remaining in front of the boss/world it struck. */
+  drawParticles(false,true);
   if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='healthlab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
     if(player.alive) drawPlayer();
     drawPackAllies();
@@ -50271,7 +51135,7 @@ function render(){
   /* NOW the near arches: the knight visibly ducks UNDER them */
   frontObs.sort(compareWorldDepthDescending);
   for(const o of frontObs) drawObstacle(o,proj(o.z));
-  drawParticles(); drawSlashes();
+  drawParticles();
   drawAmbient();
   drawVignette();
 
@@ -50289,12 +51153,17 @@ function render(){
     else if(mode==='charsel') drawCharSel();
     else if(mode==='score') drawScore();
     else {
+      /* HUD is authored in absolute screen space. Rebuilding the complete view
+         transform avoids sub-pixel/raster drift that inverse shake translation
+         caused when pixel sprites rounded onto the backing-canvas grid. */
+      g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
       drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();
       if(mode==='bossintro') drawBossIntro();
       if(mode==='evolution')drawSkillEvolutionScreen();
       if(mode==='relic') drawRelicScreen();
       if(mode==='shop') drawShop();
       if(mode==='miniboss') drawMinibossIntro();
+      g.restore();
     }
   }
   if(moveHistoryOpen)drawMoveHistory();
