@@ -610,7 +610,6 @@ const SFX=(()=>{
 /* pause button hit-area (drawn in the HUD, top-right under the weapon pool) */
 const PAUSE_BTN={x:VW-52,y:100,w:38,h:38};
 const BEAR_MOUTH_BTN={x:342,y:146,w:124,h:34};
-const TURN_PANEL={x:14,y:548,w:452,h:185};
 const TURN_FIGHT_BTN={x:30,y:610,w:200,h:88};
 const TURN_SKILL_BTN={x:250,y:610,w:200,h:88};
 const TURN_BACK_BTN={x:374,y:558,w:76,h:30};
@@ -1493,18 +1492,22 @@ function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
 /* A fallen Squire is recalled instead of making the whole mounted silhouette
    shrink or crumple with the horse. The first ring pins the disappearance to
    the ground; a bounded cloud then climbs through the rider before scattering. */
-function emitSquireRecallFx(x,y,appearance=null){
+function emitSquireRecallFx(x,y,appearance=null,fallSide=1){
   particles.push({kind:'squireRecallRing',behindPlayer:true,x,y:y+61,vx:0,vy:0,
     grav:0,life:.82,maxLife:.82,size:20,col:appearance?.plume||'#d7b878'});
+  particles.push({kind:'squireRecallRing',behindPlayer:true,x:x+fallSide*36,y:y+58,vx:0,vy:0,
+    grav:0,life:.66,maxLife:.66,size:12,col:appearance?.shield?.rim||'#9ecbff'});
   const cols=appearance?[appearance.armor,appearance.armorLight,appearance.steel,
     appearance.plume,appearance.shield.face,appearance.shield.rim,
     appearance.sword.blade,'#ffffff']:
     ['#ffffff','#e8e2d0','#d7b878','#9ecbff','#6f8fb8','#7f8b94'];
-  for(let i=0;i<72;i++){
-    const localY=rnd(-62,61),width=lerp(9,24,clamp((localY+62)/123,0,1)),
+  for(let i=0;i<88;i++){
+    const fallen=i>=58,centreX=fallen?x+fallSide*36:x,
+      centreY=fallen?y+48:y,localY=fallen?rnd(-24,20):rnd(-62,61),
+      width=fallen?rnd(10,28):lerp(9,24,clamp((localY+62)/123,0,1)),
       life=rnd(.58,1.12),front=i%4!==0;
     particles.push({kind:'squireRecallMote',behindPlayer:!front,
-      x:x+rnd(-width,width),y:y+localY,vx:rnd(-58,58),vy:rnd(-132,-46),
+      x:centreX+rnd(-width,width),y:centreY+localY,vx:rnd(-58,58),vy:rnd(-132,-46),
       grav:rnd(-16,30),life,maxLife:life,size:rnd(2.5,6.2),col:pick(cols)});
   }
 }
@@ -1833,6 +1836,14 @@ function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=
   rigSegment(sx,sy,ex,ey,2.05*depth,upper);rigJoint(ex,ey,1.85*depth,joint);
   rigSegment(ex,ey,hx,hy,1.65*depth,lower);if(hand)rigJoint(hx,hy,1.55*depth,joint);
 }
+function applySerJonathanRiderFall(fall,hipY){
+  if(!fall)return;
+  /* Translation occurs in the rider's local art plane; rotation pivots at the
+     planted seat so legs, torso, equipment and helmet leave the horse as one
+     articulated body instead of rotating the entire mount. */
+  g.translate((fall.x||0)*U,(fall.y||0)*U);
+  g.translate(9*U,hipY*U);g.rotate(fall.rotation||0);g.translate(-9*U,-hipY*U);
+}
 function rigPolygon(points,col){
   g.fillStyle=col;g.beginPath();
   for(let i=0;i<points.length;i++){
@@ -2045,7 +2056,8 @@ function drawSerJonathanRider(x,y,scale,o){
     swordGrip=appearance?.sword?.grip||'#7140a8',
     swordGuard=appearance?.sword?.guard||'#d1a640',
     swordBlade=appearance?.sword?.blade||steelL,swordEdge=appearance?.sword?.edge||'#ffffff',
-    swordSheath=appearance?.sword?.sheath||'#402719',shieldPalette=appearance?.shield||null;
+    swordSheath=appearance?.sword?.sheath||'#402719',shieldPalette=appearance?.shield||null,
+    riderFall=o.riderFall||null;
   /* The seat is the hinge of the duck. BOTW and the rear riding reference both
      keep the pelvis planted while the chest folds away from the camera. */
   const hipY=10+riderBob;
@@ -2060,12 +2072,14 @@ function drawSerJonathanRider(x,y,scale,o){
   drawSerJonathanHorseLeg(11.8,1,Math.PI,true,horseD,gal,air,bob,horseD,mane);
   /* Rider legs are farther than the rump from this camera. Draw them now so
      both haunches mask the inner thighs; only the portions beside the horse survive. */
+  g.save();applySerJonathanRiderFall(riderFall,hipY);
   rigSegment(7.1,hipY,.6,16+bob,2.05,armorD);rigJoint(.6,16+bob,1.85,armorL);
   rigSegment(.6,16+bob,.7,23+bob,1.65,armor);px(-.15,22+bob,1.8,2.2,armorD);
   px(-.35,23.25+bob,2.15,.7,steel);
   rigSegment(10.9,hipY,17.4,16+bob,2.05,armorD);rigJoint(17.4,16+bob,1.85,armorL);
   rigSegment(17.4,16+bob,17.3,23+bob,1.65,armor);px(16.35,22+bob,1.8,2.2,armorD);
   px(16.2,23.25+bob,2.15,.7,steel);
+  g.restore();
   /* Symmetric rear silhouette: paired haunches and a central cleft make the
      camera direction unmistakable. */
   rigHexagon(1.2,15+bob,4,12.4+bob,8.55,13.2+bob,8.35,22.2+bob,4.1,23.4+bob,1.5,21+bob,horse);
@@ -2099,6 +2113,7 @@ function drawSerJonathanRider(x,y,scale,o){
   rigQuad(3.1,12.1+bob,14.9,12.1+bob,13.8,14.3+bob,4.2,14.3+bob,'#39251d');
 
   /* The rigid scabbard stays attached to the hip while the upper body folds. */
+  g.save();applySerJonathanRiderFall(riderFall,hipY);
   rigSegment(6.25,hipY-.65,4.35,hipY+.55,.62,shade(swordSheath,-18));
   rigSegment(6.55,hipY-.2,4.55,hipY+1.05,.62,shade(swordSheath,-18));
   rigSegment(4.4,hipY+.25,2.3,hipY+12.2,1.7,swordSheath);
@@ -2146,7 +2161,7 @@ function drawSerJonathanRider(x,y,scale,o){
     mountedShieldDepth=1;
   let shieldCenterX=9,shieldCenterY=mountedShieldY,shieldTurn=0,
     shieldTilt=lerp(-.04,.025,duckFold),shieldScale=mountedShieldScale,
-    shieldDepthScale=mountedShieldDepth,shieldGripFrontAlpha=0,shieldUpperArmFrontAlpha=0;
+    shieldDepthScale=mountedShieldDepth;
   if(shieldActive){
     shieldDepthScale=1;
     if(shield.kind==='parry'){
@@ -2235,13 +2250,6 @@ function drawSerJonathanRider(x,y,scale,o){
       leftElbowY=lerp(leftElbowY,pullElbowY,remount);
       leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
       leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
-      /* The hand is visible on the camera-facing inner grip in guard, then the
-         turning plate naturally occludes it as the decorated face comes around. */
-      shieldGripFrontAlpha=smoothStep(clamp((shieldTurn-.32)/.42,0,1))*(1-settle);
-      /* Once the decorated face returns, the forearm belongs behind the plate but
-         shoulder-to-elbow must remain in front. Otherwise the shield appears to
-         float beside a severed hand at the held BOTW finish. */
-      shieldUpperArmFrontAlpha=smoothStep(clamp((sweep-.10)/.55,0,1))*(1-remount)*(1-settle);
     }else{
     const forward=shield.forward,reach=shield.reach,detach=shield.detach,
       flip=shield.flip,drive=shield.drive,retreat=shield.retreat,
@@ -2296,7 +2304,6 @@ function drawSerJonathanRider(x,y,scale,o){
     }
     leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
     leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
-    shieldGripFrontAlpha=smoothStep(clamp((shieldTurn-.48)/.34,0,1))*(1-settle);
     }
   }
   let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
@@ -2379,17 +2386,22 @@ function drawSerJonathanRider(x,y,scale,o){
     rightHandY=lerp(rightHandY,signalHandY,callSignal);
   }
   const rightActive=swordActive||bowActive||callSignal>.001;
-  /* The 2.5D turn owns one explicit layer swap at edge-on. While the inner face
-     looks toward Jonathan, shield renders behind the gripping arm. As soon as the
-     outer face returns, the whole plate moves above arm, joints and cuirass. */
+  /* Every shield transfer owns one explicit layer swap at edge-on. While the
+     hidden inner face looks toward camera the plate renders first and the full
+     gripping arm renders above it. With the decorated outer face toward camera,
+     the plate renders last and occludes the forearm. This is shared by Knight
+     and Squire Bash; scale and random palette cannot change the anatomy. */
   const parryShieldActive=shieldActive&&shield.kind==='parry',
     parryShieldInnerLayer=parryShieldActive&&shieldTurn>=.5,
+    bashShieldActive=shieldActive&&shield.kind==='bash',
+    bashShieldInnerLayer=bashShieldActive&&shieldTurn>=.5,
+    shieldInnerLayer=parryShieldInnerLayer||bashShieldInnerLayer,
     drawCurrentShield=()=>{
       if(shieldActive)drawSerJonathanShield(shieldCenterX,shieldCenterY,
         shieldTurn,shieldTilt,shieldScale,shieldDepthScale,shieldPalette);
       else drawSerJonathanMountedShield25D(duckPose,mountedShieldScale,shieldPalette);
     };
-  if(parryShieldInnerLayer)
+  if(shieldInnerLayer)
     drawCurrentShield();
   /* Reins and resting arms are BEHIND the back plate. From this camera the hands
      are ahead of the torso and should almost disappear, never form a chest X. */
@@ -2521,24 +2533,8 @@ function drawSerJonathanRider(x,y,scale,o){
   /* Mounted: only the royal outer face is visible and the grip is trapped
      between plate and shield. During the clip the shield turns edge-on before
      its inner face and gripping hand are allowed onto the foreground layer. */
-  if(!parryShieldInnerLayer)
+  if(!shieldInnerLayer)
     drawCurrentShield();
-  if(!parryShieldActive&&shieldActive&&shieldUpperArmFrontAlpha>.01){
-    g.globalAlpha=shieldUpperArmFrontAlpha*(1-shieldGripFrontAlpha);
-    rigSegment(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
-      2.05*farDepthScale,armorD);
-    rigJoint(leftElbowX,leftElbowY,1.85*farDepthScale,steel);
-    g.globalAlpha=1;
-  }
-  if(!parryShieldActive&&shieldActive&&shieldGripFrontAlpha>.01){
-    g.globalAlpha=shieldGripFrontAlpha;
-    /* Once the inner face has turned toward camera, the entire gripping arm is
-       in front of the plate.  Redrawing only elbow-to-hand made the upper arm
-       disappear behind the shield and visually disconnect at the shoulder. */
-    drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
-      leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
-    g.globalAlpha=1;
-  }
 
   /* In the deep crouch the forearms become the visible support plane beneath the
      helmet. Their top faces reappear over the back plate while the upper arms stay
@@ -2554,6 +2550,7 @@ function drawSerJonathanRider(x,y,scale,o){
     g.globalAlpha=Math.sin(counter*Math.PI);g.strokeStyle='#ffe37a';g.lineWidth=2.5*U;
     g.beginPath();g.arc(9*U,(shoulderY+2)*U,14*U,-.5-counter*2.1,.7-counter*2.1);g.stroke();g.globalAlpha=1;
   }
+  g.restore();
   g.restore();
 }
 
@@ -8367,7 +8364,7 @@ const SQUIRE_BASE=Object.freeze({
   slashDamage:6,postureDamage:14,postureChipDamage:2,
   encourageDamagePerStack:2,encouragePosturePerStack:4,
 });
-const SQUIRE_CALL_SIGNAL_DURATION=.84,SQUIRE_DEATH_DURATION=1.12;
+const SQUIRE_CALL_SIGNAL_DURATION=.84,SQUIRE_DEATH_BURST_AT=.92,SQUIRE_DEATH_DURATION=2.08;
 const SQUIRE_VISUAL_COLORS=Object.freeze({
   armor:Object.freeze(['#657780','#806f63','#63766b','#756b82','#7d7056','#596d80']),
   metal:Object.freeze(['#aebbc5','#c1b59c','#9fb7ad','#b8abc0','#9ca8bd','#bea58f']),
@@ -8396,14 +8393,16 @@ const squire={
   present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
   parryOnHit:false,
   activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
-  arrivalT:0,deathT:-1,callSignalT:-1,visualX:-60,lastX:VW/2-58,
+  arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
+  visualX:-60,lastX:VW/2-58,
   appearance:null,profile:null,profileKey:'',
 };
 function resetSquireCombat(){
   Object.assign(squire,{present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
     parryOnHit:false,
     activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
-    arrivalT:0,deathT:-1,callSignalT:-1,visualX:-60,lastX:VW/2-58,
+    arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
+    visualX:-60,lastX:VW/2-58,
     appearance:null,profile:null,profileKey:''});
 }
 /* Defensive shield choreography is input-owned rather than hazard-owned. Press
@@ -8628,7 +8627,13 @@ function updateSquire(dt){
     squire.visualX=lerp(squire.visualX,target,ease);squire.lastX=squire.visualX;
     if(squire.cheerT!==undefined){squire.cheerT+=dt;if(squire.cheerT>.72)delete squire.cheerT;}
   }else if(squire.deathT>=0){
-    squire.deathT+=dt;if(squire.deathT>SQUIRE_DEATH_DURATION)squire.deathT=-1;
+    squire.deathT+=dt;
+    if(!squire.deathBurst&&squire.deathT>=SQUIRE_DEATH_BURST_AT){
+      squire.deathBurst=true;
+      emitSquireRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide);
+      SFX.relic();shake(7,.24);
+    }
+    if(squire.deathT>SQUIRE_DEATH_DURATION)squire.deathT=-1;
   }
 }
 function squireCallSignalAmount(){
@@ -8664,30 +8669,38 @@ function drawPlayer(){
 }
 function drawSquire(){
   if(!squire.present&&squire.deathT<0)return;
-  const dying=!squire.present,death=dying?clamp(squire.deathT/SQUIRE_DEATH_DURATION,0,1):0,
+  const dying=!squire.present;
+  if(dying&&squire.deathT>=SQUIRE_DEATH_BURST_AT)return;
+  const deathTime=dying?Math.max(0,squire.deathT):0,
     arrival=clamp((squire.arrivalT||0)/.8,0,1),
     shieldAction=dying?null:activeSquireShieldPose(),shieldLunge=shieldAction?.lunge||0,
     attack=shieldAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
     strike=Math.sin((1-attack)*Math.PI)*(attack>0?1:0),
     cheer=squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
     baseX=squire.present?squire.visualX:squire.lastX,
-    fallSide=baseX<laneX(player.x,1)?-1:1,
-    launch=dying?easeOut(clamp((death-.055)/.62,0,1)):0,
-    arc=dying?Math.sin(Math.PI*clamp((death-.055)/.76,0,1)):0,
-    vanish=dying?smoothStep(clamp((death-.58)/.29,0,1)):0,
-    x=baseX+fallSide*launch*32,
-    y=PLAYER_Y+9-strike*13-cheer*5-shieldLunge*98-arc*19+launch*launch*15,
-    scale=.72*(1+strike*.05+shieldLunge*.06)*(1-launch*.055),appearance=squire.appearance;
-  g.save();g.globalAlpha=dying?1-vanish:clamp(arrival*1.3,0,1);
-  if(dying){g.translate(x,y);g.rotate(fallSide*launch*.31);g.translate(-x,-y);}
-  drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:perfNow*.34,
+    fallSide=dying?squire.deathSide:(baseX<laneX(player.x,1)?-1:1),
+    fall=dying?smoothStep(clamp((deathTime-.08)/.68,0,1)):0,
+    fallArc=Math.sin(Math.PI*fall),horsePanic=dying?smoothStep(clamp(deathTime/.38,0,1)):0,
+    x=baseX,y=PLAYER_Y+9-strike*13-cheer*5-shieldLunge*98,
+    scale=.72*(1+strike*.05+shieldLunge*.06),appearance=squire.appearance,
+    riderFall=dying?{x:fallSide*fall*16,y:-fallArc*7+fall*13,
+      rotation:fallSide*fall*1.08}:null;
+  g.save();g.globalAlpha=squire.present?clamp(arrival*1.3,0,1):1;
+  drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:
+      perfNow*(.34+horsePanic*4.4),
     lean:0,duck:0,air:0,rigId:'ser_jonathan',feather:'#d7b878',horse:'#4f3425',
-    appearance,squire:true,attack, counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction});
-  if(dying&&death<.20){
-    g.globalCompositeOperation='screen';g.globalAlpha=(1-death/.20)*.78;
+    appearance,squire:true,riderFall,attack, counter:0,parry:0,swordCombo:null,
+    bowAction:null,shieldAction});
+  if(dying&&deathTime<.18){
+    g.globalCompositeOperation='screen';g.globalAlpha=(1-deathTime/.18)*.82;
     drawRider(x,y,scale,{gallop:perfNow*.34,lean:0,duck:0,air:0,
-      rigId:'ser_jonathan',appearance,squire:true,
+      rigId:'ser_jonathan',appearance,squire:true,riderFall,
       attack:0,counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction:null});
+  }
+  if(dying&&horsePanic>.05){
+    const pulse=.25+.35*Math.sin(deathTime*22);
+    g.globalAlpha=horsePanic*pulse;g.fillStyle=appearance?.plume||'#d7b878';
+    g.fillRect(x-2,y+8,4,2);g.globalAlpha=1;
   }
   g.restore();
 }
@@ -40815,7 +40828,7 @@ function summonSquire(){
   const serial=boss&&boss.playerPhaseSerial||0,target=clamp(laneX(player.x,1)-62,42,VW-42);
   Object.assign(squire,{present:true,active:false,health:squire.maxHealth,
     activateOnPlayerPhase:serial+1,readyOnPlayerPhase:0,encouragement:0,
-    arrivalT:0,deathT:-1,callSignalT:0,visualX:-48,lastX:target,
+    arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:0,visualX:-48,lastX:target,
     appearance:randomSquireAppearance(),profile:null,profileKey:''});
   burst(target,PLAYER_Y-20,18,[squire.appearance.plume,squire.appearance.armorLight,
     squire.appearance.shield.face],130,90,3.2,.7);
@@ -42951,12 +42964,13 @@ function resolveSquireIntercept(reason){
     floater(point.x,point.y-94,'SQUIRE -1 HEALTH','#ff7a82',16);
     SFX.hit();shake(7,.25);return true;
   }
-  squire.present=false;squire.active=false;squire.deathT=0;squire.encouragement=0;
+  squire.deathSide=(squire.lastX||point.x)<laneX(player.x,1)?-1:1;
+  squire.present=false;squire.active=false;squire.deathT=0;squire.deathBurst=false;
+  squire.encouragement=0;
   squire.profile=null;squire.profileKey='';
   squire.readyOnPlayerPhase=(boss.playerPhaseSerial||0)+SQUIRE_BASE.deathCooldownTurns+1;
   if(boss.partyActor==='ally')boss.partyActor='knight';
   floater(point.x,point.y-96,'SQUIRE DOWN · RETURNS IN 2 TURNS','#ff7a82',17);
-  emitSquireRecallFx(point.x,point.y,squire.appearance);
   SFX.hit();shake(9,.3);
   return true;
 }
@@ -48616,10 +48630,9 @@ function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
      remains pinned to the same final-screen coordinates as its hit boxes. */
   g.save();g.translate(0,-uiTop);
-  const panel=TURN_PANEL;
-  g.fillStyle='rgba(5,7,12,.94)';g.fillRect(panel.x,panel.y,panel.w,panel.h);
-  g.strokeStyle='#e8e2d0';g.lineWidth=3;
-  g.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1);
+  /* The former full-width panel and bright outline sat over Jonathan's lower
+     silhouette. Individual buttons already provide all required contrast, so
+     the world and rider now remain visible through the spaces between them. */
   if(boss.playerMenu==='skills'){
     const skills=activeTurnSkills();
     drawPartyTabs();

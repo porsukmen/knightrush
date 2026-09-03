@@ -44,7 +44,10 @@
     pressureShieldTimeline=pressureStarted&&isSquireShieldTurnAction(boss.turnAction)&&
       !!activeSquireShieldPose();
   let pressureRenderSafe=true;
-  try{drawSquire();}catch(error){pressureRenderSafe=false;}
+  try{
+    for(const t of [0,.48,.72,.94,1.18,1.5]){boss.turnAction.t=t;drawSquire();}
+    boss.turnAction.t=0;
+  }catch(error){pressureRenderSafe=false;}
   const pressureFrames=resolveAction(),pressureResolved=boss.posture>postureBefore;
 
   const move=activeBossAttackSet()[0].steps[0],fakeHazard={src:BOSS_SOURCE,done:false};
@@ -56,9 +59,17 @@
   const intercepted=!squire.present&&squire.health===0&&
       player.currentHealthUnits===knightHealthBefore,
     baseDidNotParry=boss.sequenceIndex===0&&!fakeHazard.done&&chainStacks===chainBefore,
-    recallFx=particles.length>particleCountBefore&&particles.some(p=>p.kind==='squireRecallMote');
-  let deathRenderSafe=true;
-  try{drawSquire();drawParticles(false,true);drawParticles();}catch(error){deathRenderSafe=false;}
+    deathSequenceStarted=squire.deathT===0&&!squire.deathBurst;
+  let deathRenderSafe=true,fallAdvanced=false;
+  try{
+    drawSquire();
+    for(let i=0;i<28;i++)updateSquire(1/60);
+    fallAdvanced=squire.deathT>.4&&!squire.deathBurst;drawSquire();
+    for(let i=0;i<30;i++)updateSquire(1/60);
+    drawSquire();drawParticles(false,true);drawParticles();
+  }catch(error){deathRenderSafe=false;}
+  const recallFx=squire.deathBurst&&particles.length>particleCountBefore&&
+    particles.some(p=>p.kind==='squireRecallMote');
 
   hazards=[];boss.parryReaction=null;boss.pendingBreak=null;boss.state='idle';boss.attack=null;
   boss.phase='dodge';beginPlayerTurn();const cooldownTwo=squireCooldownTurns()===2;
@@ -71,7 +82,8 @@
     encourageLockedOnCallTurn&&appearanceAuthored&&summonRenderSafe&&deathRenderSafe&&
     activated&&encourageStarted&&encourageFrames<180&&encouraged&&slashStarted&&
     slashFrames<180&&slashResolved&&pressureContract&&pressureStarted&&pressureFrames<180&&
-    pressureResolved&&pressureShieldTimeline&&pressureRenderSafe&&recallFx&&
+    pressureResolved&&pressureShieldTimeline&&pressureRenderSafe&&deathSequenceStarted&&
+    fallAdvanced&&recallFx&&
     intercepted&&baseDidNotParry&&
     cooldownTwo&&cooldownOne&&cooldownReady;
   return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
@@ -79,7 +91,7 @@
     summonRenderSafe,deathRenderSafe,
     activated,encourageStarted,encourageFrames,encouraged,slashStarted,slashFrames,
     slashResolved,pressureContract,pressureStarted,pressureFrames,pressureResolved,
-    pressureShieldTimeline,pressureRenderSafe,recallFx,
+    pressureShieldTimeline,pressureRenderSafe,deathSequenceStarted,fallAdvanced,recallFx,
     intercepted,baseDidNotParry,cooldownTwo,cooldownOne,
     cooldownReady};
 })();
