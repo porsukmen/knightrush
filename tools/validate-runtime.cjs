@@ -48,6 +48,7 @@ const document={documentElement:root,hidden:false,hasFocus:()=>true,addEventList
 const storage={getItem:()=>null,setItem:noop,removeItem:noop};
 const sandbox={console,document,localStorage:storage,navigator:{userAgent:'runtime-validator',
     maxTouchPoints:0},performance:{now:()=>0},devicePixelRatio:1,innerWidth:480,innerHeight:800,
+  location:{search:''},URLSearchParams,
   requestAnimationFrame:()=>1,cancelAnimationFrame:noop,setTimeout,clearTimeout,
   Uint8ClampedArray,Math,Date,JSON,Map,Set,WeakMap,Object,Array,Number,String,Boolean,RegExp,
   Error,TypeError,RangeError,Promise,Infinity,NaN};
@@ -1442,7 +1443,8 @@ try{
     afflictionCriticalOnly=process.argv.includes('--affliction-critical'),
     afflictionFocusOnly=process.argv.includes('--affliction-focus'),
     afflictionChargeOnly=process.argv.includes('--affliction-charge'),
-    hasFocusedAudits=chargeFocusOnly||chargeAfflictionOnly||chargeCriticalOnly||chargePostureOnly||chargeChainOnly||chargeDetonationOnly||chargeSpecsOnly||criticalPostureOnly||criticalFocusOnly||criticalAfflictionOnly||criticalChargeOnly||arrowScalingOnly||globalChainOnly||afflictionSpecsOnly||afflictionDetonationOnly||afflictionChainOnly||afflictionPostureOnly||afflictionCriticalOnly||afflictionFocusOnly||afflictionChargeOnly,
+    squireOnly=process.argv.includes('--squire'),
+    hasFocusedAudits=chargeFocusOnly||chargeAfflictionOnly||chargeCriticalOnly||chargePostureOnly||chargeChainOnly||chargeDetonationOnly||chargeSpecsOnly||criticalPostureOnly||criticalFocusOnly||criticalAfflictionOnly||criticalChargeOnly||arrowScalingOnly||globalChainOnly||afflictionSpecsOnly||afflictionDetonationOnly||afflictionChainOnly||afflictionPostureOnly||afflictionCriticalOnly||afflictionFocusOnly||afflictionChargeOnly||squireOnly,
     bootOnly=process.argv.includes('--boot-only')||(hasFocusedAudits&&!process.argv.includes('--quick')),
     adjacentOnly=process.argv.includes('--adjacent'),
     exhaustiveFeature=process.argv.includes('--exhaustive-feature'),
@@ -1558,7 +1560,9 @@ try{
       (afflictionFocusOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
         'affliction-focus-audit.js'),'utf8'):'')+
       (afflictionChargeOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
-        'affliction-charge-audit.js'),'utf8'):''),
+        'affliction-charge-audit.js'),'utf8'):'')+
+      (squireOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'squire-audit.js'),'utf8'):''),
     source=(bootOnly?match[1]:parentStrengthOnly?parentStrengthSource:
       exhaustiveFeature?exhaustiveFeatureSource:
       exhaustiveDelivery?exhaustiveDeliverySource:
@@ -2024,6 +2028,11 @@ try{
     const audit=sandbox.__afflictionChargeAudit;
     console.log('AFFLICTION_CHARGE_AUDIT '+JSON.stringify(audit));
     if(!audit||!audit.passed)throw new Error('F5S6 targeted audit failed');
+  }
+  if(squireOnly){
+    const audit=sandbox.__squireAudit;
+    console.log('SQUIRE_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('Squire base vertical-slice audit failed');
   }
   if(bootOnly){console.log(`BOOT_RUNTIME_OK ${file}`);process.exit(0);}
   if(combatRoutesOnly){

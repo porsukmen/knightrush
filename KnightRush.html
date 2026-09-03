@@ -15,7 +15,8 @@
     touch-action:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none;
     -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   body{position:fixed;inset:0;width:100%}
-  canvas{display:block;position:absolute;image-rendering:pixelated;image-rendering:crisp-edges}
+  canvas{display:block;position:absolute;background:#05070c;
+    image-rendering:pixelated;image-rendering:crisp-edges}
 </style>
 </head>
 <body>
@@ -24,6 +25,15 @@
 <div id="safe" style="position:fixed;top:0;left:0;width:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden"></div>
 <script>
 "use strict";
+const BOOT_QUERY=new URLSearchParams(location.search),
+  BOOT_PROFILE_ENABLED=BOOT_QUERY.has('profileBoot'),
+  /* Skill/design audits belong to authoring, never to the shipped game boot. */
+  RUN_BOOT_AUDITS=false,
+  BOOT_PROFILE_STARTED_AT=performance.now(),BOOT_PROFILE=[];
+function bootCheckpoint(label){
+  if(BOOT_PROFILE_ENABLED)BOOT_PROFILE.push(label+':'+
+    (performance.now()-BOOT_PROFILE_STARTED_AT).toFixed(1));
+}
 /* Boot failures are surfaced on the root element so a black-screen report can
    expose the real exception in headless/mobile diagnostics without a debugger. */
 window.addEventListener('error',event=>{
@@ -71,7 +81,7 @@ const CFG = {
   JUMP_TIME       : 0.52,  // seconds airborne (snappy — back-to-back jumps now chain)
   JUMP_H          : 100,   // apex height in screen px (at player scale)
   JUMP_SAFE_H     : 38,    // min height that counts as "over" a low hazard (tight window)
-  DUCK_TIME       : 0.38,  // seconds a duck lasts (tight — press again to refresh)
+  DUCK_TIME       : 0.52,  // readable lower/hold/rise arc; press again to refresh
   LANE_EASE       : 11,    // lane-change easing speed (higher = snappier)
 
   /* --- spawning (per spawn event; events every SPAWN_GAP z-units) --- */
@@ -150,6 +160,7 @@ const CFG = {
   BREAK_DURATION:4.0,
   BREAK_POSE_IN:0.62,
   BREAK_RECOVERY:0.72,
+  BOSS_TURN_CENTER_TIME:0.46,
   TURN_AP_BASE:2,
   TURN_AP_PER_ATTACK_BREAK:1,
   TURN_RESOLVE_MAX:6,
@@ -516,6 +527,10 @@ function resize(){
   lastCW=innerWidth; lastCH=innerHeight; lastDpr=dpr;
   cvs.width=innerWidth*dpr; cvs.height=innerHeight*dpr;
   cvs.style.width=innerWidth+'px'; cvs.style.height=innerHeight+'px';
+  /* An opaque canvas has an implementation-defined backing colour immediately
+     after resize. Paint it before any expensive game setup can yield a frame so
+     refresh never exposes Chromium's grey/white allocation surface. */
+  g.setTransform(1,0,0,1,0,0);g.fillStyle='#05070c';g.fillRect(0,0,cvs.width,cvs.height);
   viewScale=Math.min(innerWidth/VW,innerHeight/VH)*dpr;
   viewX=(cvs.width-VW*viewScale)/2; viewY=(cvs.height-VH*viewScale)/2;
   PAD_TOP=PAD_BOT=Math.max(0,viewY/viewScale); PAD_TOT=PAD_TOP+PAD_BOT;
@@ -876,15 +891,27 @@ addEventListener('keydown',e=>{
     return;
   }
   const a=map[e.key]; if(!a) return; e.preventDefault();
+  /* Parry is a true press/hold/release gesture.  Starting the guard on keydown
+     removes the former tap delay; combat timing is sampled only on keyup. */
+  if(a==='parry'){
+    if(!e.repeat&&beginPlayerParryHold())keyboardParryHeld=true;
+    return;
+  }
   if(e.key==='Enter'&&GAMEPLAY_MODES.includes(mode)) return;
   if(a==='tap') handleAction('tap',{x:VW/2,y:VH/2}); else handleAction(a);
+});
+let keyboardParryHeld=false;
+addEventListener('keyup',e=>{
+  if(e.key!==' '||!keyboardParryHeld)return;
+  e.preventDefault();keyboardParryHeld=false;
+  releasePlayerParryHold({x:VW/2,y:VH/2});
 });
 /* swipes fire the INSTANT the pointer crosses the threshold (Subway-Surfers feel) —
    and each touch is exactly ONE action: after it fires, the rest of that drag is
    ignored until the finger lifts. No hold-and-slide steering, no double-lane hops. */
 let tStart=null;
 const SWIPE_TH=24;
-const TAP_INTENT_DELAY_MS=75,TAP_MOVE_CANCEL=4;
+const TAP_MOVE_CANCEL=4;
 let tapIntentSimulationFrozen=false;
 let debugStageHoldTimer=0,debugStageHoldDir=0,debugStageHoldBegan=0;
 function debugStageDeltaAt(pt){
@@ -920,6 +947,7 @@ function trySwipe(cx,cy){
   if(!tStart||tStart.done) return false;
   const dx=cx-tStart.x, dy=cy-tStart.y;
   if(Math.abs(dx)<SWIPE_TH && Math.abs(dy)<SWIPE_TH) return false;
+  cancelPlayerParryHold(tStart);
   clearProvisionalDebugParryMark(tStart);
   clearTapIntent(tStart);
   if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left',null,tStart.parryIntent);
@@ -1122,22 +1150,26 @@ function registerModelSwipeDodgeInput(action,intent=null){
 function armTapIntent(start,cx,cy){
   const pt=toGame(cx,cy);
   if(!immediateParryTapEligible(pt)||start.done) return;
+  /* Keep a touchstart model snapshot for a swipe that may emerge from this
+     gesture, but do not turn it into a parry. Parry owns the release frame. */
   start.parryIntent=captureTapParryIntent();
   markDebugParryTouchStart(start.parryIntent);
-  /* With the explicit debug freeze enabled, every possible tap holds its exact
-     touchstart frame; a swipe releases that hold as soon as intent movement is
-     visible. With it disabled, combat never stops and this buffered state alone
-     remains authoritative after the at-most 75 ms gesture decision. */
-  tapIntentSimulationFrozen=debugParryFreezeRequested();
-  start.tapTimer=setTimeout(()=>{
-    if(tStart!==start||start.done||start.intentMoved) return;
-    start.tapTimer=0;start.done=true;tapIntentSimulationFrozen=false;
-    handleAction('tap',pt,start.parryIntent);
-  },TAP_INTENT_DELAY_MS);
+  start.parryHold=beginPlayerParryHold(PARRY_SHIELD_CLIP.swipeVisualGrace);
+  if(start.parryHold)start.parryClip=player.parryShield;
+  tapIntentSimulationFrozen=false;
 }
 function noteTapIntentMovement(start,cx,cy){
   if(!start||start.intentMoved) return;
-  if(Math.abs(cx-start.x)>TAP_MOVE_CANCEL||Math.abs(cy-start.y)>TAP_MOVE_CANCEL){
+  /* A held parry tolerates ordinary finger drift. Only trySwipe's real gesture
+     threshold cancels the guard and commits a dodge. */
+  const moved=Math.abs(cx-start.x)>TAP_MOVE_CANCEL||Math.abs(cy-start.y)>TAP_MOVE_CANCEL;
+  if(start.parryHold){
+    /* Movement below SWIPE_TH is still ambiguous. Suppress only the visual guard
+       for the remainder of this pointer gesture; release timing stays armed. */
+    if(moved&&start.parryClip===player.parryShield)start.parryClip.pointerGestureMoved=true;
+    return;
+  }
+  if(moved){
     start.intentMoved=true;clearProvisionalDebugParryMark(start);clearTapIntent(start);
   }
 }
@@ -1172,11 +1204,14 @@ addEventListener('touchend',e=>{e.preventDefault();
   clearDebugStageHold();
   if(!tStart) return; const t=e.changedTouches[0];
   clearTapIntent(tStart);
-  if(!tStart.done && !trySwipe(t.clientX,t.clientY) && !tStart.intentMoved)
-    handleAction('tap',toGame(t.clientX,t.clientY),tStart.parryIntent);
+  if(!tStart.done && !trySwipe(t.clientX,t.clientY) && !tStart.intentMoved){
+    const pt=toGame(t.clientX,t.clientY);
+    if(!releasePlayerParryHold(pt,tStart))handleAction('tap',pt,tStart.parryIntent);
+  }
   tStart=null;
 },{passive:false});
 addEventListener('touchcancel',()=>{
+  cancelPlayerParryHold(tStart);
   clearDebugStageHold();clearProvisionalDebugParryMark(tStart);clearTapIntent(tStart);tStart=null;
 },{passive:true});
 let mDown=false;
@@ -1208,8 +1243,10 @@ addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(!tStart) return;
   clearTapIntent(tStart);
-  if(!tStart.done && !trySwipe(e.clientX,e.clientY) && !tStart.intentMoved)
-    handleAction('tap',toGame(e.clientX,e.clientY),tStart.parryIntent);
+  if(!tStart.done && !trySwipe(e.clientX,e.clientY) && !tStart.intentMoved){
+    const pt=toGame(e.clientX,e.clientY);
+    if(!releasePlayerParryHold(pt,tStart))handleAction('tap',pt,tStart.parryIntent);
+  }
   tStart=null;
 });
 /* the game must NOT run in the background: pause when the tab/app is hidden
@@ -1217,6 +1254,7 @@ addEventListener('mouseup',e=>{
    lifecycle event is hooked, and the main loop carries a watchdog that pauses the
    run whenever the frame clock reveals we were suspended. */
 function autoPause(){
+  keyboardParryHeld=false;cancelPlayerParryHold();
   clearDebugStageHold();
   if(GAMEPLAY_MODES.includes(mode)){
     /* Backgrounding must never dismiss a clean screenshot that is already
@@ -1452,33 +1490,53 @@ function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
     particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-40,life,maxLife:life,
       size:rnd(size*0.5,size),col:pick(cols),grav}); }
 }
-/* Edge-on galaxy: the attack vector defines the normal, then a long thin spark
-   disc runs 90 degrees across it. Both arms grow from the knight/contact centre
-   and a restrained symmetric bulge gives the middle its galactic core. */
+/* Successful-parry contact burst. The attack resolver supplies the exact world
+   contact; presentation expands from there rather than from the shield centre. */
 function parrySparkCloud(x,y,profile=PARRY_STAGGER){
-  const knightX=laneX(player.x,1),knightY=PLAYER_Y-jumpHeight()-58,
-    centreX=(knightX+x)*.5,centreY=(knightY+y)*.5-profile.sparkRise;
-  let attackX=x-knightX,attackY=y-knightY,attackLen=Math.hypot(attackX,attackY);
-  if(attackLen<1){attackX=0;attackY=-1;attackLen=1;}
-  const normalX=attackX/attackLen,normalY=attackY/attackLen,
-    axisX=-normalY,axisY=normalX,half=profile.sparkLineLength*.5,
-    cols=['#fffdf0','#fff1a8','#ffe37a','#ffb13b'];
-  for(let i=0;i<profile.sparks;i++){
-    const u=((i+.35+sRnd(i*19+7)*.3)/profile.sparks)*2-1,
-      core=1-Math.abs(u),bulge=Math.pow(core,3.2)*profile.sparkSpike,
-      thin=profile.sparkLineWidth*(.2+sRnd(i*31+3)*.8),
-      side=sRnd(i*47+11)<.5?-1:1,
-      thickness=side*(sRnd(i*13+5)*thin+sRnd(i*23+9)*bulge),
-      px2=centreX+axisX*u*half+normalX*thickness,
-      py2=centreY+axisY*u*half+normalY*thickness,
-      outward=(u<0?-1:1)*rnd(24,profile.sparkSpeed),
-      corePush=side*rnd(4,22)*core;
-    particles.push({kind:'parrySpark',x:px2,y:py2,
-      vx:axisX*outward+normalX*corePush,
-      vy:axisY*outward+normalY*corePush-10,
-      life:profile.sparkLife*rnd(.55,1),maxLife:profile.sparkLife,
-      size:rnd(3.2,7.0)*(1+core*.18),
-      col:pick(cols),grav:70});
+  /* BOTW-style contact grammar: a dense white/cyan star at the true collision
+     point, one expanding ring, then sparse radial needles. Effects live behind
+     Jonathan so the shield's lower-left follow-through remains readable. */
+  /* Collision still decides WHETHER the parry succeeded at the authored attack
+     contact. Presentation originates from Jonathan's shield, so attacks arriving
+     from either side retain one consistent defensive read. */
+  if(playerChar&&playerChar.rigId==='ser_jonathan'){
+    const shieldY=PLAYER_Y-jumpHeight()-(activePlayerShieldPose()?.lunge||0)*136;
+    x=laneX(player.x,1)-24;y=shieldY-122;
+  }
+  const cols=['#ffffff','#ffffff','#ffffff','#f4fdff','#dff8ff','#a9ebff','#68d2ff'],
+    life=Math.max(.38,profile.sparkLife||.50),count=Math.min(96,
+      Math.max(72,Math.round((profile.sparks||26)*2.35)));
+  particles.push({kind:'parryRing',behindPlayer:true,x,y,vx:0,vy:0,grav:0,
+    life:life*.88,maxLife:life*.88,size:19,col:'#9fe7ff'});
+  particles.push({kind:'parryRing',behindPlayer:true,x,y,vx:0,vy:0,grav:0,
+    life:life*.54,maxLife:life*.54,size:11,col:'#ffffff'});
+  /* The broad ring stays behind Jonathan, but BOTW's success flash has a tiny
+     brilliant layer in front of the shield. This short-lived glint prevents the
+     actual contact from disappearing underneath the plate without hiding its art. */
+  particles.push({kind:'parryGlint',x,y,vx:0,vy:0,grav:0,
+    life:.24,maxLife:.24,size:18,col:'#ffffff'});
+  for(let i=0;i<22;i++){
+    const a=TAU*(i/22)+rnd(-.12,.12),speed=rnd(62,148),pLife=rnd(.16,.32);
+    particles.push({kind:'parryCore',x:x+Math.cos(a)*3,y:y+Math.sin(a)*3,
+      vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,life:pLife,maxLife:pLife,
+      size:rnd(1.8,3.4),col:i%3===0?'#ffffff':'#8fe4ff',grav:12});
+  }
+  for(let i=0;i<count;i++){
+    const a=rnd(TAU),core=Math.pow(Math.random(),2.1),radius=core*10,
+      speed=rnd(34,145)*(1-core*.45),pLife=life*rnd(.55,1);
+    particles.push({kind:'parryCore',behindPlayer:true,
+      x:x+Math.cos(a)*radius,y:y+Math.sin(a)*radius,
+      vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-8,
+      life:pLife,maxLife:pLife,size:rnd(2.4,6.4)*(1-core*.25),
+      col:pick(cols),grav:34});
+  }
+  const rays=24;
+  for(let i=0;i<rays;i++){
+    const a=TAU*(i/rays)+rnd(-.13,.13),pLife=life*rnd(.52,.82),speed=rnd(105,230);
+    particles.push({kind:'parryRay',behindPlayer:true,x,y,
+      vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+      life:pLife,maxLife:pLife,size:rnd(1.3,2.2),length:rnd(13,28),angle:a,
+      col:i%3===0?'#ffffff':'#8fe4ff',grav:18});
   }
 }
 const NORMAL_SHIELD_SPARK_COLORS=Object.freeze([
@@ -1578,8 +1636,32 @@ function drawParticles(behindBoss=false,behindPlayer=false){
   for(const p of particles){
     if(!!p.behindBoss!==behindBoss||!!p.behindPlayer!==behindPlayer)continue;
     const a=p.life/p.maxLife;
-    g.globalAlpha=a; g.fillStyle=p.col;
-    g.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size); }
+    if(p.kind==='parryRing'){
+      const age=1-a,r=p.size*(.48+age*1.45);
+      g.globalAlpha=a*a;g.strokeStyle=p.col;g.lineWidth=Math.max(1,2.8*a);
+      g.beginPath();g.arc(p.x,p.y,r,0,TAU);g.stroke();
+    }else if(p.kind==='parryGlint'){
+      const age=1-a,pulse=Math.sin(Math.PI*clamp(age/.82,0,1)),r=p.size*(.55+pulse*.9);
+      g.save();g.translate(p.x,p.y);g.globalCompositeOperation='screen';
+      g.globalAlpha=a;g.fillStyle=p.col;
+      g.fillRect(-r,-1.25,r*2,2.5);g.fillRect(-1.25,-r,2.5,r*2);
+      g.rotate(Math.PI/4);g.globalAlpha=a*.72;
+      g.fillRect(-r*.62,-.8,r*1.24,1.6);g.fillRect(-.8,-r*.62,1.6,r*1.24);
+      g.restore();
+    }else if(p.kind==='parryCore'){
+      g.save();g.globalCompositeOperation='screen';g.globalAlpha=Math.min(1,a*1.35);
+      g.fillStyle=p.col;g.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+      if(p.size>3.2){g.globalAlpha=a*.45;g.fillRect(p.x-p.size,p.y-.7,p.size*2,1.4);}
+      g.restore();
+    }else if(p.kind==='parryRay'){
+      g.save();g.translate(p.x,p.y);g.rotate(p.angle);g.globalAlpha=a*a;g.fillStyle=p.col;
+      g.globalCompositeOperation='screen';
+      g.fillRect(-p.length*a*.18,-p.size/2,p.length*a,p.size);g.restore();
+    }else{
+      g.globalAlpha=a; g.fillStyle=p.col;
+      g.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+    }
+  }
   g.globalAlpha=1;
   if(behindBoss||behindPlayer)return;       // text feedback always owns the front layer
   if(pausePhotoMode) return;                // screenshot mode keeps effects but removes text UI
@@ -1594,19 +1676,63 @@ function drawParticles(behindBoss=false,behindPlayer=false){
    Every sprite is drawn with small filled rects in a local "pixel" coordinate space,
    then scaled/rotated with canvas transforms. u = one art pixel (3 screen px).      */
 const U=3;
-const SER_JONATHAN_DUCK_SHOULDER_Y=5.7,SER_JONATHAN_DUCK_HEAD_Y=4.85,
-  SER_JONATHAN_DUCK_HEAD_SCALE=.82,SER_JONATHAN_DUCK_CROWN_Y=-1.45;
+const SER_JONATHAN_SPINE_LENGTH=9.7,SER_JONATHAN_NECK_LENGTH=5.4,
+  SER_JONATHAN_DUCK_PITCH=Math.PI*.35,SER_JONATHAN_DUCK_NECK_TUCK=Math.PI*.045,
+  SER_JONATHAN_CAMERA_FOCAL=42,SER_JONATHAN_CAMERA_DEPTH_LIFT=.12;
 function px(x,y,w,h,c){ g.fillStyle=c; g.fillRect(x*U,y*U,w*U,h*U); }
 
-/* Helmet crown in Jonathan's local art space. Collision samples the very same
-   pitched pose instead of approximating it with a disappearing magic extension. */
+/* One rear-camera projection owns drawing and collision.  Jonathan's pelvis is a
+   planted hinge; the upper body advances along a real depth axis instead of being
+   squeezed downward in screen space. */
+function serJonathanProjectWorldPoint(point,hipY){
+  const z=point.z||0,scale=1/(1+Math.max(0,z)/SER_JONATHAN_CAMERA_FOCAL);
+  return {x:9+(point.x||0)*scale,
+    y:hipY-(point.y||0)*scale-z*SER_JONATHAN_CAMERA_DEPTH_LIFT,
+    z,scale};
+}
+function serJonathanDuckPose(duck,riderBob=0){
+  const fold=clamp(duck,0,1),hipY=10+riderBob,
+    torsoPitch=SER_JONATHAN_DUCK_PITCH*fold,
+    headPitch=torsoPitch+SER_JONATHAN_DUCK_NECK_TUCK*fold,
+    shoulderWorld={x:0,y:SER_JONATHAN_SPINE_LENGTH*Math.cos(torsoPitch),
+      z:SER_JONATHAN_SPINE_LENGTH*Math.sin(torsoPitch)},
+    headWorld={x:0,
+      y:shoulderWorld.y+SER_JONATHAN_NECK_LENGTH*Math.cos(headPitch),
+      z:shoulderWorld.z+SER_JONATHAN_NECK_LENGTH*Math.sin(headPitch)},
+    shoulder=serJonathanProjectWorldPoint(shoulderWorld,hipY),
+    head=serJonathanProjectWorldPoint(headWorld,hipY);
+  return {fold,hipY,torsoPitch,headPitch,shoulderWorld,headWorld,shoulder,head,
+    shoulderY:shoulder.y,headY:head.y,farScale:shoulder.scale,
+    armScale:lerp(shoulder.scale,head.scale,.28),headScale:head.scale};
+}
+function serJonathanTorsoWorldPoint(pose,x,along,zOffset=0){
+  return {x,y:pose.shoulderWorld.y*along,z:pose.shoulderWorld.z*along+zOffset};
+}
+function serJonathanProjectTorsoPoint(pose,x,along,zOffset=0){
+  return serJonathanProjectWorldPoint(serJonathanTorsoWorldPoint(pose,x,along,zOffset),pose.hipY);
+}
+function serJonathanProjectHeadPoint(pose,x,up,forward=0){
+  const c=Math.cos(pose.headPitch),s=Math.sin(pose.headPitch);
+  return serJonathanProjectWorldPoint({x:pose.headWorld.x+x,
+    y:pose.headWorld.y+up*c-forward*s,
+    z:pose.headWorld.z+up*s+forward*c},pose.hipY);
+}
+/* The helmet is a shallow cuboid. Pitch trades rear-face height for a visible
+   top plane; their combined silhouette remains full-sized instead of collapsing. */
+function serJonathanHelmetProjection(headY,headPitch,perspectiveScale=1){
+  const faceHeight=5.5*Math.cos(headPitch)*perspectiveScale,
+    topDepth=4*Math.sin(headPitch)*perspectiveScale,
+    totalHeight=faceHeight+topDepth,topY=headY-totalHeight*.5+.4,
+    planeY=topY+topDepth,bottomY=planeY+faceHeight;
+  return {faceHeight,topDepth,topY,planeY,bottomY,
+    crownY:topY-.35*perspectiveScale,perspectiveScale};
+}
+/* Helmet crown in Jonathan's local art space. Collision samples the exact same
+   projected cuboid used by the sprite. */
 function serJonathanHelmetTopLocal(duck){
-  const fold=easeInOut(clamp(duck,0,1)),hipY=10+duck*.8,
-    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y,fold),
-    headY=lerp(shoulderY-5.4,SER_JONATHAN_DUCK_HEAD_Y,fold),
-    headScale=lerp(1,SER_JONATHAN_DUCK_HEAD_SCALE,fold),
-    crownY=lerp(-2.7,SER_JONATHAN_DUCK_CROWN_Y,fold);
-  return headY+crownY*headScale;
+  const pose=serJonathanDuckPose(duck),helmet=serJonathanHelmetProjection(
+    pose.headY,pose.headPitch,pose.headScale);
+  return helmet.crownY;
 }
 function serJonathanHelmetTopWorldY(baseY,duck){
   return baseY+(serJonathanHelmetTopLocal(duck)-30)*U*1.02;
@@ -1690,13 +1816,17 @@ function rigPolygon(points,col){
    crest. The broad silver rim and blue kite silhouette stay readable at HUD
    scale. Its handle exists only on the inner face; while mounted, that face is
    physically between the shield and Jonathan's back and therefore invisible. */
-function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1){
+function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1,depthScale=1){
   const faceCos=Math.cos(clamp(turn,0,1)*Math.PI),faceWidth=Math.max(.10,Math.abs(faceCos)),
     front=faceCos>=0,outer=[[-3.45,-4.15],[3.45,-4.15],[4.15,-2.85],[3.65,1.35],
       [0,4.85],[-3.65,1.35],[-4.15,-2.85]],
     inner=[[-2.72,-3.38],[2.72,-3.38],[3.28,-2.38],[2.88,1.02],
       [0,3.92],[-2.88,1.02],[-3.28,-2.38]];
-  g.save();g.translate(cx*U,cy*U);g.rotate(tilt);g.scale(scale*faceWidth,scale);
+  g.save();g.translate(cx*U,cy*U);g.rotate(tilt);
+  /* Pitching a shield away from the rear camera shortens only its screen-depth
+     axis. A uniform scale made the mounted plate slide down the rump while the
+     rider folded; this extra axis keeps it attached to the authored back plane. */
+  g.scale(scale*faceWidth,scale*depthScale);
   rigPolygon(outer,front?'#d5e0e7':'#7c8994');
   rigPolygon(inner,front?'#234f88':'#27313a');
   if(front){
@@ -1722,6 +1852,66 @@ function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1){
   g.restore();
 }
 
+/* A mounted shield is a real plate on Jonathan's back. Every vertex is projected
+   from the same torso basis as the shoulders, so the plate foreshortens and gains
+   visible rim thickness instead of sliding down and being Y-scaled. */
+function drawSerJonathanMountedShield25D(pose,scale=1.05){
+  const outer=[[-3.45,-4.15],[3.45,-4.15],[4.15,-2.85],[3.65,1.35],
+      [0,4.85],[-3.65,1.35],[-4.15,-2.85]],
+    inner=[[-2.72,-3.38],[2.72,-3.38],[3.28,-2.38],[2.88,1.02],
+      [0,3.92],[-2.88,1.02],[-3.28,-2.38]],
+    centerAlong=.55,c=Math.cos(pose.torsoPitch),s=Math.sin(pose.torsoPitch),
+    center=serJonathanTorsoWorldPoint(pose,0,centerAlong,-.22);
+  function projectLocal(point,zOffset=0){
+    const lx=point[0]*scale,up=-point[1]*scale;
+    return serJonathanProjectWorldPoint({x:center.x+lx,
+      y:center.y+up*c,z:center.z+up*s+zOffset},pose.hipY);
+  }
+  function projected(poly,zOffset=0){
+    return poly.map(point=>{const p=projectLocal(point,zOffset);return [p.x,p.y];});
+  }
+  const back=projected(outer,.72),front=projected(outer,0);
+  rigPolygon(back,'#66737f');
+  /* The connector quads are deliberately subdued. Their changing thickness is
+     the perspective cue visible in the angled BOTW shield reference. */
+  for(let i=0;i<outer.length;i++){
+    const j=(i+1)%outer.length;
+    rigPolygon([back[i],back[j],front[j],front[i]],i<3?'#aab8c2':'#7f8d98');
+  }
+  rigPolygon(front,'#d5e0e7');
+  rigPolygon(projected(inner),'#234f88');
+  rigPolygon(projected([[-2.35,-1.65],[-.55,-.35],[0,.72],[-1.2,.18],[-2.55,-.72]]),'#c7444e');
+  rigPolygon(projected([[2.35,-1.65],[.55,-.35],[0,.72],[1.2,.18],[2.55,-.72]]),'#c7444e');
+  rigPolygon(projected([[-1.05,1.05],[0,2.75],[1.05,1.05],[0,1.62]]),'#c7444e');
+  rigPolygon(projected([[-2.85,-3.05],[2.85,-3.05],[2.85,-2.53],[-2.85,-2.53]]),'#73a2ce');
+  const boss=projectLocal([0,-.52]),bossScale=boss.scale*scale;
+  rigJoint(boss.x,boss.y,1.35*bossScale,'#d6ad43');
+  rigJoint(boss.x,boss.y,.58*bossScale,'#ffe37a');
+}
+
+function drawSerJonathanHelmet25D(headX,headY,headPitch,perspectiveScale,
+  armor,armorD,armorL,steelL){
+  const h=serJonathanHelmetProjection(headY,headPitch,perspectiveScale),
+    farHalf=3.18*perspectiveScale,nearHalf=3.5*perspectiveScale;
+  /* As the head pitches away, the lost rear-face area becomes a top plane. This
+     is the essential 2.5D cue: the helmet keeps its width and physical volume. */
+  if(h.topDepth>.015){
+    rigQuad(headX-farHalf,h.topY,headX+farHalf,h.topY,
+      headX+nearHalf,h.planeY,headX-nearHalf,h.planeY,steelL);
+    rigQuad(headX-farHalf+.42,h.topY+.38,headX+farHalf-.42,h.topY+.38,
+      headX+nearHalf-.52,h.planeY-.48,headX-nearHalf+.52,h.planeY-.48,armorL);
+  }
+  rigQuad(headX-nearHalf,h.planeY,headX+nearHalf,h.planeY,
+    headX+nearHalf,h.bottomY,headX-nearHalf,h.bottomY,armor);
+  rigQuad(headX-.5,h.planeY+.12,headX+.5,h.planeY+.12,
+    headX+.5,h.bottomY-.18,headX-.5,h.bottomY-.18,armorL);
+  rigQuad(headX-nearHalf-.05,h.bottomY-.82,headX+nearHalf+.05,h.bottomY-.82,
+    headX+nearHalf+.05,h.bottomY+.08,headX-nearHalf-.05,h.bottomY+.08,armorD);
+  px(headX-2*perspectiveScale,h.crownY,4*perspectiveScale,
+    .72*perspectiveScale,steelL);
+  return h;
+}
+
 /* SER JONATHAN SMITH — first production rider rig.
    Silver armour and the long blue plume preserve the Fallen Knights silhouette.
    Horse and rider have independent joints so
@@ -1731,6 +1921,12 @@ function drawSerJonathanRider(x,y,scale,o){
     leap=air>0?Math.sin(air*Math.PI):0,
     shield=o.shieldAction||null,shieldActive=!!(shield&&shield.active),
     shieldLunge=shieldActive?shield.lunge:0,
+    shieldSweep=shieldActive&&shield.kind==='parry'?shield.sweep*(1-shield.retreat):0,
+    /* BOTW's force comes from a braced upper-body counter-turn, not from sliding
+       the whole character through world space. Keep this drive readable while
+       the left follow-through is held, then unwind it with the retreat. */
+    shieldBodyDrive=shieldActive&&shield.kind==='parry'
+      ?smoothStep(clamp((shield.sweep-.08)/.72,0,1))*(1-shield.retreat)*(1-shield.remount):0,
     bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
     riderBob=(air>0?-leap*.24:Math.sin(gal*2+.9)*.34)-shieldLunge*.24,
     atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
@@ -1745,7 +1941,9 @@ function drawSerJonathanRider(x,y,scale,o){
   const horse=o.horse||'#6f4327',horseD=shade(horse,-28),horseL=shade(horse,18),
     mane=shade(horse,-48),armor='#919da7',armorD='#4b5966',armorL='#c4ced5',
     steel='#aebbc5',steelL='#edf4f7',plume=o.feather||'#268ee8';
-  const hipY=10+riderBob+duck*.8;
+  /* The seat is the hinge of the duck. BOTW and the rear riding reference both
+     keep the pelvis planted while the chest folds away from the camera. */
+  const hipY=10+riderBob;
   g.save();g.translate(x,y);g.scale(scale,scale);
   g.rotate(air>0?0:(o.lean||0)*.13);g.translate(-9*U,-30*U);
 
@@ -1808,37 +2006,142 @@ function drawSerJonathanRider(x,y,scale,o){
     rigJoint(5.08,hipY-3.35,1.35,'#7140a8');
   }
 
-  /* A shorter, broader torso fits the runner clearance while keeping Jonathan
-     human-proportioned instead of an unnaturally thin vertical line. */
-  /* Authored rear-camera crouch. This is a second perspective pose, not a scaled
-     standing sprite: the waist remains near the camera, the shoulder edge becomes
-     the narrow far edge of a pitched back plate, and the helmet travels beyond it. */
-  const duckFold=easeInOut(duck),deepDuck=easeInOut(clamp((duckFold-.38)/.62,0,1)),
-    depthScale=lerp(1,.94,duckFold),farDepthScale=lerp(1,.66,duckFold),
-    headDepthScale=lerp(1,SER_JONATHAN_DUCK_HEAD_SCALE,duckFold),
-    plumeLengthScale=lerp(1,1.08,duckFold),plumeWidthScale=lerp(1,.98,duckFold),
-    shoulderX=9-swordTurn*.25,
-    shoulderY=lerp(hipY-9.7,SER_JONATHAN_DUCK_SHOULDER_Y+riderBob,duckFold)-shieldLunge*1.45,
-    headX=shoulderX-swordTurn*.2,
-    headY=lerp(shoulderY-5.4,SER_JONATHAN_DUCK_HEAD_Y+riderBob,duckFold);
+  /* Rear-camera articulated crouch. Pelvis, spine, neck and equipment now share
+     one world-depth skeleton; no finished body part is compressed to fake depth. */
+  const duckPose=serJonathanDuckPose(duck,riderBob),duckFold=duckPose.fold,
+    depthScale=duckPose.farScale,farDepthScale=duckPose.armScale,
+    poseDriveY=shieldLunge*1.45+shieldBodyDrive*1.05,
+    /* The shield sweep begins in Jonathan's torso, then travels through the
+       shoulder, elbow and wrist. This small counter-turn keeps it from reading
+       as a prop sliding independently over a rigid rider. */
+    shoulderX=duckPose.shoulder.x-swordTurn*.25-shieldBodyDrive*.34,
+    shoulderY=duckPose.shoulderY-poseDriveY,
+    headX=duckPose.head.x-swordTurn*.2-shieldBodyDrive*.12,
+    headY=duckPose.headY-poseDriveY-shieldBodyDrive*.18,
+    /* Left shoulder drives into the blow while the right shoulder counters back.
+       This opposing line is the missing whole-body effort from the stiff pass. */
+    torsoTurn=swordTurn-shieldBodyDrive*1.18;
 
-  const leftShoulderX=shoulderX-3.7*depthScale,leftShoulderY=shoulderY+.8+swordTurn*.35,
-    rightShoulderX=shoulderX+3.7*depthScale+swordTurn*.8,rightShoulderY=shoulderY+.8-swordTurn*.35;
-  let leftElbowX=shoulderX-4.9*depthScale,leftElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
-      leftHandX=lerp(6.9,7.35,duckFold),leftHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
-      rightElbowX=shoulderX+4.9*depthScale,rightElbowY=lerp(shoulderY+3.5,5.45+riderBob,duckFold),
-      rightHandX=lerp(11.1,10.65,duckFold),rightHandY=lerp(6.3+headLift,4.55+headLift,duckFold),
+  const leftShoulderX=shoulderX-3.7*depthScale-shieldSweep*.48,
+    leftShoulderY=shoulderY+.8+torsoTurn*.35-shieldSweep*.22,
+    rightShoulderX=shoulderX+3.7*depthScale+swordTurn*.8+shieldBodyDrive*.28,
+    rightShoulderY=shoulderY+.8-torsoTurn*.35;
+  let leftElbowX=lerp(shoulderX-4.9*depthScale,shoulderX-4.25,duckFold),
+      leftElbowY=lerp(shoulderY+3.5,6.15+riderBob,duckFold),
+      leftHandX=lerp(6.9,7.15,duckFold),leftHandY=lerp(6.3+headLift,3.65+headLift,duckFold),
+      rightElbowX=lerp(shoulderX+4.9*depthScale,shoulderX+4.25,duckFold),
+      rightElbowY=lerp(shoulderY+3.5,6.15+riderBob,duckFold),
+      rightHandX=lerp(11.1,10.85,duckFold),rightHandY=lerp(6.3+headLift,3.65+headLift,duckFold),
       swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0;
   const restingLeftElbowX=leftElbowX,restingLeftElbowY=leftElbowY,
     restingLeftHandX=leftHandX,restingLeftHandY=leftHandY;
-  const mountedShieldScale=1.05,activeShieldScale=1.13;
-  let shieldCenterX=9,shieldCenterY=shoulderY+4.35,shieldTurn=0,shieldTilt=-.04,
-    shieldScale=mountedShieldScale,shieldGripFrontAlpha=0;
+  const mountedShieldScale=1.05,activeShieldScale=1.13,
+    mountedShieldAnchor=serJonathanProjectTorsoPoint(duckPose,0,.55,-.22),
+    mountedShieldY=mountedShieldAnchor.y-poseDriveY,
+    mountedShieldDepth=1;
+  let shieldCenterX=9,shieldCenterY=mountedShieldY,shieldTurn=0,
+    shieldTilt=lerp(-.04,.025,duckFold),shieldScale=mountedShieldScale,
+    shieldDepthScale=mountedShieldDepth,shieldGripFrontAlpha=0,shieldUpperArmFrontAlpha=0;
   if(shieldActive){
+    shieldDepthScale=1;
+    if(shield.kind==='parry'){
+      const prep=clamp(shield.prepare||0,0,1),sweep=clamp(shield.sweep||0,0,1),
+        retreat=clamp(shield.retreat||0,0,1),remount=clamp(shield.remount||0,0,1),
+        settle=clamp(shield.settle||0,0,1),
+        /* The hand arrives at the hidden grip before the plate leaves Jonathan's
+           back. Keeping reach and unmount as overlapping, offset curves removes
+           the old impression that the shield moved by itself. */
+        unmount=smoothStep(clamp((prep-.16)/.84,0,1)),
+        backX=9,backY=mountedShieldY,
+        hiddenX=6.05,hiddenY=shoulderY+4.15,
+        pullX=4.35,pullY=shoulderY+.55,
+        /* BOTW-like loaded guard: after clearing the back, the shield returns
+           toward Jonathan's centre and sits lower over the chest. This reserves
+           visible screen distance for the release to travel up, forward and left. */
+        guardX=6.00,guardY=shoulderY-1.30,
+        /* BOTW's shield meets the strike in front of the rider first. Only the
+           follow-through opens left; making contact itself far-left turned the
+           parry into a sideways wave. Screen-up supplies 2.5D forward reach. */
+        contactX=2.15,contactY=shoulderY-10.10,
+         /* Contact is forward-left; the readable finish opens farther left and
+            slightly lowers, matching the BOTW silhouette without becoming a wave. */
+         followX=-3.00,followY=shoulderY-3.15,
+        recoveryX=3.95,recoveryY=shoulderY-2.45;
+      /* Preparation and release share the same continuous path. On an early
+         release prep continues while sweep grows, so neither hand nor shield can
+         jump to the completed guard pose. */
+      const prepX=cubic(backX,hiddenX,pullX,guardX,unmount),
+        prepY=cubic(backY,hiddenY,pullY,guardY,unmount),
+        releaseFrom=clamp(shield.releaseFrom===undefined?prep:shield.releaseFrom,0,1),
+        releaseUnmount=smoothStep(clamp((releaseFrom-.16)/.84,0,1)),
+        releaseX=cubic(backX,hiddenX,pullX,guardX,releaseUnmount),
+        releaseY=cubic(backY,hiddenY,pullY,guardY,releaseUnmount),
+        sweepControlX=lerp(releaseX,guardX-.25,.72),
+        sweepControlY=lerp(releaseY,guardY-1.45,.72),
+        sweepX=cubic(releaseX,sweepControlX,contactX,followX,sweep),
+        sweepY=cubic(releaseY,sweepControlY,contactY,followY,sweep);
+      shieldCenterX=sweep>0?sweepX:prepX;
+      shieldCenterY=sweep>0?sweepY:prepY;
+      if(retreat>0){
+        shieldCenterX=lerp(shieldCenterX,recoveryX,retreat);
+        shieldCenterY=lerp(shieldCenterY,recoveryY,retreat);
+      }
+      if(remount>0){
+        shieldCenterX=lerp(shieldCenterX,backX,remount);
+        shieldCenterY=lerp(shieldCenterY,backY,remount);
+      }
+      /* Mounted outer face -> enemy-facing inner guard -> decorated outer face
+         toward camera during the left follow-through. */
+      shieldTurn=unmount*(1-sweep)*(1-remount);
+      shieldCenterX-=Math.sin(Math.PI*shieldTurn)*1.22;
+      shieldTilt=lerp(-.04,.035,prep);
+      shieldTilt=lerp(shieldTilt,-.18,sweep);
+      shieldTilt=lerp(shieldTilt,.04,retreat);
+      shieldTilt=lerp(shieldTilt,-.04,remount);
+      shieldScale=lerp(mountedShieldScale,activeShieldScale,Math.max(unmount,sweep)*(1-settle));
+
+      const reach=smoothStep(clamp(prep/.38,0,1)),lock=unmount,
+        reachedX=lerp(restingLeftHandX,hiddenX,reach),
+        reachedY=lerp(restingLeftHandY,hiddenY,reach),
+        heldX=lerp(reachedX,shieldCenterX,lock),heldY=lerp(reachedY,shieldCenterY,lock),
+        gripLock=Math.max(lock,sweep,retreat,remount);
+      leftHandX=lerp(reachedX,shieldCenterX,gripLock);
+      leftHandY=lerp(reachedY,shieldCenterY,gripLock);
+      /* Post-remount depth cue only: once the shield is already fixed on the
+         back, the freed hand clears it to the left, then returns right to the
+         reins. Nothing in the shield or main parry choreography changes. */
+      const postHandClear=smoothStep(clamp(settle/.58,0,1)),
+        postHandReturn=smoothStep(clamp((settle-.48)/.52,0,1)),
+        clearedHandX=lerp(leftHandX,restingLeftHandX-.72,postHandClear),
+        clearedHandY=lerp(leftHandY,restingLeftHandY+.18,postHandClear);
+      leftHandX=lerp(clearedHandX,restingLeftHandX,postHandReturn);
+      leftHandY=lerp(clearedHandY,restingLeftHandY,postHandReturn);
+
+      const pullElbowX=leftShoulderX-3.80,pullElbowY=shoulderY+1.50,
+        guardElbowX=leftShoulderX-2.20,guardElbowY=shoulderY+.25,
+        prepElbowX=cubic(restingLeftElbowX,pullElbowX,guardElbowX,guardElbowX,prep),
+        prepElbowY=cubic(restingLeftElbowY,pullElbowY,guardElbowY,guardElbowY,prep),
+        straightElbowX=lerp(leftShoulderX,leftHandX,.52),
+        straightElbowY=lerp(leftShoulderY,leftHandY,.52),
+        sweepArc=Math.sin(Math.PI*sweep);
+      leftElbowX=lerp(prepElbowX,straightElbowX,sweep)-sweepArc*.75;
+      leftElbowY=lerp(prepElbowY,straightElbowY,sweep)-sweepArc*1.15;
+      leftElbowX=lerp(leftElbowX,pullElbowX,remount);
+      leftElbowY=lerp(leftElbowY,pullElbowY,remount);
+      leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
+      leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
+      /* The hand is visible on the camera-facing inner grip in guard, then the
+         turning plate naturally occludes it as the decorated face comes around. */
+      shieldGripFrontAlpha=smoothStep(clamp((shieldTurn-.32)/.42,0,1))*(1-settle);
+      /* Once the decorated face returns, the forearm belongs behind the plate but
+         shoulder-to-elbow must remain in front. Otherwise the shield appears to
+         float beside a severed hand at the held BOTW finish. */
+      shieldUpperArmFrontAlpha=smoothStep(clamp((sweep-.10)/.55,0,1))*(1-remount)*(1-settle);
+    }else{
     const forward=shield.forward,reach=shield.reach,detach=shield.detach,
       flip=shield.flip,drive=shield.drive,retreat=shield.retreat,
       remount=shield.remount,settle=shield.settle,
-      backX=9,backY=shoulderY+4.35,pullX=4.25,pullY=shoulderY+1.05,
+      backX=9,backY=mountedShieldY,pullX=4.25,pullY=shoulderY+1.05,
       readyX=4.65,readyY=shoulderY-1.45,strikeX=6.15,strikeY=shoulderY-5.75;
     if(remount>0){
       shieldCenterX=lerp(readyX,backX,remount);shieldCenterY=lerp(readyY,backY,remount);
@@ -1889,6 +2192,7 @@ function drawSerJonathanRider(x,y,scale,o){
     leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
     leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
     shieldGripFrontAlpha=smoothStep(clamp((shieldTurn-.48)/.34,0,1))*(1-settle);
+    }
   }
   let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
   if(bowActive){
@@ -1959,10 +2263,26 @@ function drawSerJonathanRider(x,y,scale,o){
     rightElbowY=lerp(straightElbowY,bentElbowY,swordReturnK);
   }
   const rightActive=swordActive||bowActive;
+  /* The 2.5D turn owns one explicit layer swap at edge-on. While the inner face
+     looks toward Jonathan, shield renders behind the gripping arm. As soon as the
+     outer face returns, the whole plate moves above arm, joints and cuirass. */
+  const parryShieldActive=shieldActive&&shield.kind==='parry',
+    parryShieldInnerLayer=parryShieldActive&&shieldTurn>=.5,
+    drawCurrentShield=()=>{
+      if(shieldActive)drawSerJonathanShield(shieldCenterX,shieldCenterY,
+        shieldTurn,shieldTilt,shieldScale,shieldDepthScale);
+      else drawSerJonathanMountedShield25D(duckPose,mountedShieldScale);
+    };
+  if(parryShieldInnerLayer)
+    drawCurrentShield();
   /* Reins and resting arms are BEHIND the back plate. From this camera the hands
      are ahead of the torso and should almost disappear, never form a chest X. */
-  if(!bowActive)rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
-  drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
+  /* A parry releases the rein completely; drawing it to the shield hand created
+     the stray black diagonal seen across the plate. */
+  if(!bowActive&&!parryShieldActive)
+    rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
+  drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
+    leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale);
   if(!rightActive){
     rigSegment(rightHandX,rightHandY,10.4,5.2+bob+headLift,.38,'#241915');
     drawSerJonathanArm(rightShoulderX,rightShoulderY,rightElbowX,rightElbowY,rightHandX,rightHandY,armorD,armorL,steel,true,farDepthScale);
@@ -2003,52 +2323,66 @@ function drawSerJonathanRider(x,y,scale,o){
     g.globalAlpha=1;
   }
 
-  const helmetTopY=lerp(-2,-1.05,duckFold),helmetBottomY=lerp(3.5,1.85,duckFold),
-    helmetCrownY=lerp(-2.7,SER_JONATHAN_DUCK_CROWN_Y,duckFold),
-    helmetRimY=lerp(2.45,1.15,duckFold),helmetFaceAlpha=1-deepDuck;
-  /* The deep helmet keeps most of its width, but its vertical face collapses and
-     is painted BEFORE the back. The torso then naturally occludes its lower half. */
-  if(deepDuck>.01){
-    g.globalAlpha=deepDuck;
-    rigQuad(headX-3.2*headDepthScale,headY+helmetTopY*headDepthScale,
-      headX+3.2*headDepthScale,headY+helmetTopY*headDepthScale,
-      headX+3.5*headDepthScale,headY+helmetBottomY*headDepthScale,
-      headX-3.5*headDepthScale,headY+helmetBottomY*headDepthScale,armor);
-    px(headX-.5*headDepthScale,headY+lerp(-1.6,-.72,duckFold)*headDepthScale,
-      headDepthScale,lerp(4.8,2.15,duckFold)*headDepthScale,armorL);
-    px(headX-3.55*headDepthScale,headY+helmetRimY*headDepthScale,
-      7.1*headDepthScale,1.3*headDepthScale,armorD);
-    px(headX-2*headDepthScale,headY+helmetCrownY*headDepthScale,
-      4*headDepthScale,1.05*headDepthScale,steelL);
-    g.globalAlpha=1;
-  }
+  /* Helmet and plume are physically beyond the back plane. Drawing them once,
+     before the torso, gives natural occlusion at deep pitch without a crossfade
+     between two differently shaped heads. */
+  const helmetProjection=serJonathanHelmetProjection(headY,duckPose.headPitch,
+    duckPose.headScale);
+  rigQuad(headX-1.15,helmetProjection.bottomY-.18,
+    headX+1.15,helmetProjection.bottomY-.18,
+    shoulderX+1.45,shoulderY+.35,shoulderX-1.45,shoulderY+.35,armorD);
+  drawSerJonathanHelmet25D(headX,headY,duckPose.headPitch,duckPose.headScale,
+    armor,armorD,armorL,steelL);
+  /* The plume is parented to the helmet frame. Like the shield, it advances into
+     depth and descends in projection rather than receiving hand-authored Y offsets. */
+  const plumeSway=Math.sin(gal+2.2)*.7,
+    plumeRoot=serJonathanProjectHeadPoint(duckPose,0,2.55),
+    plume1=serJonathanProjectHeadPoint(duckPose,.2,6.65),
+    plume2=serJonathanProjectHeadPoint(duckPose,2.8+plumeSway,9.05),
+    plume3=serJonathanProjectHeadPoint(duckPose,4.7+plumeSway*1.4,7.95);
+  rigSegment(plumeRoot.x,plumeRoot.y,plume1.x,plume1.y,
+    1.55*plumeRoot.scale,plume);
+  rigSegment(plume1.x,plume1.y,plume2.x,plume2.y,
+    1.9*plume1.scale,shade(plume,12));
+  rigSegment(plume2.x,plume2.y,plume3.x,plume3.y,
+    1.35*plume2.scale,plume);
 
-  /* At full crouch this quadrilateral is the TOP plane of Jonathan's back: the
-     far shoulder edge narrows while the near waist edge widens toward camera. */
-  const backShoulderHalf=lerp(4.35,2.85,duckFold),backHipHalf=lerp(2.7,4.05,duckFold),
-    innerShoulderHalf=lerp(3.55,2.15,duckFold),innerHipHalf=lerp(2.05,3.25,duckFold);
-  rigQuad(shoulderX-backShoulderHalf,shoulderY+swordTurn*.35,
-    shoulderX+backShoulderHalf,shoulderY-swordTurn*.35,
-    9+backHipHalf,hipY,9-backHipHalf,hipY,armorD);
-  rigQuad(shoulderX-innerShoulderHalf,shoulderY+.45+swordTurn*.25,
-    shoulderX+innerShoulderHalf,shoulderY+.45-swordTurn*.25,
-    9+innerHipHalf,hipY-1,9-innerHipHalf,hipY-1,armor);
-  rigSegment(shoulderX,shoulderY+.8,9,Math.max(shoulderY+1.2,hipY-2.5),1.3,armorL);
+  /* The back is one rigid projected plate. Distance produces only a mild far-edge
+     reduction; the former drastic shoulder narrowing/waist widening was the
+     squeezed silhouette the real-video comparison exposed. */
+  const backShoulderL=serJonathanProjectTorsoPoint(duckPose,-4.35,1),
+    backShoulderR=serJonathanProjectTorsoPoint(duckPose,4.35,1),
+    backHipR=serJonathanProjectTorsoPoint(duckPose,2.7,0),
+    backHipL=serJonathanProjectTorsoPoint(duckPose,-2.7,0),
+    innerShoulderL=serJonathanProjectTorsoPoint(duckPose,-3.55,1),
+    innerShoulderR=serJonathanProjectTorsoPoint(duckPose,3.55,1),
+    innerHipR=serJonathanProjectTorsoPoint(duckPose,2.05,.103),
+    innerHipL=serJonathanProjectTorsoPoint(duckPose,-2.05,.103),
+    seamTop=serJonathanProjectTorsoPoint(duckPose,0,.92),
+    seamBottom=serJonathanProjectTorsoPoint(duckPose,0,.26);
+  rigQuad(backShoulderL.x,backShoulderL.y+torsoTurn*.35,
+    backShoulderR.x,backShoulderR.y-torsoTurn*.35,
+    backHipR.x,backHipR.y,backHipL.x,backHipL.y,armorD);
+  rigQuad(innerShoulderL.x,innerShoulderL.y+.45+torsoTurn*.25,
+    innerShoulderR.x,innerShoulderR.y+.45-torsoTurn*.25,
+    innerHipR.x,innerHipR.y,innerHipL.x,innerHipL.y,armor);
+  rigSegment(seamTop.x,seamTop.y,seamBottom.x,seamBottom.y,
+    1.3*seamTop.scale,armorL);
   if(duckFold>.01){
-    const planeNearY=lerp(shoulderY+1.25,hipY-1.15,deepDuck),
-      planeNearHalf=lerp(innerShoulderHalf+.35,innerHipHalf,deepDuck);
-    g.globalAlpha=duckFold*.58;
-    rigQuad(shoulderX-backShoulderHalf,shoulderY+swordTurn*.35,
-      shoulderX+backShoulderHalf,shoulderY-swordTurn*.35,
-      9+planeNearHalf,planeNearY,9-planeNearHalf,planeNearY,armorL);
+    const planeL=serJonathanProjectTorsoPoint(duckPose,-3.15,.76,-.32),
+      planeR=serJonathanProjectTorsoPoint(duckPose,3.15,.76,-.32);
+    g.globalAlpha=duckFold*.22;
+    rigQuad(innerShoulderL.x,innerShoulderL.y+.45,
+      innerShoulderR.x,innerShoulderR.y+.45,
+      planeR.x,planeR.y,planeL.x,planeL.y,armorL);
     g.globalAlpha=1;
   }
   px(6.25,hipY-1.3,5.5,1.35,'#3a281f');
-  rigJoint(shoulderX-4.05*depthScale,shoulderY+.7+swordTurn*.28,3.05*farDepthScale,armorL);
-  rigJoint(shoulderX+4.05*depthScale,shoulderY+.7-swordTurn*.28,3.05*farDepthScale,armorL);
+  rigJoint(shoulderX-4.05*depthScale,shoulderY+.7+torsoTurn*.28,3.05*farDepthScale,armorL);
+  rigJoint(shoulderX+4.05*depthScale,shoulderY+.7-torsoTurn*.28,3.05*farDepthScale,armorL);
   /* Rear view keeps most limbs behind the cuirass, but these tiny outer elbow
      caps stop the arms from disappearing without exposing them across the back. */
-  g.globalAlpha=1-deepDuck*.92;
+  g.globalAlpha=1-duckFold*.72;
   if(leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
   if(rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
   g.globalAlpha=1;
@@ -2056,8 +2390,16 @@ function drawSerJonathanRider(x,y,scale,o){
   /* Mounted: only the royal outer face is visible and the grip is trapped
      between plate and shield. During the clip the shield turns edge-on before
      its inner face and gripping hand are allowed onto the foreground layer. */
-  drawSerJonathanShield(shieldCenterX,shieldCenterY,shieldTurn,shieldTilt,shieldScale);
-  if(shieldActive&&shieldGripFrontAlpha>.01){
+  if(!parryShieldInnerLayer)
+    drawCurrentShield();
+  if(!parryShieldActive&&shieldActive&&shieldUpperArmFrontAlpha>.01){
+    g.globalAlpha=shieldUpperArmFrontAlpha*(1-shieldGripFrontAlpha);
+    rigSegment(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
+      2.05*farDepthScale,armorD);
+    rigJoint(leftElbowX,leftElbowY,1.85*farDepthScale,steel);
+    g.globalAlpha=1;
+  }
+  if(!parryShieldActive&&shieldActive&&shieldGripFrontAlpha>.01){
     g.globalAlpha=shieldGripFrontAlpha;
     /* Once the inner face has turned toward camera, the entire gripping arm is
        in front of the plate.  Redrawing only elbow-to-hand made the upper arm
@@ -2071,51 +2413,11 @@ function drawSerJonathanRider(x,y,scale,o){
      helmet. Their top faces reappear over the back plate while the upper arms stay
      behind it, so the elbows read as lowered rather than winged outward. */
   if(duckFold>.02){
-    g.globalAlpha=duckFold*(1-deepDuck*.82);
+    g.globalAlpha=duckFold*.42;
     rigSegment(leftElbowX,leftElbowY,leftHandX,leftHandY,1.15*farDepthScale,armorL);
     rigSegment(rightElbowX,rightElbowY,rightHandX,rightHandY,1.15*farDepthScale,armorL);
     g.globalAlpha=1;
   }
-
-  /* Neck bridge and helmet have their own pitched geometry. As Jonathan folds,
-     the tall rear face becomes a shallow crown/back plane rather than a smaller
-     upright rectangle pasted into the torso. */
-  if(helmetFaceAlpha>.01){
-    g.globalAlpha=helmetFaceAlpha;
-    rigQuad(headX-1.15*headDepthScale,headY+helmetBottomY*headDepthScale,
-      headX+1.15*headDepthScale,headY+helmetBottomY*headDepthScale,
-      shoulderX+1.45,shoulderY+.25,shoulderX-1.45,shoulderY+.25,armorD);
-    rigQuad(headX-3.2*headDepthScale,headY+helmetTopY*headDepthScale,
-      headX+3.2*headDepthScale,headY+helmetTopY*headDepthScale,
-      headX+3.5*headDepthScale,headY+helmetBottomY*headDepthScale,
-      headX-3.5*headDepthScale,headY+helmetBottomY*headDepthScale,armor);
-    px(headX-.5*headDepthScale,headY+lerp(-1.6,-.72,duckFold)*headDepthScale,
-      headDepthScale,lerp(4.8,2.15,duckFold)*headDepthScale,armorL);
-    px(headX-3.55*headDepthScale,headY+helmetRimY*headDepthScale,
-      7.1*headDepthScale,1.3*headDepthScale,armorD);
-    if(duckFold>.01){
-      g.globalAlpha=helmetFaceAlpha*duckFold*.78;
-      rigQuad(headX-2.7*headDepthScale,headY+helmetTopY*headDepthScale,
-        headX+2.7*headDepthScale,headY+helmetTopY*headDepthScale,
-        headX+3.05*headDepthScale,headY+.05*headDepthScale,
-        headX-3.05*headDepthScale,headY+.05*headDepthScale,steelL);
-    }
-    g.globalAlpha=1;
-    g.globalAlpha=helmetFaceAlpha;
-    px(headX-2*headDepthScale,headY+helmetCrownY*headDepthScale,
-      4*headDepthScale,1.05*headDepthScale,steelL);
-    g.globalAlpha=1;
-  }
-  const plumeSway=Math.sin(gal+2.2)*.7,plumeRootY=headY-2.2*headDepthScale,
-    plume1X=headX+(.2+duck*1.8)*plumeLengthScale,
-    plume1Y=plumeRootY+(-4.1+duck*3.2)*plumeLengthScale,
-    plume2X=headX+(2.8+plumeSway+duck*3.1)*plumeLengthScale,
-    plume2Y=plumeRootY+(-6.5+duck*5.7)*plumeLengthScale,
-    plume3X=headX+(4.7+plumeSway*1.4+duck*3.5)*plumeLengthScale,
-    plume3Y=plumeRootY+(-5.4+duck*5.9)*plumeLengthScale;
-  rigSegment(headX,plumeRootY,plume1X,plume1Y,1.55*plumeWidthScale,plume);
-  rigSegment(plume1X,plume1Y,plume2X,plume2Y,1.9*plumeWidthScale,shade(plume,12));
-  rigSegment(plume2X,plume2Y,plume3X,plume3Y,1.35*plumeWidthScale,plume);
 
   if(counter>0){
     g.globalAlpha=Math.sin(counter*Math.PI);g.strokeStyle='#ffe37a';g.lineWidth=2.5*U;
@@ -7912,11 +8214,10 @@ const PLAYER_HEALTH_CONTRACT=Object.freeze({
   rule:'INTEGER_FIXED_POINT_HEALTH_ONE_UNIT_PER_VISIBLE_HEART_CELL',
   shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
 });
-/* Health is implemented as a reusable character foundation, but the current
-   runner has not been rebuilt around it yet. Until that combat revamp, normal
-   runs keep the original one-hit rule; Health Lab remains fully functional. */
-const CURRENT_RUN_USES_HEALTH=false;
-function playerHeartHealthEnabled(){return CURRENT_RUN_USES_HEALTH||activeSkillLabCombat();}
+/* Hearts belong to encounters, not navigation. Road obstacles retain the
+   original one-hit runner contract; miniboss wounds persist through the road
+   and into the stage boss because the same player pool is never reset there. */
+function playerHeartHealthEnabled(){return activeSkillLabCombat()||!!boss||!!minibossFight;}
 const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
@@ -7926,8 +8227,87 @@ const player={
   damageTakenModifierProduct:1,
   heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
-  attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, invuln:0,
+  attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, parryShield:null, invuln:0,
 };
+/* The Squire is encounter state, not another resource economy. He shares the
+   Knight's AP/Resolve and owns only health slots, availability and presentation. */
+const SQUIRE_BASE=Object.freeze({
+  maxHealth:1,deathCooldownTurns:2,
+  slashDamage:6,postureDamage:14,postureChipDamage:2,
+  encourageDamagePerStack:2,encouragePosturePerStack:4,
+});
+const squire={
+  present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
+  parryOnHit:false,
+  activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
+  arrivalT:0,deathT:-1,visualX:-60,lastX:VW/2-58,profile:null,profileKey:'',
+};
+function resetSquireCombat(){
+  Object.assign(squire,{present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
+    parryOnHit:false,
+    activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
+    arrivalT:0,deathT:-1,visualX:-60,lastX:VW/2-58,profile:null,profileKey:''});
+}
+/* Defensive shield choreography is input-owned rather than hazard-owned. Press
+   begins the unmount, hold preserves the guard, and release samples combat on
+   that exact frame while the visual clip continues independently. */
+const PARRY_SHIELD_CLIP=Object.freeze({
+  prepare:.42,strike:.28,contact:.18,retreatStart:.44,retreatEnd:.62,
+  remountStart:.58,remountEnd:.86,settleEnd:1.08,cancel:.30,swipeVisualGrace:.075
+});
+function beginPlayerParryHold(visualDelay=0){
+  if(!player.alive||knightRushSequence||paused||settingsOpen||
+     (mode!=='boss'&&mode!=='miniboss')||(mode==='boss'&&isPlayerTurn()))return false;
+  let carry=0;
+  if(player.parryShield){
+    const pose=activePlayerParryShieldPose();
+    carry=pose?clamp(pose.guard||pose.prepare||0,0,1):0;
+  }
+  player.parryShield={phase:'prepare',t:carry*PARRY_SHIELD_CLIP.prepare,
+    prepare:carry,releaseFrom:carry,visualDelay:carry>0?0:Math.max(0,visualDelay),
+    pointerGestureMoved:false};
+  SFX.init();SFX.swipe();
+  return true;
+}
+function releasePlayerParryHold(pt,source=null){
+  if(source&&!source.parryHold)return false;
+  const clip=player.parryShield;
+  if(!clip||(clip.phase!=='prepare'&&clip.phase!=='hold'))return false;
+  if(!player.alive||(mode!=='boss'&&mode!=='miniboss')||
+     (mode==='boss'&&isPlayerTurn())){cancelPlayerParryHold(source);return true;}
+  clip.releaseFrom=clamp(clip.prepare||0,0,1);clip.phase='release';clip.t=0;
+  if(source){source.parryHold=false;clearProvisionalDebugParryMark(source);}
+  /* The old touchstart snapshot remains available only to swipe. A parry's
+     resolver, debug marker and grace contract all receive the release frame. */
+  const intent=captureTapParryIntent();
+  playerAction('parry',intent);
+  return true;
+}
+function cancelPlayerParryHold(source=null){
+  if(source)source.parryHold=false;
+  const clip=player.parryShield;
+  if(!clip||(clip.phase!=='prepare'&&clip.phase!=='hold'))return false;
+  /* A committed pointer movement never exposed a guard pose, so it has nothing
+     to remount. Starting the recovery clip here was the one-frame elbow flicker. */
+  if(clip.pointerGestureMoved||(clip.prepare||0)<=.001){player.parryShield=null;return true;}
+  clip.releaseFrom=clamp(clip.prepare||0,0,1);clip.phase='cancel';clip.t=0;
+  return true;
+}
+function updatePlayerParryShield(dt){
+  const clip=player.parryShield;if(!clip)return;
+  const T=PARRY_SHIELD_CLIP;clip.t+=dt;
+  if(clip.phase==='prepare'){
+    if(clip.pointerGestureMoved){clip.t=0;clip.prepare=0;return;}
+    /* Pointer input gets a tiny visual-only ambiguity window. Timing is still
+       captured on the exact release frame; only the arm waits long enough for a
+       real swipe to cross SWIPE_TH and cancel without flashing the guard pose. */
+    const delay=Math.min(T.prepare-.001,clip.visualDelay||0),motionT=Math.max(0,clip.t-delay);
+    clip.prepare=easeInOut(clamp(motionT/(T.prepare-delay),0,1));
+    if(clip.t>=T.prepare){clip.phase='hold';clip.t=0;clip.prepare=1;}
+  }else if(clip.phase==='hold')clip.prepare=1;
+  else if(clip.phase==='release'&&clip.t>=T.settleEnd)player.parryShield=null;
+  else if(clip.phase==='cancel'&&clip.t>=T.cancel)player.parryShield=null;
+}
 function characterMaxHealthUnits(character=playerChar){
   return Math.max(1,Math.round(character.maxHearts*PLAYER_HEALTH_CONTRACT.unitsPerHeart));
 }
@@ -7950,6 +8330,10 @@ function syncPlayerVitals(fullHeal=false){
   if(fullHeal||previousMax<=0){player.shieldCharges=0;player.volatileShieldCharges=0;
     player.volatileShieldPosture=0;}
   if(fullHeal)player.heartFlashStartedAt=-Infinity;
+}
+function restorePlayerHealthAfterBoss(){
+  syncPlayerVitals(false);player.currentHealthUnits=player.maxHealthUnits;
+  player.heartFlashStartedAt=-Infinity;
 }
 const HEART_HIT_FLASH_DURATION=.5;
 function beginPlayerHeartFlash(fromUnits,toUnits){
@@ -7987,7 +8371,10 @@ function playerAction(a,parryIntent=null){
   else if(a==='parry'&&(mode==='boss'||mode==='miniboss')){
     const inputAt=parryIntent?parryIntent.at:perfNow;
     markDebugParryInput(inputAt,true,parryIntent);
-    player.lastParry=inputAt; player.parryAnim=1; SFX.swipe();
+    player.lastParry=inputAt;
+    /* Jonathan's parry is now shield-authored. Keep the legacy sword clock only
+       for riders that have not yet received the articulated shield rig. */
+    player.parryAnim=playerChar.rigId==='ser_jonathan'?0:1; SFX.swipe();
     registerModelParryInput(parryIntent);
     registerLegacyParryInput(parryIntent);
     captureMoveLabParryInputSnapshot(parryIntent);
@@ -7998,6 +8385,24 @@ function firstHalfPostureTime(amount,duration){
   return phase*duration;
 }
 function jumpHeight(){ return player.jumpT<0?0:Math.sin(Math.PI*clamp(player.jumpT/jumpDur(),0,1))*CFG.JUMP_H; }
+/* Duck owns three readable beats instead of a fast sine pulse. Both edges have
+   zero velocity, and the short full-pose hold keeps the rider from snapping
+   through the silhouette before the eye can read the forward hinge. */
+function duckPostureAmountAt(duckT){
+  if(duckT<0)return 0;
+  const phase=clamp(duckT/CFG.DUCK_TIME,0,1),lowerEnd=.36,riseStart=.62;
+  if(phase<lowerEnd)return easeInOut(phase/lowerEnd);
+  if(phase<=riseStart)return 1;
+  return 1-easeInOut((phase-riseStart)/(1-riseStart));
+}
+function duckLoweringTimeForAmount(amount){
+  let lo=0,hi=CFG.DUCK_TIME*.36;
+  for(let i=0;i<10;i++){
+    const mid=(lo+hi)*.5;
+    if(duckPostureAmountAt(mid)>=amount)hi=mid;else lo=mid;
+  }
+  return hi;
+}
 function isAirborne(){ return jumpHeight()>CFG.JUMP_SAFE_H; }
 function isDucking(){ return player.duckT>=0; }
 /* Multi-hit commands keep one blade out for the entire action: sheath -> right,
@@ -8039,17 +8444,34 @@ function updatePlayer(dt){
   if(player.duckT>=0){ player.duckT+=dt; if(player.duckT>CFG.DUCK_TIME) player.duckT=-1; }
   player.attackAnim=Math.max(0,player.attackAnim-dt*2.4);
   player.counterAnim=Math.max(0,player.counterAnim-dt*1.6);
-  /* Parry uses the same complete sheath-to-sheath sword clip as an attack. */
+  /* Legacy riders retain their sword parry clock; Jonathan owns a separate held
+     shield state updated below. */
   player.parryAnim=Math.max(0,player.parryAnim-dt*2.4);
+  updatePlayerParryShield(dt);
   updatePlayerSwordCombo(dt);
   player.invuln=Math.max(0,player.invuln-dt);
   updateAllyTrail();
+  updateSquire(dt);
   /* galloping dust */
   if(!resting&&Math.random()<dt*14) burst(laneX(player.x,1)+rnd(-12,12),PLAYER_Y+10,1,['#6a5a40'],40,60,3,.5);
 }
+function squireFormationX(){
+  const knightX=laneX(player.x,1),side=player.x<.45?1:-1;
+  return clamp(knightX+side*62,42,VW-42);
+}
+function updateSquire(dt){
+  if(squire.present){
+    squire.arrivalT=Math.min(1.2,(squire.arrivalT||0)+dt);
+    const target=squireFormationX(),ease=1-Math.exp(-dt*(squire.arrivalT<.8?5.2:8));
+    squire.visualX=lerp(squire.visualX,target,ease);squire.lastX=squire.visualX;
+    if(squire.cheerT!==undefined){squire.cheerT+=dt;if(squire.cheerT>.72)delete squire.cheerT;}
+  }else if(squire.deathT>=0){
+    squire.deathT+=dt;if(squire.deathT>1.05)squire.deathT=-1;
+  }
+}
 function drawPlayer(){
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
-  const duck=player.duckT>=0?Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1)):0;
+  const duck=duckPostureAmountAt(player.duckT);
   const rushLunge=characterSpecialLungeAmount(),shieldAction=activePlayerShieldPose(),
     shieldLunge=shieldAction?shieldAction.lunge:0,jumpH=jumpHeight(),
     y=PLAYER_Y-jumpH-rushLunge*68-shieldLunge*136,
@@ -8070,6 +8492,23 @@ function drawPlayer(){
     swordCombo:player.swordCombo,bowAction:activePlayerBowPose(),shieldAction,
   });
   g.globalAlpha=1;
+}
+function drawSquire(){
+  if(!squire.present&&squire.deathT<0)return;
+  const dying=!squire.present,death=dying?clamp(squire.deathT/1.05,0,1):0,
+    arrival=clamp((squire.arrivalT||0)/.8,0,1),
+    attack=boss?Math.max(0,boss.allyAttackAnim||0):0,
+    strike=Math.sin((1-attack)*Math.PI)*(attack>0?1:0),
+    cheer=squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
+    x=squire.present?squire.visualX:squire.lastX,
+    y=PLAYER_Y+9-strike*13-cheer*5+death*22,
+    scale=.72*(1+strike*.05)*(1-death*.18);
+  g.save();g.globalAlpha=dying?1-death*death:clamp(arrival*1.3,0,1);
+  if(dying){g.translate(x,y);g.rotate(death*.34);g.translate(-x,-y);}
+  drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:perfNow*.34,
+    lean:0,duck:0,air:0,rigId:'ser_jonathan',feather:'#d7b878',horse:'#4f3425',
+    attack, counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction:null});
+  g.restore();
 }
 /* ============================== collisions (run mode) ============================== */
 function updateRunCollisions(){
@@ -8147,6 +8586,10 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
     floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE!','#9ecbff',20);
     return;
   }
+  /* Temporary shields remain the first defence. Once they are gone, a living
+     Squire intercepts one complete boss hit; runner obstacles and finishers never
+     consume him. Base Squire simply takes the wound. Parry is an upgrade hook. */
+  if(!unstoppable&&resolveSquireIntercept(reason))return;
   chainStacks=0;                             // only an actual wound breaks the chain
   if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
   if(labFight&&skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
@@ -8163,6 +8606,7 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
     return;
   }
   player.alive=false; deathReason=reason;
+  keyboardParryHeld=false;player.parryShield=null;
   SFX.hit(); SFX.dead(); flash('#ff4d3a',.8); shake(14,.5); stopTime(.22);
   burst(laneX(player.x,1),PLAYER_Y-40,30,['#ff4d3a','#8f9bb0','#3f7bff'],260,240,4,1);
   setMode('dying');
@@ -8248,7 +8692,7 @@ function samplePlayerHurtVolumesAt(out,x,baseY,duck){
 }
 function samplePlayerHurtVolumes(out=PLAYER_HURT_VOLUMES){
   const x=laneX(player.x,1),baseY=PLAYER_Y-jumpHeight();
-  const duck=player.duckT<0?0:Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1));
+  const duck=duckPostureAmountAt(player.duckT);
   return samplePlayerHurtVolumesAt(out,x,baseY,duck);
 }
 function pointSegmentDistanceSq(px,py,ax,ay,bx,by){
@@ -8648,7 +9092,7 @@ function modelDodgeClearanceTime(h,redRaw){
   }
   if(h.height==='high'){
     const duckNeed=clamp(serJonathanDuckForClearanceY(PLAYER_Y,MODEL_DUCK_CLEARANCE_Y),0,.98);
-    return firstHalfPostureTime(duckNeed,CFG.DUCK_TIME)+
+    return duckLoweringTimeForAmount(duckNeed)+
       MODEL_DODGE_VIABILITY.frameMargin;
   }
   sampleBossPresentation(h.actor,h.def,h.predictPresentation,'strike',redRaw*h.duration);
@@ -9820,7 +10264,7 @@ const CHARGE_BANK_CONTRACT=Object.freeze({version:2,defaultPolicy:'COMMIT_FULL_B
   economyPolicy:'COMMIT_THEN_EXPLICIT_RETURN',rule:'NO_SILENT_PARTIAL_SPEND'});
 const CHAIN_PHASE_POLICY=Object.freeze({defenseToPlayer:'CARRY',playerToDefense:'RESET'});
 function chainAfterPlayerPhase(){return 0;}
-const CHAIN_PHASE_POLICY_AUDIT=(()=>{
+const CHAIN_PHASE_POLICY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   if(CHAIN_PHASE_POLICY.defenseToPlayer!=='CARRY'||CHAIN_PHASE_POLICY.playerToDefense!=='RESET'||
      chainAfterPlayerPhase(37)!==0)
     throw new Error('Chain phase policy must carry defense Chain once, then reset after player actions');
@@ -10043,6 +10487,7 @@ function markRule(data){
   return Object.freeze({mode:'CONSUME',timing:'ACTION',cap:1,damagePerMark:0,
     curve:'FULL',delivery:'LAST',chainPerMark:0,temporaryChainPerMark:0,fraction:null,...data});
 }
+bootCheckpoint('runtime-core');
 /* ======================= WEAPON / SKILL OWNERSHIP =======================
    Immutable definitions form one ownership tree:
    Weapon -> Weapon Skill -> Base Attribute -> Primary -> Secondary.
@@ -10171,6 +10616,9 @@ const CLASS_SKILLS=new DefinitionRegistry('class skill');
 CLASS_SKILLS.register(new ClassSkillDefinition({id:'shield_bash',classId:'knight',name:'SHIELD BASH',
   identityId:'SHIELD_BASH',command:{cost:1,damage:14,hits:1,posture:20,canCrit:false,
     col:'#9ecbff',slash:-.38,tags:['class','melee','shield','posture']}}));
+CLASS_SKILLS.register(new ClassSkillDefinition({id:'call_squire',classId:'knight',name:'CALL SQUIRE',
+  identityId:'SQUIRE_CALL',command:{cost:1,damage:0,hits:1,canCrit:false,
+    col:'#d7b878',squireSupport:true,tags:['class','support','summon','squire']}}));
 Object.freeze(CLASS_SKILLS.ids);Object.freeze(CLASS_SKILLS.list);
 Object.freeze(CLASS_SKILLS.byId);Object.freeze(CLASS_SKILLS);
 
@@ -10257,7 +10705,7 @@ const SHIELD_BASH_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   SHIELD_BASH_ROUTES.map(route=>[route.id,route])));
 const CLASS_SKILL_ROUTES=SHIELD_BASH_ROUTES;
 const CLASS_SKILL_ROUTE_BY_ID=SHIELD_BASH_ROUTE_BY_ID;
-const CLASS_SKILL_ROUTE_AUDIT=(()=>{
+const CLASS_SKILL_ROUTE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const reinforced=SHIELD_BASH_ROUTE_BY_ID.shield_bash_reinforced,
     styles=SHIELD_BASH_ROUTES.filter(route=>route.depth===2),
     mastery=SHIELD_BASH_ROUTES.filter(route=>route.depth===3),
@@ -11425,7 +11873,7 @@ function runCombatAttributeRegistrySelfTests(){
     pairs:Object.keys(COMBAT_ATTRIBUTE_PAIR_CONTRACTS).length,
     capabilities:COMBAT_ATTRIBUTE_CAPABILITIES.length,axes:COMBAT_ATTRIBUTE_SCALING_AXES.length});
 }
-const COMBAT_ATTRIBUTE_REGISTRY_AUDIT=runCombatAttributeRegistrySelfTests();
+const COMBAT_ATTRIBUTE_REGISTRY_AUDIT=RUN_BOOT_AUDITS&&runCombatAttributeRegistrySelfTests();
 
 /* =========================== COMBAT DELIVERY REGISTRY ===========================
    A profile owns reusable animation language and legal vocabulary. A resolved
@@ -12244,7 +12692,7 @@ const SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID=Object.freeze({
   mark_chain_shotgun_chain_apex:'BOW_SHOTGUN',
   mark_chain_shotgun_wave_apex:'BOW_SHOTGUN'
 });
-const SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT=(()=>{
+const SHARPSHOOT_BOW_ROUTE_RECIPE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const missing=Object.entries(SHARPSHOOT_BOW_RECIPE_BY_ROUTE_ID)
     .filter(([,recipeId])=>!BOW_ANIMATION_RECIPES.has(recipeId));
   if(missing.length)throw new Error('Sharpshoot routes reference unknown Bow recipes: '+
@@ -12325,7 +12773,7 @@ function buildBowActionTimeline(command,delivery,charge=0,distance=600,markAtSta
   return Object.freeze({recipe,releases,contacts,firstRelease,flightTime,interval,waveCount,
     cueStrength,recoveryEnd});
 }
-const BOW_ANIMATION_RECIPE_AUDIT=(()=>{
+const BOW_ANIMATION_RECIPE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const delivery=Object.freeze({family:'PROJECTILE',profileId:'OWNER_BOW',pattern:'SINGLE'}),
     standard=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_STANDARD'},delivery,0,600),
     detonation=buildBowActionTimeline({hits:1,bowAnimationRecipeId:'BOW_DETONATION'},delivery,0,600),
@@ -12502,7 +12950,7 @@ function runCombatDeliveryRegistrySelfTests(){
     payloadModes:COMBAT_PAYLOAD_APPLICATION_MODES.length,legacySamples:3,
     baseSkills:BASE_TURN_SKILLS.length});
 }
-const COMBAT_DELIVERY_REGISTRY_AUDIT=runCombatDeliveryRegistrySelfTests();
+const COMBAT_DELIVERY_REGISTRY_AUDIT=RUN_BOOT_AUDITS&&runCombatDeliveryRegistrySelfTests();
 const SKILL_SYNTHESIS_QUALITY_AXES=Object.freeze([
   'DAMAGE_WEIGHT','HIT_COUNT','CHAIN_TOTAL','MARK_GAIN','DAMAGE_BACKLOAD','CHAIN_DAMAGE_RATE'
 ]);
@@ -12657,7 +13105,7 @@ const F1_SYNTHESIS_ROUTE_RECIPES=Object.freeze([
 ]);
 const F1_SYNTHESIS_ROUTE_RECIPE_BY_ID=Object.freeze(Object.fromEntries(
   F1_SYNTHESIS_ROUTE_RECIPES.map(recipe=>[recipe.id,recipe])));
-const F1_SYNTHESIS_ROUTE_RECIPE_AUDIT=(()=>{
+const F1_SYNTHESIS_ROUTE_RECIPE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const forms=F1_SYNTHESIS_ROUTE_RECIPES.filter(recipe=>recipe.depth===1),
     specializations=F1_SYNTHESIS_ROUTE_RECIPES.filter(recipe=>recipe.depth===2),
     ids=new Set(F1_SYNTHESIS_ROUTE_RECIPES.map(recipe=>recipe.id));
@@ -12687,7 +13135,7 @@ const F1_SYNTHESIS_ROUTE_RECIPE_AUDIT=(()=>{
     throw new Error('F1 legacy Attribute adapter changed its calibration meaning');
   return Object.freeze({forms:forms.length,specializations:specializations.length,total:F1_SYNTHESIS_ROUTE_RECIPES.length});
 })();
-const SKILL_SYNTHESIS_IDENTITY_AUDIT=(()=>{
+const SKILL_SYNTHESIS_IDENTITY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const common={thresholdPolicyId:F1_QUALITY_THRESHOLD_POLICY_ID,
     qualityAxes:['DAMAGE_WEIGHT'],qualityProfile:{DAMAGE_WEIGHT:1},
     mechanicalBlueprint:{hits:1,chainTotal:0,markGain:0,damageShape:'EVEN',chainShape:'EVEN',extraChainBonus:0},
@@ -12716,6 +13164,7 @@ const SKILL_SYNTHESIS_IDENTITY_AUDIT=(()=>{
     zeroMarkChain:true,rejectedImmediateCharge});
 })();
 
+bootCheckpoint('skill-foundation');
 /* ======================= SHARPSHOOT MARK VERTICAL SLICE =======================
    This is the first final Attribute-v1 content contract. Preview nodes remain
    outside the live draft catalogue; materialized routes can be equipped only in
@@ -12814,7 +13263,7 @@ function materializeWeaponSkillBaseAttributePower(command,skillId,paidPower){
     paidPower:Number(credit.toFixed(4)),spentPower:Number(spent.toFixed(4)),
     reservePower:Number(reserve.toFixed(4))});
 }
-const WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT=(()=>{
+const WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   for(const skillDefinition of WEAPON_SKILLS.list){
     const definition=skillDefinition.command,weapon=WEAPONS.get(skillDefinition.weaponId),
       family=WEAPON_ANIMATION_FAMILIES.get(skillDefinition.animationFamilyId),
@@ -13349,7 +13798,7 @@ function skillAttributeRouteContract(data){
     stableCausality,
     twistIdentity,apexDesign,deliveryPolicy,deliveryScaling});
 }
-const DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT=(()=>{
+const DETONATION_BASE_ATTRIBUTE_ROUTE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const route=skillAttributeRouteContract({id:'audit_mark_burst_detonation_form',skillId:'mark_burst',
     depth:1,formSlot:1,primaryAttributeId:'DETONATION',secondaryAttributeId:null,powerBudget:1,
     promise:'Preserve contact-bound Detonation as both Base and Primary output.',
@@ -22208,9 +22657,10 @@ const APEX_DECISION_DEPTH_REJECTION_SELF_TEST=(()=>{
   if(!rejected)throw new Error('Apex Design V2 must reject a four-way numeric-only family');
   return Object.freeze({passed:true,rejectsNumericOnlyFamily:true});
 })();
-const MARK_BURST_APEX_DECISION_DEPTH_AUDIT=
+bootCheckpoint('skill-slice-a');
+const MARK_BURST_APEX_DECISION_DEPTH_AUDIT=RUN_BOOT_AUDITS&&
   auditVersionedApexDecisionFamilies(MARK_BURST_ROUTE_CONTRACTS);
-const MARK_BURST_DETONATION_AFFLICTION_STRUCTURE_AUDIT=(()=>{
+const MARK_BURST_DETONATION_AFFLICTION_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=twists.map(route=>route.id),apexes=
       MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.includes(route.parentId)),
@@ -22223,7 +22673,7 @@ const MARK_BURST_DETONATION_AFFLICTION_STRUCTURE_AUDIT=(()=>{
     throw new Error('Detonation/Affliction needs 4 distinct Twists and 4 Apex Design V2 children each');
   return Object.freeze({passed:true,twists:4,apexes:16,engines:4});
 })();
-const MARK_BURST_DETONATION_CHARGE_STRUCTURE_AUDIT=(()=>{
+const MARK_BURST_DETONATION_CHARGE_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=twists.map(route=>route.id),apexes=
       MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.includes(route.parentId)),
@@ -22236,7 +22686,7 @@ const MARK_BURST_DETONATION_CHARGE_STRUCTURE_AUDIT=(()=>{
     throw new Error('Detonation/Charge needs 4 distinct Twists and 4 Apex Design V2 children each');
   return Object.freeze({passed:true,twists:4,apexes:16,engines:4});
 })();
-const MARK_BURST_DETONATION_CRITICAL_STRUCTURE_AUDIT=(()=>{
+const MARK_BURST_DETONATION_CRITICAL_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_critical_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -22254,7 +22704,7 @@ const MARK_BURST_DETONATION_CRITICAL_STRUCTURE_AUDIT=(()=>{
   return Object.freeze({passed:true,twists:twists.length,apexes:apexes.length,
     engines:engines.size});
 })();
-const MARK_BURST_STABLE_CAUSALITY_AUDIT=(()=>{
+const MARK_BURST_STABLE_CAUSALITY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===3),failures=twists.filter(route=>
     !route.stableCausality||route.stableCausality.startsFrom!=='PRIMARY'||
     route.stableCausality.zeroSecondary!=='FUNCTIONAL'||
@@ -22392,7 +22842,7 @@ const SHARPSHOOT_AFFLICTION_TWIST_AUTHORING_BRIEFS=Object.freeze([
     identityPromise:
       'Defense performance feeds a dominant wound through reactive or measured Charge use rather than a generic damage release.'})
 ]);
-const SHARPSHOOT_AFFLICTION_TWIST_BRIEF_AUDIT=(()=>{
+const SHARPSHOOT_AFFLICTION_TWIST_BRIEF_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const briefs=SHARPSHOOT_AFFLICTION_TWIST_AUTHORING_BRIEFS,
     specs=briefs.map(brief=>SHARPSHOOT_MARK_ROUTE_BY_ID[brief.specId]),
     uniqueSecondaries=new Set(specs.map(spec=>spec.secondaryAttributeId)),
@@ -22562,7 +23012,7 @@ const SHARPSHOOT_AFFLICTION_TWIST_DESIGN_CANDIDATES=Object.freeze([
     engineIds:['DEFENSE_FEEDS_BLEED','BLEED_RETRIGGER'],deliveryPurpose:'MECHANIC_REQUIRED',
     deliveryReason:'A defense-end wound echo makes the completed phase performance and partial retrigger visible.'})
 ]);
-const SHARPSHOOT_AFFLICTION_TWIST_DESIGN_AUDIT=(()=>{
+const SHARPSHOOT_AFFLICTION_TWIST_DESIGN_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const familyRows=[],allIds=new Set(SHARPSHOOT_AFFLICTION_TWIST_DESIGN_CANDIDATES.map(row=>row.id));
   if(allIds.size!==SHARPSHOOT_AFFLICTION_TWIST_DESIGN_CANDIDATES.length)
     throw new Error('F5 Twist design candidates need unique ids');
@@ -22596,7 +23046,7 @@ const SHARPSHOOT_AFFLICTION_TWIST_DESIGN_AUDIT=(()=>{
       twistIdentityCoreFingerprint(row.identity))).size,materialized:true,
     rows:Object.freeze(familyRows)});
 })();
-const SHARPSHOOT_TWIST_AUTHORING_INFRASTRUCTURE_AUDIT=(()=>{
+const SHARPSHOOT_TWIST_AUTHORING_INFRASTRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const brief=SHARPSHOOT_AFFLICTION_TWIST_AUTHORING_BRIEFS.find(entry=>
       entry.specId==='affliction_focus_spec'),cards=[
     {id:'fixture_bleed_power',deliveryPattern:'SINGLE',identity:twistIdentityContract({version:1,
@@ -22628,7 +23078,7 @@ const SHARPSHOOT_TWIST_AUTHORING_INFRASTRUCTURE_AUDIT=(()=>{
     positiveMaxSimilarity:positive.maximumSimilarity,deliveryCloneRejected:true,
     futureFormGate:6,perFrameWork:false});
 })();
-const SHARPSHOOT_MARK_ROUTE_AUDIT=(()=>{
+const SHARPSHOOT_MARK_ROUTE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form=SHARPSHOOT_MARK_ROUTE_BY_ID.mark_primary_form,
     chainForm=SHARPSHOOT_MARK_ROUTE_BY_ID.chain_primary_form,
     postureForm=SHARPSHOOT_MARK_ROUTE_BY_ID.posture_primary_form,
@@ -23568,7 +24018,7 @@ const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_TR=Object.freeze({
   mark_charge_distribution_mark_apex:'Charge ile güçlenen her saldırının bir kez bıraktığı Mark desteğini büyütür. Diğer üç skilli geçici olarak Sharpshootun Primary Mark planına bağlar.',
   mark_charge_distribution_final_apex:'Dağıtılmış Charge motorunu korur; bankadaki son Chargeı harcayan mevcut saldırıya ekstra hasar verir. Yeni bir vuruş üretmeden fazın bitiriş kararını ödüllendirir.'
 });
-const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=(()=>{
+const SHARPSHOOT_ROUTE_DEBUG_SUMMARY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const families=new Set(['MARK','CHAIN','CRITICAL','AFFLICTION','CHARGE']),
     routes=SHARPSHOOT_MARK_ROUTE_CONTRACTS
     .filter(route=>route.depth===1||families.has(route.secondaryAttributeId)||
@@ -23887,7 +24337,7 @@ function sharpshootLabRouteChildren(parentRouteId){
     return route&&route.parentId===parentRouteId;
   });
 }
-const SHARPSHOOT_MARK_LAB_AUDIT=(()=>{
+const SHARPSHOOT_MARK_LAB_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form1Specs=SHARPSHOOT_MARK_LAB_NODES.filter(node=>
       SHARPSHOOT_MARK_ROUTE_BY_ID[node.routeId].formSlot===1),
     form2Specs=SHARPSHOOT_MARK_LAB_NODES.filter(node=>
@@ -24162,7 +24612,7 @@ const SKILL_RARITY_SYNTHESIS_ECONOMY=Object.freeze({
    than one isolated roll: 1/4/8/14 gives Uncommon a visible step, keeps Rare a
    build event, and leaves part of Legendary's jackpot budget to carried Stamps.
    Chance artifacts may alter future rolls, but never rewrite carried Quality. */
-const SKILL_RARITY_INFORMATION_AUDIT=(()=>{
+const SKILL_RARITY_INFORMATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const total=SKILL_RARITY_ORDER.reduce((sum,rarity)=>sum+SKILL_MUTATION_RARITY_WEIGHTS[rarity],0),
     values=Object.create(null),qualities=[];
   if(total!==100)throw new Error('Skill rarity weights must remain percentages');
@@ -24196,7 +24646,7 @@ const SKILL_GUARDRAIL_SCENARIOS=Object.freeze([
   Object.freeze({id:'CHAIN_READY',mark:0,chain:10}),
   Object.freeze({id:'COMBINED',mark:8,chain:10})
 ]);
-const SKILL_GUARDRAIL_POLICY_AUDIT=(()=>{
+const SKILL_GUARDRAIL_POLICY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   if(SKILL_GUARDRAIL_SCENARIOS.map(entry=>entry.id).join('|')!==SKILL_SYNTHESIS_SCENARIO_IDS.join('|')||
      Object.values(SKILL_GUARDRAIL_POWER_VALUES).some(value=>!(value>0)))
     throw new Error('Skill guardrail power values and scenario ids must remain positive and aligned');
@@ -24345,7 +24795,7 @@ function skillQualityThresholdProgress(value,thresholds){
     tierCost:tierCost===null?null:Number(tierCost.toFixed(3)),
     needed:needed===null?null:Number(needed.toFixed(3)),progress:Number(progress.toFixed(4))});
 }
-const SKILL_QUALITY_RESERVE_AUDIT=(()=>{
+const SKILL_QUALITY_RESERVE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const thresholds=SKILL_QUALITY_THRESHOLD_POLICIES[F1_QUALITY_THRESHOLD_POLICY_ID],
     before=skillQualityThresholdProgress(1.4,thresholds.HIT_COUNT),
     after=skillQualityThresholdProgress(3.1,thresholds.HIT_COUNT);
@@ -24670,7 +25120,7 @@ function materializeAttributeMotorDelivery(attributeId,kind,totalQuality,density
     contacts,nativeOutput,pattern:delivery.pattern,interval:delivery.interval,weight,capped:false,
     contactGroups:Object.freeze(contactGroups)});
 }
-const ATTRIBUTE_MOTOR_DELIVERY_AUDIT=(()=>{
+const ATTRIBUTE_MOTOR_DELIVERY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const rows=[];
   for(const attributeId of Object.keys(ATTRIBUTE_MOTOR_OUTPUT_CONTRACTS)){
     for(const kind of Object.values(MOTOR_DELIVERY_KINDS)){
@@ -24695,14 +25145,14 @@ const ATTRIBUTE_MOTOR_DELIVERY_AUDIT=(()=>{
     deliveries:Object.freeze(Object.values(MOTOR_DELIVERY_PATTERNS)),
     styles:Object.freeze(Object.values(MOTOR_DELIVERY_KINDS)),rows:Object.freeze(rows)});
 })();
-const SKILL_DELIVERY_MAGNITUDE_AUDIT=(()=>{
+const SKILL_DELIVERY_MAGNITUDE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const samples=Object.freeze({0:1,3:1,4:2,6:2,9:3,10:3,16:4,25:5,49:7,10000:100});
   for(const [quality,expected] of Object.entries(samples))
     if(skillDeliveryMagnitude(Number(quality))!==expected)
       throw new Error('Delivery magnitude curve failed at Quality '+quality);
   return Object.freeze({passed:true,formula:'FLOOR_SQRT_TOTAL_QUALITY',capped:false,samples});
 })();
-const SKILL_DELIVERY_SCALING_AUDIT=(()=>{
+const SKILL_DELIVERY_SCALING_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const mock=(quality,power)=>({totalQuality:quality,
       axisPowerCredits:{DELIVERY_CONTACTS:power,DELIVERY_WEIGHT:power}}),
     qualities=[3,6,10,16],contacts=qualities.map(quality=>{
@@ -24736,7 +25186,7 @@ function skillRepeatedThresholdProgress(value,step){
     reserve:Number(reserve.toFixed(3)),next:Number(next.toFixed(3)),tierCost:Number(tierCost.toFixed(3)),
     needed:Number(needed.toFixed(3)),progress:Number(clamp(reserve/tierCost,0,1).toFixed(4))});
 }
-const UNBOUNDED_MARK_OUTPUT_AUDIT=(()=>{
+const UNBOUNDED_MARK_OUTPUT_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const sample=skillRepeatedThresholdProgress(600,SKILL_GUARDRAIL_POWER_VALUES.MARK_GAIN);
   if(sample.rank!==100||sample.next!==606||sample.needed!==6)
     throw new Error('Repeated Mark thresholds must continue beyond ordinary authored output');
@@ -24799,7 +25249,7 @@ function stableLayerDirectRetention(receipt,rarityDirectExpressionPower=0){
   return direct*STABLE_LAYER_DIRECT_RETENTION_SHARE+
     Math.max(0,Number(rarityDirectExpressionPower)||0);
 }
-const PURE_ATTRIBUTE_RARITY_EXPRESSION_AUDIT=(()=>{
+const PURE_ATTRIBUTE_RARITY_EXPRESSION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const leverage=SKILL_SYNTHESIS_DEPTH_LEVERAGE[2],share=
       PURE_ATTRIBUTE_RARITY_EXPRESSION.MARK.share,
     values=Object.freeze(Object.fromEntries(SKILL_RARITY_ORDER.map(rarity=>[rarity,
@@ -24847,7 +25297,7 @@ function sharpshootMarkTrailScale(mechanics,totalQuality){
   return Math.max(1,mechanics.phaseMarkTrailBase+Math.floor(earned/
     Math.max(Number.EPSILON,Number(mechanics.phaseMarkTrailQualityStep)||12)));
 }
-const SHARPSHOOT_MARK_FOCUS_UNBOUNDED_SCALE_AUDIT=(()=>{
+const SHARPSHOOT_MARK_FOCUS_UNBOUNDED_SCALE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const focusLow=sharpshootFocusIdentityMarkBonus(700),
     focusHigh=sharpshootFocusIdentityMarkBonus(7000),
     bloomLow=commandBloomMarkGain({markBloomRate:.20},700),
@@ -24880,7 +25330,7 @@ function skillAttributeExpressionRatio(attributeId,role,contextProfileId){
     throw new Error('Missing output expression policy for '+role+' '+contextProfileId+' '+attributeId);
   return Number((roleRatio*contextRatio).toFixed(4));
 }
-const SKILL_ATTRIBUTE_EXPRESSION_AUDIT=(()=>{
+const SKILL_ATTRIBUTE_EXPRESSION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const posture=skillAttributeExpressionRatio('POSTURE','SECONDARY','LIGHT_RANGED'),
     critical=skillAttributeExpressionRatio('CRITICAL','SECONDARY','STABLE_SUPPORT');
   if(posture!==.32||critical!==.4)
@@ -28061,7 +28511,8 @@ function synthesizeMarkBurstDetonationPath(formRarity='COMMON',specializationId=
   return synthesizeMarkBurstFormRoute(form,formRarity,specialization,specializationRarity,
     twist,twistRarity,apex,apexRarity);
 }
-const MARK_BURST_DETONATION_FORM_AUDIT=(()=>{
+bootCheckpoint('skill-slice-b');
+const MARK_BURST_DETONATION_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const rows=SKILL_RARITY_ORDER.map(rarity=>{
     const command=synthesizeMarkBurstDetonationForm(rarity),plan=commandMarkPlan(command,8);
     return Object.freeze({rarity,damage:command.damage,damagePerMark:command.markRule.damagePerMark,
@@ -29490,7 +29941,8 @@ function synthesizeSharpshootCriticalPath(formRarity='COMMON',specializationId=n
   SHARPSHOOT_SYNTHESIS_COMMAND_CACHE.set(synthesisCacheKey,cloneSharpshootSynthesisCommand(command));
   return command;
 }
-const SHARPSHOOT_CRITICAL_FORM_AUDIT=(()=>{
+bootCheckpoint('skill-b-critical');
+const SHARPSHOOT_CRITICAL_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const rows=SKILL_RARITY_ORDER.map(rarity=>{
     const command=synthesizeSharpshootCriticalPath(rarity),score=
       stableEvolutionCombinedGuardrailValue(command),play=
@@ -29517,7 +29969,8 @@ const SHARPSHOOT_CRITICAL_FORM_AUDIT=(()=>{
     precisionPolicy:'PERSIST_AFTER_NON_CRIT_RESET_ON_CRIT',
     overflowPolicy:'CHANCE_AND_PRECISION_TO_LOCAL_CRIT_POWER'});
 })();
-const SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT=(()=>{
+bootCheckpoint('critical-form-done');
+const SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.formSlot===4),
     matrix=[],standard=[];
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER)
@@ -29581,7 +30034,8 @@ const SHARPSHOOT_CRITICAL_SPECIALIZATION_AUDIT=(()=>{
     maxPowerSpread:Number(maxPowerSpread.toFixed(4)),standard:Object.freeze(standard),
     matrix:Object.freeze(matrix)});
 })();
-const SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT=(()=>{
+bootCheckpoint('critical-spec-done');
+const SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twistIds=['critical_focus_sequence_twist','critical_focus_verdict_twist',
       'critical_focus_cascade_twist','critical_focus_packet_twist'],matrix=[],standard=[];
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER)
@@ -29640,7 +30094,8 @@ const SHARPSHOOT_CRITICAL_FOCUS_TWIST_AUDIT=(()=>{
     powerSpread:Number(powerSpread.toFixed(4)),capped:false,standard:Object.freeze(standard),
     matrix:Object.freeze(matrix)});
 })();
-const SHARPSHOOT_CRITICAL_AFFLICTION_TWIST_AUDIT=(()=>{
+bootCheckpoint('critical-focus-twist-done');
+const SHARPSHOOT_CRITICAL_AFFLICTION_TWIST_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twistIds=['critical_affliction_volley_twist','critical_affliction_rupture_twist',
       'critical_affliction_bloodsight_twist','critical_affliction_packet_twist'],matrix=[],standard=[];
   for(const formRarity of SKILL_RARITY_ORDER)for(const specRarity of SKILL_RARITY_ORDER)
@@ -29704,7 +30159,8 @@ const SHARPSHOOT_CRITICAL_AFFLICTION_TWIST_AUDIT=(()=>{
     powerSpread:Number(powerSpread.toFixed(4)),capped:false,standard:Object.freeze(standard),
     matrix:Object.freeze(matrix)});
 })();
-const SHARPSHOOT_CRITICAL_AFFLICTION_APEX_AUDIT=(()=>{
+bootCheckpoint('critical-affliction-twist-done');
+const SHARPSHOOT_CRITICAL_AFFLICTION_APEX_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twistIds=['critical_affliction_volley_twist','critical_affliction_rupture_twist',
       'critical_affliction_bloodsight_twist','critical_affliction_packet_twist'],
     apexRoutes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -29795,7 +30251,8 @@ const SHARPSHOOT_CRITICAL_AFFLICTION_APEX_AUDIT=(()=>{
     capped:false,standard:Object.freeze(standard),leaders:Object.freeze(leaders),
     matrix:Object.freeze(matrix)});
 })();
-const SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT=(()=>{
+bootCheckpoint('critical-affliction-apex-done');
+const SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twistIds=['critical_focus_sequence_twist','critical_focus_verdict_twist',
       'critical_focus_cascade_twist','critical_focus_packet_twist'],
     apexRoutes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -29881,7 +30338,8 @@ const SHARPSHOOT_CRITICAL_FOCUS_APEX_AUDIT=(()=>{
     histories:histories.length,capped:false,
     standard:Object.freeze(standard),matrix:Object.freeze(matrix)});
 })();
-const SHARPSHOOT_CRITICAL_ADJACENT_FAMILY_AUDIT=(()=>{
+bootCheckpoint('critical-focus-apex-done');
+const SHARPSHOOT_CRITICAL_ADJACENT_FAMILY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const mean=(rows,key)=>rows.reduce((sum,row)=>sum+row[key],0)/rows.length,
     spreadPair=(left,right,key)=>{const a=mean(left,key),b=mean(right,key),middle=(a+b)/2;
       return middle>0?Math.abs(a-b)/middle:0;},
@@ -29900,7 +30358,8 @@ const SHARPSHOOT_CRITICAL_ADJACENT_FAMILY_AUDIT=(()=>{
     apexScoreSpread:Number(apexScoreSpread.toFixed(4)),
     apexPlaySpread:Number(apexPlaySpread.toFixed(4)),maximum:Number(maximum.toFixed(4))});
 })();
-const SHARPSHOOT_CRITICAL_CHARGE_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('critical-adjacent-done');
+const SHARPSHOOT_CRITICAL_CHARGE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
       route.parentId==='critical_charge_spec'),apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(
       route=>route.depth===4&&twists.some(twist=>twist.id===route.parentId));
@@ -29909,6 +30368,7 @@ const SHARPSHOOT_CRITICAL_CHARGE_CLOSURE_AUDIT=(()=>{
     throw new Error('F4S6 needs four materialized Twists and four Apexes under each Twist');
   return Object.freeze({passed:true,twists:twists.length,apexes:apexes.length});
 })();
+bootCheckpoint('critical-charge-done');
 /* Kept out of normal game boot: the validator calls this representative rarity
    matrix after loading the page. Runtime pays only the O(1) closure audit above. */
 function runSharpshootCriticalChargeFamilyAudit(){
@@ -30359,7 +30819,8 @@ function synthesizeSharpshootAfflictionPath(formRarity='COMMON',specializationId
   SHARPSHOOT_SYNTHESIS_COMMAND_CACHE.set(synthesisCacheKey,cloneSharpshootSynthesisCommand(command));
   return command;
 }
-const SHARPSHOOT_AFFLICTION_FORM_AUDIT=(()=>{
+bootCheckpoint('skill-b-affliction');
+const SHARPSHOOT_AFFLICTION_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const rows=[];let previous=null;
   for(const rarity of SKILL_RARITY_ORDER){
     const command=synthesizeSharpshootAfflictionPath(rarity),delivery=commandDeliveryContract(command),
@@ -30387,7 +30848,8 @@ const SHARPSHOOT_AFFLICTION_FORM_AUDIT=(()=>{
   return Object.freeze({passed:true,cards:rows.length,capped:false,durationTicks:2,
     rows:Object.freeze(rows)});
 })();
-const SHARPSHOOT_AFFLICTION_SPECIALIZATION_AUDIT=(()=>{
+bootCheckpoint('affliction-form-done');
+const SHARPSHOOT_AFFLICTION_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.formSlot===5),
     rows=[],standard=[],spreads=[];
   if(specs.length!==6)throw new Error('F5 needs six materialized Specializations');
@@ -30441,7 +30903,8 @@ const SHARPSHOOT_AFFLICTION_SPECIALIZATION_AUDIT=(()=>{
     maxPowerSpread:Number(Math.max(...spreads).toFixed(4)),standard:Object.freeze(standard),
     rows:Object.freeze(rows),durationTicks:2,baseAttribute:'MARK',baseLayerShare:.10});
 })();
-const SHARPSHOOT_AFFLICTION_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('affliction-spec-done');
+const SHARPSHOOT_AFFLICTION_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&route.formSlot===5),
     twistIds=twists.map(route=>route.id),apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
       route.depth===4&&twistIds.includes(route.parentId)),twistRows=[],apexRows=[],spreads=[];
@@ -30540,6 +31003,7 @@ const SHARPSHOOT_AFFLICTION_CLOSURE_AUDIT=(()=>{
     standardTwists:Object.freeze(twistRows.filter(row=>row.rarity==='COMMON')),
     standardApex:Object.freeze(commonApex)});
 })();
+bootCheckpoint('affliction-closure-done');
 function sharpshootPostureHistoryNode(route,rarity,receipt){
   return Object.freeze({...sharpshootMarkHistoryNode(route,rarity,receipt,0),
     mutationId:'pinning_shot',buildAspect:'BREAK_ARCHERY'});
@@ -31977,7 +32441,8 @@ function synthesizeSharpshootChainDescendantPath(formRarity='COMMON',specializat
     specializationRarity,twistId,twistRarity,apexId,apexRarity,applyRankFloor);
   return null;
 }
-const SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT=(()=>{
+bootCheckpoint('skill-b-chain');
+const SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
       route.depth===2&&route.formSlot===2),rows=[];
   for(const formRarity of SKILL_RARITY_ORDER)for(const spec of specs){
@@ -32030,7 +32495,8 @@ const SHARPSHOOT_CHAIN_SPECIALIZATION_AUDIT=(()=>{
       f1ChainDamage:Number(commandRealChainDamagePerStack(f1MarkChain).toFixed(3)),
       f2ChainDamage:Number(commandRealChainDamagePerStack(f2ChainMark).toFixed(3))})});
 })();
-const SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT=(()=>{
+bootCheckpoint('chain-spec-done');
+const SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
       route.parentId==='chain_mark_spec'),
     apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -32090,7 +32556,8 @@ const SHARPSHOOT_CHAIN_MARK_FAMILY_AUDIT=(()=>{
     cards:rows.length,powerSpread:Number(powerSpread.toFixed(4)),
     standard:Object.freeze(standard.map(Object.freeze))});
 })();
-const SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT=(()=>{
+bootCheckpoint('chain-mark-done');
+const SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
       route.parentId==='chain_focus_spec'),apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
       route.depth===4&&twists.some(twist=>twist.id===route.parentId)),rows=[];
@@ -32157,6 +32624,7 @@ const SHARPSHOOT_CHAIN_FOCUS_FAMILY_AUDIT=(()=>{
     cards:rows.length,powerSpread:Number(powerSpread.toFixed(4)),
     standard:Object.freeze(standard.map(Object.freeze))});
 })();
+bootCheckpoint('chain-focus-done');
 function auditSharpshootChainSecondaryFamily(config){
   const twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
       route.parentId===config.specId),apexes=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>
@@ -32237,7 +32705,7 @@ function auditSharpshootChainSecondaryFamily(config){
     powerSpread:Number(powerSpread.toFixed(4)),standard:Object.freeze(standard.map(Object.freeze)),
     roleLeaders:Object.freeze(roleLeaders)});
 }
-const SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily({
+const SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT=RUN_BOOT_AUDITS&&auditSharpshootChainSecondaryFamily({
   label:'F2S3 Chain/Posture',specId:'chain_posture_spec',synthesize:synthesizeSharpshootChainPosturePath,
   secondarySuffix:'posture',
   contactResultCheck:(command,label)=>{
@@ -32264,7 +32732,8 @@ const SHARPSHOOT_CHAIN_POSTURE_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily(
        !timeline||timeline.releases.length!==1||timeline.contacts.length!==exploit.hits)
       throw new Error('F2S3 relationship or visible-delivery truth failed');
   }});
-const SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily({
+bootCheckpoint('chain-posture-done');
+const SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT=RUN_BOOT_AUDITS&&auditSharpshootChainSecondaryFamily({
   label:'F2S5 Chain/Affliction',specId:'chain_affliction_spec',
   synthesize:synthesizeSharpshootChainAfflictionPath,
   secondarySuffix:'bleed',
@@ -32304,7 +32773,8 @@ const SHARPSHOOT_CHAIN_AFFLICTION_FAMILY_AUDIT=auditSharpshootChainSecondaryFami
         reopen:{pattern:reopen.deliveryPattern,split:reopen.afflictionSplitPerContact,
           rate:reopen.chainBonusPerExistingBleed,timing:reopen.chainScalingTiming}}));
   }});
-const SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily({
+bootCheckpoint('chain-affliction-done');
+const SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT=RUN_BOOT_AUDITS&&auditSharpshootChainSecondaryFamily({
   label:'F2S4 Chain/Critical',specId:'chain_critical_spec',
   synthesize:synthesizeSharpshootChainCriticalPath,secondarySuffix:'crit',
   secondaryPower:command=>commandExpectedLocalCritPower(command,0,SHARPSHOOT_CHAIN_SCALING_REFERENCE),
@@ -32330,7 +32800,8 @@ const SHARPSHOOT_CHAIN_CRITICAL_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily
        !(crescendoLast>crescendoFirst)||!(weightPrepared>weightEmpty))
       throw new Error('F2S4 Critical relationship or animation identity failed');
   }});
-const SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily({
+bootCheckpoint('chain-critical-done');
+const SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT=RUN_BOOT_AUDITS&&auditSharpshootChainSecondaryFamily({
   label:'F2S6 Chain/Charge',specId:'chain_charge_spec',
   synthesize:synthesizeSharpshootChainChargePath,secondarySuffix:'charge',
   secondaryPower:command=>commandExpectedDefenseTemperPower(command),identityCheck:()=>{
@@ -32356,10 +32827,12 @@ const SHARPSHOOT_CHAIN_CHARGE_FAMILY_AUDIT=auditSharpshootChainSecondaryFamily({
        resonanceEmpty!==0||!(resonancePrepared>resonanceEmpty))
       throw new Error('F2S6 Charge relationship or animation identity failed');
   }});
+bootCheckpoint('chain-charge-done');
 /* F2 is now a closed authored slice: every Secondary owns four distinct
    Twists and every Twist owns four Apex refinements. This audit prevents a
    route from appearing in the tree without a playable synthesized command. */
-const SHARPSHOOT_CHAIN_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('skill-b-chain-closure');
+const SHARPSHOOT_CHAIN_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form=SHARPSHOOT_MARK_ROUTE_BY_ID.chain_primary_form,
     specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.formSlot===2),
     twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&route.formSlot===2),
@@ -32634,7 +33107,8 @@ function synthesizeSharpshootChargePath(formRarity='COMMON',specializationId=nul
 function synthesizeSharpshootChargeForm(formRarity='COMMON'){
   return synthesizeSharpshootChargePath(formRarity);
 }
-const SHARPSHOOT_CHARGE_FORM_AUDIT=(()=>{
+bootCheckpoint('skill-slice-c');
+const SHARPSHOOT_CHARGE_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const ladder=SKILL_RARITY_ORDER.map(rarity=>synthesizeSharpshootChargeForm(rarity));
   if(ladder.some(command=>!command||command.chargeMode!=='DELAYED_PRIMARY'||command.hits!==1||
        command.markGain<1||totalCommandChainGain(command)!==1||command.cost!==1||
@@ -32652,7 +33126,7 @@ const SHARPSHOOT_CHARGE_FORM_AUDIT=(()=>{
     commonBonus:commandPreparationDamage(ladder[0]),
     legendaryBonus:commandPreparationDamage(ladder.at(-1))});
 })();
-const SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT=
+const SHARPSHOOT_CHARGE_PRIMARY_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&
   navigator.userAgent==='runtime-validator'?(()=>{
   const specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.formSlot===6),
     twists=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===3&&route.formSlot===6),
@@ -33818,7 +34292,7 @@ function synthesizeSharpshootMarkPath(formRarity='COMMON',specializationId=null,
     cloneSharpshootSynthesisCommand(command));
   return command;
 }
-const SHARPSHOOT_CHAIN_FORM_AUDIT=(()=>{
+const SHARPSHOOT_CHAIN_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const expectedQuality=[3,6,10,16],expectedHits=[2,3,4,5],rows=[];
   let previousDamage=-Infinity,previousChainDamage=-Infinity,previousScore=-Infinity;
   for(let index=0;index<SKILL_RARITY_ORDER.length;index++){
@@ -33859,7 +34333,7 @@ const SHARPSHOOT_CHAIN_FORM_AUDIT=(()=>{
   return Object.freeze({passed:true,cards:rows.length,capped:false,rows:Object.freeze(rows),
     deliveryFormula:'FLOOR_SQRT_TOTAL_QUALITY',baseMarkOwner:'SHARPSHOOT_FINAL_CONTACT'});
 })();
-const SHARPSHOOT_POSTURE_FORM_AUDIT=(()=>{
+const SHARPSHOOT_POSTURE_FORM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const expectedQuality=[3,6,10,16],rows=[];
   let previousDamage=-Infinity,previousPosture=-Infinity,previousMark=-Infinity;
   for(let index=0;index<SKILL_RARITY_ORDER.length;index++){
@@ -33893,7 +34367,7 @@ const SHARPSHOOT_POSTURE_FORM_AUDIT=(()=>{
     postureTiming:'AFTER_FINAL_CONTACT',breakDamageOwner:'NEXT_COMMAND',
     breakReward:'ONE_AP_PLUS_BREAK_PHASE'});
 })();
-const SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT=(()=>{
+const SHARPSHOOT_POSTURE_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specs=SHARPSHOOT_MARK_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.formSlot===3),
     rows=[],standard=[],spreads=[];
   if(specs.length!==6)throw new Error('F3 needs six materialized Specializations');
@@ -36124,7 +36598,8 @@ function stableEvolutionCombinedGuardrailValue(state){
     total+=stableEvolutionGuardrailValue(state,scenario.mark,scenario.chain);
   return total/SKILL_GUARDRAIL_SCENARIOS.length;
 }
-const STABLE_RESOURCE_DELTA_AUDIT=(()=>{
+bootCheckpoint('skill-slice-d');
+const STABLE_RESOURCE_DELTA_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const builder={hits:1,damage:0,cost:0,addsChain:false,markGain:4},
     converter={hits:1,damage:0,cost:0,addsChain:false,markGain:0,
       markRule:markRule({mode:'CONVERT_CHAIN',timing:'ACTION',cap:MARK_ALL,fraction:.5,
@@ -36149,7 +36624,8 @@ function stableEvolutionScenarioVector(state){
   return Object.freeze({average:Number(average.toFixed(3)),scores:Object.freeze(scores),
     ratios:Object.freeze(ratios)});
 }
-const MARK_BURST_DETONATION_SPECIALIZATION_AUDIT=(()=>{
+bootCheckpoint('skill-d-detonation-spec');
+const MARK_BURST_DETONATION_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form=MARK_BURST_ROUTE_BY_ID.detonation_primary_form,specs=
     MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.parentId===form.id),
     animationIds=MARK_BURST_DETONATION_SPEC_ANIMATION_BY_ID,rows=[];
@@ -36222,7 +36698,7 @@ const MARK_BURST_DETONATION_SPECIALIZATION_AUDIT=(()=>{
 /* F3 Posture Specializations stay intentionally small: six Common commands are
    enough to lock their identities and sibling balance. Deeper Twist/Apex audits
    are added only after those designs are approved. */
-const MARK_BURST_POSTURE_SPECIALIZATION_AUDIT=(()=>{
+const MARK_BURST_POSTURE_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form=MARK_BURST_ROUTE_BY_ID.posture_primary_form,specs=
       MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.parentId===form.id),
     expected=['DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'],
@@ -36314,7 +36790,7 @@ const MARK_BURST_POSTURE_SPECIALIZATION_AUDIT=(()=>{
 /* F4 Critical Specializations keep the complete parent roll engine. This small
    Common matrix locks the approved 70/30 identities; only the Chain comparison
    samples Legendary because its slower-than-Primary contact growth is structural. */
-const MARK_BURST_CRITICAL_SPECIALIZATION_AUDIT=(()=>{
+const MARK_BURST_CRITICAL_SPECIALIZATION_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const form=MARK_BURST_ROUTE_BY_ID.critical_primary_form,specs=
       MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&route.parentId===form.id),
     expected=['DETONATION','CHAIN','POSTURE','CRITICAL','AFFLICTION','CHARGE'],
@@ -36389,7 +36865,7 @@ const MARK_BURST_CRITICAL_SPECIALIZATION_AUDIT=(()=>{
       criticalLegendary:criticalChainLegendary.hits,primaryLegendary:chainPrimaryLegendary.hits}),
     rows:Object.freeze(rows.map(({command,...entry})=>Object.freeze(entry)))});
 })();
-const MARK_BURST_UNIFIED_DETONATION_MOTOR_AUDIT=(()=>{
+const MARK_BURST_UNIFIED_DETONATION_MOTOR_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const powers=[0,1,2,4,8,16,32,64,128],curveRows=powers.map(power=>{
     const command=createRunSkill(BASE_TURN_SKILL_BY_ID.mark_burst),result=
       materializeMarkBurstDetonationMotor(command,power);
@@ -36426,7 +36902,7 @@ const MARK_BURST_UNIFIED_DETONATION_MOTOR_AUDIT=(()=>{
 /* Builder/payoff parity is executable. Base power, Primary identity power and
    Secondary identity power all buy the same number of resource units: one
    Sharpshoot Mark created equals one Mark Burst Mark that can be detonated. */
-const MARK_BURST_SHARPSHOOT_OUTPUT_PARITY_AUDIT=(()=>{
+const MARK_BURST_SHARPSHOOT_OUTPUT_PARITY_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const powerRows=[0,1,5.999,6,12,60,600].map(power=>{
       const command=createRunSkill(BASE_TURN_SKILL_BY_ID.mark_burst),result=
         materializeMarkBurstDetonationMotor(command,power),marks=1+
@@ -36472,7 +36948,7 @@ const MARK_BURST_SHARPSHOOT_OUTPUT_PARITY_AUDIT=(()=>{
   return Object.freeze({passed:true,powerRows:Object.freeze(powerRows),
     primaryRows:Object.freeze(primaryRows),secondaryRows:Object.freeze(secondaryRows)});
 })();
-const MARK_BURST_CRITICAL_DETONATION_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CRITICAL_DETONATION_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_critical_detonation_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -36562,7 +37038,7 @@ const MARK_BURST_CRITICAL_DETONATION_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,capped:false,twists:4,apexes:12,spread,
     rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_CRITICAL_CHAIN_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CRITICAL_CHAIN_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_critical_chain_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -36672,7 +37148,8 @@ const MARK_BURST_CRITICAL_CHAIN_CLOSURE_AUDIT=(()=>{
 /* Keep the startup closure structural. The paid-output/current-rank and real
    action checks live in --critical-posture instead of adding a history matrix
    to every player's boot. */
-const MARK_BURST_CRITICAL_FOCUS_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('skill-d-critical-focus');
+const MARK_BURST_CRITICAL_FOCUS_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=MARK_BURST_ROUTE_CONTRACTS.filter(r=>r.depth===3&&r.parentId==='burst_critical_focus_spec'),
     ids=new Set(twists.map(r=>r.id)),apexes=MARK_BURST_ROUTE_CONTRACTS.filter(r=>r.depth===4&&ids.has(r.parentId));
   if(twists.length!==4||apexes.length!==16||twists.some(t=>t.apexTarget!==4||
@@ -36682,7 +37159,7 @@ const MARK_BURST_CRITICAL_FOCUS_CLOSURE_AUDIT=(()=>{
     throw new Error('F4S4 needs 4/16 and pure-only authored Crit Damage');
   return Object.freeze({passed:true,twists:4,apexes:16});
 })();
-const MARK_BURST_CRITICAL_POSTURE_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CRITICAL_POSTURE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===3&&
       route.parentId==='burst_critical_posture_spec'),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId));
@@ -36692,7 +37169,7 @@ const MARK_BURST_CRITICAL_POSTURE_CLOSURE_AUDIT=(()=>{
     throw new Error('F4S3 needs 4 Twists / 15 Apex with deliberate 4/4/4/3 targets');
   return Object.freeze({passed:true,twists:4,apexes:15,targets:Object.freeze([4,4,4,3])});
 })();
-const MARK_BURST_POSTURE_DETONATION_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_DETONATION_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_detonation_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&twistIds.has(route.parentId)),
@@ -36768,7 +37245,7 @@ const MARK_BURST_POSTURE_DETONATION_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,twists:4,apexes:16,spread,identityAudit,
     rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_POSTURE_CHAIN_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_CHAIN_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_chain_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -36852,7 +37329,7 @@ const MARK_BURST_POSTURE_CHAIN_CLOSURE_AUDIT=(()=>{
     globalLiveChainBonus:CFG.CHAIN_BONUS,rows:Object.freeze(rows),
     apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_POSTURE_FOCUS_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_FOCUS_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -36929,7 +37406,7 @@ const MARK_BURST_POSTURE_FOCUS_CLOSURE_AUDIT=(()=>{
     parentBreakPower:parent.breakPowerBonus,rows:Object.freeze(rows),
     apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_POSTURE_CRITICAL_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_CRITICAL_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_critical_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -37022,7 +37499,7 @@ const MARK_BURST_POSTURE_CRITICAL_CLOSURE_AUDIT=(()=>{
       ladderLegendary:ladderLegendary.hits,chainLegendary:chainLegendary.hits}),
     rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_POSTURE_AFFLICTION_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_AFFLICTION_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -37097,7 +37574,7 @@ const MARK_BURST_POSTURE_AFFLICTION_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,twists:4,apexes:16,spread,identityAudit,
     rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_POSTURE_CHARGE_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_POSTURE_CHARGE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_posture_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -37172,7 +37649,8 @@ const MARK_BURST_POSTURE_CHARGE_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,twists:4,apexes:16,spread,identityAudit,
     rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_CHAIN_SPECIALIZATION_STRUCTURE_AUDIT=(()=>{
+bootCheckpoint('skill-d-chain');
+const MARK_BURST_CHAIN_SPECIALIZATION_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specs=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===2&&
       route.parentId==='chain_primary_form'),bySecondary=Object.fromEntries(
       specs.map(route=>[route.secondaryAttributeId,route])),expected=
@@ -37202,7 +37680,7 @@ const MARK_BURST_CHAIN_SPECIALIZATION_STRUCTURE_AUDIT=(()=>{
   return Object.freeze({passed:true,specializations:6,secondaries:Object.freeze(expected),
     detonationCap:1,visibleChainPerContact:true,totalPayloadsRemainFinite:true});
 })();
-const MARK_BURST_CHAIN_DETONATION_STRUCTURE_AUDIT=(()=>{
+const MARK_BURST_CHAIN_DETONATION_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_detonation_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -37220,7 +37698,7 @@ const MARK_BURST_CHAIN_DETONATION_STRUCTURE_AUDIT=(()=>{
     throw new Error('Mark Burst Chain/Detonation needs four distinct Twists and sixteen decision Apexes');
   return Object.freeze({passed:true,twists:4,apexes:16,engines:Object.freeze([...engines])});
 })();
-const MARK_BURST_PURE_CHAIN_STRUCTURE_AUDIT=(()=>{
+const MARK_BURST_PURE_CHAIN_STRUCTURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -37238,7 +37716,7 @@ const MARK_BURST_PURE_CHAIN_STRUCTURE_AUDIT=(()=>{
   return Object.freeze({passed:true,skillSpecificExceptions:0,twists:4,apexes:16,
     engines:Object.freeze([...expected])});
 })();
-const MARK_BURST_CHAIN_POSTURE_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CHAIN_POSTURE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_posture_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -37312,7 +37790,7 @@ const MARK_BURST_CHAIN_POSTURE_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,capped:false,twists:4,apexes:16,
     rarityRows:rows.length,engines:Object.freeze([...expected]),rows:Object.freeze(rows)});
 })();
-const MARK_BURST_CHAIN_CRITICAL_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CHAIN_CRITICAL_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_critical_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -37407,7 +37885,7 @@ const MARK_BURST_CHAIN_CRITICAL_CLOSURE_AUDIT=(()=>{
     rarityRows:rows.length,declaredTargets:Object.freeze({...targets}),siblingSpread:spread,
     rows:Object.freeze(rows)});
 })();
-const MARK_BURST_CHAIN_AFFLICTION_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CHAIN_AFFLICTION_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -37492,7 +37970,7 @@ const MARK_BURST_CHAIN_AFFLICTION_CLOSURE_AUDIT=(()=>{
   return Object.freeze({passed:true,capped:false,twists:4,apexes:16,rarityRows:rows.length,
     siblingSpread:spread,engines:Object.freeze([...expected]),rows:Object.freeze(rows)});
 })();
-const MARK_BURST_CHAIN_CHARGE_CLOSURE_AUDIT=(()=>{
+const MARK_BURST_CHAIN_CHARGE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='burst_chain_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),ids=new Set(twists.map(route=>route.id)),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&ids.has(route.parentId)),
@@ -37576,7 +38054,8 @@ const MARK_BURST_CHAIN_CHARGE_CLOSURE_AUDIT=(()=>{
 /* Lightweight F2 closure: compare only the pure all-Common paths. This is the
    everyday authoring gate; it deliberately avoids the combinatorial rarity
    history and browser matrices reserved for release checkpoints. */
-const MARK_BURST_F2_COMMON_BALANCE_AUDIT=(()=>{
+bootCheckpoint('skill-d-f2-balance');
+const MARK_BURST_F2_COMMON_BALANCE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const formId='chain_primary_form',specs=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===2&&route.parentId===formId),specIds=new Set(specs.map(route=>route.id)),
     twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===3&&specIds.has(route.parentId)),
@@ -37628,7 +38107,8 @@ const MARK_BURST_F2_COMMON_BALANCE_AUDIT=(()=>{
     weakestApexes:Object.freeze(apexRows.slice().sort((a,b)=>a.score-b.score).slice(0,5)),
     strongestApexes:Object.freeze(apexRows.slice().sort((a,b)=>b.score-a.score).slice(0,5))});
 })();
-const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('f2-common-done');
+const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_focus_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&twistIds.includes(route.parentId)),
@@ -37728,7 +38208,8 @@ const MARK_BURST_DETONATION_FOCUS_CLOSURE_AUDIT=(()=>{
     twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
     standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('f2-focus-done');
+const MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_chain_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&twistIds.includes(route.parentId)),
@@ -37840,7 +38321,8 @@ const MARK_BURST_DETONATION_CHAIN_CLOSURE_AUDIT=(()=>{
     twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
     standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT=(()=>{
+bootCheckpoint('f2-chain-done');
+const MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_posture_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),twistIds=twists.map(route=>route.id),
     apexes=MARK_BURST_ROUTE_CONTRACTS.filter(route=>route.depth===4&&
@@ -37965,7 +38447,9 @@ const MARK_BURST_DETONATION_POSTURE_CLOSURE_AUDIT=(()=>{
     twistCards:rows.length,apexCards:apexRows.length,siblingSpread,identityAudit,
     standard:Object.freeze(standard),rows:Object.freeze(rows),apexRows:Object.freeze(apexRows)});
 })();
-const MARK_BURST_DETONATION_AFFLICTION_RUNTIME_AUDIT=(()=>{
+bootCheckpoint('f2-posture-done');
+bootCheckpoint('skill-d-runtime');
+const MARK_BURST_DETONATION_AFFLICTION_RUNTIME_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_affliction_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),commands=new Map(twists.map(twist=>[twist.id,
       synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',twist.id,'COMMON')]));
@@ -37991,7 +38475,7 @@ const MARK_BURST_DETONATION_AFFLICTION_RUNTIME_AUDIT=(()=>{
   return Object.freeze({passed:true,twists:4,apexes:16,ambush:true,reload:true,
     movePulse:true,packetTruth:true});
 })();
-const MARK_BURST_DETONATION_CHARGE_RUNTIME_AUDIT=(()=>{
+const MARK_BURST_DETONATION_CHARGE_RUNTIME_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const specId='detonation_charge_spec',twists=MARK_BURST_ROUTE_CONTRACTS.filter(route=>
       route.depth===3&&route.parentId===specId),commands=new Map(twists.map(twist=>[twist.id,
       synthesizeMarkBurstDetonationPath('COMMON',specId,'COMMON',twist.id,'COMMON')]));
@@ -38051,7 +38535,8 @@ function stableEvolutionPlaythroughVector(state,defenseChainPattern=STABLE_PLAYT
     averageContribution:Number((totalContribution/defenseChainPattern.length).toFixed(3))});
 }
 const SHARPSHOOT_TWIST_PLAYTHROUGH_EQUALITY_LIMIT=.20;
-const SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT=(()=>{
+bootCheckpoint('skill-slice-e');
+const SHARPSHOOT_TWIST_PLAYTHROUGH_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const twistIds=Object.freeze(['mark_chain_direct_twist','mark_chain_converter_twist',
     'mark_chain_echo_twist','mark_chain_shotgun_twist']),rows=[],reference=Object.create(null);
   let maxContributionSpread=0,maxStandardContributionSpread=0,maxDamageSpread=0,
@@ -38134,7 +38619,8 @@ function validateF1SynthesisObservationContract(card){
     throw new Error(card.routeId+' '+card.rarity+' does not reward '+contract.favoredScenario);
   return true;
 }
-const F1_SYNTHESIS_BALANCE_AUDIT=(()=>{
+bootCheckpoint('skill-e-f1-balance');
+const F1_SYNTHESIS_BALANCE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const routeIds=F1_SYNTHESIS_ROUTE_RECIPES.filter(recipe=>recipe.depth===2).map(recipe=>recipe.id),
     matrix=Object.create(null),spreads=Object.create(null),scoresByRoute=Object.create(null);
   for(const rarity of SKILL_RARITY_ORDER){
@@ -38772,7 +39258,8 @@ function runSkillEvolutionValidatorSelfTests(){
     mutation(),state({markGain:Number.MAX_SAFE_INTEGER+1}),[]),/safe integer/);
   return passed;
 }
-const SKILL_EVOLUTION_VALIDATOR_AUDIT=runSkillEvolutionValidatorSelfTests();
+bootCheckpoint('skill-slice-f');
+const SKILL_EVOLUTION_VALIDATOR_AUDIT=RUN_BOOT_AUDITS&&runSkillEvolutionValidatorSelfTests();
 function runMarkSystemSelfTests(){
   let passed=0;
   const arrowFixture={hits:3,markRule:markRule({mode:'CONSUME',timing:'PER_HIT',
@@ -38836,7 +39323,7 @@ function runMarkSystemSelfTests(){
     echoFromFive:echoPlan.temporaryChain,detonation:Object.freeze({clean:emptyDamage,
       primed:primedDamage,consumed:primedDetonation.consumedTotal})});
 }
-const MARK_SYSTEM_AUDIT=runMarkSystemSelfTests();
+const MARK_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&runMarkSystemSelfTests();
 function runDecimalDamageSystemSelfTests(){
   const raw=turnHitDamageBreakdown(10,10,0,10,true,.05,true,CFG.CRIT_DAMAGE_MULT),
     combat=combatTurnHitDamageBreakdown(10,10,0,10,true,.05,true,CFG.CRIT_DAMAGE_MULT);
@@ -38851,7 +39338,7 @@ function runDecimalDamageSystemSelfTests(){
   return Object.freeze({precision:3,raw:raw.final,combat:combat.final,
     critMultiplier:CFG.CRIT_DAMAGE_MULT,breakMultiplier:CFG.BREAK_DAMAGE_MULT});
 }
-const DECIMAL_DAMAGE_SYSTEM_AUDIT=runDecimalDamageSystemSelfTests();
+const DECIMAL_DAMAGE_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&runDecimalDamageSystemSelfTests();
 const SKILL_MUTATIONS_BY_SKILL=(()=>{
   const index=Object.create(null),seenIds=new Set();
   for(const skill of BASE_TURN_SKILLS){
@@ -38987,7 +39474,7 @@ const PLAYABLE_SKILL_MUTATIONS_BY_SKILL=Object.freeze(Object.fromEntries(
   BASE_TURN_SKILLS.map(skill=>[skill.id,Object.freeze(
     (SKILL_MUTATIONS_BY_SKILL[skill.id]||[]).filter(mutation=>!retiredSkillMutation(mutation)))])
 ));
-const RETIRED_TREE_SURFACE_AUDIT=(()=>{
+const RETIRED_TREE_SURFACE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const exposed=Object.values(PLAYABLE_SKILL_MUTATIONS_BY_SKILL).flat()
     .filter(retiredSkillMutation);
   if(exposed.length)throw new Error('Retired Sharpshoot cards leaked into a playable mutation pool');
@@ -39014,7 +39501,7 @@ function averagePairwiseStructuralDistance(nodes){
 /* Six independent boot-time reviews protect the authored hierarchy. They are
    deliberately separate: a pool can be numerically valid while still violating
    its layer's design purpose. None of this code runs in the frame loop. */
-const SKILL_TREE_DESIGN_AUDIT=(()=>{
+const SKILL_TREE_DESIGN_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   /* PASS 1 — Form owns the largest future: unique build aspects and broader
      combat-grammar separation than the narrower Specializations below Split Sight. */
   const forms=SKILL_MUTATIONS.filter(node=>node.kind==='EVOLUTION'&&node.resultAspect==='STABLE'&&
@@ -39099,7 +39586,7 @@ const SKILL_TREE_DESIGN_AUDIT=(()=>{
 /* A compact, read-only health record for automated smoke tests. Content counts
    come from the live graph, so a future edit cannot silently leave the UI and
    the authored tree disagreeing about what actually exists. */
-const SKILL_EVOLUTION_CONTENT_AUDIT=(()=>{
+const SKILL_EVOLUTION_CONTENT_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const forms=(SKILL_MUTATIONS_BY_SKILL.sharpshoot||[]).filter(node=>
       node.kind==='EVOLUTION'&&node.depth===1),
     specializations=skillMutationChildren('split_sight').filter(node=>
@@ -39291,15 +39778,60 @@ const COMPANION_COMBAT=Object.freeze({
   toad:companionCombatProfile('toad','MIRE TOAD','HEADBUTT','MIRE MARK','DOUBLE KICK','#c9f74a'),
   imp:companionCombatProfile('imp','CINDER IMP','CLAW','CINDER MARK','TWIN CLAW','#ff9a3a'),
 });
-function hasCombatAlly(){return pack>0&&packTypes.length>0;}
-function companionProfile(){return COMPANION_COMBAT[packTypes[0]]||COMPANION_COMBAT.wolf;}
+function squireCooldownTurns(){
+  if(squire.present||!boss)return 0;
+  /* A death happens during enemy time. Display the two upcoming player turns,
+     not the current already-spent serial; once a player turn begins it owns its
+     full visible cooldown number until that turn is completed. */
+  const enemyOffset=boss.phase==='player'||boss.phase==='playerResolve'?0:1;
+  return Math.max(0,Math.ceil((squire.readyOnPlayerPhase||0)-
+    (boss.playerPhaseSerial||0)-enemyOffset));
+}
+function squirePartyReady(){return squire.present&&squire.active&&squire.health>0;}
+function squireCombatProfile(){
+  const morale=Math.max(0,Math.floor(squire.encouragement||0)),key=String(morale);
+  if(squire.profile&&squire.profileKey===key)return squire.profile;
+  const slashDamage=SQUIRE_BASE.slashDamage+morale*SQUIRE_BASE.encourageDamagePerStack,
+    posture=SQUIRE_BASE.postureDamage+morale*SQUIRE_BASE.encouragePosturePerStack,
+    col='#d7b878';
+  squire.profileKey=key;
+  squire.profile=Object.freeze({id:'squire',name:'SQUIRE',fightName:'SQUIRE SLASH',col,
+    fightDamage:slashDamage,fightPosture:0,fightAddsChain:false,
+    skills:Object.freeze([
+      Object.freeze({id:'squire_slash',name:'SQUIRE SLASH',source:'COMPANION',skill:true,
+        squireMove:true,cost:0,damage:slashDamage,hits:1,posture:0,addsChain:false,
+        canCrit:false,col,slash:-.34,deliveryProfileId:'COMPANION_STRIKE'}),
+      Object.freeze({id:'squire_posture',name:'SHIELD PRESS',source:'COMPANION',skill:true,
+        squireMove:true,cost:1,damage:SQUIRE_BASE.postureChipDamage,hits:1,posture,
+        addsChain:false,canCrit:false,col:'#9ecbff',slash:.18,
+        deliveryProfileId:'COMPANION_STRIKE'}),
+    ])});
+  return squire.profile;
+}
+function squireClassCommand(base){
+  if(!base)return base;
+  if(squire.present)return {...base,name:'ENCOURAGE SQUIRE',squireAction:'ENCOURAGE',
+    squireSupport:true,col:'#c0f79a'};
+  const cooldown=squireCooldownTurns();
+  if(cooldown>0)return {...base,name:'SQUIRE · '+cooldown+' TURN'+(cooldown===1?'':'S'),
+    squireAction:'COOLDOWN',squireSupport:true,col:'#716957',squireCooldown:cooldown};
+  return {...base,name:'CALL SQUIRE',squireAction:'CALL',squireSupport:true,col:'#d7b878'};
+}
+function knightTurnSkills(){
+  return runSkills.map(skill=>(skill.baseId||skill.id)==='call_squire'?squireClassCommand(skill):skill);
+}
+function hasCombatAlly(){return squirePartyReady()||(pack>0&&packTypes.length>0);}
+function companionProfile(){
+  return squirePartyReady()?squireCombatProfile():
+    (COMPANION_COMBAT[packTypes[0]]||COMPANION_COMBAT.wolf);
+}
 function activeTurnActorId(){return boss&&boss.partyActor==='ally'&&hasCombatAlly()?'ally':'knight';}
 function selectTurnActor(id){
   if(!boss||primaryChargePreparationLocked()||(id==='ally'&&!hasCombatAlly()))return false;
   boss.partyActor=id;boss.playerMenu='root';
   skillTooltipIndex=-1;SFX.swipe();return true;
 }
-function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:runSkills;}
+function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:knightTurnSkills();}
 function classSkillUsedThisPhase(command){
   /* Skill Lab is a debug sandbox: keep AP/Resolve honest, but do not hide the
      animation behind the class-skill once-per-phase production rule. */
@@ -39310,8 +39842,11 @@ function classSkillUsedThisPhase(command){
 function turnCommandApCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.apCost||1);}
 function turnCommandResolveCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.cost||0);}
 function turnCommandAvailable(command){
-  return !!(boss&&command&&!primaryChargePreparationLocked()&&
-    !classSkillUsedThisPhase(command)&&
+  if(!boss||!command||primaryChargePreparationLocked())return false;
+  if(command.squireAction==='COOLDOWN')return false;
+  if(command.squireAction==='CALL'&&squire.present)return false;
+  if(command.squireAction==='ENCOURAGE'&&!squire.present)return false;
+  return !!(!classSkillUsedThisPhase(command)&&
     (boss.ap||0)>=turnCommandApCost(command)&&
     (boss.resolve||0)>=turnCommandResolveCost(command));
 }
@@ -40028,7 +40563,11 @@ function fightCommand(actorId=activeTurnActorId()){
   if(actorId==='ally'&&hasCombatAlly()){
     const profile=companionProfile();
     return {id:profile.id+'_fight',name:profile.fightName,source:'COMPANION',skill:false,cost:0,
-      damage:5,hits:1,resolvePerHit:1,col:profile.col,slash:-.12,
+      damage:profile.fightDamage===undefined?5:profile.fightDamage,hits:1,
+      posture:profile.fightPosture||0,resolvePerHit:profile.id==='squire'?0:1,
+      addsChain:profile.fightAddsChain===undefined?true:profile.fightAddsChain,
+      squireMove:profile.id==='squire',canCrit:profile.id==='squire'?false:undefined,
+      col:profile.col,slash:-.12,
       deliveryProfileId:'COMPANION_STRIKE'};
   }
   const weapon=activeWeapon();
@@ -40088,6 +40627,49 @@ function releaseChargeAftershock(){
     bowAnimationRecipeId:'BOW_CHARGE_QUICK',deliveryPattern:'SINGLE'};
   return performPlayerAction(command,{freeFollowUp:true});
 }
+function summonSquire(){
+  const serial=boss&&boss.playerPhaseSerial||0,target=clamp(laneX(player.x,1)-62,42,VW-42);
+  Object.assign(squire,{present:true,active:false,health:squire.maxHealth,
+    activateOnPlayerPhase:serial+1,readyOnPlayerPhase:0,encouragement:0,
+    arrivalT:0,deathT:-1,visualX:-48,lastX:target,profile:null,profileKey:''});
+  burst(target,PLAYER_Y-20,18,['#d7b878','#e8e2d0','#8a744f'],130,90,3.2,.7);
+  floater(target,PLAYER_Y-116,'SQUIRE CALLED','#d7b878',18);SFX.relic();
+}
+function encourageSquire(){
+  const x=squire.visualX||squire.lastX||laneX(player.x,1)-58;
+  if(squire.health<squire.maxHealth){
+    squire.health=Math.min(squire.maxHealth,squire.health+1);
+    burst(x,PLAYER_Y-62,14,['#c0f79a','#ffffff','#d7b878'],120,65,3.2,.62);
+    floater(x,PLAYER_Y-128,'SQUIRE HEALED +1','#c0f79a',17);
+  }else{
+    squire.encouragement++;squire.profile=null;squire.profileKey='';
+    burst(x,PLAYER_Y-66,18,['#ffe37a','#d7b878','#ffffff'],145,55,3.5,.7);
+    floater(x,PLAYER_Y-128,'MORALE +1','#ffe37a',17);
+  }
+  squire.cheerT=0;SFX.relic();
+}
+function performSquireSupportAction(command){
+  if(!isPlayerTurn()||!turnCommandAvailable(command)||
+     (command.squireAction!=='CALL'&&command.squireAction!=='ENCOURAGE')){
+    SFX.duck();return false;
+  }
+  const apCost=turnCommandApCost(command),cost=turnCommandResolveCost(command);
+  boss.classSkillUseSerial||(boss.classSkillUseSerial=Object.create(null));
+  boss.classSkillUseSerial[command.baseId||command.id]=boss.playerPhaseSerial;
+  boss.ap-=apCost;boss.resolve-=cost;
+  if(command.squireAction==='CALL')summonSquire();else encourageSquire();
+  boss.phase='playerResolve';boss.playerMenu='skills';boss.playerActionReturnMenu='skills';
+  boss.playerActionTimer=.72;
+  boss.turnAction={command,actorId:'knight',supportOnly:true,t:0,hits:0,hitIndex:0};
+  return true;
+}
+function updateSquirePlayerPhase(){
+  if(!boss||!squire.present||squire.active||squire.health<=0)return false;
+  if((boss.playerPhaseSerial||0)<squire.activateOnPlayerPhase)return false;
+  squire.active=true;squire.activateOnPlayerPhase=Infinity;
+  floater(squire.visualX||squire.lastX,PLAYER_Y-126,'SQUIRE READY','#d7b878',17);
+  SFX.relic();return true;
+}
 function beginPlayerTurn(fromBreak=false){
   if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;
@@ -40119,6 +40701,7 @@ function beginPlayerTurn(fromBreak=false){
   boss.breakActionsTaken=0;boss.playerPhaseAttackCount=0;
   boss.preparedCriticalPhase=null;
   boss.playerPhaseSerial=(boss.playerPhaseSerial||0)+1;
+  updateSquirePlayerPhase();
   boss.classArmorExposure=null;
   if(!fromBreak){boss.state='idle';boss.stateT=0;boss.attack=null;}
   boss.hazardLanes=[];boss.playerMenu='root';boss.playerActionTimer=0;
@@ -40146,7 +40729,9 @@ function endPlayerTurn(){
   clearPlayerMarkTrail();
   returnUnusedDistributedCharge();
   if(endedBreak){
-    boss.posture=0;boss.breakEntryZ=undefined;boss.breakSource=null;
+    /* Preserve the authored break pose/depth until its reverse recovery has
+       visibly returned the species to idle. Clearing these here teleported it. */
+    boss.posture=0;
     boss.pendingBreak=null;boss.playerTurnBreak=false;boss.breakDamageBonus=0;
     activeBreakPowerBonus=0;
   }
@@ -40158,7 +40743,7 @@ function endPlayerTurn(){
      that phase are discarded; after the empowered action a fresh half-turn starts. */
   boss.enemyTurn=(boss.enemyTurn||1)+1;
   boss.attacksLeft=boss.enemyTurnBudget;
-  boss.phase='dodge';boss.state='idle';boss.stateT=0;boss.attack=null;
+  boss.phase='dodge';boss.state=endedBreak?'breakRecover':'idle';boss.stateT=0;boss.attack=null;
   boss.hazardLanes=[];boss.atkTimer=encounterAttackDelay();boss.playerMenu='root';
   boss.partyActor='knight';boss.turnAction=null;
   startDefenseChargePhase();
@@ -40169,7 +40754,15 @@ function endPlayerTurn(){
 }
 function finishPlayerAction(){
   if(!isTurnCombat()||boss.phase!=='playerResolve') return;
-  const finishedAction=boss.turnAction,finishAfterRelease=!!(finishedAction&&finishedAction.finishAfterRelease),
+  const finishedAction=boss.turnAction;
+  if(finishedAction&&finishedAction.supportOnly){
+    boss.turnAction=null;boss.phase='player';boss.playerActionTimer=0;
+    boss.playerMenu=boss.playerActionReturnMenu||'skills';
+    floater(VW/2,286,'AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax,
+      '#7fc9ff',15);
+    return;
+  }
+  const finishAfterRelease=!!(finishedAction&&finishedAction.finishAfterRelease),
     pendingRecoil=boss.pendingMarkBurstRecoil||null,
     preparedChainExtra=finishPreparedChain(finishedAction);
   if(finishedAction){
@@ -40373,12 +40966,48 @@ function buildShieldBashTimeline(command,delivery){
 function isShieldTurnAction(action){
   return !!(action&&action.shieldTimeline&&action.actorId==='knight');
 }
-const PLAYER_SHIELD_POSE_SCRATCH={active:false,t:0,forward:0,reach:0,detach:0,
-  flip:0,drive:0,retreat:0,remount:0,settle:0,lunge:0,impact:0};
+const PLAYER_SHIELD_POSE_SCRATCH={active:false,kind:'bash',t:0,forward:0,reach:0,detach:0,
+  flip:0,drive:0,retreat:0,remount:0,settle:0,lunge:0,impact:0,
+  prepare:0,guard:0,sweep:0,cancel:0};
+const PLAYER_PARRY_SHIELD_POSE_SCRATCH={active:false,kind:'parry',t:0,prepare:0,
+  guard:0,sweep:0,retreat:0,remount:0,settle:0,lunge:0,impact:0,cancel:0,
+  releaseFrom:0};
+function activePlayerParryShieldPose(){
+  const clip=player.parryShield;if(!clip)return null;
+  /* Pending pointer arbitration is input state, not an animation. Keep it out of
+     the rider rig until the guard has visibly begun or release commits parry. */
+  if(clip.phase==='prepare'&&(clip.pointerGestureMoved||
+     ((clip.visualDelay||0)>0&&(clip.prepare||0)<=.001)))return null;
+  const T=PARRY_SHIELD_CLIP,p=PLAYER_PARRY_SHIELD_POSE_SCRATCH;
+  p.active=true;p.kind='parry';p.t=clip.t;p.sweep=0;p.retreat=0;p.remount=0;
+  p.settle=0;p.lunge=0;p.impact=0;p.cancel=clip.phase==='cancel'?1:0;
+  p.releaseFrom=clamp(clip.releaseFrom||0,0,1);
+  if(clip.phase==='prepare'||clip.phase==='hold'){
+    p.prepare=p.guard=clamp(clip.prepare||0,0,1);
+  }else if(clip.phase==='cancel'){
+    const back=easeInOut(clamp(clip.t/T.cancel,0,1));
+    p.prepare=p.guard=(clip.releaseFrom||0)*(1-back);
+    p.remount=(clip.releaseFrom||0)>.001?back:0;
+    p.settle=smoothStep(clamp((back-.72)/.28,0,1));
+  }else{
+    const t=clip.t,join=easeInOut(clamp(t/Math.min(.16,T.strike*.62),0,1));
+    p.prepare=lerp(clip.releaseFrom||0,1,join);
+    p.sweep=easeInOut(clamp(t/T.strike,0,1));p.guard=1-p.sweep;
+    p.retreat=easeInOut(clamp((t-T.retreatStart)/(T.retreatEnd-T.retreatStart),0,1));
+    p.remount=easeInOut(clamp((t-T.remountStart)/(T.remountEnd-T.remountStart),0,1));
+    p.settle=easeInOut(clamp((t-T.remountEnd)/(T.settleEnd-T.remountEnd),0,1));
+    /* A two-pixel mounted weight shift prevents a frozen root, while nearly all
+       of the apparent power remains in Jonathan's torso and shield arm. */
+    p.lunge=.018*p.sweep*(1-p.retreat);
+    p.impact=Math.sin(Math.PI*clamp((t-(T.contact-.055))/.11,0,1));
+  }
+  return p;
+}
 function activePlayerShieldPose(){
-  const action=boss&&boss.turnAction;if(!isShieldTurnAction(action))return null;
+  const action=boss&&boss.turnAction;
+  if(!isShieldTurnAction(action))return activePlayerParryShieldPose();
   const t=action.t,T=SHIELD_BASH_TIMING,p=PLAYER_SHIELD_POSE_SCRATCH;
-  p.active=true;p.t=t;
+  p.active=true;p.kind='bash';p.t=t;
   /* One continuous forward gesture drives the whole prop transfer.  The
      authored sub-actions overlap it instead of waiting for one another, so
      reach -> unhook -> turn -> strike reads as one committed motion. */
@@ -41352,6 +41981,7 @@ function resolveTurnActionDetonationEcho(action){
 }
 function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
+  if(action.supportOnly){action.t+=dt;return;}
   boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
   action.t+=dt;
   if(action.shieldTimeline&&!action.shieldUnhookCue&&action.t>=SHIELD_BASH_TIMING.detachEnd){
@@ -41489,6 +42119,7 @@ function resolvePendingClassShieldGrant(action){
 }
 function performPlayerAction(command,options=null){
   if(!isPlayerTurn()||!command) return false;
+  if(command.squireSupport)return performSquireSupportAction(command);
   assertPersistentChainCommand(command,'Player action');
   skillTooltipIndex=-1;
   const actorId=activeTurnActorId(),skill=command.skill===true,
@@ -42051,7 +42682,8 @@ function doMoveLabParry(src,x,y,moveOverride=null,strikeT=null){
   const move=moveOverride||(actor&&actor.currentMove());
   if(!actor||!move) return;
   const reaction=beginParryReaction(actor,move,x,y,strikeT);
-  player.parryAnim=1;player.counterAnim=.55;
+  player.parryAnim=playerChar.rigId==='ser_jonathan'?0:1;
+  player.counterAnim=playerChar.rigId==='ser_jonathan'?0:.55;
   emitParryReactionFx(x,y,reaction);
   floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
   interruptParriedAttack(src);
@@ -42060,7 +42692,8 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   const actor=src===MINIBOSS_SOURCE?minibossFight:boss;
   const move=moveOverride||(actor&&actor.currentMove());
   const reaction=beginParryReaction(actor,move,x,y,strikeT);
-  player.parryAnim=1; player.counterAnim=.55;
+  player.parryAnim=playerChar.rigId==='ser_jonathan'?0:1;
+  player.counterAnim=playerChar.rigId==='ser_jonathan'?0:.55;
   if(src!==MINIBOSS_SOURCE)addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   if(src!==MINIBOSS_SOURCE&&activeSkillLabCombat()&&skillLabSession.defenseStats)
     skillLabSession.defenseStats.parries++;
@@ -42081,7 +42714,50 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   }
   if(!defeated)addChainStack();
 }
+function squireScreenPoint(){
+  return {x:squire.visualX||squire.lastX||clamp(laneX(player.x,1)-62,42,VW-42),
+    y:PLAYER_Y-58};
+}
+function doSquireParry(x,y){
+  if(!boss||boss.phase!=='dodge')return false;
+  const move=boss.currentMove&&boss.currentMove(),reaction=beginParryReaction(boss,move,x,y);
+  addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
+  if(activeSkillLabCombat()&&skillLabSession.defenseStats)skillLabSession.defenseStats.parries++;
+  recordDefenseChargeSuccess(DEFENSE_CHARGE.parryGain,'PARRY');
+  addKnightRush(CFG.RUSH_PER_PARRY);
+  const crit=rollGlobalCritical();
+  applyBossPosture(applyCriticalPostureDamage(CFG.POSTURE_PER_PARRY,crit),'squire_parry',reaction);
+  emitParryReactionFx(x,y,reaction);
+  floater(x,y-62,'SQUIRE PARRY!','#d7b878',19);
+  interruptParriedAttack(BOSS_SOURCE);
+  const defeated=hurtBoss(applyCriticalHealthDamage(
+    counterDmg()*CFG.PARRY_DMG_MULT*(1+chainBonus()*chainStacks),crit),true,
+    'squire_counter',crit.critical);
+  if(!defeated)addChainStack();
+  return true;
+}
+function resolveSquireIntercept(reason){
+  if(!boss||!isTurnCombat(boss)||boss.phase!=='dodge'||!squire.present||squire.health<=0)
+    return false;
+  const point=squireScreenPoint();squire.lastX=point.x;
+  if(squire.parryOnHit)doSquireParry(point.x,point.y);
+  squire.health=Math.max(0,squire.health-1);
+  boss.defenseTookDamage=true;
+  burst(point.x,point.y,22,['#d7b878','#9ecbff','#ffffff'],210,130,4,.78);
+  if(squire.health>0){
+    floater(point.x,point.y-94,'SQUIRE -1 HEALTH','#ff7a82',16);
+    SFX.hit();shake(7,.25);return true;
+  }
+  squire.present=false;squire.active=false;squire.deathT=0;squire.encouragement=0;
+  squire.profile=null;squire.profileKey='';
+  squire.readyOnPlayerPhase=(boss.playerPhaseSerial||0)+SQUIRE_BASE.deathCooldownTurns+1;
+  if(boss.partyActor==='ally')boss.partyActor='knight';
+  floater(point.x,point.y-96,'SQUIRE DOWN · RETURNS IN 2 TURNS','#ff7a82',17);
+  SFX.hit();shake(9,.3);
+  return true;
+}
 
+bootCheckpoint('skill-system-complete');
 /* CHARACTER SPECIALS
    Characters own only a special id. Immutable definitions own activation,
    simulation and presentation data, so rebuilding the roster never adds
@@ -42199,6 +42875,7 @@ function beginQueuedKnightRush(){
     contactReach:Math.min(boss.z-.8,CFG.KNIGHT_RUSH_REACH)
   };
   player.attackAnim=0;player.counterAnim=0;player.parryAnim=0;
+  player.parryShield=null;keyboardParryHeld=false;
   beginPlayerSwordSegment(0,1,knightRushHitTime(0));
   return true;
 }
@@ -42999,6 +43676,7 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
   if(move) anim=state==='tele'?move.anim:state==='strike'?move.strike:comboRecovering?comboStepRecoveryAnim(move):
     state==='recover'&&!rushRecovery&&move.recoverAnim?move.recoverAnim:state;
   if(state==='break'||state==='breakRecover')anim=def.breakAnim||'break';
+  else if(state==='turnCenter')anim='idle';
   const riseK=easeOut(clamp(actor.rise,0,1)),sink=(1-riseK)*150*out.sProj;
   let x=laneX(actor.x,out.tProj);
   if(state==='tele'&&move&&move.sweep&&move.bodySweep)
@@ -43025,6 +43703,7 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
   const denom=state==='tele'&&move?(actor.teleTime||move.tele):state==='strike'&&move?move.travel:
     comboRecovering?comboRecoverTime:state==='recover'?recoverAnimTime:
     state==='break'?CFG.BREAK_POSE_IN:state==='breakRecover'?CFG.BREAK_RECOVERY:
+    state==='turnCenter'?CFG.BOSS_TURN_CENTER_TIME:
     state==='finisher'?2.15:state==='dying'?2.5:.5;
   out.actor=actor; out.def=def; out.move=move; out.state=state; out.stateT=stateT;
   out.z=zD; out.x=x; out.y=out.yProj+sink; out.scale=out.sProj*def.scale;
@@ -43053,7 +43732,7 @@ function sampleBossPresentation(actor,def,out,state=actor.state,stateT=actor.sta
   out.comboRecoverTime=comboRecoverTime; out.recoverAnimTime=recoverAnimTime;
   const rushContactLanes=move&&(rushApproach||reaction&&reaction.source==='knight_rush')
     ?(typeof move.lanes==='function'?move.lanes():move.lanes):actor.hazardLanes;
-  if(state==='break'||state==='breakRecover')out.contactXs.length=0;
+  if(state==='break'||state==='breakRecover'||state==='turnCenter')out.contactXs.length=0;
   else if(reaction&&move){
     const strikeT=reaction.strikeT*(1-parryLimbReturnProgress(reaction));
     fillMoveContactXs(actor,move,rushContactLanes,'strike',strikeT*move.travel,out.contactXs);
@@ -43140,6 +43819,7 @@ function packLeapDmg(){
 }
 function startBoss(definitionId=null){
   /* the bear stalks in from the treeline; pond bosses RISE from the water */
+  resetSquireCombat();
   const def=definitionId?ENCOUNTERS.get(definitionId):activeBossDefinition();
   const side=def.rises?1:(Math.random()<.5?-3.1:5.1);
   const guaranteeQueue=bossGuaranteeQueue(),fullAttackBudget=bossAttackCount(),
@@ -43620,6 +44300,7 @@ function updateBoss(dt){
       /* A tamed miniboss is now a run-long party member. Future encounters may
          offer swap/evolution choices; a stage boss no longer dismisses it. */
       if(hasRelic('idol')){ awardGold(40); floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
+      restorePlayerHealthAfterBoss();
       boss=null; RUN_POLICY().afterBoss(loop);   // policy chooses reward/continuation; arena stays available
     }
     return;
@@ -43687,6 +44368,20 @@ function updateBoss(dt){
     }
     return;
   }
+  if(st==='turnCenter'){
+    /* Player control begins only after the boss has visibly left its final
+       attack lane. One authored curve owns the complete trip, so no residual
+       exponential tail or last-frame lane snap can survive. */
+    const from=Number.isFinite(boss.turnCenterFrom)?boss.turnCenterFrom:boss.x,
+      k=easeInOut(clamp(T/CFG.BOSS_TURN_CENTER_TIME,0,1));
+    boss.x=lerp(from,1,k);
+    if(T>=CFG.BOSS_TURN_CENTER_TIME){
+      boss.x=boss.xTarget=1;boss.state='idle';boss.stateT=0;
+      boss.turnCenterFrom=undefined;
+      beginPlayerTurn();
+    }
+    return;
+  }
   if(st==='idle'){
     if(boss._moveLab&&boss._moveLab.index>=boss._moveLab.moves.length&&hazards.length===0){
       if(boss._moveLab.loopMoveset&&boss._moveLab.moves.length){
@@ -43698,7 +44393,12 @@ function updateBoss(dt){
       return;
     }
     if(!boss._moveLab&&boss.phase==='dodge'&&boss.attacksLeft<=0&&hazards.length===0){
-      if(isTurnCombat()){beginPlayerTurn();return;}
+      if(isTurnCombat()){
+        if(Math.abs(boss.x-1)<.008){boss.x=boss.xTarget=1;beginPlayerTurn();}
+        else{boss.turnCenterFrom=boss.x;boss.xTarget=1;
+          boss.state='turnCenter';boss.stateT=0;boss.attack=null;}
+        return;
+      }
       boss.phase='volley'; boss.state='volley'; boss.stateT=0; boss.volleyTimer=0.6;
       const total=arrows+lances+pack;
       floater(VW/2,280,total>0?'YOUR TURN — UNLEASH!':'YOUR TURN... BUT YOU CARRY NOTHING','#c0f79a',22);
@@ -44681,10 +45381,13 @@ function moveLabFrameAutoParryReady(h){
 }
 function triggerMoveLabAutoParry(h){
   if(!moveLabAutoParryCanTrigger(h)) return false;
-  /* Set the one-shot guard first because playerAction() immediately registers
-     against every live hazard through the same path as a real tap. */
+  /* Set the one-shot guard first because release immediately registers against
+     every live hazard. Auto Parry owns a real zero-hold press/release gesture, so
+     its debug button exercises the same shield clip and exact-frame resolver as
+     the player's input instead of silently calling the verdict path. */
   h.autoParryTriggered=true;
-  playerAction('parry');
+  if(beginPlayerParryHold())releasePlayerParryHold({x:VW/2,y:VH/2});
+  else playerAction('parry');
   return true;
 }
 function toggleMoveLabAutoParry(actor=activeMoveLabActor()){
@@ -45044,7 +45747,7 @@ function updateAllyTrail(){
      record the complete readable pose so the follower replays movement instead
      of merely chasing the knight's current lane. */
   if(pack<=0){allyTrail.length=0;allyTrailStart=0;return;}
-  const duck=player.duckT<0?0:Math.sin(Math.PI*clamp(player.duckT/CFG.DUCK_TIME,0,1));
+  const duck=duckPostureAmountAt(player.duckT);
   allyTrail.push({t:perfNow,x:player.x,j:jumpHeight(),d:duck,g:player.gallop});
   while(allyTrailStart<allyTrail.length&&allyTrail[allyTrailStart].t<perfNow-0.8) allyTrailStart++;
   /* compact occasionally instead of shifting the whole trail every frame */
@@ -46323,7 +47026,7 @@ function giveSkillEvolution(){
   skillMutationChoices=rollSkillMutationChoices(activeSkillEvolutionRules().choiceCount);
   if(!skillMutationChoices.length){giveRelic();return false;}
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,
-    attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9});
+    attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9});
   setMode('evolution');SFX.relic();flash('#9ecbff',.32);
   return true;
 }
@@ -46485,6 +47188,7 @@ function applySkillLabPreset(id,audible=true){
   }[id];
   if(!values)return false;
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
+  resetSquireCombat();
   player.alive=true;syncPlayerVitals(true);
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
   boss.criticalBleedTrace=null;
@@ -46524,6 +47228,7 @@ function resetSkillLabTurn(){
      a fake defense result, Charge, Bleed tick, or Break reward. */
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
   player.alive=true;syncPlayerVitals(true);
+  resetSquireCombat();
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
   boss.turnAction=null;boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
   boss.pendingChargeRelease=null;boss.pendingPostureChargeConductor=null;
@@ -46604,7 +47309,7 @@ function giveRelic(){
   let bi=(Math.random()*(ARTIFACT_IDS.length-1))|0; if(bi>=ai) bi++;
   relicChoices=[ARTIFACTS.get(ARTIFACT_IDS[ai]).create(),ARTIFACTS.get(ARTIFACT_IDS[bi]).create()];
   pendingRelic=null;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,lastParry:-9});
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9});
   setMode('relic'); SFX.relic(); flash('#ffe37a',.35);
 }
 function relicTap(pt){
@@ -46674,6 +47379,7 @@ function nextLoop(){
   setMode('run');
 }
 
+bootCheckpoint('combat-and-world-complete');
 /* ============================== 12. GAME STATE / HUD / MENUS ============================== */
 let mode='menu', modeT=0, perfNow=0;
 let loop=1, dist=0, roadScroll=0, gold=0, goldEarned=0, runDistance=0, arrows=0, lances=0;
@@ -46687,6 +47393,7 @@ function setMode(m){
      changes the player's own mute preference and is released on the normal menu. */
   SFX.setTestMuted(SILENT_TEST_MODES.has(m)||(skillLabSession&&skillLabSession.inCombat)||
     (debugRun&&m!=='menu'));
+  if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
   mode=m;modeT=0;
 }
 function speed(){
@@ -46746,12 +47453,13 @@ function resetRun(){
   relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null;skillMutationChoices=null; // all FIVE slots, empty
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
+  resetSquireCombat();
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
   hudShieldShatters.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,
-    parryAnim:0,swordCombo:null,lastParry:-9,invuln:0,shieldCharges:0,
+    parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9,invuln:0,shieldCharges:0,
     volatileShieldCharges:0,volatileShieldPosture:0,
     damageTakenModifierProduct:1,heartFlashStartedAt:-Infinity,
     heartFlashFromUnits:0,heartFlashToUnits:0});
@@ -46783,7 +47491,7 @@ for(const character of CHARS){
     throw new Error('Character '+character.name+' damageTakenMultiplier must be greater than zero');
 }
 let charSel=0, playerChar=CHARS[0];
-const PLAYER_HEALTH_SYSTEM_AUDIT=(()=>{
+const PLAYER_HEALTH_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const jonathan=CHARS[0],saved=player.damageTakenModifierProduct;
   player.damageTakenModifierProduct=1;
   if(characterMaxHealthUnits(jonathan)!==576||incomingPlayerDamageUnits(1,jonathan)!==144)
@@ -46794,7 +47502,7 @@ const PLAYER_HEALTH_SYSTEM_AUDIT=(()=>{
   if(armored!==108)throw new Error('Character and defense damage multipliers must compose before one final rounding');
   return Object.freeze({unitsPerHeart:144,jonathanMax:576,oneAndHalfAtHalfDefense:108});
 })();
-const CRITICAL_SYSTEM_AUDIT=(()=>{
+const CRITICAL_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const command={id:'__crit_audit',hits:3,critChance:.20,critPrecisionGain:.10,
       critDamageMultiplier:CFG.CRIT_DAMAGE_MULT},rolls=[.90,.90,.05],
     plan=createCommandCritPlan(command,'knight',()=>rolls.shift());
@@ -46826,7 +47534,7 @@ const CRITICAL_SYSTEM_AUDIT=(()=>{
   return Object.freeze({contacts:plan.contacts.length,multiplier:plan.multiplier,
     sharedPrecisionUpdates:1,cascadeContacts:cascadePlan.contacts.length,postureCrit:30});
 })();
-const BLEED_SYSTEM_AUDIT=(()=>{
+const BLEED_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const first=bleedPhaseTick(4,4,false),second=bleedPhaseTick(first.next,first.later,false),
     broken=bleedPhaseTick(4,4,true);
   if(first.damage!==4||first.next!==4||first.later!==0||second.damage!==4||second.next!==0||
@@ -46835,7 +47543,7 @@ const BLEED_SYSTEM_AUDIT=(()=>{
   return Object.freeze({first:first.damage,second:second.damage,broken:broken.damage,
     expired:second.next,totalFactor:BLEED_STATUS.totalDamageFactor});
 })();
-const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
+const DEFENSE_CHARGE_SYSTEM_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const command={defenseTemperDamagePerCharge:2},
     stacked=combatTurnHitDamageBreakdown(10+commandDefenseTemperBonus(command,3),0,0,0,true,.05,true,1.5),
     contactCommand={chargeMode:'CONTACT_RELEASE'},contactPayload=24,
@@ -46857,7 +47565,7 @@ const DEFENSE_CHARGE_SYSTEM_AUDIT=(()=>{
     bankContract:CHARGE_BANK_CONTRACT.rule,contactPayload,distributedReserved:
       distributed.remainingCharge,paired:Object.freeze(paired),measured:Object.freeze(measured)});
 })();
-const CHARGE_PRIMARY_RUNTIME_AUDIT=(()=>{
+const CHARGE_PRIMARY_RUNTIME_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const echoer={chargeChainEchoDamagePerChainPerCharge:.5},uncapped=
       commandChargeChainEchoDamage(echoer,4,10000),
     primaryPower=8,primary={chargeMode:'DELAYED_PRIMARY',preparedRelease:{damage:
@@ -47228,7 +47936,7 @@ function emitHudShieldShatter(count,volatileCount=0){
       seed:Math.floor(perfNow*1000)+719});
   }
 }
-const HEART_RENDER_AUDIT=(()=>{
+const HEART_RENDER_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const units=PLAYER_HEALTH_CONTRACT.unitsPerHeart;
   if(HEART_INTERIOR_CELLS.length!==units||HEART_SPRITES.length!==units+1||
      HEART_FLASH_SPRITES.length!==units+1||
@@ -47238,6 +47946,22 @@ const HEART_RENDER_AUDIT=(()=>{
 })();
 
 /* ---------- HUD ---------- */
+function drawSquireCombatHUD(){
+  if(!boss)return;
+  const cooldown=squireCooldownTurns();
+  if(!squire.present&&cooldown<=0)return;
+  const x=248,y=64,w=166,h=42,active=squirePartyReady();
+  g.fillStyle='rgba(5,7,12,.88)';g.fillRect(x,y,w,h);
+  g.strokeStyle=squire.present?'#d7b878':'#716957';g.lineWidth=2;
+  g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.textAlign='left';g.font='bold 11px monospace';
+  g.fillStyle=squire.present?'#f1d9a5':'#9c9177';
+  g.fillText(squire.present?'SQUIRE  ♥ '+squire.health+'/'+squire.maxHealth:
+    'SQUIRE RECOVERING',x+9,y+17);
+  g.font='8px monospace';g.fillStyle=active?'#c0f79a':'#aeb2c2';
+  g.fillText(squire.present?(active?'PARTY READY · MORALE '+squire.encouragement:
+    'RIDING IN · ACTIVE NEXT TURN'):'CALL READY IN '+cooldown+' TURN'+(cooldown===1?'':'S'),x+9,y+33);
+}
 function drawHUD(){
   g.save(); g.translate(0,uiTop);           // keep the HUD clear of phone notches / islands
   g.textAlign='left'; g.font='bold 20px monospace';
@@ -47274,6 +47998,7 @@ function drawHUD(){
       player.volatileShieldCharges);
   }
   drawHudShieldShatters(shieldAnchor.x,shieldAnchor.y);
+  drawSquireCombatHUD();
   /* active tamed-miniboss chip */
   if(pack>0){ g.font='11px monospace'; g.textAlign='left'; g.fillStyle='#9ecbff';
     const ally=packEncounter(0);
@@ -47394,6 +48119,14 @@ function skillButtonSubtitle(skill){
     const resonance=skillRarityResonanceCompactLabel(skill);
     return text+(resonance?' · '+resonance:'');
   };
+  if(skill.squireAction==='CALL')return '1AP · 1R · ARRIVES NOW · ACTS NEXT TURN';
+  if(skill.squireAction==='ENCOURAGE')return squire.health<squire.maxHealth
+    ?'1AP · 1R · HEAL 1 HEALTH SLOT':'1AP · 1R · MORALE +1';
+  if(skill.squireAction==='COOLDOWN')return 'RETURNS IN '+skill.squireCooldown+' TURN'+
+    (skill.squireCooldown===1?'':'S');
+  if(skill.squireMove)return skill.id==='squire_posture'
+    ?'1AP · 1R · '+healthDamageText(turnDamage(skill.damage))+' DMG · '+skill.posture+' POST'
+    :'1AP · 0R · '+healthDamageText(turnDamage(skill.damage))+' DMG · NO POSTURE';
   if(skill.source==='COMPANION'){
     const perHit=healthDamageText(turnDamage(skill.damage));
     return finish(skill.hits>1
@@ -47547,6 +48280,26 @@ function skillTooltipContent(command){
     if(bowText)additions.push(bowText);if(economy)additions.push(economy);if(resonance)additions.push(resonance);
     return {paragraphs:command.evolutionText.concat(additions)};
   }
+  if(command.squireAction==='CALL')return {paragraphs:[
+    'Call a smaller mounted Squire with 1 Health. He arrives immediately and can intercept the coming boss phase.',
+    'He becomes a selectable party member on the next player turn and shares the Knight’s AP and Resolve.',
+    'After dying he cannot be called during the next two player turns.'
+  ]};
+  if(command.squireAction==='ENCOURAGE')return {paragraphs:[
+    'If the Squire is missing a Health slot, restore 1 slot.',
+    'At full Health, grant Morale +1 until he dies: Squire Slash gains +2 damage and Shield Press gains +4 Posture.'
+  ]};
+  if(command.squireAction==='COOLDOWN')return {paragraphs:[
+    'The Squire is recovering and cannot be called yet.',
+    'Complete '+command.squireCooldown+' more player turn'+(command.squireCooldown===1?'':'s')+' to make Call Squire ready.'
+  ]};
+  if(command.squireMove)return {paragraphs:command.id==='squire_posture'?[
+    'A low-damage shield drive that applies '+command.posture+' Posture and never creates Chain.',
+    'It spends the same shared AP and Resolve shown on the Knight’s command panel.'
+  ]:[
+    'A simple mounted slash for '+command.damage+' base damage with no Posture and no Chain gain.',
+    'It spends the same shared AP and Resolve shown on the Knight’s command panel.'
+  ]};
   if(command.source==='COMPANION'&&!command.skill)return {paragraphs:[
     'A weak free companion attack. Every landed hit grants 1 Resolve and adds 1 shared Chain.',
     'It costs 1 AP but no Resolve, so it can fund a second action in the same phase.',
@@ -47621,8 +48374,9 @@ function drawSkillTooltip(){
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
   g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
-  const unavailable=classSkillUsedThisPhase(command)?' · USED THIS PHASE':
-    boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
+    const unavailable=command.squireAction==='COOLDOWN'?' · RECOVERING':
+      classSkillUsedThisPhase(command)?' · USED THIS PHASE':
+      boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
   g.fillText('AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
     (available?' · READY':unavailable),x+28,y+124);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';
@@ -47644,7 +48398,9 @@ function drawPartyTabs(){
   if(!hasCombatAlly())return;
   const selected=activeTurnActorId();
   drawTurnButton(TURN_KNIGHT_TAB,'KNIGHT','',selected==='knight'?'#ffe37a':'#aeb2c2',true);
-  drawTurnButton(TURN_ALLY_TAB,companionProfile().id.toUpperCase(),'',selected==='ally'?'#9ecbff':'#aeb2c2',true);
+  const profile=companionProfile(),label=profile.id==='squire'
+    ?'SQUIRE '+squire.health+'♥':profile.id.toUpperCase();
+  drawTurnButton(TURN_ALLY_TAB,label,'',selected==='ally'?'#9ecbff':'#aeb2c2',true);
 }
 function drawPlayerTurnUI(){
   /* drawHUD is translated by uiTop; cancel it so this touch-first command panel
@@ -47684,7 +48440,8 @@ function drawPlayerTurnUI(){
     const fightEnabled=boss.ap>0&&!primaryChargePreparationLocked(),
       fight=fightCommand(actorId),fightDamage=turnCommandDamageBreakdown(fight).total,
       fightSub=actorId==='ally'
-        ?'1AP · '+fight.name+' · '+fightDamage+' DMG · +1R'
+        ?'1AP · '+fight.name+' · '+fightDamage+' DMG'+
+          (companionProfile().id==='squire'?' · NO POSTURE':' · +1R')
         :'1AP · '+activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R';
     drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:'NO AP','#e8e2d0',fightEnabled);
     drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',hasAffordableTurnSkill());
@@ -48865,7 +49622,7 @@ function moveTreeCatalogueForms(skillId){
   const authored=WEAPON_SKILL_PROTOTYPE_LAB_NODE_BY_SKILL_AND_ID[skillId];
   return authored?Object.values(authored).filter(node=>node.kind==='EVOLUTION'&&node.depth===1):[];
 }
-const MOVE_TREE_CATALOGUE_SOURCE_AUDIT=(()=>{
+const MOVE_TREE_CATALOGUE_SOURCE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const forms=moveTreeCatalogueForms('sharpshoot'),expected=SHARPSHOOT_MARK_ROUTE_CONTRACTS
       .filter(route=>route.depth===1).map(route=>route.id),actual=forms.map(node=>node.id),
     legacyIds=new Set((SKILL_MUTATIONS_BY_SKILL.sharpshoot||[])
@@ -48995,7 +49752,7 @@ function moveTreeGridRects(count,y,maxBottom=542){
     x:24+(index%2)*(w+gapX),y:y+((index/2)|0)*(h+gapY),w,h
   }));
 }
-const MOVE_TREE_TWIST_LAYOUT_AUDIT=(()=>{
+const MOVE_TREE_TWIST_LAYOUT_AUDIT=RUN_BOOT_AUDITS&&(()=>{
   const layout=MOVE_TREE_TWIST_LAYOUT,
     rects=moveTreeGridRects(SKILL_EVOLUTION_DEPTHS[4].poolFamilies,layout.apexTop,layout.apexBottom),
     lastApexBottom=Math.max(...rects.map(rect=>rect.y+rect.h)),
@@ -51117,6 +51874,7 @@ function render(){
      while remaining in front of the boss/world it struck. */
   drawParticles(false,true);
   if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='healthlab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
+    drawSquire();
     if(player.alive) drawPlayer();
     drawPackAllies();
     drawProjectiles();
@@ -51193,6 +51951,7 @@ function render(){
   }
 }
 
+bootCheckpoint('menus-complete');
 /* ============================== 13. MAIN LOOP ============================== */
 let lastTime=performance.now();
 let hadFocus=true;
@@ -51218,6 +51977,8 @@ function frame(now){
   render();
 }
 cvs.dataset.bootReady='1';
+cvs.dataset.bootAudits=RUN_BOOT_AUDITS?'complete':'deferred';
+if(RUN_BOOT_AUDITS){
 cvs.dataset.evolutionAudit=SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmNodes+'-'+
   SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmTwists+'-'+SKILL_EVOLUTION_CONTENT_AUDIT.twinRhythmApexes;
 cvs.dataset.evolutionPoolAudit=SKILL_EVOLUTION_CONTENT_AUDIT.sharpshootForms+'-'+
@@ -51487,7 +52248,10 @@ cvs.dataset.skillTreeLineageAudit=String(SKILL_TREE_DESIGN_AUDIT.lineagesReviewe
 cvs.dataset.skillTreeSpreadAudit=SKILL_TREE_DESIGN_AUDIT.formSpread.toFixed(2)+'-'+
   SKILL_TREE_DESIGN_AUDIT.specializationSpread.toFixed(2)+'-'+
   SKILL_TREE_DESIGN_AUDIT.spectrum.fromOrigin.join('.');
+}
 requestAnimationFrame(frame);
+bootCheckpoint('script-complete');
+if(BOOT_PROFILE_ENABLED)document.title='KR_BOOT '+BOOT_PROFILE.join('|');
 </script>
 </body>
 </html>
