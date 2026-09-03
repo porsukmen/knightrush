@@ -13,7 +13,12 @@
     initialAp=boss.ap,initialResolve=boss.resolve,
     callStarted=performPlayerAction(call),callFrames=resolveAction(),
     called=squire.present&&squire.health===1&&!squire.active,
-    callEconomy=boss.ap===initialAp-1&&boss.resolve===initialResolve-1;
+    callEconomy=boss.ap===initialAp-1&&boss.resolve===initialResolve-1,
+    arrivingCommand=knightTurnSkills().find(skill=>(skill.baseId||skill.id)==='call_squire'),
+    encourageLockedOnCallTurn=arrivingCommand.squireAction==='ARRIVING'&&
+      !turnCommandAvailable(arrivingCommand);
+  let summonRenderSafe=true;
+  try{drawPlayer();drawSquire();}catch(error){summonRenderSafe=false;}
 
   boss.phase='dodge';boss.state='idle';boss.attack=null;boss.hazardLanes=[];
   beginPlayerTurn();
@@ -43,6 +48,8 @@
   const intercepted=!squire.present&&squire.health===0&&
       player.currentHealthUnits===knightHealthBefore,
     baseDidNotParry=boss.sequenceIndex===0&&!fakeHazard.done&&chainStacks===chainBefore;
+  let deathRenderSafe=true;
+  try{drawSquire();drawParticles(false,true);drawParticles();}catch(error){deathRenderSafe=false;}
 
   hazards=[];boss.parryReaction=null;boss.pendingBreak=null;boss.state='idle';boss.attack=null;
   boss.phase='dodge';beginPlayerTurn();const cooldownTwo=squireCooldownTurns()===2;
@@ -52,11 +59,14 @@
     cooldownReady=squireCooldownTurns()===0&&readyCommand.squireAction==='CALL'&&
       turnCommandAvailable(readyCommand);
   const passed=initialSkills.length===4&&callStarted&&callFrames<180&&called&&callEconomy&&
+    encourageLockedOnCallTurn&&summonRenderSafe&&deathRenderSafe&&
     activated&&encourageStarted&&encourageFrames<180&&encouraged&&slashStarted&&
     slashFrames<180&&slashResolved&&pressureContract&&pressureStarted&&pressureFrames<180&&
     pressureResolved&&intercepted&&baseDidNotParry&&
     cooldownTwo&&cooldownOne&&cooldownReady;
   return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
+    encourageLockedOnCallTurn,
+    summonRenderSafe,deathRenderSafe,
     activated,encourageStarted,encourageFrames,encouraged,slashStarted,slashFrames,
     slashResolved,pressureContract,pressureStarted,pressureFrames,pressureResolved,
     intercepted,baseDidNotParry,cooldownTwo,cooldownOne,
