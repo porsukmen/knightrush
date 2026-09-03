@@ -16,7 +16,10 @@
     callEconomy=boss.ap===initialAp-1&&boss.resolve===initialResolve-1,
     arrivingCommand=knightTurnSkills().find(skill=>(skill.baseId||skill.id)==='call_squire'),
     encourageLockedOnCallTurn=arrivingCommand.squireAction==='ARRIVING'&&
-      !turnCommandAvailable(arrivingCommand);
+      !turnCommandAvailable(arrivingCommand),
+    appearanceAuthored=!!(squire.appearance&&squire.appearance.sword&&
+      squire.appearance.shield&&squire.appearance.shield.style==='squire'&&
+      Number.isInteger(squire.appearance.shield.pattern));
   let summonRenderSafe=true;
   try{drawPlayer();drawSquire();}catch(error){summonRenderSafe=false;}
 
@@ -38,16 +41,22 @@
   boss.phase='dodge';boss.state='idle';boss.attack=null;boss.hazardLanes=[];
   beginPlayerTurn();selectTurnActor('ally');
   const postureBefore=boss.posture,pressureStarted=performPlayerAction(pressure),
-    pressureFrames=resolveAction(),pressureResolved=boss.posture>postureBefore;
+    pressureShieldTimeline=pressureStarted&&isSquireShieldTurnAction(boss.turnAction)&&
+      !!activeSquireShieldPose();
+  let pressureRenderSafe=true;
+  try{drawSquire();}catch(error){pressureRenderSafe=false;}
+  const pressureFrames=resolveAction(),pressureResolved=boss.posture>postureBefore;
 
   const move=activeBossAttackSet()[0].steps[0],fakeHazard={src:BOSS_SOURCE,done:false};
   boss.phase='dodge';boss.state='strike';boss.stateT=move.travel*.5;
   boss.attack={steps:[move,move,move]};boss.sequenceIndex=0;hazards.push(fakeHazard);
-  const knightHealthBefore=player.currentHealthUnits,chainBefore=chainStacks;
+  const knightHealthBefore=player.currentHealthUnits,chainBefore=chainStacks,
+    particleCountBefore=particles.length;
   damagePlayer('SQUIRE AUDIT');
   const intercepted=!squire.present&&squire.health===0&&
       player.currentHealthUnits===knightHealthBefore,
-    baseDidNotParry=boss.sequenceIndex===0&&!fakeHazard.done&&chainStacks===chainBefore;
+    baseDidNotParry=boss.sequenceIndex===0&&!fakeHazard.done&&chainStacks===chainBefore,
+    recallFx=particles.length>particleCountBefore&&particles.some(p=>p.kind==='squireRecallMote');
   let deathRenderSafe=true;
   try{drawSquire();drawParticles(false,true);drawParticles();}catch(error){deathRenderSafe=false;}
 
@@ -59,16 +68,18 @@
     cooldownReady=squireCooldownTurns()===0&&readyCommand.squireAction==='CALL'&&
       turnCommandAvailable(readyCommand);
   const passed=initialSkills.length===4&&callStarted&&callFrames<180&&called&&callEconomy&&
-    encourageLockedOnCallTurn&&summonRenderSafe&&deathRenderSafe&&
+    encourageLockedOnCallTurn&&appearanceAuthored&&summonRenderSafe&&deathRenderSafe&&
     activated&&encourageStarted&&encourageFrames<180&&encouraged&&slashStarted&&
     slashFrames<180&&slashResolved&&pressureContract&&pressureStarted&&pressureFrames<180&&
-    pressureResolved&&intercepted&&baseDidNotParry&&
+    pressureResolved&&pressureShieldTimeline&&pressureRenderSafe&&recallFx&&
+    intercepted&&baseDidNotParry&&
     cooldownTwo&&cooldownOne&&cooldownReady;
   return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
-    encourageLockedOnCallTurn,
+    encourageLockedOnCallTurn,appearanceAuthored,
     summonRenderSafe,deathRenderSafe,
     activated,encourageStarted,encourageFrames,encouraged,slashStarted,slashFrames,
     slashResolved,pressureContract,pressureStarted,pressureFrames,pressureResolved,
+    pressureShieldTimeline,pressureRenderSafe,recallFx,
     intercepted,baseDidNotParry,cooldownTwo,cooldownOne,
     cooldownReady};
 })();
