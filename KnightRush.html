@@ -8729,10 +8729,10 @@ const player={
   attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, parryShield:null,
   swordPreviewT:-1,swordPreviewCue:0,invuln:0,
 };
-/* The Squire is encounter state, not another resource economy. He shares the
-   Knight's AP/Resolve and owns only health slots, availability and presentation. */
+/* The Squire is encounter state with one personal action point each player phase.
+   His moves spend that point instead of the Knight's AP, but Resolve stays shared. */
 const SQUIRE_BASE=Object.freeze({
-  maxHealth:1,deathCooldownTurns:2,
+  maxHealth:1,apMax:1,deathCooldownTurns:2,
   slashDamage:6,postureDamage:14,postureChipDamage:2,
   encourageDamagePerStack:2,encouragePosturePerStack:4,
 });
@@ -8809,6 +8809,7 @@ function randomSquireAppearance(){
 }
 const squire={
   present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
+  ap:0,apMax:SQUIRE_BASE.apMax,
   parryOnHit:false,
   activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
   arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
@@ -8817,6 +8818,7 @@ const squire={
 };
 function resetSquireCombat(){
   Object.assign(squire,{present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
+    ap:0,apMax:SQUIRE_BASE.apMax,
     parryOnHit:false,
     activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
@@ -40547,17 +40549,28 @@ function markTurnSkillUsedThisPhase(command,actorId=activeTurnActorId()){
 function classSkillUsedThisPhase(command){return turnSkillUsedThisPhase(command);}
 function turnCommandApCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.apCost||1);}
 function turnCommandResolveCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.cost||0);}
+function commandUsesSquireAp(command,actorId=activeTurnActorId()){
+  return actorId==='ally'&&!!(command&&command.squireMove)&&squirePartyReady();
+}
+function turnCommandApState(command,actorId=activeTurnActorId()){
+  const personal=commandUsesSquireAp(command,actorId);
+  return {personal,current:personal?(squire.ap||0):(boss&&boss.ap||0),
+    max:personal?(squire.apMax||SQUIRE_BASE.apMax):(boss&&boss.apMax||0),
+    label:personal?'SQUIRE AP':'AP'};
+}
 function turnCommandAvailable(command,actorId=activeTurnActorId()){
   if(!boss||!command||primaryChargePreparationLocked())return false;
   if(command.squireAction==='COOLDOWN'||command.squireAction==='ARRIVING')return false;
   if(command.squireAction==='CALL'&&squire.present)return false;
   if(command.squireAction==='ENCOURAGE'&&!squire.present)return false;
+  const ap=turnCommandApState(command,actorId),labSquireAp=ap.personal&&activeSkillLabCombat();
   return !!(!turnSkillUsedThisPhase(command,actorId)&&
-    (boss.ap||0)>=turnCommandApCost(command)&&
+    (labSquireAp||ap.current>=turnCommandApCost(command))&&
     (boss.resolve||0)>=turnCommandResolveCost(command));
 }
 function hasAffordableTurnSkill(){
-  return !!(boss&&activeTurnSkills().some(turnCommandAvailable));
+  const actorId=activeTurnActorId();
+  return !!(boss&&activeTurnSkills().some(command=>turnCommandAvailable(command,actorId)));
 }
 function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
@@ -41338,6 +41351,7 @@ function releaseChargeAftershock(){
 function summonSquire(){
   const serial=boss&&boss.playerPhaseSerial||0,target=clamp(laneX(player.x,1)-62,42,VW-42);
   Object.assign(squire,{present:true,active:false,health:squire.maxHealth,
+    ap:0,apMax:SQUIRE_BASE.apMax,
     activateOnPlayerPhase:serial+1,readyOnPlayerPhase:0,encouragement:0,
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:0,visualX:-48,lastX:target,
     appearance:randomSquireAppearance(),profile:null,profileKey:''});
@@ -41373,11 +41387,16 @@ function performSquireSupportAction(command){
   return true;
 }
 function updateSquirePlayerPhase(){
-  if(!boss||!squire.present||squire.active||squire.health<=0)return false;
-  if((boss.playerPhaseSerial||0)<squire.activateOnPlayerPhase)return false;
-  squire.active=true;squire.activateOnPlayerPhase=Infinity;
-  floater(squire.visualX||squire.lastX,PLAYER_Y-126,'SQUIRE READY','#d7b878',17);
-  SFX.relic();return true;
+  if(!boss||!squire.present||squire.health<=0){squire.ap=0;return false;}
+  let activated=false;
+  if(!squire.active){
+    if((boss.playerPhaseSerial||0)<squire.activateOnPlayerPhase){squire.ap=0;return false;}
+    squire.active=true;squire.activateOnPlayerPhase=Infinity;activated=true;
+    floater(squire.visualX||squire.lastX,PLAYER_Y-126,'SQUIRE READY · 1 AP','#d7b878',17);
+    SFX.relic();
+  }
+  squire.ap=squire.apMax||SQUIRE_BASE.apMax;
+  return activated;
 }
 function beginPlayerTurn(fromBreak=false){
   if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
@@ -42878,6 +42897,8 @@ function performPlayerAction(command,options=null){
     freeFollowUp=!!(options&&options.freeFollowUp),
     cost=primaryRelease||freeFollowUp?0:(command.cost||0),
     apCost=primaryRelease||freeFollowUp?0:(command.apCost===undefined?1:command.apCost),
+    useSquireAp=!primaryRelease&&!freeFollowUp&&commandUsesSquireAp(command,actorId),
+    availableAp=useSquireAp?(squire.ap||0):(boss.ap||0),
     breakActionIndex=boss.playerTurnBreak===true?Math.max(0,
       Math.floor(Number(boss.breakActionsTaken)||0)):-1;
   if(!primaryRelease&&commandChargeMode(command)==='DELAYED_PRIMARY'){
@@ -42888,7 +42909,8 @@ function performPlayerAction(command,options=null){
     if(!freeFollowUp)markTurnSkillUsedThisPhase(command,actorId);
     return armPrimaryChargeRelease(command,actorId,apCost,cost);
   }
-  if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
+  if(((!useSquireAp||!activeSkillLabCombat())&&availableAp<apCost)||
+     (boss.resolve||0)<cost){SFX.duck();return false;}
   if(!freeFollowUp&&turnSkillUsedThisPhase(command,actorId)){SFX.duck();return false;}
   if(!freeFollowUp)markTurnSkillUsedThisPhase(command,actorId);
   if(command.source==='CLASS'){
@@ -43164,7 +43186,11 @@ function performPlayerAction(command,options=null){
       if(chargeRetained)restoreBossCharge(chargeRetained);
     }
   }
-  boss.ap-=apCost;
+  if(useSquireAp){
+    /* Skill Lab remains an unrestricted animation sandbox; real encounters spend
+       the single personal point and refill it only at the next player phase. */
+    if(!activeSkillLabCombat())squire.ap=Math.max(0,squire.ap-apCost);
+  }else boss.ap-=apCost;
   boss.resolve-=cost;
   boss.phase='playerResolve';boss.playerMenu=skill?'skills':'root';
   boss.playerActionReturnMenu=skill?'skills':'root';
@@ -43507,7 +43533,7 @@ function resolveSquireIntercept(reason){
   }
   squire.deathSide=(squire.lastX||point.x)<laneX(player.x,1)?-1:1;
   squire.present=false;squire.active=false;squire.deathT=0;squire.deathBurst=false;
-  squire.encouragement=0;
+  squire.ap=0;squire.encouragement=0;
   squire.profile=null;squire.profileKey='';
   squire.readyOnPlayerPhase=(boss.playerPhaseSerial||0)+SQUIRE_BASE.deathCooldownTurns+1;
   if(boss.partyActor==='ally')boss.partyActor='knight';
@@ -48721,7 +48747,7 @@ function drawSquireCombatHUD(){
   g.fillText(squire.present?'SQUIRE  ♥ '+squire.health+'/'+squire.maxHealth:
     'SQUIRE RECOVERING',x+9,y+17);
   g.font='8px monospace';g.fillStyle=active?'#c0f79a':'#aeb2c2';
-  g.fillText(squire.present?(active?'PARTY READY · MORALE '+squire.encouragement:
+  g.fillText(squire.present?(active?'SQUIRE AP '+squire.ap+'/'+squire.apMax+' · MORALE '+squire.encouragement:
     'RIDING IN · ACTIVE NEXT TURN'):'CALL READY IN '+cooldown+' TURN'+(cooldown===1?'':'S'),x+9,y+33);
 }
 function drawHUD(){
@@ -48778,8 +48804,11 @@ function drawHUD(){
     if(boss.state==='volley') st='YOUR TURN — every weapon flies!';
     else if(isTurnCombat()&&boss.phase==='player'&&boss.playerTurnBreak)
       st='BREAK TURN — all damage +'+Math.round((activeBreakDamageMultiplier(true)-1)*100)+'%';
-    else if(isTurnCombat()&&boss.phase==='player')
-      st='YOUR TURN — AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax;
+    else if(isTurnCombat()&&boss.phase==='player'){
+      const squireTurn=activeTurnActorId()==='ally'&&squirePartyReady();
+      st='YOUR TURN — '+(squireTurn?'K '+boss.ap+'AP · SQUIRE '+squire.ap+'AP':
+        'AP '+boss.ap+'/'+boss.apMax)+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax;
+    }
     else if(isTurnCombat()&&boss.phase==='playerResolve') st='ATTACK!';
     else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
     else if(boss.state==='breakRecover') st='RECOVERING';
@@ -48888,8 +48917,8 @@ function skillButtonSubtitle(skill){
   if(skill.squireAction==='COOLDOWN')return 'RETURNS IN '+skill.squireCooldown+' TURN'+
     (skill.squireCooldown===1?'':'S');
   if(skill.squireMove)return skill.id==='squire_posture'
-    ?'1AP · 1R · '+healthDamageText(turnDamage(skill.damage))+' DMG · '+skill.posture+' POST'
-    :'1AP · 0R · '+healthDamageText(turnDamage(skill.damage))+' DMG · NO POSTURE';
+    ?'1 SQUIRE AP · 1R · '+healthDamageText(turnDamage(skill.damage))+' DMG · '+skill.posture+' POST'
+    :'1 SQUIRE AP · 0R · '+healthDamageText(turnDamage(skill.damage))+' DMG · NO POSTURE';
   if(skill.source==='COMPANION'){
     const perHit=healthDamageText(turnDamage(skill.damage));
     return finish(skill.hits>1
@@ -49045,7 +49074,8 @@ function skillTooltipContent(command){
   }
   if(command.squireAction==='CALL')return {paragraphs:[
     'Call a smaller mounted Squire with 1 Health. He arrives immediately and can intercept the coming boss phase.',
-    'He becomes a selectable party member on the next player turn and shares the Knight’s AP and Resolve.',
+    'He becomes selectable on the next player turn and refreshes 1 personal Squire AP at the start of every player phase.',
+    'His actions spend Squire AP instead of the Knight’s AP. Resolve remains shared.',
     'After dying he cannot be called during the next two player turns.'
   ]};
   if(command.squireAction==='ARRIVING')return {paragraphs:[
@@ -49062,10 +49092,10 @@ function skillTooltipContent(command){
   ]};
   if(command.squireMove)return {paragraphs:command.id==='squire_posture'?[
     'A low-damage shield drive that applies '+command.posture+' Posture and never creates Chain.',
-    'It spends the same shared AP and Resolve shown on the Knight’s command panel.'
+    'It spends the phase’s 1 Squire AP and 1 shared Resolve; the Knight keeps all of his AP.'
   ]:[
     'A simple mounted slash for '+command.damage+' base damage with no Posture and no Chain gain.',
-    'It spends the same shared AP and Resolve shown on the Knight’s command panel.'
+    'It spends the phase’s 1 Squire AP; the Knight keeps all of his AP.'
   ]};
   if(command.source==='COMPANION'&&!command.skill)return {paragraphs:[
     'A weak free companion attack. Every landed hit grants 1 Resolve and adds 1 shared Chain.',
@@ -49123,7 +49153,8 @@ function drawSkillTooltip(){
   if(!command||!isPlayerTurn()||(fightTooltip?boss.playerMenu!=='root':boss.playerMenu!=='skills'))return;
   const info=skillTooltipContent(command),breakdown=turnCommandDamageBreakdown(command),
     finals=breakdown.rows.map(row=>healthDamageText(row.final,true)),x=20,y=94,w=440,h=552,
-    available=turnCommandAvailable(command),apCost=turnCommandApCost(command),
+    actorId=activeTurnActorId(),available=turnCommandAvailable(command,actorId),
+    apCost=turnCommandApCost(command),ap=turnCommandApState(command,actorId),
     resolveCost=turnCommandResolveCost(command),
     preview=breakdown.rows.length>1
       ?breakdown.rows.length+' HITS · '+finals.join(' / ')+' · TOTAL '+healthDamageText(breakdown.total,true)
@@ -49136,16 +49167,16 @@ function drawSkillTooltip(){
   g.textAlign='left';g.font='bold 23px monospace';g.fillStyle='#f4f1e8';
   g.fillText(command.name,x+20,y+42);
   g.font='bold 11px monospace';g.fillStyle=command.col;
-  g.fillText(command.source+' '+(command.skill?'SKILL':'ATTACK')+'  ·  '+apCost+' AP  ·  '+
+  g.fillText(command.source+' '+(command.skill?'SKILL':'ATTACK')+'  ·  '+apCost+' '+ap.label+'  ·  '+
     resolveCost+' RESOLVE',x+20,y+64);
   g.fillStyle='rgba(255,255,255,.055)';g.fillRect(x+16,y+81,w-32,54);
   g.font='bold 14px monospace';g.fillStyle='#ffe37a';g.fillText(preview,x+28,y+105);
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
     const unavailable=command.squireAction==='COOLDOWN'?' · RECOVERING':
       command.squireAction==='ARRIVING'?' · READY NEXT TURN':
-      turnSkillUsedThisPhase(command)?' · USED THIS PHASE':
-      boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
-  g.fillText('AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
+      turnSkillUsedThisPhase(command,actorId)?' · USED THIS PHASE':
+      ap.current<apCost?' · NO '+ap.label:' · NOT ENOUGH RESOLVE';
+  g.fillText(ap.label+' '+ap.current+'/'+ap.max+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
     (available?' · READY':unavailable),x+28,y+124);
   g.font='bold 10px monospace';g.fillStyle='#ff8794';
   g.fillText('DAMAGE SOURCES · FINAL VALUE ROUNDED',x+20,y+166);
@@ -49178,7 +49209,9 @@ function drawPlayerTurnUI(){
      silhouette. Individual buttons already provide all required contrast, so
      the world and rider now remain visible through the spaces between them. */
   if(boss.playerMenu==='skills'){
-    const skills=activeTurnSkills();
+    const skills=activeTurnSkills(),actorId=activeTurnActorId(),squireTurn=actorId==='ally'&&squirePartyReady(),
+      apLabel=squireTurn?'K AP '+boss.ap+'/'+boss.apMax+' · SQUIRE AP '+squire.ap+'/'+squire.apMax:
+        'AP '+boss.ap+'/'+boss.apMax;
     drawPartyTabs();
     if(!hasCombatAlly()){
       g.textAlign='left';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
@@ -49192,9 +49225,11 @@ function drawPlayerTurnUI(){
         skillButtonSubtitle(skill),skill.col,enabled,skill);
     }
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FOR DETAILS · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
+    g.fillText('HOLD FOR DETAILS · '+apLabel+' · R '+boss.resolve+'/'+boss.resolveMax,VW/2,721);
   }else{
     const actorId=activeTurnActorId();
+    const fight=fightCommand(actorId),fightAp=turnCommandApState(fight,actorId),
+      squireTurn=fightAp.personal;
     if(hasCombatAlly())drawPartyTabs();
     else{
       g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
@@ -49203,15 +49238,18 @@ function drawPlayerTurnUI(){
     g.textAlign='right';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
     if(!hasCombatAlly())g.fillText('AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,450,578);
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FIGHT · AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,130,600);
-    const fightEnabled=boss.ap>0&&!primaryChargePreparationLocked(),
-      fight=fightCommand(actorId),fightDamage=turnCommandDamageBreakdown(fight).total,
+    g.fillText('HOLD FIGHT · '+fightAp.label+' '+fightAp.current+'/'+fightAp.max+
+      ' · R '+boss.resolve+'/'+boss.resolveMax,130,600);
+    const fightEnabled=turnCommandAvailable(fight,actorId),
+      fightDamage=turnCommandDamageBreakdown(fight).total,
       fightSub=actorId==='ally'
-        ?'1AP · '+fight.name+' · '+fightDamage+' DMG'+
+        ?(squireTurn?'1 SQUIRE AP':'1AP')+' · '+fight.name+' · '+fightDamage+' DMG'+
           (companionProfile().id==='squire'?' · NO POSTURE':' · +1R')
         :'1AP · '+activeWeapon().name+' L'+runWeapon.level+' · '+fightDamage+' DMG · +1R';
-    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:'NO AP','#e8e2d0',fightEnabled);
-    drawTurnButton(TURN_SKILL_BTN,'SKILL','SPEND RESOLVE','#7fc9ff',hasAffordableTurnSkill());
+    drawTurnButton(TURN_FIGHT_BTN,'FIGHT',fightEnabled?fightSub:'NO '+fightAp.label,'#e8e2d0',fightEnabled);
+    drawTurnButton(TURN_SKILL_BTN,'SKILL',squireTurn?
+      (squire.ap>0?'USE SQUIRE AP':'SQUIRE AP SPENT'):'SPEND RESOLVE',
+      '#7fc9ff',hasAffordableTurnSkill());
     drawTurnButton(TURN_ROOT_FINISH_BTN,'FINISH TURN','','#ffe37a',true);
   }
   g.restore();

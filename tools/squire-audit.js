@@ -37,7 +37,8 @@
 
   boss.phase='dodge';boss.state='idle';boss.attack=null;boss.hazardLanes=[];
   beginPlayerTurn();
-  const activated=squirePartyReady()&&companionProfile().id==='squire',
+  const activated=squirePartyReady()&&companionProfile().id==='squire'&&
+      squire.ap===SQUIRE_BASE.apMax&&squire.apMax===1,
     encourage=knightTurnSkills().find(skill=>(skill.baseId||skill.id)==='call_squire'),
     encourageStarted=performPlayerAction(encourage),encourageFrames=resolveAction(),
     encouraged=squire.encouragement===1;
@@ -71,7 +72,8 @@
     boss.turnAction.t=0;
   }catch(error){slashRenderSafe=false;}
   const slashFrames=resolveAction(),
-    slashResolved=boss.hp<hpBeforeSlash&&boss.ap===apBeforeSlash-1&&slash.posture===0,
+    slashResolved=boss.hp<hpBeforeSlash&&boss.ap===apBeforeSlash&&slash.posture===0,
+    labSquireApUnrestricted=squire.ap===SQUIRE_BASE.apMax,
     pressureContract=pressure.cost===1&&pressure.posture===
       SQUIRE_BASE.postureDamage+SQUIRE_BASE.encouragePosturePerStack;
 
@@ -86,6 +88,23 @@
     boss.turnAction.t=0;
   }catch(error){pressureRenderSafe=false;}
   const pressureFrames=resolveAction(),pressureResolved=boss.posture>postureBefore;
+
+  /* A production phase spends the Squire's personal point, never the Knight's.
+     Skill Lab keeps that point visually full so repeated animation tests remain free. */
+  const savedLabCombatForAp=skillLabSession.inCombat;
+  skillLabSession.inCombat=false;boss.phase='player';boss.partyActor='ally';
+  squire.ap=squire.apMax;boss.skillUseSerial=Object.create(null);
+  const productionKnightAp=boss.ap,productionSquireReady=turnCommandAvailable(slash,'ally'),
+    productionSlashStarted=performPlayerAction(slash),
+    productionSquireApSpent=squire.ap===0&&boss.ap===productionKnightAp;
+  const productionSlashFrames=resolveAction();
+  boss.partyActor='ally';
+  const secondSquireActionBlocked=!turnCommandAvailable(pressure,'ally');
+  boss.phase='dodge';boss.state='idle';boss.attack=null;boss.hazardLanes=[];
+  beginPlayerTurn();selectTurnActor('ally');
+  const nextPhaseSquireApRefilled=squire.ap===squire.apMax&&
+    turnCommandAvailable(pressure,'ally');
+  skillLabSession.inCombat=savedLabCombatForAp;
 
   /* Production fights allow each actor's individual skill once per player
      phase. Skill Lab intentionally bypasses this, so isolate the ledger check
@@ -163,6 +182,9 @@
     deathRenderSafe&&
     activated&&encourageStarted&&encourageFrames<180&&encouraged&&fightBalanced&&slashStarted&&
     slashSwordTimeline&&slashBalanced&&slashRenderSafe&&slashFrames<180&&slashResolved&&
+    labSquireApUnrestricted&&productionSquireReady&&productionSlashStarted&&
+    productionSquireApSpent&&productionSlashFrames<180&&secondSquireActionBlocked&&
+    nextPhaseSquireApRefilled&&
     pressureContract&&pressureStarted&&pressureFrames<180&&
     pressureResolved&&pressureShieldTimeline&&pressureRenderSafe&&deathSequenceStarted&&
     fallAdvanced&&landedPoseHeld&&recallFx&&
@@ -174,7 +196,10 @@
     encourageLockedOnCallTurn,appearanceAuthored,
     summonRenderSafe,coatVariantsRenderSafe,deathRenderSafe,
     activated,encourageStarted,encourageFrames,encouraged,fightBalanced,slashStarted,slashSwordTimeline,
-    slashBalanced,slashRenderSafe,slashFrames,slashResolved,pressureContract,pressureStarted,pressureFrames,pressureResolved,
+    slashBalanced,slashRenderSafe,slashFrames,slashResolved,labSquireApUnrestricted,
+    productionSquireReady,productionSlashStarted,productionSquireApSpent,productionSlashFrames,
+    secondSquireActionBlocked,nextPhaseSquireApRefilled,
+    pressureContract,pressureStarted,pressureFrames,pressureResolved,
     pressureShieldTimeline,pressureRenderSafe,deathSequenceStarted,fallAdvanced,landedPoseHeld,recallFx,
     intercepted,baseDidNotParry,cooldownTwo,cooldownOne,
     cooldownReady,phaseSkillRule,firstSkillReady,repeatedSkillBlocked,separateSkillReady,
