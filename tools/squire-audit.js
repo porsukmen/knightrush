@@ -23,13 +23,15 @@
       typeof squire.appearance.horseMane==='string'&&
       typeof squire.appearance.horseMark==='string'&&
       typeof squire.appearance.horseStripe==='string'&&
+      typeof squire.appearance.horsePoint==='string'&&
+      typeof squire.appearance.horseCoatFamily==='string'&&
       Number.isInteger(squire.appearance.horsePattern)&&
-      squire.appearance.horsePattern>=0&&squire.appearance.horsePattern<=6);
+      squire.appearance.horsePattern>=0&&squire.appearance.horsePattern<=10);
   let summonRenderSafe=true,coatVariantsRenderSafe=true;
   try{
     drawPlayer();drawSquire();
     const summonedAppearance=squire.appearance;
-    for(let horsePattern=0;horsePattern<=6;horsePattern++){
+    for(let horsePattern=0;horsePattern<=10;horsePattern++){
       squire.appearance=Object.freeze({...summonedAppearance,horsePattern});drawSquire();
     }
     squire.appearance=summonedAppearance;

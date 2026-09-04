@@ -1497,24 +1497,34 @@ function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
 /* A fallen mounted ally dissolves instead of making the whole silhouette shrink
    or crumple. The first ring pins the disappearance to the ground; a bounded
    cloud then climbs through horse and rider before scattering. */
-function emitMountedRecallFx(x,y,appearance=null,fallSide=1){
+function emitMountedRecallFx(x,y,appearance=null,fallSide=1,riderBulk=0){
+  const bulk=clamp(Number(riderBulk)||0,0,1.16),
+    /* The enlarged Guard body is vertical while mounted, then lies sideways at
+       the recall frame. Its authored Y growth therefore becomes cloud width. */
+    fallenScaleX=1+bulk*1.20,fallenScaleY=1+bulk*1.85,
+    fallenOffset=36+(fallenScaleY-1)*11,fallenCount=Math.round(30*(1+bulk*.75));
   particles.push({kind:'squireRecallRing',behindPlayer:true,x,y:y+61,vx:0,vy:0,
     grav:0,life:.82,maxLife:.82,size:20,col:appearance?.plume||'#d7b878'});
-  particles.push({kind:'squireRecallRing',behindPlayer:true,x:x+fallSide*36,y:y+58,vx:0,vy:0,
-    grav:0,life:.66,maxLife:.66,size:12,col:appearance?.shield?.rim||'#9ecbff'});
+  particles.push({kind:'squireRecallRing',behindPlayer:true,
+    x:x+fallSide*fallenOffset,y:y+58,vx:0,vy:0,grav:0,life:.66,maxLife:.66,
+    size:12*(1+bulk*.45),col:appearance?.shield?.rim||'#9ecbff'});
   const cols=appearance?[appearance.armor,appearance.armorLight,appearance.steel,
     appearance.plume,appearance.shield.face,appearance.shield.rim,
     appearance.sword.blade,appearance.horse,appearance.horseMane,
     appearance.horseMark,'#ffffff']:
     ['#ffffff','#e8e2d0','#d7b878','#9ecbff','#6f8fb8','#7f8b94'];
-  for(let i=0;i<88;i++){
-    const fallen=i>=58,centreX=fallen?x+fallSide*36:x,
-      centreY=fallen?y+48:y,localY=fallen?rnd(-24,20):rnd(-62,61),
-      width=fallen?rnd(10,28):lerp(9,24,clamp((localY+62)/123,0,1)),
+  for(let i=0;i<58+fallenCount;i++){
+    const fallen=i>=58,centreX=fallen?x+fallSide*fallenOffset:x,
+      centreY=fallen?y+48:y,
+      localY=fallen?rnd(-24*fallenScaleX,20*fallenScaleX):rnd(-62,61),
+      width=fallen?rnd(10*fallenScaleY,28*fallenScaleY):
+        lerp(9,24,clamp((localY+62)/123,0,1)),
       life=rnd(.58,1.12),front=i%4!==0;
     particles.push({kind:'squireRecallMote',behindPlayer:!front,
-      x:centreX+rnd(-width,width),y:centreY+localY,vx:rnd(-58,58),vy:rnd(-132,-46),
-      grav:rnd(-16,30),life,maxLife:life,size:rnd(2.5,6.2),col:pick(cols)});
+      x:centreX+rnd(-width,width),y:centreY+localY,
+      vx:rnd(-58,58)*(fallen?1+bulk*.22:1),vy:rnd(-132,-46),
+      grav:rnd(-16,30),life,maxLife:life,
+      size:rnd(2.5,6.2)*(fallen?1+bulk*.18:1),col:pick(cols)});
   }
 }
 /* Successful-parry contact burst. The attack resolver supplies the exact world
@@ -1863,7 +1873,8 @@ function rigHexagon(x1,y1,x2,y2,x3,y3,x4,y4,x5,y5,x6,y6,col){
   g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);g.lineTo(x3*U,y3*U);
   g.lineTo(x4*U,y4*U);g.lineTo(x5*U,y5*U);g.lineTo(x6*U,y6*U);g.closePath();g.fill();
 }
-function drawSerJonathanHorseLeg(hipX,side,phase,fore,col,gal,air,bob,horseD,mane){
+function drawSerJonathanHorseLeg(hipX,side,phase,fore,col,gal,air,bob,horseD,mane,
+    lowerCoat=null){
   const rootY=(fore?20.6:22.35)+bob;
   let kneeX,kneeY,hoofX,hoofY;
   if(air>0){
@@ -1887,9 +1898,10 @@ function drawSerJonathanHorseLeg(hipX,side,phase,fore,col,gal,air,bob,horseD,man
     hoofX=hipX+side*(fore?.03:.10);
     hoofY=30-lift*(fore?3.1:2.65);
   }
+  const lower=lowerCoat||(fore?col:horseD);
   rigSegment(hipX,rootY,kneeX,kneeY,fore?1.15:1.82,col);
-  rigJoint(kneeX,kneeY,fore?1.05:1.58,col);
-  rigSegment(kneeX,kneeY,hoofX,hoofY,fore?.95:1.42,fore?col:horseD);
+  rigJoint(kneeX,kneeY,fore?1.05:1.58,lower);
+  rigSegment(kneeX,kneeY,hoofX,hoofY,fore?.95:1.42,lower);
   px(hoofX-(fore?.58:.82),hoofY-.35,fore?1.2:1.72,1.05,mane);
 }
 function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=1,bulk=1){
@@ -2128,6 +2140,8 @@ function drawSerJonathanRider(x,y,scale,o){
     mane=appearance?.horseMane||shade(horse,-48),
     horseMark=appearance?.horseMark||'#eee7d5',
     horseStripe=appearance?.horseStripe||shade(horse,-38),
+    horsePoint=appearance?.horsePoint||horseStripe,
+    horseStockings=Math.max(0,Math.floor(appearance?.horseStockings||0)),
     horsePattern=appearance?.horsePattern||0,
     armor=appearance?.armor||'#919da7',armorD=appearance?.armorDark||'#4b5966',
     armorL=appearance?.armorLight||'#c4ced5',steel=appearance?.steel||'#aebbc5',
@@ -2147,8 +2161,12 @@ function drawSerJonathanRider(x,y,scale,o){
      floating oval, these remain underneath the planted feet. */
   if(air<=0){g.globalAlpha=.18;px(2.5,30,4.1,.65,'#000');px(11.4,30,4.1,.65,'#000');g.globalAlpha=1;}
   /* Forelegs are farther from the rear camera and emerge through the rump gap. */
-  drawSerJonathanHorseLeg(7.15,-1,0,true,horseD,gal,air,bob,horseD,mane);
-  drawSerJonathanHorseLeg(10.85,1,Math.PI,true,horseD,gal,air,bob,horseD,mane);
+  const horseLowerCoat=legBit=>horsePattern===6?horsePoint:
+    horsePattern===9&&(horseStockings&legBit)?horseMark:null;
+  drawSerJonathanHorseLeg(7.15,-1,0,true,horseD,gal,air,bob,horseD,mane,
+    horseLowerCoat(1));
+  drawSerJonathanHorseLeg(10.85,1,Math.PI,true,horseD,gal,air,bob,horseD,mane,
+    horseLowerCoat(2));
   /* Rider legs are farther than the rump from this camera. Draw them now so
      both haunches mask the inner thighs; only the portions beside the horse survive. */
   g.save();applySerJonathanRiderFall(riderFall,hipY);
@@ -2186,7 +2204,7 @@ function drawSerJonathanRider(x,y,scale,o){
     rigSegment(kneeX,kneeY,footX,footY,1.65,armor);
     px(footX-.9,footY-1.05,1.8,2.2,armorD);px(footX-1.08,footY+.2,2.15,.7,steel);
   }
-  drawFallingRiderLeg(-1);drawFallingRiderLeg(1);
+  if(!o.horseOnly){drawFallingRiderLeg(-1);drawFallingRiderLeg(1);}
   g.restore();
   /* Symmetric rear silhouette: paired haunches and a central cleft make the
      camera direction unmistakable. */
@@ -2220,49 +2238,70 @@ function drawSerJonathanRider(x,y,scale,o){
     rigPolygon([[5.45,20.1+bob],[7.55,18.85+bob],[8.1,21.95+bob],
       [6.6,23.0+bob],[4.7,22.1+bob]],horseMark);
   }else if(horsePattern===4){
-    /* Broad tiger-dun barring. Each band follows the rounded haunch instead
-       of reading as dots pasted onto the coat. */
-    rigPolygon([[1.75,14.9+bob],[2.55,13.65+bob],[7.45,14.35+bob],
-      [7.65,15.75+bob],[2.15,16.05+bob]],horseStripe);
-    rigPolygon([[1.5,17.25+bob],[7.25,16.65+bob],[6.85,18.25+bob],
-      [1.55,19.15+bob]],horseStripe);
-    rigPolygon([[2.0,20.15+bob],[6.25,18.95+bob],[5.65,20.75+bob],
-      [2.75,22.05+bob]],horseStripe);
-    rigPolygon([[10.55,14.35+bob],[15.45,13.65+bob],[16.25,14.9+bob],
-      [15.85,16.05+bob],[10.35,15.75+bob]],horseStripe);
-    rigPolygon([[10.75,16.65+bob],[16.5,17.25+bob],[16.45,19.15+bob],
-      [11.15,18.25+bob]],horseStripe);
-    rigPolygon([[11.75,18.95+bob],[16.0,20.15+bob],[15.25,22.05+bob],
-      [12.35,20.75+bob]],horseStripe);
+    /* Appaloosa: one pale rump blanket with a handful of irregular base-coat
+       islands. Broad marks survive the rear-view pixel scale better than dots. */
+    rigPolygon([[1.45,15.2+bob],[3.0,13.25+bob],[7.55,13.55+bob],
+      [8.05,21.65+bob],[5.7,23.05+bob],[2.15,21.25+bob]],horseMark);
+    rigPolygon([[10.45,13.55+bob],[15.0,13.25+bob],[16.55,15.2+bob],
+      [15.85,21.25+bob],[12.3,23.05+bob],[9.95,21.65+bob]],horseMark);
+    for(const island of [
+      [[2.4,15.4],[4.0,14.25],[4.9,15.45],[3.65,16.55]],
+      [[5.35,17.0],[6.8,16.2],[7.35,17.85],[5.95,18.65]],
+      [[3.1,19.1],[4.45,18.4],[5.0,20.05],[3.55,20.7]],
+      [[13.1,14.35],[15.0,15.0],[14.4,16.55],[12.7,15.8]],
+      [[10.65,17.4],[12.0,16.45],[12.75,18.0],[11.25,19.0]],
+      [[13.15,19.05],[14.75,18.65],[15.1,20.35],[13.55,21.0]]
+    ])rigPolygon(island.map(([bx,by])=>[bx,by+bob]),horsePoint);
   }else if(horsePattern===5){
-    /* A dark dorsal stripe forks into rear-facing chevrons. */
-    rigQuad(7.85,13.55+bob,9.0,13.2+bob,9.0,22.25+bob,8.05,22.4+bob,horseStripe);
-    rigQuad(9.0,13.2+bob,10.15,13.55+bob,9.95,22.4+bob,9.0,22.25+bob,horseStripe);
-    rigPolygon([[2.05,15.25+bob],[3.0,14.05+bob],[8.15,17.15+bob],
-      [8.05,18.65+bob]],horseStripe);
-    rigPolygon([[1.75,18.0+bob],[2.15,16.65+bob],[8.05,20.1+bob],
-      [7.45,21.35+bob]],horseStripe);
-    rigPolygon([[9.85,17.15+bob],[15.0,14.05+bob],[15.95,15.25+bob],
-      [9.95,18.65+bob]],horseStripe);
-    rigPolygon([[9.95,20.1+bob],[15.85,16.65+bob],[16.25,18.0+bob],
-      [10.55,21.35+bob]],horseStripe);
+    /* Dapple grey: low-contrast broken rosettes follow each rounded haunch. */
+    for(const dapple of [
+      [[2.0,15.0],[3.15,13.85],[4.7,14.25],[5.0,15.65],[3.7,16.35],[2.25,16.1]],
+      [[5.2,16.1],[6.25,15.15],[7.35,16.0],[7.05,17.55],[5.55,17.65]],
+      [[2.15,18.25],[3.6,17.35],[4.75,18.25],[4.45,19.85],[2.75,20.1]],
+      [[4.75,20.15],[6.05,19.05],[7.0,20.25],[6.25,21.8],[4.9,21.65]],
+      [[13.3,14.15],[14.85,13.9],[16.0,15.0],[15.7,16.2],[14.15,16.35]],
+      [[10.65,16.0],[11.75,15.15],[12.8,16.1],[12.45,17.65],[10.95,17.55]],
+      [[13.25,18.25],[14.4,17.35],[15.85,18.25],[15.25,20.1],[13.55,19.85]],
+      [[11.0,20.25],[11.95,19.05],[13.25,20.15],[13.1,21.65],[11.75,21.8]]
+    ])rigPolygon(dapple.map(([bx,by])=>[bx,by+bob]),horseMark);
   }else if(horsePattern===6){
-    /* Narrow zebra bars concentrate on the outer rump, leaving the saddle and
-       central cleft readable from the rear camera. */
-    for(const band of [
-      [[1.8,14.65],[2.55,13.65],[6.2,14.2],[5.75,15.25]],
-      [[1.5,16.55],[1.85,15.35],[5.7,16.15],[5.1,17.35]],
-      [[1.55,18.7],[1.55,17.45],[5.15,18.2],[4.55,19.5]],
-      [[2.05,21.0],[1.7,19.75],[4.6,20.25],[4.1,21.75]],
-      [[11.8,14.2],[15.45,13.65],[16.2,14.65],[12.25,15.25]],
-      [[12.3,16.15],[16.15,15.35],[16.5,16.55],[12.9,17.35]],
-      [[12.85,18.2],[16.45,17.45],[16.45,18.7],[13.45,19.5]],
-      [[13.4,20.25],[16.3,19.75],[15.95,21.0],[13.9,21.75]]
-    ])rigPolygon(band.map(([bx,by])=>[bx,by+bob]),horseStripe);
+    /* Bay / dark points: the lower legs carry the contrast; a restrained dark
+       tail root connects them to the black mane without inventing rump bars. */
+    rigPolygon([[7.7,14.0+bob],[9,13.45+bob],[10.3,14.0+bob],
+      [9.75,17.4+bob],[8.25,17.4+bob]],horsePoint);
+  }else if(horsePattern===7){
+    /* Dun: one real dorsal stripe, not decorative zebra barring. */
+    rigPolygon([[8.25,13.35+bob],[9,13.05+bob],[9.75,13.35+bob],
+      [9.55,22.5+bob],[9,22.75+bob],[8.45,22.5+bob]],horseStripe);
+  }else if(horsePattern===8){
+    /* Roan is expressed as sparse, broad mixed-hair islands rather than noisy
+       single pixels, keeping it distinct from Appaloosa. */
+    for(const roan of [
+      [[1.8,14.8],[3.7,13.5],[5.55,14.1],[4.6,15.45],[2.25,16.0]],
+      [[5.1,16.2],[7.55,15.0],[7.35,17.2],[5.65,18.0]],
+      [[1.65,18.0],[3.8,16.9],[4.7,18.65],[2.7,19.8]],
+      [[3.0,20.3],[5.5,19.15],[6.3,21.0],[4.1,22.3]],
+      [[12.45,14.1],[14.3,13.5],[16.2,14.8],[15.75,16.0],[13.4,15.45]],
+      [[10.45,15.0],[12.9,16.2],[12.35,18.0],[10.65,17.2]],
+      [[13.3,18.65],[14.2,16.9],[16.35,18.0],[15.3,19.8]],
+      [[11.7,21.0],[12.5,19.15],[15.0,20.3],[13.9,22.3]]
+    ])rigPolygon(roan.map(([bx,by])=>[bx,by+bob]),horseMark);
+  }else if(horsePattern===10){
+    /* Rabicano: pale ticking grows outward from the tail head and flank seams. */
+    for(const tick of [
+      [[5.7,15.0],[8.2,15.6],[8.05,16.35],[5.4,15.75]],
+      [[4.9,17.0],[8.1,17.4],[7.9,18.15],[4.65,17.75]],
+      [[5.6,19.1],[8.0,19.35],[7.8,20.1],[5.25,19.85]],
+      [[9.8,15.6],[12.3,15.0],[12.6,15.75],[9.95,16.35]],
+      [[9.9,17.4],[13.1,17.0],[13.35,17.75],[10.1,18.15]],
+      [[10.0,19.35],[12.4,19.1],[12.75,19.85],[10.2,20.1]]
+    ])rigPolygon(tick.map(([bx,by])=>[bx,by+bob]),horseMark);
   }
   /* Near hind legs hang under the haunches; they no longer skate sideways. */
-  drawSerJonathanHorseLeg(5.2,-1,Math.PI,false,horse,gal,air,bob,horseD,mane);
-  drawSerJonathanHorseLeg(12.8,1,0,false,horse,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(5.2,-1,Math.PI,false,horse,gal,air,bob,horseD,mane,
+    horseLowerCoat(4));
+  drawSerJonathanHorseLeg(12.8,1,0,false,horse,gal,air,bob,horseD,mane,
+    horseLowerCoat(8));
   /* The tail is the strongest rear-view cue: its root must sit ON the rump, not
      disappear behind it. The broad brush overlaps the cleft and hangs centrally. */
   const tail=Math.sin(gal+1.7)*1.25,tailL=shade(horse,-34);
@@ -2284,6 +2323,7 @@ function drawSerJonathanRider(x,y,scale,o){
   rigQuad(3.1,12.1+bob,14.9,12.1+bob,13.8,14.3+bob,4.2,14.3+bob,'#39251d');
 
   /* Rider and equipment share the mounted-death transform. */
+  if(o.horseOnly){g.restore();return;}
   g.save();applySerJonathanRiderFall(riderFall,hipY);
   /* Guard Squire upgrades grow only the rider's upper-body plane. His legs and
      horse were already rendered outside this transform, preserving the comic
@@ -8991,26 +9031,73 @@ const SQUIRE_VISUAL_COLORS=Object.freeze({
   armor:Object.freeze(['#657780','#806f63','#63766b','#756b82','#7d7056','#596d80']),
   metal:Object.freeze(['#aebbc5','#c1b59c','#9fb7ad','#b8abc0','#9ca8bd','#bea58f']),
   plume:Object.freeze(['#d7b878','#cf5e62','#6aa7d8','#8fc06b','#a77bd1','#e08d4f']),
-  horse:Object.freeze(['#4f3425','#6b4933','#303034','#705744','#49362f','#776b60','#8a6044']),
-  horseMane:Object.freeze(['#211a17','#33231d','#4a3426','#625044','#d2cbc0']),
-  horseMark:Object.freeze(['#eee9de','#d8d3ca','#f1efe9','#cbc3b5','#b9b5ae']),
   leather:Object.freeze(['#512e24','#653a2b','#3d2f42','#29404b','#4b3c24','#493027']),
   shield:Object.freeze(['#315d89','#755074','#4e704e','#87513f','#6a5d32','#3d6570']),
   emblem:Object.freeze(['#d2a345','#d5655e','#d8d2bd','#79b5d1','#a98bd0','#86ad68']),
 });
+/* Horse colours are selected as natural coat recipes, never as unrelated random
+   swatches. Pattern IDs: 0 solid, 1-3 pinto, 4 Appaloosa blanket, 5 dapple,
+   6 dark points, 7 dun, 8 roan, 9 stockings and 10 rabicano. */
+const SQUIRE_HORSE_COATS=Object.freeze([
+  {family:'SOLID',pattern:0,body:'#29282b',mane:'#121216'},
+  {family:'SOLID',pattern:0,body:'#443027',mane:'#1f1816'},
+  {family:'SOLID',pattern:0,body:'#6d432d',mane:'#201a18'},
+  {family:'SOLID',pattern:0,body:'#855137',mane:'#5a3025'},
+  {family:'SOLID',pattern:0,body:'#817f7a',mane:'#c8c4b9'},
+  {family:'SOLID',pattern:0,body:'#c8c6bf',mane:'#e6e2d7'},
+  {family:'PINTO',pattern:1,body:'#855137',mark:'#eee9de',mane:'#5a3025'},
+  {family:'PINTO',pattern:2,body:'#6d432d',mark:'#eee9de',mane:'#211a17'},
+  {family:'PINTO',pattern:3,body:'#29282b',mark:'#e7e4db',mane:'#151417'},
+  {family:'PINTO',pattern:1,body:'#d6d3ca',mark:'#2b292b',mane:'#211f21'},
+  {family:'PINTO',pattern:2,body:'#c9c2b2',mark:'#75452f',mane:'#4d2b21'},
+  {family:'PINTO',pattern:3,body:'#8a5a3a',mark:'#4b3026',mane:'#33221d'},
+  {family:'PINTO',pattern:1,body:'#4a3128',mark:'#9a6847',mane:'#211916'},
+  {family:'PINTO',pattern:2,body:'#aaa7a0',mark:'#454449',mane:'#d2cec4'},
+  {family:'APPALOOSA',pattern:4,body:'#72452f',mark:'#e5e1d7',
+    point:'#583323',mane:'#2c211c'},
+  {family:'APPALOOSA',pattern:4,body:'#2f2e31',mark:'#d6d4cd',
+    point:'#242326',mane:'#171619'},
+  {family:'APPALOOSA',pattern:4,body:'#a36d48',mark:'#eee9de',
+    point:'#79452f',mane:'#5a3829'},
+  {family:'DAPPLE',pattern:5,body:'#77787a',mark:'#999a98',mane:'#c5c3bc'},
+  {family:'DAPPLE',pattern:5,body:'#4f5053',mark:'#6d6e70',mane:'#a9a8a3'},
+  {family:'DARK_POINTS',pattern:6,body:'#947650',point:'#25201d',mane:'#201b18'},
+  {family:'DARK_POINTS',pattern:6,body:'#70442f',point:'#211a18',mane:'#1b1715'},
+  {family:'DUN',pattern:7,body:'#89745a',stripe:'#40352d',mane:'#3a3029'},
+  {family:'DUN',pattern:7,body:'#756957',stripe:'#342f29',mane:'#302b26'},
+  {family:'ROAN',pattern:8,body:'#795443',mark:'#a78d80',mane:'#3d2a24'},
+  {family:'ROAN',pattern:8,body:'#666b6d',mark:'#929795',mane:'#393c3d'},
+  {family:'STOCKINGS',pattern:9,body:'#835038',mark:'#e9e5db',
+    mane:'#4e2d23',stockings:12},
+  {family:'STOCKINGS',pattern:9,body:'#65402f',mark:'#dfdcd4',
+    mane:'#241c19',stockings:4},
+  {family:'STOCKINGS',pattern:9,body:'#39363a',mark:'#e4e1d8',
+    mane:'#191719',stockings:14},
+  {family:'RABICANO',pattern:10,body:'#875138',mark:'#c8aa98',mane:'#523026'},
+  {family:'RABICANO',pattern:10,body:'#5c3a2d',mark:'#a98470',mane:'#28201d'},
+].map(coat=>Object.freeze(coat)));
+let lastSquireHorseCoatIndex=-1;
+function randomSquireHorseCoat(){
+  const count=SQUIRE_HORSE_COATS.length;if(count<=1)return SQUIRE_HORSE_COATS[0];
+  /* Choose from every recipe except the previous one without retry loops. */
+  let index=lastSquireHorseCoatIndex<0?Math.floor(Math.random()*count):
+    Math.floor(Math.random()*(count-1));
+  if(lastSquireHorseCoatIndex>=0&&index>=lastSquireHorseCoatIndex)index++;
+  lastSquireHorseCoatIndex=index;
+  return SQUIRE_HORSE_COATS[index];
+}
 function randomSquireAppearance(){
   const armor=pick(SQUIRE_VISUAL_COLORS.armor),steel=pick(SQUIRE_VISUAL_COLORS.metal),
     leather=pick(SQUIRE_VISUAL_COLORS.leather),shieldFace=pick(SQUIRE_VISUAL_COLORS.shield),
     shieldRim=pick(SQUIRE_VISUAL_COLORS.metal),emblem=pick(SQUIRE_VISUAL_COLORS.emblem),
-    blade=pick(SQUIRE_VISUAL_COLORS.metal),horse=pick(SQUIRE_VISUAL_COLORS.horse),
-    /* Equal visual families: three solid slots, three pinto slots and three
-       striped slots. Repeated summons therefore do not bias toward one coat. */
-    horsePattern=pick([0,0,0,1,2,3,4,5,6]);
+    blade=pick(SQUIRE_VISUAL_COLORS.metal),coat=randomSquireHorseCoat(),
+    horse=coat.body,horsePattern=coat.pattern;
   return Object.freeze({armor,armorDark:shade(armor,-30),
     armorLight:pick(SQUIRE_VISUAL_COLORS.metal),steel,steelLight:shade(steel,28),
     plume:pick(SQUIRE_VISUAL_COLORS.plume),horse,
-    horseMane:pick(SQUIRE_VISUAL_COLORS.horseMane),
-    horseMark:pick(SQUIRE_VISUAL_COLORS.horseMark),horseStripe:shade(horse,-38),horsePattern,
+    horseMane:coat.mane,horseMark:coat.mark||shade(horse,18),
+    horseStripe:coat.stripe||shade(horse,-38),horsePoint:coat.point||shade(horse,-32),
+    horseStockings:coat.stockings||0,horsePattern,horseCoatFamily:coat.family,
     helmetBand:pick(SQUIRE_VISUAL_COLORS.emblem),
     sword:Object.freeze({blade,edge:shade(blade,35),grip:leather,
       guard:pick(SQUIRE_VISUAL_COLORS.emblem),sheath:pick(SQUIRE_VISUAL_COLORS.leather)}),
@@ -9025,6 +9112,7 @@ const squire={
   veterancy:0,defenseVeterancyEligible:false,
   activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
   arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
+  deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
   visualX:-60,lastX:VW/2-58,
   appearance:null,profile:null,profileKey:'',swordFxPose:null,
 };
@@ -9035,6 +9123,7 @@ function resetSquireCombat(){
     veterancy:0,defenseVeterancyEligible:false,
     activateOnPlayerPhase:Infinity,readyOnPlayerPhase:0,encouragement:0,
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
+    deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
     visualX:-60,lastX:VW/2-58,
     appearance:null,profile:null,profileKey:'',swordFxPose:null});
 }
@@ -9394,7 +9483,8 @@ function updateSquire(dt){
     squire.deathT+=dt;
     if(!squire.deathBurst&&squire.deathT>=SQUIRE_DEATH_BURST_AT){
       squire.deathBurst=true;
-      emitMountedRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide);
+      emitMountedRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide,
+        squire.deathVisualBulk);
       SFX.relic();shake(7,.24);
     }
     if(squire.deathT>SQUIRE_DEATH_DURATION)squire.deathT=-1;
@@ -9475,23 +9565,26 @@ function drawSquire(){
     horsePanic=deathPose?.horsePanic||0,
     x=baseX,y=PLAYER_Y+9-strike*13-cheer*5-shieldLunge*98,
     scale=.72*(1+strike*.05+shieldLunge*.06),appearance=squire.appearance,
+    visualBulk=dying?squire.deathVisualBulk:squireVisualBulk(),
+    rankLevel=dying?squire.deathRankLevel:squireVeterancyRank().visualLevel,
+    weaponThickness=dying?squire.deathWeaponThickness:squireWeaponThicknessGrowth(),
     riderFall=deathPose?.riderFall||null;
   g.save();g.globalAlpha=squire.present?clamp(arrival*1.3,0,1):1;
   drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:
       perfNow*(.34+horsePanic*4.4),
     lean:0,duck:0,air:0,rigId:'ser_jonathan',feather:'#d7b878',horse:'#4f3425',
-    appearance,squire:true,squireBulk:squireVisualBulk(),
-    squireRankLevel:squireVeterancyRank().visualLevel,
-    squireWeaponThicknessGrowth:squireWeaponThicknessGrowth(),
+    appearance,squire:true,squireBulk:visualBulk,
+    squireRankLevel:rankLevel,
+    squireWeaponThicknessGrowth:weaponThickness,
     swordFxTarget:squire,
     riderFall,attack, counter:0,parry:0,swordCombo:null,swordAction,
     bowAction:null,shieldAction});
   if(dying&&deathTime<.18){
     g.globalCompositeOperation='screen';g.globalAlpha=(1-deathTime/.18)*.82;
     drawRider(x,y,scale,{gallop:perfNow*.34,lean:0,duck:0,air:0,
-      rigId:'ser_jonathan',appearance,squire:true,squireBulk:squireVisualBulk(),
-      squireRankLevel:squireVeterancyRank().visualLevel,
-      squireWeaponThicknessGrowth:squireWeaponThicknessGrowth(),riderFall,
+      rigId:'ser_jonathan',appearance,squire:true,squireBulk:visualBulk,
+      squireRankLevel:rankLevel,
+      squireWeaponThicknessGrowth:weaponThickness,riderFall,
       attack:0,counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction:null});
   }
   if(dying&&horsePanic>.05){
@@ -41789,6 +41882,7 @@ function summonSquire(){
     veterancy:0,defenseVeterancyEligible:false,
     activateOnPlayerPhase:serial+1,readyOnPlayerPhase:0,encouragement:0,
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:0,visualX:-48,lastX:target,
+    deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
     appearance:randomSquireAppearance(),profile:null,profileKey:''});
   burst(target,PLAYER_Y-20,18,[squire.appearance.plume,squire.appearance.armorLight,
     squire.appearance.shield.face],130,90,3.2,.7);
@@ -44038,8 +44132,15 @@ function resolveSquireIntercept(reason){
     floater(point.x,point.y-94,'SQUIRE -1 HEALTH','#ff7a82',16);
     SFX.hit();shake(7,.25);return true;
   }
+  /* Progression resets immediately for combat rules, so retain the defeated
+     silhouette separately until its fall and delayed particle recall finish. */
+  const deathVisualBulk=squireVisualBulk(),
+    deathRankLevel=squireVeterancyRank().visualLevel,
+    deathWeaponThickness=squireWeaponThicknessGrowth();
   squire.deathSide=(squire.lastX||point.x)<laneX(player.x,1)?-1:1;
   squire.present=false;squire.active=false;squire.deathT=0;squire.deathBurst=false;
+  squire.deathVisualBulk=deathVisualBulk;squire.deathRankLevel=deathRankLevel;
+  squire.deathWeaponThickness=deathWeaponThickness;
   squire.ap=0;squire.encouragement=0;squire.veterancy=0;
   squire.preparedParry=false;squire.defenseVeterancyEligible=false;
   squire.profile=null;squire.profileKey='';
@@ -52607,6 +52708,42 @@ const HEALTH_LAB_BUTTONS=Object.freeze([
   {id:'reset',x:320,y:540,w:92,h:42,label:'RESET',col:'#b08ae0'}
 ]);
 let healthLabState=null;
+const horseCoatLab={page:0,paused:false,rider:false,clock:0,lastTime:0};
+function horseCoatLabTap(pt){
+  if(pt.y>=684&&pt.y<=726){
+    if(pt.x<118)horseCoatLab.page=(horseCoatLab.page+4)%5;
+    else if(pt.x<236)horseCoatLab.paused=!horseCoatLab.paused;
+    else if(pt.x<354)horseCoatLab.rider=!horseCoatLab.rider;
+    else horseCoatLab.page=(horseCoatLab.page+1)%5;
+  }
+}
+function drawHorseCoatLab(){
+  const s=horseCoatLab;
+  if(!s.paused)s.clock+=Math.min(.05,Math.max(0,perfNow-s.lastTime));
+  s.lastTime=perfNow;
+  g.textAlign='center';g.font='bold 16px monospace';g.fillStyle='#d7b878';
+  g.fillText('SQUIRE STABLE · 30 COATS',VW/2,94);
+  for(let slot=0;slot<6;slot++){
+    const index=s.page*6+slot,coat=SQUIRE_HORSE_COATS[index],
+      x=12+(slot%2)*234,y=110+Math.floor(slot/2)*184;
+    g.fillStyle='#171a22';g.fillRect(x,y,222,174);
+    g.strokeStyle='#414550';g.lineWidth=1;g.strokeRect(x,y,222,174);
+    drawSerJonathanRider(x+111,y+136,.85,{squire:true,horseOnly:!s.rider,
+      gallop:s.clock*.34,appearance:{horse:coat.body,horseMane:coat.mane,
+        horseMark:coat.mark||shade(coat.body,18),horsePoint:coat.point||shade(coat.body,-32),
+        horseStripe:coat.stripe||shade(coat.body,-38),horsePattern:coat.pattern,
+        horseStockings:coat.stockings||0}});
+    g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#e8e2d0';
+    g.fillText('#'+String(index+1).padStart(2,'0')+' '+coat.family.replaceAll('_',' '),x+111,y+156);
+    for(const [n,color] of [coat.body,coat.mark||coat.body,coat.mane].entries()){
+      g.fillStyle=color;g.fillRect(x+94+n*13,y+162,10,5);
+    }
+  }
+  for(const [i,label] of ['< PREV',s.paused?'PLAY':'PAUSE',s.rider?'HIDE RIDER':'SHOW RIDER','NEXT >'].entries())
+    drawHealthLabButton({x:12+i*117,y:684,w:105,h:42,label,col:'#d7b878'});
+  g.font='11px monospace';g.textAlign='center';g.fillStyle='#aeb2c2';
+  g.fillText('PAGE '+(s.page+1)+' / 5 · BODY / MARK / MANE',VW/2,754);
+}
 function openHealthLab(){
   healthLabState={maxHearts:4,currentUnits:576,damageMultiplier:1,shieldCharges:2,
     heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
@@ -52640,6 +52777,10 @@ function healthLabCycleMultiplier(direction){
 }
 function healthLabTap(pt){
   if(pt.x>16&&pt.x<108&&pt.y>28&&pt.y<66){healthLabState=null;setMode('debugcfg');SFX.duck();return;}
+  if(pt.x>=366&&pt.x<=468&&pt.y>=28&&pt.y<=66){
+    healthLabState.coats=!healthLabState.coats;horseCoatLab.lastTime=perfNow;return;
+  }
+  if(healthLabState.coats){horseCoatLabTap(pt);return;}
   const button=HEALTH_LAB_BUTTONS.find(b=>pt.x>b.x&&pt.x<b.x+b.w&&pt.y>b.y&&pt.y<b.y+b.h);
   if(!button)return;
   switch(button.id){
@@ -52680,7 +52821,9 @@ function drawHealthLab(){
   g.fillStyle='#090b12';g.fillRect(0,0,VW,620);
   g.strokeStyle='#ff6b70';g.lineWidth=2;g.strokeRect(16,28,92,38);
   g.textAlign='center';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.fillText('◄ BACK',62,52);
-  g.font='bold 22px monospace';g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB',VW/2,58);
+  g.font='bold 18px monospace';g.fillStyle='#ff6b70';g.fillText('UI LAB',VW/2,54);
+  drawHealthLabButton({x:366,y:28,w:102,h:38,label:s.coats?'HEALTH':'HORSE COATS',col:'#d7b878'});
+  if(s.coats){drawHorseCoatLab();return;}
   g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('ONE HEART = EXACTLY 144 LOGICAL FILL CELLS',VW/2,78);
   const scale=s.maxHearts<=6?3:s.maxHearts<=12?2:1,
     perRow=Math.max(1,Math.floor((VW-24)/((HEART_SPRITE_W+1)*scale))),
