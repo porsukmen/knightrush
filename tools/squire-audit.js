@@ -177,6 +177,44 @@
   }catch(error){knightDeathRenderSafe=false;}
   const knightRecallFx=player.deathBurst&&particles.length>knightDeathParticleStart&&
     particles.some(p=>p.kind==='squireRecallMote');
+  /* Guard Form uses the production weapon Quality economy, not a parallel rank
+     system. Validate the complete Common and Legendary histories plus the final
+     prepared-parry ordering against a stored Knight shield. */
+  const allCommon=['COMMON','COMMON','COMMON','COMMON','COMMON'],
+    allLegendary=['COMMON','LEGENDARY','LEGENDARY','LEGENDARY','LEGENDARY'],
+    commonGuard=compileClassSkillRoute('squire_living_bastion',allCommon),
+    legendaryGuard=compileClassSkillRoute('squire_living_bastion',allLegendary),
+    guardQualityLedger=commonGuard&&legendaryGuard&&commonGuard.synthesisQuality===15&&
+      legendaryGuard.synthesisQuality===67&&commonGuard.synthesisProjectedResolveCost===1&&
+      legendaryGuard.synthesisProjectedResolveCost===5&&
+      legendaryGuard.synthesisEffectiveQuality>commonGuard.synthesisEffectiveQuality&&
+      legendaryGuard.squireBaseMaxHealth>commonGuard.squireBaseMaxHealth&&
+      legendaryGuard.squireVeterancyEfficiency>commonGuard.squireVeterancyEfficiency;
+  replaceRunSkill('call_squire',legendaryGuard);resetSquireCombat();
+  player.alive=true;player.invuln=0;resetPlayerMountedDeath();setMode('boss');
+  boss.phase='player';boss.state='idle';boss.turnAction=null;boss.playerPhaseSerial=1;
+  summonSquire();squire.active=true;squire.ap=1;
+  const guardProfile=squireCombatProfile(),guardBash=guardProfile.skills.find(skill=>
+      skill.squireShieldBash),coveringCross=guardProfile.skills.find(skill=>
+      skill.squirePreparedParry),guardKitReady=squire.maxHealth===legendaryGuard.squireBaseMaxHealth&&
+      guardProfile.name==='GUARD SQUIRE'&&guardBash?.squireShieldGrant===1&&
+      coveringCross?.name==='COVERING CROSS'&&squireVisualBulk()>=1;
+  const noFreeVeterancy=!awardSquireDefenseVeterancy()&&squire.veterancy===0;
+  squire.defenseVeterancyEligible=true;
+  const earnedVeterancy=awardSquireDefenseVeterancy()&&squire.veterancy===1;
+  const rankContract=squireVeterancyRank(0).name==='RECRUIT'&&
+    squireVeterancyRank(2).name==='GUARD'&&squireVeterancyRank(5).name==='VETERAN'&&
+    squireVeterancyRank(9).name==='BASTION'&&nextSquireVeterancyRank(0).min===2&&
+    nextSquireVeterancyRank(2).min===5&&nextSquireVeterancyRank(9)===null;
+  squire.preparedParry=true;player.shieldCharges=1;
+  const preparedHealth=squire.health,preparedKnightHealth=player.currentHealthUnits;
+  boss.phase='dodge';boss.state='strike';boss.attack={steps:[move]};boss.sequenceIndex=0;
+  damagePlayer('PREPARED SQUIRE PARRY AUDIT');
+  const preparedParryResolved=!squire.preparedParry&&squire.health===preparedHealth&&
+    player.currentHealthUnits===preparedKnightHealth&&player.shieldCharges===1&&squire.parryT===0;
+  let guardRenderSafe=true;
+  try{drawSquire();for(const t of [0,.18,.34,.52,.76,.96]){squire.parryT=t;drawSquire();}}
+  catch(error){guardRenderSafe=false;}
   const passed=initialSkills.length===4&&callStarted&&callFrames<180&&called&&callEconomy&&
     encourageLockedOnCallTurn&&appearanceAuthored&&summonRenderSafe&&coatVariantsRenderSafe&&
     deathRenderSafe&&
@@ -191,7 +229,8 @@
     intercepted&&baseDidNotParry&&
     cooldownTwo&&cooldownOne&&cooldownReady&&phaseSkillRule&&
     knightDeathSequenceStarted&&knightDeathRenderSafe&&knightFallAdvanced&&
-    knightLandedPoseHeld&&knightRecallFx;
+    knightLandedPoseHeld&&knightRecallFx&&guardQualityLedger&&guardKitReady&&
+    noFreeVeterancy&&earnedVeterancy&&rankContract&&preparedParryResolved&&guardRenderSafe;
   return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
     encourageLockedOnCallTurn,appearanceAuthored,
     summonRenderSafe,coatVariantsRenderSafe,deathRenderSafe,
@@ -205,5 +244,8 @@
     cooldownReady,phaseSkillRule,firstSkillReady,repeatedSkillBlocked,separateSkillReady,
     knightLedgerIndependent,repeatFightAllowed,nextPhaseSkillReady,
     knightDeathSequenceStarted,knightDeathRenderSafe,knightFallAdvanced,
-    knightLandedPoseHeld,knightRecallFx};
+    knightLandedPoseHeld,knightRecallFx,guardQualityLedger,guardKitReady,noFreeVeterancy,
+    earnedVeterancy,rankContract,preparedParryResolved,guardRenderSafe,
+    commonGuardQuality:commonGuard&&commonGuard.synthesisQuality,
+    legendaryGuardQuality:legendaryGuard&&legendaryGuard.synthesisQuality};
 })();
