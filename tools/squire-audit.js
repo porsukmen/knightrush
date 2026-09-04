@@ -199,6 +199,8 @@
       skill.squirePreparedParry),guardKitReady=squire.maxHealth===legendaryGuard.squireBaseMaxHealth&&
       guardProfile.name==='GUARD SQUIRE'&&guardBash?.squireShieldGrant===1&&
       coveringCross?.name==='COVERING CROSS'&&squireVisualBulk()>=1;
+  const normalFightDoesNotPrepare=guardProfile.fightName==='SQUIRE SLASH'&&
+    guardProfile.fightPreparedParry!==true&&fightCommand('ally').squirePreparedParry!==true;
   const noFreeVeterancy=!awardSquireDefenseVeterancy()&&squire.veterancy===0;
   squire.defenseVeterancyEligible=true;
   const earnedVeterancy=awardSquireDefenseVeterancy()&&squire.veterancy===1;
@@ -230,7 +232,8 @@
     cooldownTwo&&cooldownOne&&cooldownReady&&phaseSkillRule&&
     knightDeathSequenceStarted&&knightDeathRenderSafe&&knightFallAdvanced&&
     knightLandedPoseHeld&&knightRecallFx&&guardQualityLedger&&guardKitReady&&
-    noFreeVeterancy&&earnedVeterancy&&rankContract&&preparedParryResolved&&guardRenderSafe;
+    normalFightDoesNotPrepare&&noFreeVeterancy&&earnedVeterancy&&rankContract&&
+    preparedParryResolved&&guardRenderSafe;
   return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
     encourageLockedOnCallTurn,appearanceAuthored,
     summonRenderSafe,coatVariantsRenderSafe,deathRenderSafe,
@@ -244,8 +247,9 @@
     cooldownReady,phaseSkillRule,firstSkillReady,repeatedSkillBlocked,separateSkillReady,
     knightLedgerIndependent,repeatFightAllowed,nextPhaseSkillReady,
     knightDeathSequenceStarted,knightDeathRenderSafe,knightFallAdvanced,
-    knightLandedPoseHeld,knightRecallFx,guardQualityLedger,guardKitReady,noFreeVeterancy,
-    earnedVeterancy,rankContract,preparedParryResolved,guardRenderSafe,
+    knightLandedPoseHeld,knightRecallFx,guardQualityLedger,guardKitReady,
+    normalFightDoesNotPrepare,noFreeVeterancy,earnedVeterancy,rankContract,
+    preparedParryResolved,guardRenderSafe,
     commonGuardQuality:commonGuard&&commonGuard.synthesisQuality,
     legendaryGuardQuality:legendaryGuard&&legendaryGuard.synthesisQuality};
 })();
