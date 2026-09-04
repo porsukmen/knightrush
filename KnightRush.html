@@ -653,6 +653,7 @@ const SKILL_LAB_COMBAT_HUD=Object.freeze({x:395,y:245,w:70,h:32});
 const SKILL_LAB_COMBAT_HEAL=Object.freeze({x:54,y:285,w:112,h:32});
 const SKILL_LAB_COMBAT_SHIELD=Object.freeze({x:184,y:285,w:112,h:32});
 const SKILL_LAB_COMBAT_VOLATILE_SHIELD=Object.freeze({x:314,y:285,w:112,h:32});
+const SKILL_LAB_COMBAT_SWORD=Object.freeze({x:4,y:285,w:46,h:32});
 const SKILL_LAB_SPEED_SLIDER=Object.freeze({x:118,y:406,w:244,h:36,min:.65,max:1.60});
 /* drawHUD pins the Rush meter to the physical bottom of the logical viewport
    even when safe-area translation moves the rest of the HUD. Keep its tap target
@@ -1489,17 +1490,18 @@ function burst(x,y,n,cols,spd=140,grav=180,size=4,life=0.7){
     particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-40,life,maxLife:life,
       size:rnd(size*0.5,size),col:pick(cols),grav}); }
 }
-/* A fallen Squire is recalled instead of making the whole mounted silhouette
-   shrink or crumple with the horse. The first ring pins the disappearance to
-   the ground; a bounded cloud then climbs through the rider before scattering. */
-function emitSquireRecallFx(x,y,appearance=null,fallSide=1){
+/* A fallen mounted ally dissolves instead of making the whole silhouette shrink
+   or crumple. The first ring pins the disappearance to the ground; a bounded
+   cloud then climbs through horse and rider before scattering. */
+function emitMountedRecallFx(x,y,appearance=null,fallSide=1){
   particles.push({kind:'squireRecallRing',behindPlayer:true,x,y:y+61,vx:0,vy:0,
     grav:0,life:.82,maxLife:.82,size:20,col:appearance?.plume||'#d7b878'});
   particles.push({kind:'squireRecallRing',behindPlayer:true,x:x+fallSide*36,y:y+58,vx:0,vy:0,
     grav:0,life:.66,maxLife:.66,size:12,col:appearance?.shield?.rim||'#9ecbff'});
   const cols=appearance?[appearance.armor,appearance.armorLight,appearance.steel,
     appearance.plume,appearance.shield.face,appearance.shield.rim,
-    appearance.sword.blade,'#ffffff']:
+    appearance.sword.blade,appearance.horse,appearance.horseMane,
+    appearance.horseMark,'#ffffff']:
     ['#ffffff','#e8e2d0','#d7b878','#9ecbff','#6f8fb8','#7f8b94'];
   for(let i=0;i<88;i++){
     const fallen=i>=58,centreX=fallen?x+fallSide*36:x,
@@ -1710,6 +1712,45 @@ const U=3;
 const SER_JONATHAN_SPINE_LENGTH=9.7,SER_JONATHAN_NECK_LENGTH=5.4,
   SER_JONATHAN_DUCK_PITCH=Math.PI*.35,SER_JONATHAN_DUCK_NECK_TUCK=Math.PI*.045,
   SER_JONATHAN_CAMERA_FOCAL=42,SER_JONATHAN_CAMERA_DEPTH_LIFT=.12;
+/* BOTW-reference back draw. The hand reaches and locks before the blade moves,
+   the blade leaves along the scabbard axis, then two opposite diagonal cuts
+   form an X before recovery reverses the physical draw constraints. */
+const BACK_SWORD_TIMING=Object.freeze({
+  reachEnd:.24,gripEnd:.36,drawEnd:.70,windupEnd:.88,contact:1.18,
+  reboundEnd:1.46,crossContact:1.80,followEnd:1.94,poseHoldEnd:2.06,
+  recoverEnd:2.34,alignEnd:2.54,sheathEnd:2.78,settleEnd:2.96
+});
+function backSwordPoseAt(t,p){
+  const T=BACK_SWORD_TIMING;t=Math.max(0,Number(t)||0);
+  p.active=true;p.t=t;
+  p.reach=easeInOut(clamp(t/T.reachEnd,0,1));
+  p.grip=smoothStep(clamp((t-.12)/(T.gripEnd-.12),0,1));
+  p.extract=easeInOut(clamp((t-T.gripEnd)/(T.drawEnd-T.gripEnd),0,1));
+  p.windup=easeInOut(clamp((t-T.drawEnd)/(T.windupEnd-T.drawEnd),0,1));
+  p.slash=easeInOut(clamp((t-T.windupEnd)/(T.contact-T.windupEnd),0,1));
+  p.rebound=easeInOut(clamp((t-T.contact)/(T.reboundEnd-T.contact),0,1));
+  p.cross=easeInOut(clamp((t-T.reboundEnd)/(T.crossContact-T.reboundEnd),0,1));
+  p.crossDepth=Math.sin(Math.PI*clamp((t-T.reboundEnd)/
+    (T.crossContact-T.reboundEnd),0,1));
+  p.follow=easeOut(clamp((t-T.crossContact)/(T.followEnd-T.crossContact),0,1));
+  p.recover=easeInOut(clamp((t-T.poseHoldEnd)/(T.recoverEnd-T.poseHoldEnd),0,1));
+  p.align=easeInOut(clamp((t-T.recoverEnd)/(T.alignEnd-T.recoverEnd),0,1));
+  p.sheath=easeInOut(clamp((t-T.alignEnd)/(T.sheathEnd-T.alignEnd),0,1));
+  p.settle=easeInOut(clamp((t-T.sheathEnd)/(T.settleEnd-T.sheathEnd),0,1));
+  const firstDrive=Math.sin(Math.PI*clamp((t-T.windupEnd)/
+      (T.reboundEnd-T.windupEnd),0,1)),
+    crossDrive=Math.sin(Math.PI*clamp((t-T.reboundEnd)/
+      (T.followEnd-T.reboundEnd),0,1));
+  p.bodyDrive=Math.max(firstDrive,crossDrive*.42);
+  p.bodyTurn=-.10*p.reach+.18*p.windup-
+    .64*Math.max(p.slash,p.rebound)*(1-p.rebound)+
+    .70*Math.max(p.cross,p.follow)*(1-p.recover);
+  p.forwardDepth=Math.max(firstDrive,crossDrive)*(1-p.recover)*.55;
+  p.trail=Math.max(
+    Math.sin(Math.PI*clamp((t-(T.windupEnd+.02))/(T.reboundEnd-T.windupEnd),0,1)),
+    Math.sin(Math.PI*clamp((t-T.reboundEnd)/(T.followEnd-T.reboundEnd),0,1)));
+  return p;
+}
 function px(x,y,w,h,c){ g.fillStyle=c; g.fillRect(x*U,y*U,w*U,h*U); }
 
 /* One rear-camera projection owns drawing and collision.  Jonathan's pelvis is a
@@ -1805,32 +1846,33 @@ function rigHexagon(x1,y1,x2,y2,x3,y3,x4,y4,x5,y5,x6,y6,col){
   g.lineTo(x4*U,y4*U);g.lineTo(x5*U,y5*U);g.lineTo(x6*U,y6*U);g.closePath();g.fill();
 }
 function drawSerJonathanHorseLeg(hipX,side,phase,fore,col,gal,air,bob,horseD,mane){
+  const rootY=(fore?20.6:22.35)+bob;
   let kneeX,kneeY,hoofX,hoofY;
   if(air>0){
     /* Wolf-style flight posing: forelegs tuck early and reach for landing;
        hind legs trail at take-off, gather at the apex, then extend. */
     const tuck=Math.sin(Math.PI*air),reach=easeInOut(clamp((air-.62)/.38,0,1));
     if(fore){
-      kneeX=hipX+side*(.15+.25*tuck);kneeY=24.2-2.2*tuck+1.2*reach;
-      hoofX=hipX+side*(.08+.18*tuck);hoofY=lerp(30-5.4*tuck,30,reach);
+      kneeX=hipX+side*(.08+.16*tuck);kneeY=24.8-1.8*tuck+1.0*reach;
+      hoofX=hipX+side*(.04+.12*tuck);hoofY=lerp(30-5.0*tuck,30,reach);
     }else{
       const trail=clamp((.42-air)/.42,0,1);
-      kneeX=hipX+side*(.7+.35*trail-.25*tuck);kneeY=23.2-1.2*tuck;
-      hoofX=hipX+side*(.45+1.1*trail-.25*tuck);hoofY=lerp(30-4.2*tuck,30,reach);
+      kneeX=hipX+side*(.22+.25*trail-.12*tuck);kneeY=25.0-1.1*tuck;
+      hoofX=hipX+side*(.12+.55*trail-.1*tuck);hoofY=lerp(30-4.0*tuck,30,reach);
     }
   }else{
     /* Rear-view gallop moves in screen depth: hooves rise vertically with only
        a sub-pixel lateral drift. Opposite phases keep a diagonal pair planted. */
     const stride=Math.sin(gal+phase),lift=Math.max(0,stride);
-    kneeX=hipX+side*(fore?.10:.48);
-    kneeY=(fore?24.3:23.4)+bob-lift*(fore?.9:.55);
-    hoofX=hipX+side*(fore?.06:.28);
+    kneeX=hipX+side*(fore?.05:.18);
+    kneeY=(fore?24.9:25.15)+bob-lift*(fore?.75:.48);
+    hoofX=hipX+side*(fore?.03:.10);
     hoofY=30-lift*(fore?3.1:2.65);
   }
-  rigSegment(hipX,19.8+bob,kneeX,kneeY,fore?1.3:2.25,col);
-  rigJoint(kneeX,kneeY,fore?1.25:2.05,col);
-  rigSegment(kneeX,kneeY,hoofX,hoofY,fore?1.05:1.72,fore?mane:horseD);
-  px(hoofX-(fore?.62:.95),hoofY-.35,fore?1.3:2.05,1.15,mane);
+  rigSegment(hipX,rootY,kneeX,kneeY,fore?1.15:1.82,col);
+  rigJoint(kneeX,kneeY,fore?1.05:1.58,col);
+  rigSegment(kneeX,kneeY,hoofX,hoofY,fore?.95:1.42,fore?col:horseD);
+  px(hoofX-(fore?.58:.82),hoofY-.35,fore?1.2:1.72,1.05,mane);
 }
 function drawSerJonathanArm(sx,sy,ex,ey,hx,hy,upper,lower,joint,hand=true,depth=1){
   rigSegment(sx,sy,ex,ey,2.05*depth,upper);rigJoint(ex,ey,1.85*depth,joint);
@@ -1917,7 +1959,7 @@ function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1,depthScale=1,palette=
 /* A mounted shield is a real plate on Jonathan's back. Every vertex is projected
    from the same torso basis as the shoulders, so the plate foreshortens and gains
    visible rim thickness instead of sliding down and being Y-scaled. */
-function drawSerJonathanMountedShield25D(pose,scale=1.05,palette=null){
+function drawSerJonathanMountedShield25D(pose,scale=1.05,palette=null,motion=null){
   const squireStyle=palette?.style==='squire',
     outer=squireStyle?[[-3.25,-3.55],[3.25,-3.55],[4,-1.75],[3.08,2.25],
       [0,4.72],[-3.08,2.25],[-4,-1.75]]:
@@ -1931,11 +1973,19 @@ function drawSerJonathanMountedShield25D(pose,scale=1.05,palette=null){
     face=palette?.face||'#234f88',emblem=palette?.emblem||'#c7444e',
     bossCol=palette?.boss||'#d6ad43',
     centerAlong=.55,c=Math.cos(pose.torsoPitch),s=Math.sin(pose.torsoPitch),
-    center=serJonathanTorsoWorldPoint(pose,0,centerAlong,-.22);
+    center=serJonathanTorsoWorldPoint(pose,0,centerAlong,-.22),
+    projectedCenter=serJonathanProjectWorldPoint(center,pose.hipY),
+    motionX=motion?.x||0,motionY=motion?.y||0,
+    motionRotation=motion?.rotation||0,
+    motionC=Math.cos(motionRotation),motionS=Math.sin(motionRotation);
   function projectLocal(point,zOffset=0){
     const lx=point[0]*scale,up=-point[1]*scale;
-    return serJonathanProjectWorldPoint({x:center.x+lx,
-      y:center.y+up*c,z:center.z+up*s+zOffset},pose.hipY);
+    const projected=serJonathanProjectWorldPoint({x:center.x+lx,
+        y:center.y+up*c,z:center.z+up*s+zOffset},pose.hipY),
+      dx=projected.x-projectedCenter.x,dy=projected.y-projectedCenter.y;
+    return {x:projectedCenter.x+dx*motionC-dy*motionS+motionX,
+      y:projectedCenter.y+dx*motionS+dy*motionC+motionY,
+      scale:projected.scale};
   }
   function projected(poly,zOffset=0){
     return poly.map(point=>{const p=projectLocal(point,zOffset);return [p.x,p.y];});
@@ -2039,24 +2089,31 @@ function drawSerJonathanRider(x,y,scale,o){
     bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
     riderBob=(air>0?-leap*.24:Math.sin(gal*2+.9)*.34)-shieldLunge*.24,
     atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
+    swordAction=o.swordAction||null,
     bow=o.bowAction||null,bowActive=!shieldActive&&!!(bow&&bow.visible>0),
     counter=clamp(o.counter||0,0,1),callSignal=clamp(o.callSignal||0,0,1),
     squireVariant=!!o.squire,swordClock=Math.max(atk,parry),
-    swordActive=!bowActive&&!shieldActive&&(swordClock>0||!!combo),
+    swordActive=!bowActive&&!shieldActive&&(swordClock>0||!!combo||!!swordAction),
     attackProgress=swordActive?1-swordClock:0,
     baseCut=swordClock>0?(attackProgress<.58
       ?easeInOut(clamp(attackProgress/.58,0,1))
       :1-easeInOut(clamp((attackProgress-.58)/.42,0,1))):0,
-    swordTurn=combo?lerp(combo.from,combo.to,combo.k):baseCut,cut=Math.abs(swordTurn);
+    legacySwordTurn=combo?lerp(combo.from,combo.to,combo.k):baseCut,
+    swordTurn=swordAction?Number(swordAction.bodyTurn)||0:legacySwordTurn,
+    cut=Math.abs(legacySwordTurn);
   const appearance=o.appearance||null,horse=appearance?.horse||o.horse||'#6f4327',
-    horseD=shade(horse,-28),horseL=shade(horse,18),mane=shade(horse,-48),
+    horseD=shade(horse,-28),horseL=shade(horse,18),
+    mane=appearance?.horseMane||shade(horse,-48),
+    horseMark=appearance?.horseMark||'#eee7d5',
+    horseStripe=appearance?.horseStripe||shade(horse,-38),
+    horsePattern=appearance?.horsePattern||0,
     armor=appearance?.armor||'#919da7',armorD=appearance?.armorDark||'#4b5966',
     armorL=appearance?.armorLight||'#c4ced5',steel=appearance?.steel||'#aebbc5',
     steelL=appearance?.steelLight||'#edf4f7',plume=appearance?.plume||o.feather||'#268ee8',
-    swordGrip=appearance?.sword?.grip||'#7140a8',
-    swordGuard=appearance?.sword?.guard||'#d1a640',
+    swordGrip=appearance?.sword?.grip||'#4059a8',
+    swordGuard=appearance?.sword?.guard||'#6f91d8',
     swordBlade=appearance?.sword?.blade||steelL,swordEdge=appearance?.sword?.edge||'#ffffff',
-    swordSheath=appearance?.sword?.sheath||'#402719',shieldPalette=appearance?.shield||null,
+    swordSheath=appearance?.sword?.sheath||'#1c426f',shieldPalette=appearance?.shield||null,
     riderFall=o.riderFall||null;
   /* The seat is the hinge of the duck. BOTW and the rear riding reference both
      keep the pelvis planted while the chest folds away from the camera. */
@@ -2068,17 +2125,46 @@ function drawSerJonathanRider(x,y,scale,o){
      floating oval, these remain underneath the planted feet. */
   if(air<=0){g.globalAlpha=.18;px(2.5,30,4.1,.65,'#000');px(11.4,30,4.1,.65,'#000');g.globalAlpha=1;}
   /* Forelegs are farther from the rear camera and emerge through the rump gap. */
-  drawSerJonathanHorseLeg(6.2,-1,0,true,horseD,gal,air,bob,horseD,mane);
-  drawSerJonathanHorseLeg(11.8,1,Math.PI,true,horseD,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(7.15,-1,0,true,horseD,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(10.85,1,Math.PI,true,horseD,gal,air,bob,horseD,mane);
   /* Rider legs are farther than the rump from this camera. Draw them now so
      both haunches mask the inner thighs; only the portions beside the horse survive. */
   g.save();applySerJonathanRiderFall(riderFall,hipY);
-  rigSegment(7.1,hipY,.6,16+bob,2.05,armorD);rigJoint(.6,16+bob,1.85,armorL);
-  rigSegment(.6,16+bob,.7,23+bob,1.65,armor);px(-.15,22+bob,1.8,2.2,armorD);
-  px(-.35,23.25+bob,2.15,.7,steel);
-  rigSegment(10.9,hipY,17.4,16+bob,2.05,armorD);rigJoint(17.4,16+bob,1.85,armorL);
-  rigSegment(17.4,16+bob,17.3,23+bob,1.65,armor);px(16.35,22+bob,1.8,2.2,armorD);
-  px(16.2,23.25+bob,2.15,.7,steel);
+  const fallAmount=clamp(riderFall?.amount||0,0,1),fallDirection=riderFall?.side||1,
+    stirrupRelease=smoothStep(clamp(fallAmount/.27,0,1)),
+    airborneFold=smoothStep(clamp((fallAmount-.18)/.48,0,1)),
+    groundSettle=clamp(riderFall?.grounded||0,0,1),
+    fallLegValue=(mounted,released,airborne,ground)=>{
+      let value=lerp(mounted,released,stirrupRelease);
+      value=lerp(value,airborne,airborneFold);
+      return lerp(value,ground,groundSettle);
+    };
+  function drawFallingRiderLeg(sideSign){
+    const mountedHipX=9+sideSign*1.9,mountedKneeX=9+sideSign*8.4,
+      mountedFootX=9+sideSign*8.3,outer=sideSign===fallDirection,
+      releasedHipX=9+sideSign*1.3,releasedKneeX=9+sideSign*3.2,
+      releasedFootX=9+sideSign*4.0,
+      airborneHipX=9+sideSign*1.05,
+      airborneKneeX=outer?9+sideSign*3.8:9+sideSign*.4,
+      airborneFootX=outer?9+sideSign*6.2:9+sideSign*2.5,
+      groundHipX=9+sideSign*.72,
+      /* At the final quarter-turn, equal X values become a horizontal lower
+         leg on screen. Offset the two tracks in Y so the knees never merge. */
+      groundKneeX=9+fallDirection*(outer?5.15:4.25),
+      groundFootX=9+fallDirection*(outer?5.22:4.18),
+      hipX=fallLegValue(mountedHipX,releasedHipX,airborneHipX,groundHipX),
+      hipLegY=fallLegValue(hipY,hipY,hipY+.1,hipY+(outer?.28:-.2)),
+      kneeX=fallLegValue(mountedKneeX,releasedKneeX,airborneKneeX,groundKneeX),
+      kneeY=fallLegValue(16+bob,15.2+bob,(outer?16.7:14.4)+bob,
+        hipY+(outer?6.75:5.15)),
+      footX=fallLegValue(mountedFootX,releasedFootX,airborneFootX,groundFootX),
+      footY=fallLegValue(23+bob,20.6+bob,(outer?21.8:16.4)+bob,
+        hipY+(outer?12.05:10.15));
+    rigSegment(hipX,hipLegY,kneeX,kneeY,2.05,armorD);rigJoint(kneeX,kneeY,1.85,armorL);
+    rigSegment(kneeX,kneeY,footX,footY,1.65,armor);
+    px(footX-.9,footY-1.05,1.8,2.2,armorD);px(footX-1.08,footY+.2,2.15,.7,steel);
+  }
+  drawFallingRiderLeg(-1);drawFallingRiderLeg(1);
   g.restore();
   /* Symmetric rear silhouette: paired haunches and a central cleft make the
      camera direction unmistakable. */
@@ -2089,9 +2175,72 @@ function drawSerJonathanRider(x,y,scale,o){
      as eyes and made the rump look like a face. */
   px(3.05,15.1+bob,1.05,5.4,horseL);px(13.9,15.1+bob,1.05,5.4,horseL);
   px(8.55,14.2+bob,.9,6.9,mane);
+  /* Summoned horses keep one authored coat for their lifetime. Pinto markings
+     use broad, irregular islands like real piebald coats; tiny polka dots read
+     as decoration rather than hair at this rear-view resolution. */
+  if(horsePattern===1){
+    rigPolygon([[1.55,15.5+bob],[3.9,12.9+bob],[6.9,13.8+bob],[7.25,16.8+bob],
+      [5.8,19.8+bob],[2.7,20.3+bob],[1.45,18.2+bob]],horseMark);
+    rigPolygon([[10.45,16.5+bob],[12.25,13.2+bob],[15.0,13.2+bob],[16.55,15.7+bob],
+      [16.25,20.7+bob],[13.2,22.8+bob],[11.05,20.6+bob]],horseMark);
+  }else if(horsePattern===2){
+    rigPolygon([[2.0,15.2+bob],[4.15,12.7+bob],[7.55,13.25+bob],[8.1,16.15+bob],
+      [7.15,20.9+bob],[4.0,23.05+bob],[1.65,20.55+bob]],horseMark);
+    rigPolygon([[9.7,14.25+bob],[12.0,12.8+bob],[14.75,13.25+bob],[16.35,15.5+bob],
+      [15.2,18.25+bob],[12.35,18.65+bob],[10.2,17.0+bob]],horseMark);
+    rigPolygon([[11.45,20.0+bob],[13.35,19.1+bob],[15.45,20.15+bob],
+      [14.15,22.75+bob],[11.7,22.25+bob]],horseMark);
+  }else if(horsePattern===3){
+    rigPolygon([[1.65,16.4+bob],[3.2,13.45+bob],[6.05,13.05+bob],[7.1,15.25+bob],
+      [6.35,18.1+bob],[3.9,19.15+bob],[1.55,18.25+bob]],horseMark);
+    rigPolygon([[9.8,17.5+bob],[11.45,15.55+bob],[14.6,15.0+bob],[16.45,17.0+bob],
+      [15.9,21.15+bob],[13.15,22.8+bob],[10.6,20.75+bob]],horseMark);
+    rigPolygon([[5.45,20.1+bob],[7.55,18.85+bob],[8.1,21.95+bob],
+      [6.6,23.0+bob],[4.7,22.1+bob]],horseMark);
+  }else if(horsePattern===4){
+    /* Broad tiger-dun barring. Each band follows the rounded haunch instead
+       of reading as dots pasted onto the coat. */
+    rigPolygon([[1.75,14.9+bob],[2.55,13.65+bob],[7.45,14.35+bob],
+      [7.65,15.75+bob],[2.15,16.05+bob]],horseStripe);
+    rigPolygon([[1.5,17.25+bob],[7.25,16.65+bob],[6.85,18.25+bob],
+      [1.55,19.15+bob]],horseStripe);
+    rigPolygon([[2.0,20.15+bob],[6.25,18.95+bob],[5.65,20.75+bob],
+      [2.75,22.05+bob]],horseStripe);
+    rigPolygon([[10.55,14.35+bob],[15.45,13.65+bob],[16.25,14.9+bob],
+      [15.85,16.05+bob],[10.35,15.75+bob]],horseStripe);
+    rigPolygon([[10.75,16.65+bob],[16.5,17.25+bob],[16.45,19.15+bob],
+      [11.15,18.25+bob]],horseStripe);
+    rigPolygon([[11.75,18.95+bob],[16.0,20.15+bob],[15.25,22.05+bob],
+      [12.35,20.75+bob]],horseStripe);
+  }else if(horsePattern===5){
+    /* A dark dorsal stripe forks into rear-facing chevrons. */
+    rigQuad(7.85,13.55+bob,9.0,13.2+bob,9.0,22.25+bob,8.05,22.4+bob,horseStripe);
+    rigQuad(9.0,13.2+bob,10.15,13.55+bob,9.95,22.4+bob,9.0,22.25+bob,horseStripe);
+    rigPolygon([[2.05,15.25+bob],[3.0,14.05+bob],[8.15,17.15+bob],
+      [8.05,18.65+bob]],horseStripe);
+    rigPolygon([[1.75,18.0+bob],[2.15,16.65+bob],[8.05,20.1+bob],
+      [7.45,21.35+bob]],horseStripe);
+    rigPolygon([[9.85,17.15+bob],[15.0,14.05+bob],[15.95,15.25+bob],
+      [9.95,18.65+bob]],horseStripe);
+    rigPolygon([[9.95,20.1+bob],[15.85,16.65+bob],[16.25,18.0+bob],
+      [10.55,21.35+bob]],horseStripe);
+  }else if(horsePattern===6){
+    /* Narrow zebra bars concentrate on the outer rump, leaving the saddle and
+       central cleft readable from the rear camera. */
+    for(const band of [
+      [[1.8,14.65],[2.55,13.65],[6.2,14.2],[5.75,15.25]],
+      [[1.5,16.55],[1.85,15.35],[5.7,16.15],[5.1,17.35]],
+      [[1.55,18.7],[1.55,17.45],[5.15,18.2],[4.55,19.5]],
+      [[2.05,21.0],[1.7,19.75],[4.6,20.25],[4.1,21.75]],
+      [[11.8,14.2],[15.45,13.65],[16.2,14.65],[12.25,15.25]],
+      [[12.3,16.15],[16.15,15.35],[16.5,16.55],[12.9,17.35]],
+      [[12.85,18.2],[16.45,17.45],[16.45,18.7],[13.45,19.5]],
+      [[13.4,20.25],[16.3,19.75],[15.95,21.0],[13.9,21.75]]
+    ])rigPolygon(band.map(([bx,by])=>[bx,by+bob]),horseStripe);
+  }
   /* Near hind legs hang under the haunches; they no longer skate sideways. */
-  drawSerJonathanHorseLeg(4,-1,Math.PI,false,horse,gal,air,bob,horseD,mane);
-  drawSerJonathanHorseLeg(14,1,0,false,horse,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(5.2,-1,Math.PI,false,horse,gal,air,bob,horseD,mane);
+  drawSerJonathanHorseLeg(12.8,1,0,false,horse,gal,air,bob,horseD,mane);
   /* The tail is the strongest rear-view cue: its root must sit ON the rump, not
      disappear behind it. The broad brush overlaps the cleft and hangs centrally. */
   const tail=Math.sin(gal+1.7)*1.25,tailL=shade(horse,-34);
@@ -2112,25 +2261,14 @@ function drawSerJonathanRider(x,y,scale,o){
   px(8.45,4.1+bob+headLift,1.1,4.1,mane);
   rigQuad(3.1,12.1+bob,14.9,12.1+bob,13.8,14.3+bob,4.2,14.3+bob,'#39251d');
 
-  /* The rigid scabbard stays attached to the hip while the upper body folds. */
+  /* Rider and equipment share the mounted-death transform. */
   g.save();applySerJonathanRiderFall(riderFall,hipY);
-  rigSegment(6.25,hipY-.65,4.35,hipY+.55,.62,shade(swordSheath,-18));
-  rigSegment(6.55,hipY-.2,4.55,hipY+1.05,.62,shade(swordSheath,-18));
-  rigSegment(4.4,hipY+.25,2.3,hipY+12.2,1.7,swordSheath);
-  rigSegment(4.22,hipY+.45,2.18,hipY+12,.55,shade(swordSheath,34));
-  px(1.4,hipY+11.7,1.8,1.15,shade(swordSheath,-42));
-  if(!swordActive){
-    /* Purple grip projects straight out of the brown sheath on its own axis. */
-    rigSegment(4.4,hipY+.25,4.98,hipY-3.05,1.42,swordGrip);
-    rigSegment(3.28,hipY-.22,5.68,hipY+.2,.78,swordGuard);
-    rigJoint(5.08,hipY-3.35,1.35,swordGrip);
-  }
 
   /* Rear-camera articulated crouch. Pelvis, spine, neck and equipment now share
      one world-depth skeleton; no finished body part is compressed to fake depth. */
   const duckPose=serJonathanDuckPose(duck,riderBob),duckFold=duckPose.fold,
     depthScale=duckPose.farScale,farDepthScale=duckPose.armScale,
-    poseDriveY=shieldLunge*1.45+shieldBodyDrive*1.05,
+    poseDriveY=shieldLunge*1.45+shieldBodyDrive*1.05+(swordAction?.bodyDrive||0)*.72,
     /* The shield sweep begins in Jonathan's torso, then travels through the
        shoulder, elbow and wrist. This small counter-turn keeps it from reading
        as a prop sliding independently over a rigid rider. */
@@ -2152,13 +2290,58 @@ function drawSerJonathanRider(x,y,scale,o){
       rightElbowX=lerp(shoulderX+4.9*depthScale,shoulderX+4.25,duckFold),
       rightElbowY=lerp(shoulderY+3.5,6.15+riderBob,duckFold),
       rightHandX=lerp(11.1,10.85,duckFold),rightHandY=lerp(6.3+headLift,3.65+headLift,duckFold),
-      swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0;
+      swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0,swordForeshorten=1;
   const restingLeftElbowX=leftElbowX,restingLeftElbowY=leftElbowY,
-    restingLeftHandX=leftHandX,restingLeftHandY=leftHandY;
+    restingLeftHandX=leftHandX,restingLeftHandY=leftHandY,
+    restingRightElbowX=rightElbowX,restingRightElbowY=rightElbowY,
+    restingRightHandX=rightHandX,restingRightHandY=rightHandY;
   const mountedShieldScale=1.05,activeShieldScale=1.13,
     mountedShieldAnchor=serJonathanProjectTorsoPoint(duckPose,0,.55,-.22),
     mountedShieldY=mountedShieldAnchor.y-poseDriveY,
     mountedShieldDepth=1;
+  /* Zelda-like back carry: the blue scabbard runs below the shield from the
+     left hip to the right shoulder. Both endpoints follow the projected spine,
+     so ducking or falling changes its perspective instead of sliding a 2D prop. */
+  const backSwordTipAnchor=serJonathanProjectTorsoPoint(duckPose,-4.55,.03,-.34),
+    backSwordMouthAnchor=serJonathanProjectTorsoPoint(duckPose,4.05,.86,-.38),
+    backSwordTipX=backSwordTipAnchor.x-swordTurn*.12,
+    backSwordTipY=backSwordTipAnchor.y-poseDriveY*.10,
+    backSwordMouthX=backSwordMouthAnchor.x+swordTurn*.26,
+    backSwordMouthY=backSwordMouthAnchor.y-poseDriveY*.84,
+    backSwordDX=backSwordMouthX-backSwordTipX,
+    backSwordDY=backSwordMouthY-backSwordTipY,
+    backSwordLength=Math.hypot(backSwordDX,backSwordDY)||1,
+    backSwordUX=backSwordDX/backSwordLength,backSwordUY=backSwordDY/backSwordLength,
+    backSwordNX=-backSwordUY,backSwordNY=backSwordUX,
+    hiltSeatX=backSwordMouthX+backSwordUX*2.0,
+    hiltSeatY=backSwordMouthY+backSwordUY*2.0,
+    /* The mounted and held hilts exchange ownership on one exact threshold.
+       Without this split the reach phase showed a second sword in Jonathan's
+       rein hand while the real sword was still visibly seated on his back. */
+    mountedHiltVisible=!swordActive||(swordAction&&
+      (swordAction.extract<=.015||swordAction.sheath>=.985)),
+    drawMountedBackSword=()=>{
+      rigSegment(backSwordTipX,backSwordTipY,backSwordMouthX,backSwordMouthY,1.72,swordSheath);
+      rigSegment(backSwordTipX+backSwordNX*.34,backSwordTipY+backSwordNY*.34,
+        backSwordMouthX+backSwordNX*.34,backSwordMouthY+backSwordNY*.34,.48,
+        shade(swordSheath,34));
+      rigJoint(backSwordTipX,backSwordTipY,1.08,shade(swordSheath,-34));
+      rigSegment(backSwordMouthX-backSwordNX*.92,backSwordMouthY-backSwordNY*.92,
+        backSwordMouthX+backSwordNX*.92,backSwordMouthY+backSwordNY*.92,.72,steelL);
+      if(mountedHiltVisible){
+        const guardX=backSwordMouthX+backSwordUX*.48,guardY=backSwordMouthY+backSwordUY*.48,
+          pommelX=backSwordMouthX+backSwordUX*3.75,pommelY=backSwordMouthY+backSwordUY*3.75;
+        rigSegment(guardX,guardY,pommelX,pommelY,1.34,swordGrip);
+        rigSegment(guardX-backSwordNX*1.62,guardY-backSwordNY*1.62,
+          guardX+backSwordNX*1.62,guardY+backSwordNY*1.62,.90,swordGuard);
+        rigJoint(guardX-backSwordNX*1.52,guardY-backSwordNY*1.52,.68,swordGuard);
+        rigJoint(guardX+backSwordNX*1.52,guardY+backSwordNY*1.52,.68,swordGuard);
+        rigJoint(pommelX,pommelY,.92,shade(swordGuard,18));
+        rigJoint(guardX,guardY,.52,'#7fc9ff');
+      }
+    };
+  /* drawMountedBackSword is deliberately delayed until the torso is complete.
+     The scabbard never jumps behind the body when the draw animation begins. */
   let shieldCenterX=9,shieldCenterY=mountedShieldY,shieldTurn=0,
     shieldTilt=lerp(-.04,.025,duckFold),shieldScale=mountedShieldScale,
     shieldDepthScale=mountedShieldDepth;
@@ -2319,7 +2502,167 @@ function drawSerJonathanRider(x,y,scale,o){
     rightElbowY=lerp(rightShoulderY,rightHandY,.52)-1.4;
   }
   if(swordActive){
-    if(combo){
+    if(swordAction){
+      /* The reference draw is constrained by the prop. Reach ends on the actual
+         mounted hilt; extraction translates hand and blade together along the
+         scabbard axis before either is allowed to rotate into the cut. */
+      const p=swordAction,drawDistance=backSwordLength*.96,
+        gripHandX=hiltSeatX,gripHandY=hiltSeatY,
+        gripElbowX=rightShoulderX+5.15,gripElbowY=rightShoulderY-1.75,
+        bladeLength=backSwordLength+2.0,
+        sheathAngle=Math.atan2(backSwordTipY-gripHandY,
+          backSwordTipX-gripHandX),
+        drawnHandX=gripHandX+backSwordUX*drawDistance,
+        drawnHandY=gripHandY+backSwordUY*drawDistance,
+        /* Reference arm mechanics: the fist, elbow and blade travel together.
+           The hand itself draws the X across the torso; the wrist only trims
+           the point angle instead of acting as a fixed windshield-wiper pivot. */
+        windHandX=rightShoulderX+7.15,windHandY=rightShoulderY-4.45,
+        windElbowX=rightShoulderX+3.25,windElbowY=rightShoulderY-1.05,
+        firstContactHandX=shoulderX-4.85,firstContactHandY=shoulderY+1.65,
+        firstContactElbowX=shoulderX+.65,firstContactElbowY=shoulderY-.30,
+        reboundHandX=shoulderX-5.35,reboundHandY=shoulderY-3.15,
+        reboundElbowX=shoulderX-.15,reboundElbowY=shoulderY-.10,
+        /* The return cut finishes with the whole right arm opened, mirroring
+           the strong parry silhouette. The elbow stays midway between shoulder
+           and fist; it must not remain folded over the chest while the blade
+           alone rotates to camera-right. */
+        crossFinishAngle=.94,crossFinishReach=9.05,
+        crossContactHandX=rightShoulderX+Math.cos(crossFinishAngle)*crossFinishReach,
+        crossContactHandY=rightShoulderY+Math.sin(crossFinishAngle)*crossFinishReach,
+        crossContactElbowX=rightShoulderX+Math.cos(crossFinishAngle)*crossFinishReach*.5,
+        crossContactElbowY=rightShoulderY+Math.sin(crossFinishAngle)*crossFinishReach*.5,
+        /* Reference finish: the angle begins at the shoulder. Shoulder, elbow,
+           fist, hilt and blade are one unbroken 180-degree ray down-right. Hold
+           that silhouette briefly before recovery starts toward the scabbard. */
+        finishAngle=.98,finishReach=9.25,
+        followHandX=rightShoulderX+Math.cos(finishAngle)*finishReach,
+        followHandY=rightShoulderY+Math.sin(finishAngle)*finishReach,
+        followElbowX=rightShoulderX+Math.cos(finishAngle)*finishReach*.5,
+        followElbowY=rightShoulderY+Math.sin(finishAngle)*finishReach*.5,
+        recoverHandX=rightShoulderX+6.45,recoverHandY=rightShoulderY-4.35,
+        recoverElbowX=rightShoulderX+2.85,recoverElbowY=rightShoulderY-1.15,
+        alignHandX=backSwordMouthX+backSwordUX*(backSwordLength+2.0),
+        alignHandY=backSwordMouthY+backSwordUY*(backSwordLength+2.0),
+        /* Angles are deliberately continuous rather than wrapped. This makes
+           the blade follow the exact reference loops: upright right -> low-left
+           -> high-left -> a fully extended low-right finish -> scabbard axis. */
+        windAngle=Math.PI*2-1.43,
+        firstContactAngle=2.80,reboundAngle=3.74,
+        crossContactAngle=Math.PI*2+crossFinishAngle,
+        followAngle=Math.PI*2+finishAngle,
+        recoverAngle=Math.PI*2-1.06;
+      let swordAngle=sheathAngle;
+      rightHandX=lerp(restingRightHandX,gripHandX,p.reach);
+      rightHandY=lerp(restingRightHandY,gripHandY,p.reach);
+      rightElbowX=cubic(restingRightElbowX,rightShoulderX+6.2,
+        gripElbowX+.8,gripElbowX,p.reach);
+      rightElbowY=cubic(restingRightElbowY,rightShoulderY+1.4,
+        gripElbowY-1.0,gripElbowY,p.reach);
+      swordReveal=0;
+      if(p.extract>0){
+        rightHandX=lerp(gripHandX,drawnHandX,p.extract);
+        rightHandY=lerp(gripHandY,drawnHandY,p.extract);
+        rightElbowX=lerp(gripElbowX,rightShoulderX+4.65,p.extract);
+        rightElbowY=lerp(gripElbowY,rightShoulderY-1.65,p.extract);
+        swordAngle=sheathAngle;swordReveal=p.extract;
+      }
+      if(p.windup>0){
+        rightHandX=lerp(drawnHandX,windHandX,p.windup);
+        rightHandY=lerp(drawnHandY,windHandY,p.windup);
+        rightElbowX=lerp(rightShoulderX+4.65,windElbowX,p.windup);
+        rightElbowY=lerp(rightShoulderY-1.65,windElbowY,p.windup);
+        swordAngle=lerp(sheathAngle,windAngle,p.windup);swordReveal=1;
+      }
+      if(p.slash>0){
+        const arc=Math.sin(Math.PI*p.slash);
+        rightHandX=cubic(windHandX,windHandX+.25,shoulderX+1.20,
+          firstContactHandX,p.slash);
+        rightHandY=cubic(windHandY,windHandY-.75,shoulderY-1.65,
+          firstContactHandY,p.slash);
+        swordAngle=cubic(windAngle,windAngle-.08,3.55,
+          firstContactAngle,p.slash);
+        rightElbowX=cubic(windElbowX,windElbowX+.35,shoulderX+1.7,
+          firstContactElbowX,p.slash)+arc*.35;
+        rightElbowY=cubic(windElbowY,windElbowY-.35,shoulderY-1.05,
+          firstContactElbowY,p.slash)-arc*.45;
+      }
+      if(p.rebound>0){
+        const roll=Math.sin(Math.PI*p.rebound);
+        rightHandX=cubic(firstContactHandX,firstContactHandX-.45,
+          reboundHandX-.25,reboundHandX,p.rebound)-roll*.18;
+        rightHandY=cubic(firstContactHandY,firstContactHandY-.55,
+          reboundHandY+.30,reboundHandY,p.rebound)-roll*.30;
+        swordAngle=cubic(firstContactAngle,2.98,3.58,
+          reboundAngle,p.rebound);
+        rightElbowX=lerp(firstContactElbowX,reboundElbowX,p.rebound)+roll*.18;
+        rightElbowY=lerp(firstContactElbowY,reboundElbowY,p.rebound)-roll*.30;
+      }
+      if(p.cross>0){
+        /* The second cut itself travels high-left to low-right. There is no old
+           horizontal contact followed by an artificial shoulder drop: both hand
+           controls descend monotonically into the final shoulder-led ray. */
+        const extension=easeInOut(p.cross);
+        rightHandX=cubic(reboundHandX,reboundHandX+1.45,crossContactHandX-1.70,
+          crossContactHandX,p.cross);
+        rightHandY=cubic(reboundHandY,reboundHandY+1.05,crossContactHandY-1.55,
+          crossContactHandY,p.cross);
+        swordAngle=cubic(reboundAngle,4.58,6.24,
+          crossContactAngle,p.cross);
+        const straightElbowX=lerp(rightShoulderX,rightHandX,.5),
+          straightElbowY=lerp(rightShoulderY,rightHandY,.5);
+        rightElbowX=lerp(reboundElbowX,straightElbowX,extension);
+        rightElbowY=lerp(reboundElbowY,straightElbowY,extension);
+      }
+      if(p.follow>0){
+        rightHandX=lerp(crossContactHandX,followHandX,p.follow);
+        rightHandY=lerp(crossContactHandY,followHandY,p.follow);
+        swordAngle=lerp(crossContactAngle,followAngle,p.follow);
+        rightElbowX=lerp(crossContactElbowX,followElbowX,p.follow);
+        rightElbowY=lerp(crossContactElbowY,followElbowY,p.follow);
+      }
+      if(p.recover>0){
+        const lift=Math.sin(Math.PI*p.recover);
+        rightHandX=lerp(followHandX,recoverHandX,p.recover)+lift*1.55;
+        rightHandY=lerp(followHandY,recoverHandY,p.recover)-lift*1.25;
+        swordAngle=cubic(followAngle,6.58,5.30,recoverAngle,p.recover);
+        rightElbowX=lerp(followElbowX,recoverElbowX,p.recover)+lift*.45;
+        rightElbowY=lerp(followElbowY,recoverElbowY,p.recover)-lift*.40;
+      }
+      if(p.align>0){
+        rightHandX=cubic(recoverHandX,recoverHandX+1.15,
+          alignHandX+.65,alignHandX,p.align);
+        rightHandY=cubic(recoverHandY,recoverHandY-.55,
+          alignHandY-.75,alignHandY,p.align);
+        swordAngle=cubic(recoverAngle,4.36,3.02,sheathAngle,p.align);
+        rightElbowX=lerp(recoverElbowX,rightShoulderX+5.8,p.align);
+        rightElbowY=lerp(recoverElbowY,rightShoulderY-2.1,p.align);
+      }
+      if(p.sheath>0){
+        rightHandX=lerp(alignHandX,gripHandX,p.sheath);
+        rightHandY=lerp(alignHandY,gripHandY,p.sheath);
+        swordAngle=sheathAngle;
+        rightElbowX=lerp(rightShoulderX+6.1,gripElbowX,p.sheath);
+        rightElbowY=lerp(rightShoulderY-2.1,gripElbowY,p.sheath);
+        swordReveal=1-p.sheath;
+      }
+      if(p.settle>0){
+        /* Once seated, the empty hand clears the pommel to camera-right before
+           returning to the rein. This last lateral beat preserves back depth. */
+        const clear=Math.sin(Math.PI*p.settle);
+        rightHandX=lerp(gripHandX,restingRightHandX,p.settle)+clear*1.35;
+        rightHandY=lerp(gripHandY,restingRightHandY,p.settle)+clear*.25;
+        rightElbowX=lerp(gripElbowX,restingRightElbowX,p.settle)+clear*1.7;
+        rightElbowY=lerp(gripElbowY,restingRightElbowY,p.settle)+clear*.55;
+        swordAngle=sheathAngle;swordReveal=0;
+      }
+      swordTipX=rightHandX+Math.cos(swordAngle)*bladeLength;
+      swordTipY=rightHandY+Math.sin(swordAngle)*bladeLength;
+      /* These are broad lateral cuts, not camera-facing thrusts. Preserve the
+         measured reference length and use only a slight 2.5D depth reduction. */
+      swordForeshorten=lerp(1,.90,clamp(p.forwardDepth||0,0,1))*
+        lerp(1,.82,clamp(p.crossDepth||0,0,1));
+    }else if(combo){
       const k=combo.k,from=combo.from,to=combo.to,
         rightHandEndX=shoulderX+14.5,rightHandEndY=shoulderY-2.4,
         leftHandEndX=shoulderX-12.5,leftHandEndY=shoulderY-2.2,
@@ -2366,13 +2709,16 @@ function drawSerJonathanRider(x,y,scale,o){
       swordReveal=clamp(cut/.16,0,1);
       if(attackProgress>=.58)swordReturnK=easeInOut(clamp((attackProgress-.58)/.42,0,1));
     }
-    /* Draw and every contact use a genuinely extended arm: shoulder, elbow and
-       hand are collinear. Only the trip back into the left scabbard bends it. */
-    const straightElbowX=lerp(rightShoulderX,rightHandX,.52),
-      straightElbowY=lerp(rightShoulderY,rightHandY,.52),
-      bentElbowX=shoulderX+5.25,bentElbowY=shoulderY+3.8;
-    rightElbowX=lerp(straightElbowX,bentElbowX,swordReturnK);
-    rightElbowY=lerp(straightElbowY,bentElbowY,swordReturnK);
+    if(!swordAction){
+      /* Legacy slashes use a straight extension. The authored back-draw has
+         its own elbow keyframes; overwriting them here made its otherwise
+         physical reach/extract path collapse into a flat 2D arm. */
+      const straightElbowX=lerp(rightShoulderX,rightHandX,.52),
+        straightElbowY=lerp(rightShoulderY,rightHandY,.52),
+        bentElbowX=shoulderX+5.25,bentElbowY=shoulderY+3.8;
+      rightElbowX=lerp(straightElbowX,bentElbowX,swordReturnK);
+      rightElbowY=lerp(straightElbowY,bentElbowY,swordReturnK);
+    }
   }
   /* Call Squire is a readable mounted hand signal, not another full-body attack.
      The anatomical right arm releases its rein, bends beside the helmet and
@@ -2399,7 +2745,12 @@ function drawSerJonathanRider(x,y,scale,o){
     drawCurrentShield=()=>{
       if(shieldActive)drawSerJonathanShield(shieldCenterX,shieldCenterY,
         shieldTurn,shieldTilt,shieldScale,shieldDepthScale,shieldPalette);
-      else drawSerJonathanMountedShield25D(duckPose,mountedShieldScale,shieldPalette);
+      else drawSerJonathanMountedShield25D(duckPose,mountedShieldScale,shieldPalette,{
+        /* Sword cuts rotate the whole rider. The scabbard already follows this
+           drive; carrying the rear plate through the same projected center keeps
+           the three back-mounted layers physically locked together. */
+        x:swordTurn*.06,y:-poseDriveY*.52,rotation:torsoTurn*.055
+      });
     };
   if(shieldInnerLayer)
     drawCurrentShield();
@@ -2423,22 +2774,38 @@ function drawSerJonathanRider(x,y,scale,o){
     rigSegment(rightHandX,rightHandY,rightHandX+.08,rightHandY-1.85,
       .62*farDepthScale,steelL);g.globalAlpha=1;
   }
-  if(swordActive){
+  const heldSwordVisible=!swordAction||
+    (swordAction.extract>.015&&swordAction.sheath<.985);
+  if(swordActive&&heldSwordVisible){
     /* The Squire carries a shorter broad arming sword instead of a scaled copy
        of Jonathan's long blade. Its hand path stays shared, but the blade's
        physical reach and guard silhouette are independently authored. */
-    const bladeX=squireVariant?lerp(rightHandX,swordTipX,.82):swordTipX,
-      bladeY=squireVariant?lerp(rightHandY,swordTipY,.82):swordTipY,
+    const rawBladeX=squireVariant?lerp(rightHandX,swordTipX,.82):swordTipX,
+      rawBladeY=squireVariant?lerp(rightHandY,swordTipY,.82):swordTipY,
+      bladeX=rightHandX+(rawBladeX-rightHandX)*swordForeshorten,
+      bladeY=rightHandY+(rawBladeY-rightHandY)*swordForeshorten,
       dx=bladeX-rightHandX,dy=bladeY-rightHandY,len=Math.hypot(dx,dy)||1,
       nx=-dy/len,ny=dx/len,reveal=swordReveal,
       bladeBaseX=lerp(bladeX,rightHandX+dx/len*.7,reveal),
       bladeBaseY=lerp(bladeY,rightHandY+dy/len*.7,reveal);
+    if(swordAction&&swordAction.trail>.02&&reveal>.25){
+      g.save();g.globalCompositeOperation='screen';g.globalAlpha=swordAction.trail*.18;
+      rigSegment(rightHandX, rightHandY,bladeX,bladeY,
+        (squireVariant?3.25:3.8)*swordForeshorten,'#8edcff');
+      g.restore();
+    }
     rigSegment(rightHandX-dx/len*2.15,rightHandY-dy/len*2.15,rightHandX,rightHandY,1.5,swordGrip);
     rigSegment(rightHandX-nx*(squireVariant?1.55:1.25),rightHandY-ny*(squireVariant?1.55:1.25),
       rightHandX+nx*(squireVariant?1.55:1.25),rightHandY+ny*(squireVariant?1.55:1.25),
       squireVariant?1.05:1.25,swordGuard);
+    rigJoint(rightHandX-nx*(squireVariant?1.48:1.20),
+      rightHandY-ny*(squireVariant?1.48:1.20),squireVariant ? .55 : .62,swordGuard);
+    rigJoint(rightHandX+nx*(squireVariant?1.48:1.20),
+      rightHandY+ny*(squireVariant?1.48:1.20),squireVariant ? .55 : .62,swordGuard);
+    rigJoint(rightHandX,rightHandY,squireVariant ? .38 : .44,'#7fc9ff');
     if(reveal>.02){
-      rigSegment(bladeBaseX,bladeBaseY,bladeX,bladeY,squireVariant?1.75:1.45,swordBlade);
+      rigSegment(bladeBaseX,bladeBaseY,bladeX,bladeY,
+        (squireVariant?1.75:1.45)*swordForeshorten,swordBlade);
       rigSegment(bladeX-dx/len*1.25,bladeY-dy/len*1.25,bladeX,bladeY,1.0,swordEdge);
     }
   }
@@ -2529,6 +2896,10 @@ function drawSerJonathanRider(x,y,scale,o){
   if(leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
   if(rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
   g.globalAlpha=1;
+
+  /* Stable back-equipment layering, from far to near: torso -> scabbard/sword
+     mount -> shield. This order remains unchanged during reach and extraction. */
+  drawMountedBackSword();
 
   /* Mounted: only the royal outer face is visible and the grip is trapped
      between plate and shield. During the clip the shield turns edge-on before
@@ -8349,13 +8720,14 @@ function playerHeartHealthEnabled(){return activeSkillLabCombat()||!!boss||!!min
 const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
-  gallop:0, alive:true,
+  gallop:0, alive:true,mountedDeath:false,deathT:-1,deathBurst:false,deathSide:1,deathX:0,
   currentHealthUnits:576,maxHealthUnits:576,shieldCharges:0,
   volatileShieldCharges:0,volatileShieldPosture:0,
   damageTakenModifierProduct:1,
   heartFlashStartedAt:-Infinity,heartFlashFromUnits:0,heartFlashToUnits:0,
   lastLaneChange:-9, laneFrom:1, lastJump:-9, lastDuck:-9, lastParry:-9,
-  attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, parryShield:null, invuln:0,
+  attackAnim:0, counterAnim:0, parryAnim:0, swordCombo:null, parryShield:null,
+  swordPreviewT:-1,swordPreviewCue:0,invuln:0,
 };
 /* The Squire is encounter state, not another resource economy. He shares the
    Knight's AP/Resolve and owns only health slots, availability and presentation. */
@@ -8364,12 +8736,53 @@ const SQUIRE_BASE=Object.freeze({
   slashDamage:6,postureDamage:14,postureChipDamage:2,
   encourageDamagePerStack:2,encouragePosturePerStack:4,
 });
-const SQUIRE_CALL_SIGNAL_DURATION=.84,SQUIRE_DEATH_BURST_AT=.92,SQUIRE_DEATH_DURATION=2.08;
+const SQUIRE_CALL_SIGNAL_DURATION=.84,SQUIRE_DEATH_LAND_AT=1.02,
+  SQUIRE_DEATH_BURST_AT=1.20,SQUIRE_DEATH_DURATION=2.36;
+function mountedRiderDeathPose(deathTime,fallSide){
+  const fall=smoothStep(clamp((deathTime-.08)/.68,0,1)),
+    grounded=smoothStep(clamp((deathTime-.76)/(SQUIRE_DEATH_LAND_AT-.76),0,1)),
+    fallArc=Math.sin(Math.PI*fall),horsePanic=smoothStep(clamp(deathTime/.38,0,1));
+  return {fall,grounded,fallArc,horsePanic,riderFall:{
+    x:fallSide*(fall*16+grounded*1.5),y:-fallArc*7+fall*13,
+    rotation:fallSide*lerp(fall*1.08,Math.PI*.5,grounded),
+    amount:fall,grounded,side:fallSide}};
+}
+function resetPlayerMountedDeath(){
+  player.mountedDeath=false;player.deathT=-1;player.deathBurst=false;
+  player.deathSide=1;player.deathX=laneX(player.x,1);
+}
+function beginPlayerMountedDeath(){
+  if(mode!=='boss'&&mode!=='miniboss'){resetPlayerMountedDeath();return false;}
+  player.mountedDeath=true;player.deathT=0;player.deathBurst=false;
+  player.deathX=laneX(player.x,1);
+  player.deathSide=player.x<.85?1:player.x>1.15?-1:
+    (sRnd((boss?.attackSerial||0)+(minibossFight?.sequenceIndex||0)+311)<.5?-1:1);
+  return true;
+}
+function playerMountedDeathAppearance(){
+  const horse=playerChar?.horse||'#714326';
+  return {armor:'#919da7',armorLight:'#c4ced5',steel:'#aebbc5',
+    plume:playerChar?.feather||'#268ee8',horse,horseMane:shade(horse,-42),
+    horseMark:'#eee9de',shield:{face:'#315d89',rim:'#edf4f7'},
+    sword:{blade:'#edf4f7'}};
+}
+function updatePlayerMountedDeath(dt){
+  if(!player.mountedDeath||player.deathT<0)return false;
+  player.deathT+=dt;
+  if(!player.deathBurst&&player.deathT>=SQUIRE_DEATH_BURST_AT){
+    player.deathBurst=true;
+    emitMountedRecallFx(player.deathX,PLAYER_Y-58,playerMountedDeathAppearance(),player.deathSide);
+    SFX.relic();shake(9,.3);
+  }
+  return true;
+}
 const SQUIRE_VISUAL_COLORS=Object.freeze({
   armor:Object.freeze(['#657780','#806f63','#63766b','#756b82','#7d7056','#596d80']),
   metal:Object.freeze(['#aebbc5','#c1b59c','#9fb7ad','#b8abc0','#9ca8bd','#bea58f']),
   plume:Object.freeze(['#d7b878','#cf5e62','#6aa7d8','#8fc06b','#a77bd1','#e08d4f']),
-  horse:Object.freeze(['#4f3425','#6b4933','#3e4147','#705b44','#49362f','#59604d']),
+  horse:Object.freeze(['#4f3425','#6b4933','#303034','#705744','#49362f','#776b60','#8a6044']),
+  horseMane:Object.freeze(['#211a17','#33231d','#4a3426','#625044','#d2cbc0']),
+  horseMark:Object.freeze(['#eee9de','#d8d3ca','#f1efe9','#cbc3b5','#b9b5ae']),
   leather:Object.freeze(['#512e24','#653a2b','#3d2f42','#29404b','#4b3c24','#493027']),
   shield:Object.freeze(['#315d89','#755074','#4e704e','#87513f','#6a5d32','#3d6570']),
   emblem:Object.freeze(['#d2a345','#d5655e','#d8d2bd','#79b5d1','#a98bd0','#86ad68']),
@@ -8378,10 +8791,15 @@ function randomSquireAppearance(){
   const armor=pick(SQUIRE_VISUAL_COLORS.armor),steel=pick(SQUIRE_VISUAL_COLORS.metal),
     leather=pick(SQUIRE_VISUAL_COLORS.leather),shieldFace=pick(SQUIRE_VISUAL_COLORS.shield),
     shieldRim=pick(SQUIRE_VISUAL_COLORS.metal),emblem=pick(SQUIRE_VISUAL_COLORS.emblem),
-    blade=pick(SQUIRE_VISUAL_COLORS.metal);
+    blade=pick(SQUIRE_VISUAL_COLORS.metal),horse=pick(SQUIRE_VISUAL_COLORS.horse),
+    /* Equal visual families: three solid slots, three pinto slots and three
+       striped slots. Repeated summons therefore do not bias toward one coat. */
+    horsePattern=pick([0,0,0,1,2,3,4,5,6]);
   return Object.freeze({armor,armorDark:shade(armor,-30),
     armorLight:pick(SQUIRE_VISUAL_COLORS.metal),steel,steelLight:shade(steel,28),
-    plume:pick(SQUIRE_VISUAL_COLORS.plume),horse:pick(SQUIRE_VISUAL_COLORS.horse),
+    plume:pick(SQUIRE_VISUAL_COLORS.plume),horse,
+    horseMane:pick(SQUIRE_VISUAL_COLORS.horseMane),
+    horseMark:pick(SQUIRE_VISUAL_COLORS.horseMark),horseStripe:shade(horse,-38),horsePattern,
     helmetBand:pick(SQUIRE_VISUAL_COLORS.emblem),
     sword:Object.freeze({blade,edge:shade(blade,35),grip:leather,
       guard:pick(SQUIRE_VISUAL_COLORS.emblem),sheath:pick(SQUIRE_VISUAL_COLORS.leather)}),
@@ -8562,6 +8980,44 @@ function duckLoweringTimeForAmount(amount){
 }
 function isAirborne(){ return jumpHeight()>CFG.JUMP_SAFE_H; }
 function isDucking(){ return player.duckT>=0; }
+const PLAYER_BACK_SWORD_POSE_SCRATCH={},SQUIRE_BACK_SWORD_POSE_SCRATCH={};
+function resetPlayerSwordPreview(){player.swordPreviewT=-1;player.swordPreviewCue=0;}
+function beginPlayerSwordPreview(){
+  if(!activeSkillLabCombat()||!isPlayerTurn()||boss.turnAction)return false;
+  player.swordCombo=null;player.attackAnim=0;player.counterAnim=0;
+  player.swordPreviewT=0;player.swordPreviewCue=0;SFX.init();SFX.swipe();return true;
+}
+function updatePlayerSwordPreview(dt){
+  if(player.swordPreviewT<0)return;
+  const before=player.swordPreviewT;
+  player.swordPreviewT=Math.min(BACK_SWORD_TIMING.settleEnd,player.swordPreviewT+dt);
+  if(player.swordPreviewCue<1&&before<BACK_SWORD_TIMING.drawEnd&&
+     player.swordPreviewT>=BACK_SWORD_TIMING.drawEnd){
+    player.swordPreviewCue=1;SFX.swipe();
+  }
+  if(player.swordPreviewCue<2&&before<BACK_SWORD_TIMING.contact&&
+     player.swordPreviewT>=BACK_SWORD_TIMING.contact){
+    player.swordPreviewCue=2;SFX.slash();
+    const x=laneX(player.x,1);spawnSlash(x-18,PLAYER_Y-102,-.72,'#8edcff');
+    burst(x-20,PLAYER_Y-104,7,['#7fc9ff','#dff8ff','#ffffff'],100,48,2.5,.32);
+  }
+  if(player.swordPreviewCue<3&&before<BACK_SWORD_TIMING.crossContact&&
+     player.swordPreviewT>=BACK_SWORD_TIMING.crossContact){
+    player.swordPreviewCue=3;SFX.slash();
+    const x=laneX(player.x,1);spawnSlash(x+18,PLAYER_Y-102,.72,'#b9ecff');
+    burst(x+20,PLAYER_Y-104,7,['#7fc9ff','#dff8ff','#ffffff'],100,48,2.5,.32);
+  }
+  if(player.swordPreviewT>=BACK_SWORD_TIMING.settleEnd)resetPlayerSwordPreview();
+}
+function activePlayerSwordPreviewPose(){
+  return player.swordPreviewT>=0?
+    backSwordPoseAt(player.swordPreviewT,PLAYER_BACK_SWORD_POSE_SCRATCH):null;
+}
+function activeSquireSwordPose(){
+  const action=boss&&boss.turnAction;
+  return action&&action.swordTimeline&&action.actorId==='ally'?
+    backSwordPoseAt(action.t,SQUIRE_BACK_SWORD_POSE_SCRATCH):null;
+}
 /* Multi-hit commands keep one blade out for the entire action: sheath -> right,
    then alternating side-to-side cuts, then a single return from the final side. */
 function beginPlayerSwordSegment(from,to,duration,pendingReturn=false,returning=false){
@@ -8605,6 +9061,7 @@ function updatePlayer(dt){
      shield state updated below. */
   player.parryAnim=Math.max(0,player.parryAnim-dt*2.4);
   updatePlayerParryShield(dt);
+  updatePlayerSwordPreview(dt);
   updatePlayerSwordCombo(dt);
   player.invuln=Math.max(0,player.invuln-dt);
   updateAllyTrail();
@@ -8630,7 +9087,7 @@ function updateSquire(dt){
     squire.deathT+=dt;
     if(!squire.deathBurst&&squire.deathT>=SQUIRE_DEATH_BURST_AT){
       squire.deathBurst=true;
-      emitSquireRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide);
+      emitMountedRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide);
       SFX.relic();shake(7,.24);
     }
     if(squire.deathT>SQUIRE_DEATH_DURATION)squire.deathT=-1;
@@ -8642,10 +9099,35 @@ function squireCallSignalAmount(){
     lower=1-smoothStep(clamp((t-.56)/(SQUIRE_CALL_SIGNAL_DURATION-.56),0,1));
   return clamp(raise*lower,0,1);
 }
+function drawMountedPlayerDeath(){
+  if(!player.mountedDeath||player.deathT<0||player.deathT>=SQUIRE_DEATH_BURST_AT)return;
+  const deathTime=Math.max(0,player.deathT),deathPose=mountedRiderDeathPose(
+      deathTime,player.deathSide),horsePanic=deathPose.horsePanic,
+    x=player.deathX,y=PLAYER_Y,scale=1.02,
+    options={gallop:perfNow*(.34+horsePanic*4.4),lean:0,duck:0,air:0,
+      rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,
+      chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman,
+      riderFall:deathPose.riderFall,attack:0,counter:0,parry:0,swordCombo:null,
+      bowAction:null,shieldAction:null,callSignal:0};
+  g.globalAlpha=.32;g.fillStyle='#000';g.beginPath();g.ellipse(x,PLAYER_Y+4,22,4.8,0,0,TAU);g.fill();
+  g.globalAlpha=1;drawRider(x,y,scale,options);
+  if(deathTime<.18){
+    g.globalCompositeOperation='screen';g.globalAlpha=(1-deathTime/.18)*.82;
+    drawRider(x,y,scale,{...options,gallop:perfNow*.34});
+    g.globalCompositeOperation='source-over';g.globalAlpha=1;
+  }
+  if(horsePanic>.05){
+    const pulse=.25+.35*Math.sin(deathTime*22);
+    g.globalAlpha=horsePanic*pulse;g.fillStyle=playerChar.feather||'#268ee8';
+    g.fillRect(x-3,y+7,6,2);g.globalAlpha=1;
+  }
+}
 function drawPlayer(){
+  if(player.mountedDeath){drawMountedPlayerDeath();return;}
   const lean=clamp((player.lane-player.x)*1.6,-1,1);
   const duck=duckPostureAmountAt(player.duckT);
   const rushLunge=characterSpecialLungeAmount(),shieldAction=activePlayerShieldPose(),
+    swordAction=activePlayerSwordPreviewPose(),
     shieldLunge=shieldAction?shieldAction.lunge:0,jumpH=jumpHeight(),
     y=PLAYER_Y-jumpH-rushLunge*68-shieldLunge*136,
     shadowY=PLAYER_Y+4-shieldLunge*136;
@@ -8661,8 +9143,9 @@ function drawPlayer(){
     rigId:playerChar.rigId,
     feather:playerChar.feather, horse:playerChar.horse, chubby:playerChar.chubby,
     monkey:playerChar.monkey, caveman:playerChar.caveman,
-    attack:player.attackAnim, counter:player.counterAnim, parry:player.parryAnim,
-    swordCombo:player.swordCombo,bowAction:activePlayerBowPose(),shieldAction,
+    attack:swordAction?0:player.attackAnim, counter:player.counterAnim, parry:player.parryAnim,
+    swordCombo:swordAction?null:player.swordCombo,swordAction,
+    bowAction:activePlayerBowPose(),shieldAction,
     callSignal:squireCallSignalAmount(),
   });
   g.globalAlpha=1;
@@ -8674,22 +9157,22 @@ function drawSquire(){
   const deathTime=dying?Math.max(0,squire.deathT):0,
     arrival=clamp((squire.arrivalT||0)/.8,0,1),
     shieldAction=dying?null:activeSquireShieldPose(),shieldLunge=shieldAction?.lunge||0,
-    attack=shieldAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
+    swordAction=dying||shieldAction?null:activeSquireSwordPose(),
+    attack=shieldAction||swordAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
     strike=Math.sin((1-attack)*Math.PI)*(attack>0?1:0),
     cheer=squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
     baseX=squire.present?squire.visualX:squire.lastX,
     fallSide=dying?squire.deathSide:(baseX<laneX(player.x,1)?-1:1),
-    fall=dying?smoothStep(clamp((deathTime-.08)/.68,0,1)):0,
-    fallArc=Math.sin(Math.PI*fall),horsePanic=dying?smoothStep(clamp(deathTime/.38,0,1)):0,
+    deathPose=dying?mountedRiderDeathPose(deathTime,fallSide):null,
+    horsePanic=deathPose?.horsePanic||0,
     x=baseX,y=PLAYER_Y+9-strike*13-cheer*5-shieldLunge*98,
     scale=.72*(1+strike*.05+shieldLunge*.06),appearance=squire.appearance,
-    riderFall=dying?{x:fallSide*fall*16,y:-fallArc*7+fall*13,
-      rotation:fallSide*fall*1.08}:null;
+    riderFall=deathPose?.riderFall||null;
   g.save();g.globalAlpha=squire.present?clamp(arrival*1.3,0,1):1;
   drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:
       perfNow*(.34+horsePanic*4.4),
     lean:0,duck:0,air:0,rigId:'ser_jonathan',feather:'#d7b878',horse:'#4f3425',
-    appearance,squire:true,riderFall,attack, counter:0,parry:0,swordCombo:null,
+    appearance,squire:true,riderFall,attack, counter:0,parry:0,swordCombo:null,swordAction,
     bowAction:null,shieldAction});
   if(dying&&deathTime<.18){
     g.globalCompositeOperation='screen';g.globalAlpha=(1-deathTime/.18)*.82;
@@ -8801,6 +9284,10 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   }
   player.alive=false; deathReason=reason;
   keyboardParryHeld=false;player.parryShield=null;
+  /* Boss-arena deaths keep the rider on screen long enough to perform the same
+     mounted fall, ground impact, and particle breakup used by the Squire. Run
+     obstacles deliberately retain their immediate one-hit death presentation. */
+  beginPlayerMountedDeath();
   SFX.hit(); SFX.dead(); flash('#ff4d3a',.8); shake(14,.5); stopTime(.22);
   burst(laneX(player.x,1),PLAYER_Y-40,30,['#ff4d3a','#8f9bb0','#3f7bff'],260,240,4,1);
   setMode('dying');
@@ -13479,7 +13966,7 @@ const WEAPON_SKILL_BASE_ATTRIBUTE_AUDIT=RUN_BOOT_AUDITS&&(()=>{
     weaponSkillAttributePalette('mark_burst').includes(id));
   if(shared.length!==5||shared.includes('MARK')||shared.includes('DETONATION'))
     throw new Error('Weapon skill palettes must share five combat Attributes and keep distinct Base identities');
-  return Object.freeze({passed:true,weapons:WEAPONS.list.length,skills:BASE_TURN_SKILLS.length,
+  return Object.freeze({passed:true,weapons:WEAPONS.list.length,skills:WEAPON_SKILLS.list.length,
     animationFamilies:WEAPON_ANIMATION_FAMILIES.list.length,
     globalAttributes:COMBAT_ATTRIBUTE_IDS.length,attributesPerSkill:6,
     sharedAttributes:shared.length});
@@ -39986,14 +40473,20 @@ function squireCombatProfile(){
   const morale=Math.max(0,Math.floor(squire.encouragement||0)),key=String(morale);
   if(squire.profile&&squire.profileKey===key)return squire.profile;
   const slashDamage=SQUIRE_BASE.slashDamage+morale*SQUIRE_BASE.encourageDamagePerStack,
+    slashHitDamage=stableDamage(slashDamage/2),
     posture=SQUIRE_BASE.postureDamage+morale*SQUIRE_BASE.encouragePosturePerStack,
     col='#d7b878';
   squire.profileKey=key;
   squire.profile=Object.freeze({id:'squire',name:'SQUIRE',fightName:'SQUIRE SLASH',col,
-    fightDamage:slashDamage,fightPosture:0,fightAddsChain:false,
+    fightDamage:slashHitDamage,fightHitDamages:Object.freeze([slashHitDamage,slashHitDamage]),
+    fightHits:2,fightHitInterval:BACK_SWORD_TIMING.crossContact-BACK_SWORD_TIMING.contact,
+    fightPosture:0,fightAddsChain:false,
     skills:Object.freeze([
       Object.freeze({id:'squire_slash',name:'SQUIRE SLASH',source:'COMPANION',skill:true,
-        squireMove:true,cost:0,damage:slashDamage,hits:1,posture:0,addsChain:false,
+        squireMove:true,cost:0,damage:slashHitDamage,
+        hitDamages:Object.freeze([slashHitDamage,slashHitDamage]),hits:2,
+        hitInterval:BACK_SWORD_TIMING.crossContact-BACK_SWORD_TIMING.contact,
+        posture:0,addsChain:false,
         canCrit:false,col,slash:-.34,deliveryProfileId:'COMPANION_STRIKE'}),
       Object.freeze({id:'squire_posture',name:'SHIELD PRESS',source:'COMPANION',skill:true,
         squireMove:true,cost:1,damage:SQUIRE_BASE.postureChipDamage,hits:1,posture,
@@ -40029,21 +40522,37 @@ function selectTurnActor(id){
   skillTooltipIndex=-1;SFX.swipe();return true;
 }
 function activeTurnSkills(){return activeTurnActorId()==='ally'?companionProfile().skills:knightTurnSkills();}
-function classSkillUsedThisPhase(command){
-  /* Skill Lab is a debug sandbox: keep AP/Resolve honest, but do not hide the
-     animation behind the class-skill once-per-phase production rule. */
-  if(activeSkillLabCombat())return false;
-  return !!(boss&&command&&command.source==='CLASS'&&boss.classSkillUseSerial&&
-    boss.classSkillUseSerial[command.baseId||command.id]===boss.playerPhaseSerial);
+function turnSkillUsageKey(command,actorId=activeTurnActorId()){
+  return (actorId||'knight')+':'+(command.baseId||command.id);
 }
+function isTurnSkillCommand(command){return !!(command&&command.skill===true);}
+function turnSkillUsedThisPhase(command,actorId=activeTurnActorId()){
+  /* Skill Lab stays an unrestricted animation/combat sandbox. Production
+     fights remember each actor + skill separately for this player phase. */
+  if(activeSkillLabCombat()||!boss||!isTurnSkillCommand(command))return false;
+  return !!(boss.skillUseSerial&&
+    boss.skillUseSerial[turnSkillUsageKey(command,actorId)]===boss.playerPhaseSerial);
+}
+function markTurnSkillUsedThisPhase(command,actorId=activeTurnActorId()){
+  if(activeSkillLabCombat()||!boss||!isTurnSkillCommand(command))return false;
+  boss.skillUseSerial||(boss.skillUseSerial=Object.create(null));
+  boss.skillUseSerial[turnSkillUsageKey(command,actorId)]=boss.playerPhaseSerial;
+  /* Keep the old class ledger populated for save/debug compatibility. */
+  if(command.source==='CLASS'){
+    boss.classSkillUseSerial||(boss.classSkillUseSerial=Object.create(null));
+    boss.classSkillUseSerial[command.baseId||command.id]=boss.playerPhaseSerial;
+  }
+  return true;
+}
+function classSkillUsedThisPhase(command){return turnSkillUsedThisPhase(command);}
 function turnCommandApCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.apCost||1);}
 function turnCommandResolveCost(command){return primaryChargeReleaseReady(command)?0:(command&&command.cost||0);}
-function turnCommandAvailable(command){
+function turnCommandAvailable(command,actorId=activeTurnActorId()){
   if(!boss||!command||primaryChargePreparationLocked())return false;
   if(command.squireAction==='COOLDOWN'||command.squireAction==='ARRIVING')return false;
   if(command.squireAction==='CALL'&&squire.present)return false;
   if(command.squireAction==='ENCOURAGE'&&!squire.present)return false;
-  return !!(!classSkillUsedThisPhase(command)&&
+  return !!(!turnSkillUsedThisPhase(command,actorId)&&
     (boss.ap||0)>=turnCommandApCost(command)&&
     (boss.resolve||0)>=turnCommandResolveCost(command));
 }
@@ -40760,7 +41269,9 @@ function fightCommand(actorId=activeTurnActorId()){
   if(actorId==='ally'&&hasCombatAlly()){
     const profile=companionProfile();
     return {id:profile.id+'_fight',name:profile.fightName,source:'COMPANION',skill:false,cost:0,
-      damage:profile.fightDamage===undefined?5:profile.fightDamage,hits:1,
+      damage:profile.fightDamage===undefined?5:profile.fightDamage,
+      hitDamages:profile.fightHitDamages||null,hits:profile.fightHits||1,
+      hitInterval:profile.fightHitInterval||0,
       posture:profile.fightPosture||0,resolvePerHit:profile.id==='squire'?0:1,
       addsChain:profile.fightAddsChain===undefined?true:profile.fightAddsChain,
       squireMove:profile.id==='squire',canCrit:profile.id==='squire'?false:undefined,
@@ -40848,13 +41359,12 @@ function encourageSquire(){
   squire.cheerT=0;SFX.relic();
 }
 function performSquireSupportAction(command){
-  if(!isPlayerTurn()||!turnCommandAvailable(command)||
+  if(!isPlayerTurn()||!turnCommandAvailable(command,'knight')||
      (command.squireAction!=='CALL'&&command.squireAction!=='ENCOURAGE')){
     SFX.duck();return false;
   }
   const apCost=turnCommandApCost(command),cost=turnCommandResolveCost(command);
-  boss.classSkillUseSerial||(boss.classSkillUseSerial=Object.create(null));
-  boss.classSkillUseSerial[command.baseId||command.id]=boss.playerPhaseSerial;
+  markTurnSkillUsedThisPhase(command,'knight');
   boss.ap-=apCost;boss.resolve-=cost;
   if(command.squireAction==='CALL')summonSquire();else encourageSquire();
   boss.phase='playerResolve';boss.playerMenu='skills';boss.playerActionReturnMenu='skills';
@@ -41143,6 +41653,15 @@ function bowTurnActionGeometry(){
   return geometry;
 }
 function isBowTurnAction(action){return !!(action&&action.bowTimeline&&action.actorId==='knight');}
+const SQUIRE_SWORD_TIMELINE=Object.freeze({
+  /* The authored X has two blade contacts, so combat must resolve twice too. */
+  contacts:Object.freeze([BACK_SWORD_TIMING.contact,BACK_SWORD_TIMING.crossContact]),
+  recoveryEnd:BACK_SWORD_TIMING.settleEnd
+});
+function buildSquireSwordTimeline(command,actorId){
+  return actorId==='ally'&&command?.squireMove&&!command.squireShieldBash?
+    SQUIRE_SWORD_TIMELINE:null;
+}
 /* Shield Bash is an authored prop transfer, not a reskinned sword swing. The
    contact clock is deliberately late enough for the left hand to reach behind
    the shield, unhook it, reveal its hidden inner grip and turn it before impact. */
@@ -41252,7 +41771,8 @@ function activePlayerBowPose(){
   const action=boss&&boss.turnAction;
   if(!isBowTurnAction(action)){
     // Preparation glow cannot mask actual sword/parry/counter choreography.
-    if(action||player.parryAnim>0||player.counterAnim>0||player.attackAnim>0||player.swordCombo)return null;
+    if(action||player.parryAnim>0||player.counterAnim>0||player.attackAnim>0||
+       player.swordCombo||player.swordPreviewT>=0)return null;
     return preparedFocusIdleBowPose(pendingPrimaryChargeRelease(),boss);
   }
   const timeline=action.bowTimeline,recipe=timeline.recipe,t=action.t,releases=timeline.releases,
@@ -41816,7 +42336,9 @@ function resolveTurnActionHit(action){
   if(!isBowTurnAction(action)){
     if(command.id==='sharpshoot'||command.id.indexOf('fight_longbow')===0)SFX.arrow();
     else if(shieldImpact)SFX.shield();
-    else SFX.slash();
+    /* The two authored Squire sword cues already play at the blade contacts.
+       Do not stack a second identical sound when damage resolves that frame. */
+    else if(!action.swordTimeline)SFX.slash();
   }
   const bowRecipe=isBowTurnAction(action)?action.bowTimeline.recipe:null,
     impactScale=(bowRecipe?bowRecipe.impactScale:shieldImpact?1.22:1)*
@@ -42206,6 +42728,20 @@ function updateTurnAction(dt){
       (squire.visualX||squire.lastX):laneX(player.x,1);
     burst(shieldActorX,PLAYER_Y+2,9,['#6a5a40','#8a744f','#b39a6b'],95,155,3.2,.46);
   }
+  if(action.swordTimeline&&!action.swordDrawCue&&action.t>=BACK_SWORD_TIMING.drawEnd){
+    action.swordDrawCue=true;SFX.swipe();
+  }
+  if(action.swordTimeline&&!action.swordFirstCutCue&&action.t>=BACK_SWORD_TIMING.contact){
+    action.swordFirstCutCue=true;SFX.slash();
+    const swordActorX=squire.visualX||squire.lastX;
+    spawnSlash(swordActorX-12,PLAYER_Y-70,-.72,'#8edcff');
+  }
+  if(action.swordTimeline&&!action.swordCrossCutCue&&
+     action.t>=BACK_SWORD_TIMING.crossContact){
+    action.swordCrossCutCue=true;SFX.slash();
+    const swordActorX=squire.visualX||squire.lastX;
+    spawnSlash(swordActorX+12,PLAYER_Y-70,.72,'#b9ecff');
+  }
   if(action.bowTimeline)while(action.nextReleaseIndex<action.bowTimeline.releases.length&&
       action.t+1e-6>=action.bowTimeline.releases[action.nextReleaseIndex]){
     emitBowRelease(action,action.nextReleaseIndex);action.nextReleaseIndex++;
@@ -42348,13 +42884,14 @@ function performPlayerAction(command,options=null){
     if(primaryChargeReleaseReady(command))return releasePrimaryCharge();
     if(pendingPrimaryChargeRelease()){SFX.duck();return false;}
     if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
+    if(!freeFollowUp&&turnSkillUsedThisPhase(command,actorId)){SFX.duck();return false;}
+    if(!freeFollowUp)markTurnSkillUsedThisPhase(command,actorId);
     return armPrimaryChargeRelease(command,actorId,apCost,cost);
   }
   if((boss.ap||0)<apCost||(boss.resolve||0)<cost){SFX.duck();return false;}
-  if(classSkillUsedThisPhase(command)){SFX.duck();return false;}
+  if(!freeFollowUp&&turnSkillUsedThisPhase(command,actorId)){SFX.duck();return false;}
+  if(!freeFollowUp)markTurnSkillUsedThisPhase(command,actorId);
   if(command.source==='CLASS'){
-    boss.classSkillUseSerial||(boss.classSkillUseSerial=Object.create(null));
-    boss.classSkillUseSerial[command.baseId||command.id]=boss.playerPhaseSerial;
     command=prepareClassSkillCommand(command);
   }else command=claimClassArmorExposure(command);
   const readyCharge=pendingPrimaryChargeRelease();
@@ -42643,14 +43180,18 @@ function performPlayerAction(command,options=null){
       markPlan.markAtStart,boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX):null,
     shieldTimeline=(actorId==='knight'||command.squireShieldBash)?
       buildShieldBashTimeline(command,delivery):null,
+    swordTimeline=buildSquireSwordTimeline(command,actorId),
     hitInterval=bowTimeline?bowTimeline.interval:shieldTimeline&&shieldTimeline.contacts.length>1?
-      shieldTimeline.contacts[1]-shieldTimeline.contacts[0]:command.hitInterval||0,
+      shieldTimeline.contacts[1]-shieldTimeline.contacts[0]:
+      swordTimeline&&swordTimeline.contacts.length>1?
+        swordTimeline.contacts[1]-swordTimeline.contacts[0]:command.hitInterval||0,
     impactDelay=bowTimeline?bowTimeline.contacts[0]:shieldTimeline?shieldTimeline.contacts[0]:
-      Math.max(0,command.impactDelay||0),
+      swordTimeline?swordTimeline.contacts[0]:Math.max(0,command.impactDelay||0),
     /* An inherited Form duration may be shorter than a later five-hit Apex.
        Always preserve enough time for the authored final contact and recovery. */
     lastContact=bowTimeline?bowTimeline.contacts.at(-1):shieldTimeline?
-      shieldTimeline.contacts.at(-1):impactDelay+(hits-1)*hitInterval,
+      shieldTimeline.contacts.at(-1):swordTimeline?swordTimeline.contacts.at(-1):
+      impactDelay+(hits-1)*hitInterval,
     markPulseTimeline=buildMarkPulseTimeline(command,lastContact),
     postureWaveTimeline=buildPostureWaveTimeline(command,lastContact),
     detonationCascadeTimeline=buildDetonationCascadeTimeline(command,markPlan,lastContact),
@@ -42658,7 +43199,7 @@ function performPlayerAction(command,options=null){
     criticalAftershotTimeline=buildCriticalAftershotTimeline(command,lastContact),
     detonationEchoTime=markPlan.echoDamageTotal>0?lastContact+.24:null,
     duration=Math.max(command.duration||0,CFG.TURN_ACTION_TIME,bowTimeline?bowTimeline.recoveryEnd:
-      shieldTimeline?shieldTimeline.recoveryEnd:lastContact+.34,
+      shieldTimeline?shieldTimeline.recoveryEnd:swordTimeline?swordTimeline.recoveryEnd:lastContact+.34,
       markPulseTimeline?markPulseTimeline.times.at(-1)+.32:0,
       postureWaveTimeline?postureWaveTimeline.times.at(-1)+.32:0,
       detonationCascadeTimeline?detonationCascadeTimeline.times.at(-1)+.36:0,
@@ -42686,7 +43227,7 @@ function performPlayerAction(command,options=null){
   boss.playerPhaseAttackCount=Math.max(0,boss.playerPhaseAttackCount||0)+1;
   boss.playerActionTimer=duration;
   boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,impactDelay,
-    bowTimeline,shieldTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
+    bowTimeline,shieldTimeline,swordTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
     attackSerial:boss.attackSerial,markGenerated:0,freeFollowUp,
     preparedDetonationFirst,preparedDetonationFollow,
     preparedDetonationSnapshot:options?.preparedDetonation||null,
@@ -42734,7 +43275,7 @@ function performPlayerAction(command,options=null){
     ' · CHARGE +'+chargeRetained,'#7fc9ff',14);
   if(breakAttack)floater(VW/2,346,'BREAK BONUS ×'+damagePart(
     activeBreakDamageMultiplier(true)),'#ffe37a',16);
-  if(!bowTimeline&&!shieldTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
+  if(!bowTimeline&&!shieldTimeline&&!swordTimeline&&impactDelay<=0)resolveTurnActionHit(boss.turnAction);
   return true;
 }
 function handlePlayerTurnTap(pt){
@@ -44087,7 +44628,8 @@ function startBoss(definitionId=null){
     preparedCriticalAftershock:null,preparedCriticalLastAttack:null,preparedCriticalPhase:null,
     preparedAfflictionBarbs:null,preparedAfflictionLastAttack:null,preparedAfflictionTickPhase:null,
     preparedFocusCarry:null,
-    playerPhaseSerial:0,attackSerial:0,classSkillUseSerial:Object.create(null),classArmorExposure:null,
+    playerPhaseSerial:0,attackSerial:0,skillUseSerial:Object.create(null),
+    classSkillUseSerial:Object.create(null),classArmorExposure:null,
     playerMarkTrailPerContact:0,lastMarkEvent:null,
     volleyTimer:0, packLeapt:0, dealt:0, guaranteeQueue,
   });
@@ -47382,7 +47924,7 @@ function startSkillLabCombat(){
   boss.pendingChargeRelease=null;boss.pendingPostureChargeConductor=null;
   boss.pendingCriticalChargeDynamo=null;boss.criticalChargePrecisionEcho=null;
   chainStacks=0;boss.ap=boss.apMax;boss.resolve=boss.resolveMax;
-  player.alive=true;player.invuln=0;syncPlayerVitals(true);
+  player.alive=true;player.invuln=0;resetPlayerMountedDeath();resetPlayerSwordPreview();syncPlayerVitals(true);
   setMode('boss');applySkillLabPreset('clean',false);SFX.relic();return true;
 }
 function leaveSkillLabCombat(result='BUILD'){
@@ -47391,7 +47933,7 @@ function leaveSkillLabCombat(result='BUILD'){
   skillLabSession.lastCombatResult=result;
   boss=null;hazards=[];projectiles=[];particles.length=0;floaters.length=0;slashes.length=0;
   hudShieldShatters.length=0;
-  player.alive=true;player.invuln=0;syncPlayerVitals(true);
+  player.alive=true;player.invuln=0;resetPlayerMountedDeath();resetPlayerSwordPreview();syncPlayerVitals(true);
   setMode('skilllab');SFX.duck();return true;
 }
 function applySkillLabPreset(id,audible=true){
@@ -47407,7 +47949,7 @@ function applySkillLabPreset(id,audible=true){
   if(!values)return false;
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
   resetSquireCombat();
-  player.alive=true;syncPlayerVitals(true);
+  player.alive=true;resetPlayerMountedDeath();resetPlayerSwordPreview();syncPlayerVitals(true);
   boss.hp=boss.maxhp;boss.mark=values.mark;boss.bleed=0;boss.bleedLater=0;
   boss.criticalBleedTrace=null;
   boss.afflictionDetonationFuse=null;
@@ -47430,7 +47972,7 @@ function applySkillLabPreset(id,audible=true){
   boss.playerPhaseAttackCount=0;boss.criticalFocusLastAttack={};
   boss.afflictionChargeState=null;boss.defenseTookDamage=false;boss.lastDefenseFlawless=false;
   boss.preparedDetonationFollow=null;boss.preparedDetonationCarry={};boss.playerPhaseSerial=0;boss.attackSerial=0;
-  boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
+  boss.skillUseSerial=Object.create(null);boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
   boss.preparedChainEscort=null;
   boss.preparedPostureTransfer=null;boss.preparedPostureAftershock=null;
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;boss.preparedPostureLastAttack=null;
@@ -47445,7 +47987,7 @@ function resetSkillLabTurn(){
   /* Emergency lab reset: aborts the current simulation without manufacturing
      a fake defense result, Charge, Bleed tick, or Break reward. */
   skillTooltipIndex=-1;hazards=[];projectiles=[];player.invuln=0;
-  player.alive=true;syncPlayerVitals(true);
+  player.alive=true;resetPlayerMountedDeath();resetPlayerSwordPreview();syncPlayerVitals(true);
   resetSquireCombat();
   boss.phase='player';boss.playerMenu='root';boss.playerActionTimer=0;
   boss.turnAction=null;boss.attack=null;boss.hazardLanes=[];boss.pendingBreak=null;
@@ -47458,7 +48000,7 @@ function resetSkillLabTurn(){
   boss.playerPhaseAttackCount=0;boss.criticalFocusLastAttack={};
   boss.afflictionChargeState=null;boss.defenseTookDamage=false;boss.lastDefenseFlawless=false;
   boss.preparedDetonationFollow=null;boss.preparedDetonationCarry={};boss.playerPhaseSerial=0;boss.attackSerial=0;
-  boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
+  boss.skillUseSerial=Object.create(null);boss.classSkillUseSerial=Object.create(null);boss.classArmorExposure=null;
   boss.preparedChainEscort=null;
   boss.preparedPostureTransfer=null;boss.preparedPostureAftershock=null;
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;boss.preparedPostureLastAttack=null;
@@ -47681,6 +48223,8 @@ function resetRun(){
     volatileShieldCharges:0,volatileShieldPosture:0,
     damageTakenModifierProduct:1,heartFlashStartedAt:-Infinity,
     heartFlashFromUnits:0,heartFlashToUnits:0});
+  resetPlayerMountedDeath();
+  resetPlayerSwordPreview();
   syncPlayerVitals(true);
   knightRush=0;knightRushQueued=false;knightRushSequence=null;debugParryInputFrozen=false;debugParryInputMark=null;
   skillCritPrecision.clear();skillDetonationPrecisionEcho.clear();
@@ -48599,7 +49143,7 @@ function drawSkillTooltip(){
   g.font='10px monospace';g.fillStyle=available?'#7fc9ff':'#ff7a82';
     const unavailable=command.squireAction==='COOLDOWN'?' · RECOVERING':
       command.squireAction==='ARRIVING'?' · READY NEXT TURN':
-      classSkillUsedThisPhase(command)?' · USED THIS PHASE':
+      turnSkillUsedThisPhase(command)?' · USED THIS PHASE':
       boss.ap<apCost?' · NO AP':' · NOT ENOUGH RESOLVE';
   g.fillText('AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax+
     (available?' · READY':unavailable),x+28,y+124);
@@ -51304,6 +51848,9 @@ function skillLabCombatTap(pt){
   if(pointInRect(pt,SKILL_LAB_COMBAT_HP)){
     boss.hp=boss.maxhp;skillLabSession.lastLog=null;SFX.relic();return true;
   }
+  if(pointInRect(pt,SKILL_LAB_COMBAT_SWORD)){
+    if(!beginPlayerSwordPreview())SFX.duck();return true;
+  }
   if(pointInRect(pt,SKILL_LAB_COMBAT_HEAL)){
     if(!isPlayerTurn()||boss.turnAction){SFX.duck();return true;}
     const before=Math.max(0,Math.round(player.currentHealthUnits)||0),
@@ -51380,6 +51927,8 @@ function drawSkillLabCombatOverlay(){
   drawSkillLabButton(SKILL_LAB_COMBAT_HUD,'HIDE HUD','#8b8fa0');
   const canEditVitals=isPlayerTurn()&&!boss.turnAction,
     healthFull=player.currentHealthUnits>=player.maxHealthUnits;
+  drawSkillLabButton(SKILL_LAB_COMBAT_SWORD,'SWORD',canEditVitals?'#8edcff':'#516274',
+    canEditVitals,player.swordPreviewT>=0);
   drawSkillLabButton(SKILL_LAB_COMBAT_HEAL,'+ HEALTH',healthFull?'#6b5160':'#ff7a82',true,
     canEditVitals&&!healthFull);
   drawSkillLabButton(SKILL_LAB_COMBAT_SHIELD,'+ SHIELD',canEditVitals?'#9ecbff':'#516274',true,
@@ -51842,7 +52391,9 @@ function update(dt){
   updateScoreShown(dt);
   if(mode==='menu'||mode==='score'||mode==='relicdex'||mode==='debugcfg'||mode==='skilllab'||mode==='healthlab'||mode==='changelog'){ dist+=dt*6; roadScroll+=dt*6; return; }   // world drifts behind menus
   if(mode==='dying'){
-    if(modeT>1.1){
+    updatePlayerMountedDeath(dt);
+    const deathDuration=player.mountedDeath?SQUIRE_DEATH_DURATION:1.1;
+    if(modeT>deathDuration){
       if(skillLabSession&&skillLabSession.inCombat)leaveSkillLabCombat('DEFEAT');
       else{commitFinalScore();setMode('score');}
     }
@@ -52098,7 +52649,7 @@ function render(){
   drawParticles(false,true);
   if(mode!=='menu'&&mode!=='score'&&mode!=='charsel'&&mode!=='relicdex'&&mode!=='debugcfg'&&mode!=='skilllab'&&mode!=='healthlab'&&mode!=='bosslabselect'&&mode!=='bosslabmoves'&&mode!=='changelog'){
     drawSquire();
-    if(player.alive) drawPlayer();
+    if(player.alive||player.mountedDeath) drawPlayer();
     drawPackAllies();
     drawProjectiles();
     drawPackLeap();

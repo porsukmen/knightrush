@@ -1927,7 +1927,12 @@ try{
   // Explicit combined release checks reuse one boot; each focused suite has its
   // own bounded sample set. The standalone CI quick timeout remains unchanged.
   if(postureBalanceOnly||f2CommonBalanceOnly||combatRoutesOnly||quick&&!hasFocusedAudits)vmOptions.timeout=180000;
-  vm.runInNewContext(source,sandbox,vmOptions);
+  /* The shipped game deliberately skips authoring audits at boot. Validation
+     opts them back in inside the VM only; boot/focused animation smoke tests
+     keep the production startup path unchanged. */
+  const validationSource=bootOnly?source:
+    source.replace('RUN_BOOT_AUDITS=false','RUN_BOOT_AUDITS=true');
+  vm.runInNewContext(validationSource,sandbox,vmOptions);
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
   if(criticalPostureOnly){
     const audit=sandbox.__criticalPostureAudit;
