@@ -1841,6 +1841,16 @@ function rigJoint(x,y,size,col){
 function rigTriangle(x1,y1,x2,y2,x3,y3,col){
   g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);g.lineTo(x3*U,y3*U);g.closePath();g.fill();
 }
+function rigPointedBlade(ax,ay,bx,by,width,col){
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1,
+    ux=dx/len,uy=dy/len,nx=-uy,ny=ux,
+    tipLength=Math.min(len*.45,Math.max(.85,width*1.15)),
+    tipBaseX=bx-ux*tipLength,tipBaseY=by-uy*tipLength;
+  rigSegment(ax,ay,tipBaseX,tipBaseY,width,col);
+  rigTriangle(tipBaseX+nx*width*.5,tipBaseY+ny*width*.5,
+    tipBaseX-nx*width*.5,tipBaseY-ny*width*.5,bx,by,col);
+  return {ux,uy,nx,ny,len,tipLength,tipBaseX,tipBaseY};
+}
 function rigQuad(x1,y1,x2,y2,x3,y3,x4,y4,col){
   g.fillStyle=col;g.beginPath();g.moveTo(x1*U,y1*U);g.lineTo(x2*U,y2*U);
   g.lineTo(x3*U,y3*U);g.lineTo(x4*U,y4*U);g.closePath();g.fill();
@@ -2881,20 +2891,50 @@ function drawSerJonathanRider(x,y,scale,o){
         lerp(bladeRootY,bladeY,reveal)):bladeY,
       bladeBaseX=squireVariant?bladeRootX:lerp(bladeX,bladeRootX,reveal),
       bladeBaseY=squireVariant?bladeRootY:lerp(bladeY,bladeRootY,reveal),
-      visibleLength=Math.hypot(visibleBladeX-bladeBaseX,visibleBladeY-bladeBaseY);
-    if(swordAction&&swordAction.trail>.02&&reveal>.25){
-      const bladeCoreWidth=(squireVariant?1.45*squireWeaponWidthScale:1.45)*
-          swordForeshorten,
-        trailWidth=bladeCoreWidth*1.52,
-        trailTipLength=Math.min(len*.40,Math.max(.95,trailWidth*1.08)),
-        trailBaseX=visibleBladeX-ux*trailTipLength,
-        trailBaseY=visibleBladeY-uy*trailTipLength;
-      g.save();g.globalCompositeOperation='screen';g.globalAlpha=swordAction.trail*.13;
-      rigSegment(guardX,guardY,trailBaseX,trailBaseY,trailWidth,'#8edcff');
-      rigTriangle(trailBaseX+nx*trailWidth*.5,trailBaseY+ny*trailWidth*.5,
-        trailBaseX-nx*trailWidth*.5,trailBaseY-ny*trailWidth*.5,
-        visibleBladeX,visibleBladeY,'#8edcff');
-      g.restore();
+      visibleLength=Math.hypot(visibleBladeX-bladeBaseX,visibleBladeY-bladeBaseY),
+      bladeWidth=(squireVariant?1.45*squireWeaponWidthScale:1.45)*swordForeshorten,
+      edgeWidth=(squireVariant?1.0*squireWeaponWidthScale:1.0)*swordForeshorten;
+    if(swordAction){
+      const now=Math.max(0,Number(swordAction.t)||0),historyLife=.072,
+        activeTrail=swordAction.trail>.02&&reveal>.25&&visibleLength>.04,
+        store=swordAction.afterimageStore||(swordAction.afterimageStore={
+          samples:[],lastSample:-Infinity,lastObserved:-Infinity});
+      if(now<store.lastObserved){store.samples.length=0;store.lastSample=-Infinity;}
+      store.lastObserved=now;
+      if(activeTrail){
+        store.samples=store.samples.filter(sample=>now-sample.at<historyLife);
+        if(now-store.lastSample>=.012){
+          store.samples.push({at:now,baseX:bladeBaseX,baseY:bladeBaseY,
+            tipX:visibleBladeX,tipY:visibleBladeY});
+          store.lastSample=now;
+        }
+        /* One continuous swept ribbon uses a pose roughly 30-70 ms behind the
+           live sword. Both layers converge toward that older pose, producing a
+           tiny comet tail instead of separate ghost blades or a surrounding
+           glow blob. */
+        const tail=store.samples.find(sample=>now-sample.at>=.028);
+        if(tail){
+          const strength=clamp(swordAction.trail,0,1),
+            /* Split across motion depth, never across blade length. Both the
+               near and far bands span guard-to-point; only their distance
+               behind the live sword and their opacity differ. */
+            split=.54,
+            middleBase=[lerp(tail.baseX,bladeBaseX,split),
+              lerp(tail.baseY,bladeBaseY,split)],
+            middleTip=[lerp(tail.tipX,visibleBladeX,split),
+              lerp(tail.tipY,visibleBladeY,split)],
+            outerCol=squireVariant?swordBlade:'#a9e9ff',
+            innerCol=squireVariant?swordGuard:'#3978ff';
+          g.save();g.globalCompositeOperation='source-over';
+          g.globalAlpha=.13*strength;
+          rigPolygon([middleBase,middleTip,[tail.tipX,tail.tipY],
+            [tail.baseX,tail.baseY]],outerCol);
+          g.globalAlpha=.245*strength;
+          rigPolygon([[bladeBaseX,bladeBaseY],[visibleBladeX,visibleBladeY],
+            middleTip,middleBase],innerCol);
+          g.restore();
+        }
+      }else{store.samples.length=0;store.lastSample=-Infinity;}
     }
     const gripWidth=squireVariant?1.34*squireWeaponWidthScale:1.34,
       guardHalf=squireVariant?1.62*squireWeaponWidthScale:1.62,
@@ -2908,19 +2948,14 @@ function drawSerJonathanRider(x,y,scale,o){
     rigJoint(guardX+nx*(guardHalf-.07),guardY+ny*(guardHalf-.07),guardJoint,swordGuard);
     rigJoint(rightHandX,rightHandY,squireVariant ? .38 : .44,'#7fc9ff');
     if(reveal>.02&&visibleLength>.04){
-      const bladeWidth=(squireVariant?1.45*squireWeaponWidthScale:1.45)*swordForeshorten,
-        tipLength=Math.min(visibleLength*.45,Math.max(.85,bladeWidth*1.15)),
-        tipBaseX=visibleBladeX-ux*tipLength,
-        tipBaseY=visibleBladeY-uy*tipLength;
+      const bladeShape=rigPointedBlade(bladeBaseX,bladeBaseY,
+          visibleBladeX,visibleBladeY,bladeWidth,swordBlade),
+        tipLength=bladeShape.tipLength,tipBaseX=bladeShape.tipBaseX,
+        tipBaseY=bladeShape.tipBaseY;
       /* Keep the authored reach unchanged: the final portion of the blade is
          replaced by a width-proportional point rather than extending a new tip
          beyond the animation endpoint. */
-      rigSegment(bladeBaseX,bladeBaseY,tipBaseX,tipBaseY,bladeWidth,swordBlade);
-      rigTriangle(tipBaseX+nx*bladeWidth*.5,tipBaseY+ny*bladeWidth*.5,
-        tipBaseX-nx*bladeWidth*.5,tipBaseY-ny*bladeWidth*.5,
-        visibleBladeX,visibleBladeY,swordBlade);
-      const edgeWidth=(squireVariant?1.0*squireWeaponWidthScale:1.0)*swordForeshorten,
-        edgeLength=Math.min(1.25,Math.max(0,visibleLength-tipLength*.72)),
+      const edgeLength=Math.min(1.25,Math.max(0,visibleLength-tipLength*.72)),
         edgeEndX=tipBaseX+ux*tipLength*.28,
         edgeEndY=tipBaseY+uy*tipLength*.28,
         edgeStartX=edgeEndX-ux*edgeLength,
@@ -43131,6 +43166,21 @@ function resolveTurnActionDetonationEcho(action){
   hurtBoss(damage,false,'turn_attack',false);
   return true;
 }
+function emitSquireSwordCutParticles(secondCut=false){
+  if(!squire.present)return;
+  const sword=squire.appearance?.sword||{},blade=sword.blade||'#c4ced5',
+    edge=sword.edge||shade(blade,35),guard=sword.guard||'#7fc9ff',
+    visualScale=clamp(1+squireVisualBulk()*.45+
+      (squireWeaponThicknessGrowth()-1)*.60,1,1.82),
+    count=Math.round(5*visualScale),
+    x=(squire.visualX||squire.lastX)+(secondCut?15:-15),
+    y=PLAYER_Y-70+(secondCut?3:-3);
+  /* Jonathan emits seven fragments. Recruit starts slightly quieter at five;
+     the authored body/weapon growth raises both density and spread until the
+     Bastion's oversized blade throws a visibly larger colored shower. */
+  burst(x,y,count,[blade,edge,guard,'#ffffff'],
+    88+visualScale*12,42+visualScale*5,2.0+visualScale*.34,.30+visualScale*.025);
+}
 function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
   if(action.supportOnly){action.t+=dt;return;}
@@ -43152,12 +43202,14 @@ function updateTurnAction(dt){
     action.swordFirstCutCue=true;SFX.slash();
     const swordActorX=squire.visualX||squire.lastX;
     spawnSlash(swordActorX-12,PLAYER_Y-70,-.72,'#8edcff');
+    emitSquireSwordCutParticles(false);
   }
   if(action.swordTimeline&&!action.swordCrossCutCue&&
      action.t>=BACK_SWORD_TIMING.crossContact){
     action.swordCrossCutCue=true;SFX.slash();
     const swordActorX=squire.visualX||squire.lastX;
     spawnSlash(swordActorX+12,PLAYER_Y-70,.72,'#b9ecff');
+    emitSquireSwordCutParticles(true);
   }
   if(action.bowTimeline)while(action.nextReleaseIndex<action.bowTimeline.releases.length&&
       action.t+1e-6>=action.bowTimeline.releases[action.nextReleaseIndex]){
