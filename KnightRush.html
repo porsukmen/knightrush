@@ -501,6 +501,7 @@ window.addEventListener('error',event=>{
    cheaper on older phones. `let`, so draw helpers can retarget g at offscreen
    cache layers (identical output, drawn once instead of every frame). */
 let g=cvs.getContext('2d',{alpha:false});
+let worldFxShakeX=0,worldFxShakeY=0;
 /* phone browsers run canvas shadow-glow effects dreadfully slowly (dropped frames,
    flickering animation). On touch devices glow becomes a no-op — art stays, lag goes. */
 const LOW_FX=(typeof matchMedia==='function')&&matchMedia('(pointer:coarse)').matches;
@@ -1192,6 +1193,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   }
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
   tStart={x:t.clientX,y:t.clientY,done:levelHold};
+  if(beginRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   armTapIntent(tStart,t.clientX,t.clientY);
   armSkillTooltipHold(tStart,t.clientX,t.clientY);
@@ -1199,6 +1201,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
 },{passive:false});
 addEventListener('touchmove',e=>{ e.preventDefault();
   const t=e.changedTouches[0];
+  if(updateRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(updateSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
 },{passive:false});
@@ -1234,12 +1237,14 @@ addEventListener('mousedown',e=>{
   }
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
   tStart={x:e.clientX,y:e.clientY,done:levelHold};
+  if(beginRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   armTapIntent(tStart,e.clientX,e.clientY);
   armSkillTooltipHold(tStart,e.clientX,e.clientY);
   armSkillLabTooltipHold(tStart,e.clientX,e.clientY);
 });
 addEventListener('mousemove',e=>{ if(mDown){
+  if(updateRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(updateSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);
 } });
@@ -1526,6 +1531,37 @@ function emitMountedRecallFx(x,y,appearance=null,fallSide=1,riderBulk=0){
       grav:rnd(-16,30),life,maxLife:life,
       size:rnd(2.5,6.2)*(fallen?1+bulk*.18:1),col:pick(cols)});
   }
+}
+let squireRecallCanvas=null;
+function emitSquireRecallFromPose(){
+  /* One small readback per death, never per animation frame. Sample the actual
+     production renderer so horse, fallen rider and equipment share its pose. */
+  const canvas=squireRecallCanvas||(squireRecallCanvas=document.createElement('canvas'));
+  canvas.width=512;canvas.height=512;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true}),main=g,
+    originX=squire.lastX-256,originY=PLAYER_Y-256;
+  ctx.clearRect(0,0,512,512);ctx.imageSmoothingEnabled=false;
+  ctx.setTransform(1,0,0,1,-originX,-originY);
+  try{g=ctx;drawSquire(true);}finally{g=main;}
+  const data=ctx.getImageData(0,0,512,512).data,samples=[];
+  let seen=0;
+  for(let y=2;y<512;y+=4)for(let x=2;x<512;x+=4){
+    const i=(y*512+x)*4;if(data[i+3]<180)continue;
+    const sample={x:x+originX,y:y+originY,
+      col:'rgb('+data[i]+','+data[i+1]+','+data[i+2]+')'};
+    seen++;
+    if(samples.length<220)samples.push(sample);
+    else{const slot=Math.floor(Math.random()*seen);if(slot<220)samples[slot]=sample;}
+  }
+  for(const sample of samples){
+    const life=rnd(.58,1.12);
+    particles.push({...sample,kind:'squireRecallMote',behindPlayer:false,
+      vx:rnd(-58,58),vy:rnd(-132,-46),grav:rnd(-16,30),
+      life,maxLife:life,size:rnd(3,5.5)});
+  }
+  particles.push({kind:'squireRecallRing',behindPlayer:true,x:squire.lastX,
+    y:PLAYER_Y+9,vx:0,vy:0,grav:0,life:.82,maxLife:.82,size:20,
+    col:squire.appearance?.plume||'#d7b878'});
 }
 /* Successful-parry contact burst. The attack resolver supplies the exact world
    contact; presentation expands from there rather than from the shield centre. */
@@ -1927,6 +1963,19 @@ function rigPolygon(points,col){
    crest. The broad silver rim and blue kite silhouette stay readable at HUD
    scale. Its handle exists only on the inner face; while mounted, that face is
    physically between the shield and Jonathan's back and therefore invisible. */
+function sampleShieldTransfer(t,backX,backY,outsideX,outsideY,targetX,targetY,continuousGuard=false){
+  const T=SHIELD_BASH_TIMING,
+    transfer=clamp((t-.12)/(T.flipEnd-.12),0,1),
+    clear=smoothStep(clamp(transfer/.60,0,1)),
+    turn=smoothStep(clamp((transfer-.55)/.45,0,1)),
+    // Parry advances toward guard while the plate turns, rather than holding
+    // the fist still until the flip finishes. Bash keeps its authored impact.
+    forwardStart=continuousGuard?.12+(T.flipEnd-.12)*.42:T.flipEnd,
+    forwardPhase=clamp((t-forwardStart)/(T.impact-forwardStart),0,1),
+    forward=continuousGuard?smoothStep(forwardPhase):easeInOut(forwardPhase);
+  return {x:lerp(lerp(backX,outsideX,clear),targetX,forward),
+    y:lerp(lerp(backY,outsideY,clear),targetY,forward),turn};
+}
 function drawSerJonathanShield(cx,cy,turn=0,tilt=0,scale=1,depthScale=1,palette=null){
   const faceCos=Math.cos(clamp(turn,0,1)*Math.PI),faceWidth=Math.max(.10,Math.abs(faceCos)),
     front=faceCos>=0,squireStyle=palette?.style==='squire',
@@ -2463,7 +2512,7 @@ function drawSerJonathanRider(x,y,scale,o){
         /* The hand arrives at the hidden grip before the plate leaves Jonathan's
            back. Keeping reach and unmount as overlapping, offset curves removes
            the old impression that the shield moved by itself. */
-        unmount=smoothStep(clamp((prep-.16)/.84,0,1)),
+        unmount=clamp((prep-.12)/.88,0,1),
         backX=9,backY=mountedShieldY,
         hiddenX=6.05,hiddenY=shoulderY+4.15,
         pullX=4.35,pullY=shoulderY+.55,
@@ -2478,16 +2527,16 @@ function drawSerJonathanRider(x,y,scale,o){
          /* Contact is forward-left; the readable finish opens farther left and
             slightly lowers, matching the BOTW silhouette without becoming a wave. */
          followX=-3.00,followY=shoulderY-3.15,
-        recoveryX=3.95,recoveryY=shoulderY-2.45;
+        recoveryX=leftShoulderX-5.35,recoveryY=shoulderY-2.45;
       /* Preparation and release share the same continuous path. On an early
          release prep continues while sweep grows, so neither hand nor shield can
          jump to the completed guard pose. */
-      const prepX=cubic(backX,hiddenX,pullX,guardX,unmount),
-        prepY=cubic(backY,hiddenY,pullY,guardY,unmount),
+      const transferPoint=amount=>sampleShieldTransfer(amount*SHIELD_BASH_TIMING.impact,
+          backX,backY,recoveryX,shoulderY+.25,guardX,guardY,true),
+        prepTransfer=transferPoint(prep),prepX=prepTransfer.x,prepY=prepTransfer.y,
         releaseFrom=clamp(shield.releaseFrom===undefined?prep:shield.releaseFrom,0,1),
-        releaseUnmount=smoothStep(clamp((releaseFrom-.16)/.84,0,1)),
-        releaseX=cubic(backX,hiddenX,pullX,guardX,releaseUnmount),
-        releaseY=cubic(backY,hiddenY,pullY,guardY,releaseUnmount),
+        releaseTransfer=transferPoint(releaseFrom),
+        releaseX=releaseTransfer.x,releaseY=releaseTransfer.y,
         sweepControlX=lerp(releaseX,guardX-.25,.72),
         sweepControlY=lerp(releaseY,guardY-1.45,.72),
         sweepX=cubic(releaseX,sweepControlX,contactX,followX,sweep),
@@ -2504,21 +2553,23 @@ function drawSerJonathanRider(x,y,scale,o){
       }
       /* Mounted outer face -> enemy-facing inner guard -> decorated outer face
          toward camera during the left follow-through. */
-      shieldTurn=unmount*(1-sweep)*(1-remount);
-      shieldCenterX-=Math.sin(Math.PI*shieldTurn)*1.22;
+      shieldTurn=prepTransfer.turn*(1-sweep)*(1-remount);
       shieldTilt=lerp(-.04,.035,prep);
       shieldTilt=lerp(shieldTilt,-.18,sweep);
       shieldTilt=lerp(shieldTilt,.04,retreat);
       shieldTilt=lerp(shieldTilt,-.04,remount);
       shieldScale=lerp(mountedShieldScale,activeShieldScale,Math.max(unmount,sweep)*(1-settle));
 
-      const reach=smoothStep(clamp(prep/.38,0,1)),lock=unmount,
-        reachedX=lerp(restingLeftHandX,hiddenX,reach),
-        reachedY=lerp(restingLeftHandY,hiddenY,reach),
-        heldX=lerp(reachedX,shieldCenterX,lock),heldY=lerp(reachedY,shieldCenterY,lock),
-        gripLock=Math.max(lock,sweep,retreat,remount);
-      leftHandX=lerp(reachedX,shieldCenterX,gripLock);
-      leftHandY=lerp(reachedY,shieldCenterY,gripLock);
+      /* Reach completes BEFORE unmount starts at prep=.12. Once detached,
+         the palm is rigidly attached to the inner grip, not interpolated from
+         a second stationary hand target while the shield moves independently. */
+      const gripLock=Math.max(smoothStep(clamp(prep/(.12/SHIELD_BASH_TIMING.impact),0,1)),
+          sweep,retreat,remount),
+        gripOffset=-.05*shieldScale*shieldDepthScale,
+        gripX=shieldCenterX-Math.sin(shieldTilt)*gripOffset,
+        gripY=shieldCenterY+Math.cos(shieldTilt)*gripOffset;
+      leftHandX=lerp(restingLeftHandX,gripX,gripLock);
+      leftHandY=lerp(restingLeftHandY,gripY,gripLock);
       /* Post-remount depth cue only: once the shield is already fixed on the
          back, the freed hand clears it to the left, then returns right to the
          reins. Nothing in the shield or main parry choreography changes. */
@@ -2540,32 +2591,48 @@ function drawSerJonathanRider(x,y,scale,o){
       leftElbowY=lerp(prepElbowY,straightElbowY,sweep)-sweepArc*1.15;
       leftElbowX=lerp(leftElbowX,pullElbowX,remount);
       leftElbowY=lerp(leftElbowY,pullElbowY,remount);
+      // Match bash's lower elbow pole during transfer, leaving the parry
+      // contact and extended follow-through untouched.
+      const dx=leftHandX-leftShoulderX,dy=leftHandY-leftShoulderY,
+        length=Math.hypot(dx,dy)||1,
+        poleX=dy/length,poleY=-dx/length,
+        side=(leftElbowX-leftShoulderX)*poleX+(leftElbowY-leftShoulderY)*poleY,
+        transferBlend=smoothStep(clamp(unmount/.48,0,1))*(1-sweep)*(1-remount);
+      leftElbowX+=poleX*(Math.max(1.35,Math.abs(side))-side)*transferBlend;
+      leftElbowY+=poleY*(Math.max(1.35,Math.abs(side))-side)*transferBlend;
+      if(remount>0){
+        const d=Math.min(length,8.79),bend=Math.sqrt(Math.max(0,4.4*4.4-d*d*.25)),
+          follow=smoothStep(clamp(remount/.55,0,1));
+        leftElbowX=lerp(leftElbowX,(leftShoulderX+leftHandX)*.5-dy/length*bend,follow);
+        leftElbowY=lerp(leftElbowY,(leftShoulderY+leftHandY)*.5+dx/length*bend,follow);
+      }
       leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
       leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
     }else{
     const forward=shield.forward,reach=shield.reach,detach=shield.detach,
       flip=shield.flip,drive=shield.drive,retreat=shield.retreat,
       remount=shield.remount,settle=shield.settle,
-      backX=9,backY=mountedShieldY,pullX=4.25,pullY=shoulderY+1.05,
-      readyX=4.65,readyY=shoulderY-1.45,strikeX=6.15,strikeY=shoulderY-5.75;
-    if(remount>0){
-      shieldCenterX=lerp(readyX,backX,remount);shieldCenterY=lerp(readyY,backY,remount);
-    }else if(retreat>0){
-      shieldCenterX=lerp(strikeX,readyX,retreat);shieldCenterY=lerp(strikeY,readyY,retreat);
-    }else{
-      /* A single cubic path has no zero-velocity pause at the old detach and
-         flip boundaries. Pull and ready are directional controls rather than
-         separate poses the animation must stop on. */
-      shieldCenterX=cubic(backX,pullX,readyX,strikeX,forward);
-      shieldCenterY=cubic(backY,pullY,readyY,strikeY,forward);
+      backX=9,backY=mountedShieldY,
+      readyX=leftShoulderX-5.35,readyY=shoulderY+.25,
+      strikeX=6.15,strikeY=shoulderY-5.75,
+      /* A reversible transfer: clear the shoulder BEFORE flipping. The old
+         cubic drove the plate back into the helmet during its edge-on phase. */
+      transfer=remount>0?1-remount:clamp((shield.t-.12)/
+        (SHIELD_BASH_TIMING.flipEnd-.12),0,1),
+      clear=smoothStep(clamp(transfer/.60,0,1)),
+      faceTurn=smoothStep(clamp((transfer-.55)/.45,0,1)),
+      thrust=remount>0?0:retreat>0?1-retreat:
+        easeInOut(clamp((shield.t-SHIELD_BASH_TIMING.flipEnd)/
+          (SHIELD_BASH_TIMING.impact-SHIELD_BASH_TIMING.flipEnd),0,1));
+    shieldCenterX=lerp(lerp(backX,readyX,clear),strikeX,thrust);
+    shieldCenterY=lerp(lerp(backY,readyY,clear),strikeY,thrust);
+    shieldTurn=faceTurn;
+    if(remount<=0&&retreat<=0){
+      const transferPose=sampleShieldTransfer(shield.t,backX,backY,
+        readyX,readyY,strikeX,strikeY);
+      shieldCenterX=transferPose.x;shieldCenterY=transferPose.y;
+      shieldTurn=transferPose.turn;
     }
-    shieldTurn=flip*(1-remount);
-    /* Unmount and remount are opposite physical turns: Jonathan opens the
-       plate toward his LEFT, then rolls it back toward his RIGHT before it
-       settles on his back.  Reusing the left orbit for both phases made the
-       return look like the shield passed through his arm. */
-    if(remount>0)shieldCenterX+=Math.sin(Math.PI*remount)*1.38;
-    else shieldCenterX-=Math.sin(Math.PI*shieldTurn)*1.38;
     shieldTilt=remount>0?lerp(.08,-.04,remount):retreat>0?lerp(-.10,.08,retreat):
       cubic(-.04,.025,.075,-.10,forward);
     shieldScale=remount>0?lerp(activeShieldScale,mountedShieldScale,remount):
@@ -2594,12 +2661,45 @@ function drawSerJonathanRider(x,y,scale,o){
       leftElbowY=cubic(restingLeftElbowY,pullElbowY,readyElbowY,
         strikeElbowY,forward);
     }
+    /* On the outside transfer the elbow folds BELOW the shoulder-to-grip
+       line, not up into the rim. Preserve the hand and shield path; mirror
+       only the elbow pole, blending out for the existing impact pose. */
+    const armDX=leftHandX-leftShoulderX,armDY=leftHandY-leftShoulderY,
+      armLength=Math.hypot(armDX,armDY)||1,
+      downX=armDY/armLength,downY=-armDX/armLength,
+      elbowSide=(leftElbowX-leftShoulderX)*downX+(leftElbowY-leftShoulderY)*downY,
+      lowerSide=Math.max(1.35,Math.abs(elbowSide)),
+      poleBlend=clear*(1-thrust)*(1-settle);
+    leftElbowX+=downX*(lowerSide-elbowSide)*poleBlend;
+    leftElbowY+=downY*(lowerSide-elbowSide)*poleBlend;
+    if(remount>0){
+      // The upper arm follows the returning hand instead of parking the elbow
+      // outside the shoulder and stretching the forearm across the back.
+      // Solve two fixed-length segments; keep the elbow below the grip line.
+      const reachLength=Math.min(armLength,8.79),
+        bend=Math.sqrt(Math.max(0,4.4*4.4-reachLength*reachLength*.25)),
+        normalSign=1,
+        returnElbowX=(leftShoulderX+leftHandX)*.5-armDY/armLength*bend*normalSign,
+        returnElbowY=(leftShoulderY+leftHandY)*.5+armDX/armLength*bend*normalSign,
+        follow=smoothStep(clamp(remount/.55,0,1));
+      leftElbowX=lerp(leftElbowX,returnElbowX,follow);
+      leftElbowY=lerp(leftElbowY,returnElbowY,follow);
+    }
     leftElbowX=lerp(leftElbowX,restingLeftElbowX,settle);
     leftElbowY=lerp(leftElbowY,restingLeftElbowY,settle);
     }
   }
   let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
-  if(bowActive){
+  const spatialBow=bowActive?sampleSpatialBow(Number.isFinite(bow.spatialTime)?bow.spatialTime:
+    bow.preparedFocus?1.65+.85*clamp(bow.drawAmount||0,0,1):
+    (bow.raise||0)<1?1.65*(bow.raise||0):1.65+.85*clamp(bow.drawAmount||0,0,1)):null,
+    bowPoint=q=>{const p=SpatialRiderRig.project(q,0);return [shoulderX+p[0]*1.23,shoulderY+.8+(p[1]+2)*1.23];};
+  if(spatialBow){
+    [leftHandX,leftHandY]=bowPoint(spatialBow.left.hand);
+    [leftElbowX,leftElbowY]=bowPoint(spatialBow.left.elbow);
+    [rightHandX,rightHandY]=bowPoint(spatialBow.right.hand);
+    [rightElbowX,rightElbowY]=bowPoint(spatialBow.right.elbow);
+  }else if(bowActive){
     const raise=bow.raise||0,draw=bow.drawAmount||0,recoil=bow.recoil||0;
     bowCenterY=lerp(shoulderY+.5,shoulderY-5.2,raise)+recoil*1.5;
     bowHalfWidth=(6.3+draw*1.8)*(1-recoil*.08);
@@ -2868,7 +2968,7 @@ function drawSerJonathanRider(x,y,scale,o){
      are ahead of the torso and should almost disappear, never form a chest X. */
   /* A parry releases the rein completely; drawing it to the shield hand created
      the stray black diagonal seen across the plate. */
-  if(!bowActive&&!parryShieldActive)
+  if(!bowActive&&!shieldActive)
     rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
   drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
     leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale,1+squireBulk*.34);
@@ -2924,13 +3024,10 @@ function drawSerJonathanRider(x,y,scale,o){
       /* A sheathed Squire blade never scales. It exists at full length and the
          hand translates the whole rigid weapon along the scabbard axis; the
          scabbard drawn later hides the portion that remains inserted. */
-      rigidBackBlade=squireVariant&&heldSwordOnBackPlane,
-      visibleBladeX=squireVariant?(rigidBackBlade?bladeX:
-        lerp(bladeRootX,bladeX,reveal)):bladeX,
-      visibleBladeY=squireVariant?(rigidBackBlade?bladeY:
-        lerp(bladeRootY,bladeY,reveal)):bladeY,
-      bladeBaseX=squireVariant?bladeRootX:lerp(bladeX,bladeRootX,reveal),
-      bladeBaseY=squireVariant?bladeRootY:lerp(bladeY,bladeRootY,reveal),
+      visibleBladeX=bladeX,
+      visibleBladeY=bladeY,
+      bladeBaseX=bladeRootX,
+      bladeBaseY=bladeRootY,
       visibleLength=Math.hypot(visibleBladeX-bladeBaseX,visibleBladeY-bladeBaseY),
       bladeWidth=(squireVariant?1.45*squireWeaponWidthScale:1.45)*swordForeshorten,
       edgeWidth=(squireVariant?1.0*squireWeaponWidthScale:1.0)*swordForeshorten;
@@ -2941,11 +3038,16 @@ function drawSerJonathanRider(x,y,scale,o){
       const liveMatrix=typeof g.getTransform==='function'?g.getTransform():null,
         matrix=liveMatrix&&Number.isFinite(liveMatrix.a)?liveMatrix:
           {a:1,b:0,c:0,d:1,e:0,f:0},toLogical=(localX,localY)=>({
-        x:(matrix.a*localX*U+matrix.c*localY*U+matrix.e-viewX)/(viewScale||1),
-        y:(matrix.b*localX*U+matrix.d*localY*U+matrix.f-viewY)/(viewScale||1)
+        x:(matrix.a*localX*U+matrix.c*localY*U+matrix.e-viewX)/(viewScale||1)-worldFxShakeX,
+        y:(matrix.b*localX*U+matrix.d*localY*U+matrix.f-viewY)/(viewScale||1)-worldFxShakeY
       }),target=o.swordFxTarget;
       target.swordFxPose={base:toLogical(bladeBaseX,bladeBaseY),
         tip:toLogical(visibleBladeX,visibleBladeY),t:Number(swordAction.t)||0};
+      if(target.pendingSwordFx){
+        const pending=target.pendingSwordFx;target.pendingSwordFx=null;
+        if(Math.abs(target.swordFxPose.t-pending.t)<.2)
+          scatterSwordPoseParticles(target.swordFxPose,...pending.args);
+      }
     }
     if(swordAction){
       const now=Math.max(0,Number(swordAction.t)||0),historyLife=.072,
@@ -3022,7 +3124,10 @@ function drawSerJonathanRider(x,y,scale,o){
     }
   };
   if(!heldSwordOnBackPlane)drawHeldSword();
-  if(bowActive){
+  if(spatialBow){
+    drawSpatialBowProp(spatialBow,Number.isFinite(bow.spatialTime)?bow.spatialTime:2.5,
+      bowPoint,bow.recipe?.glowColor||'#afcfff');
+  }else if(bowActive){
     const recipe=bow.recipe||bowAnimationRecipeById('BOW_STANDARD'),draw=bow.drawAmount||0,
       leftX=bowCenterX-bowHalfWidth,rightX=bowCenterX+bowHalfWidth,
       limbY=bowCenterY+2.1+draw*.9,stringY=rightHandY,
@@ -3154,12 +3259,7 @@ function drawSerJonathanRider(x,y,scale,o){
   /* In the deep crouch the forearms become the visible support plane beneath the
      helmet. Their top faces reappear over the back plate while the upper arms stay
      behind it, so the elbows read as lowered rather than winged outward. */
-  if(duckFold>.02){
-    g.globalAlpha=duckFold*.42;
-    rigSegment(leftElbowX,leftElbowY,leftHandX,leftHandY,1.15*farDepthScale,armorL);
-    rigSegment(rightElbowX,rightElbowY,rightHandX,rightHandY,1.15*farDepthScale,armorL);
-    g.globalAlpha=1;
-  }
+  // Duck forearms remain on their original far-side layer, masked by the back.
 
   if(counter>0){
     g.globalAlpha=Math.sin(counter*Math.PI);g.strokeStyle='#ffe37a';g.lineWidth=2.5*U;
@@ -9203,8 +9303,8 @@ function awardSquireDefenseVeterancy(){
    begins the unmount, hold preserves the guard, and release samples combat on
    that exact frame while the visual clip continues independently. */
 const PARRY_SHIELD_CLIP=Object.freeze({
-  prepare:.42,strike:.28,contact:.18,retreatStart:.44,retreatEnd:.62,
-  remountStart:.58,remountEnd:.86,settleEnd:1.08,cancel:.30,swipeVisualGrace:.075
+  prepare:.84,strike:.28,contact:.18,retreatStart:.44,retreatEnd:.72,
+  remountStart:.72,remountEnd:1.10,settleEnd:1.34,cancel:.30,swipeVisualGrace:.075
 });
 function beginPlayerParryHold(visualDelay=0){
   if(!player.alive||knightRushSequence||paused||settingsOpen||
@@ -9253,7 +9353,9 @@ function updatePlayerParryShield(dt){
        captured on the exact release frame; only the arm waits long enough for a
        real swipe to cross SWIPE_TH and cancel without flashing the guard pose. */
     const delay=Math.min(T.prepare-.001,clip.visualDelay||0),motionT=Math.max(0,clip.t-delay);
-    clip.prepare=easeInOut(clamp(motionT/(T.prepare-delay),0,1));
+    // Pose stages own easing. Easing this clock again compresses their travel
+    // into a few central frames and makes a long clip still look like a snap.
+    clip.prepare=clamp(motionT/(T.prepare-delay),0,1);
     if(clip.t>=T.prepare){clip.phase='hold';clip.t=0;clip.prepare=1;}
   }else if(clip.phase==='hold')clip.prepare=1;
   else if(clip.phase==='release'&&clip.t>=T.settleEnd)player.parryShield=null;
@@ -9359,11 +9461,11 @@ function isDucking(){ return player.duckT>=0; }
 const PLAYER_BACK_SWORD_POSE_SCRATCH={},SQUIRE_BACK_SWORD_POSE_SCRATCH={};
 function emitSwordPoseParticles(target,expectedT,count,colors,speed,gravity,size,life,
     fallbackX,fallbackY){
-  const pose=target?.swordFxPose,poseIsCurrent=pose&&
-    Math.abs((Number(expectedT)||0)-(Number(pose.t)||0))<.12;
-  if(!poseIsCurrent){
-    burst(fallbackX,fallbackY,count,colors,speed,gravity,size,life);return;
-  }
+  /* Resolve the cue on this frame's rendered blade, after the current pose is
+     known. Never reuse the previous frame or guess a fixed actor offset. */
+  target.pendingSwordFx={t:Number(expectedT)||0,args:[count,colors,speed,gravity,size,life]};
+}
+function scatterSwordPoseParticles(pose,count,colors,speed,gravity,size,life){
   for(let i=0;i<count;i++){
     const along=rnd(.06,.98),x=lerp(pose.base.x,pose.tip.x,along),
       y=lerp(pose.base.y,pose.tip.y,along),a=rnd(TAU),travel=rnd(speed*.3,speed);
@@ -9483,8 +9585,7 @@ function updateSquire(dt){
     squire.deathT+=dt;
     if(!squire.deathBurst&&squire.deathT>=SQUIRE_DEATH_BURST_AT){
       squire.deathBurst=true;
-      emitMountedRecallFx(squire.lastX,PLAYER_Y-58,squire.appearance,squire.deathSide,
-        squire.deathVisualBulk);
+      emitSquireRecallFromPose();
       SFX.relic();shake(7,.24);
     }
     if(squire.deathT>SQUIRE_DEATH_DURATION)squire.deathT=-1;
@@ -9548,17 +9649,17 @@ function drawPlayer(){
   });
   g.globalAlpha=1;
 }
-function drawSquire(){
+function drawSquire(captureRecall=false){
   if(!squire.present&&squire.deathT<0)return;
   const dying=!squire.present;
-  if(dying&&squire.deathT>=SQUIRE_DEATH_BURST_AT)return;
+  if(dying&&squire.deathT>=SQUIRE_DEATH_BURST_AT&&!captureRecall)return;
   const deathTime=dying?Math.max(0,squire.deathT):0,
     arrival=clamp((squire.arrivalT||0)/.8,0,1),
     shieldAction=dying?null:activeSquireShieldPose(),shieldLunge=shieldAction?.lunge||0,
     swordAction=dying||shieldAction?null:activeSquireSwordPose(),
-    attack=shieldAction||swordAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
+    attack=dying||shieldAction||swordAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
     strike=Math.sin((1-attack)*Math.PI)*(attack>0?1:0),
-    cheer=squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
+    cheer=dying||squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
     baseX=squire.present?squire.visualX:squire.lastX,
     fallSide=dying?squire.deathSide:(baseX<laneX(player.x,1)?-1:1),
     deathPose=dying?mountedRiderDeathPose(deathTime,fallSide):null,
@@ -9587,7 +9688,7 @@ function drawSquire(){
       squireWeaponThicknessGrowth:weaponThickness,riderFall,
       attack:0,counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction:null});
   }
-  if(dying&&horsePanic>.05){
+  if(dying&&!captureRecall&&horsePanic>.05){
     const pulse=.25+.35*Math.sin(deathTime*22);
     g.globalAlpha=horsePanic*pulse;g.fillStyle=appearance?.plume||'#d7b878';
     g.fillRect(x-2,y+8,4,2);g.globalAlpha=1;
@@ -12120,7 +12221,9 @@ function runSkill(baseId){
 function replaceRunSkill(baseId,command){
   const index=BASE_TURN_SKILL_SLOT_BY_ID[baseId];
   if(index===undefined||!command||command.baseId!==baseId)return false;
-  runSkills[index]=command;return true;
+  runSkills[index]=command;
+  if(baseId==='call_squire'){squire.profile=null;squire.profileKey='';}
+  return true;
 }
 resetRunSkills();
 function skillMutation(data){
@@ -40984,7 +41087,11 @@ function squirePartyReady(){return squire.present&&squire.active&&squire.health>
 function squireCombatProfile(){
   const morale=Math.max(0,Math.floor(squire.encouragement||0)),route=equippedSquireCommand(),
     guardDepth=route?.squireGuardDepth||0,effectiveVeterancy=effectiveSquireVeterancy(),
-    key=[morale,squire.veterancy||0,route?.classRouteId||'BASE'].join('|');
+    key=[morale,squire.veterancy||0,route?.classRouteId||'BASE',
+      route?.squireVeterancyEfficiency,route?.squireVeterancyDamagePerPoint,
+      route?.squireCoveringCrossDamageBonus,route?.squireGuardBashPosture,
+      route?.squireVeterancyPosturePerPoint,route?.squireShieldThresholdDiscount,
+      route?.squirePreparedParryMove,guardDepth].join('|');
   if(squire.profile&&squire.profileKey===key)return squire.profile;
   const slashDamage=SQUIRE_BASE.slashDamage+morale*SQUIRE_BASE.encourageDamagePerStack+
       Math.floor(effectiveVeterancy*(route?.squireVeterancyDamagePerPoint||0))+
@@ -42229,8 +42336,8 @@ function buildSquireSwordTimeline(command,actorId){
    contact clock is deliberately late enough for the left hand to reach behind
    the shield, unhook it, reveal its hidden inner grip and turn it before impact. */
 const SHIELD_BASH_TIMING=Object.freeze({
-  reachEnd:.24,detachEnd:.46,flipEnd:.68,impact:.94,holdEnd:1.04,
-  retreatEnd:1.28,remountEnd:1.52,recoveryEnd:1.66
+  reachEnd:.28,detachEnd:.54,flipEnd:.80,impact:1.08,holdEnd:1.20,
+  retreatEnd:1.52,remountEnd:2.22,recoveryEnd:2.46
 });
 const SHIELD_BASH_TIMELINE=Object.freeze({
   contacts:Object.freeze([SHIELD_BASH_TIMING.impact]),
@@ -42242,7 +42349,8 @@ function buildShieldBashTimeline(command,delivery){
   if(hits===1)return SHIELD_BASH_TIMELINE;
   const contacts=Object.freeze(Array.from({length:hits},(_,index)=>
     SHIELD_BASH_TIMING.impact+index*.12));
-  return Object.freeze({contacts,recoveryEnd:contacts.at(-1)+.72});
+  return Object.freeze({contacts,recoveryEnd:contacts.at(-1)+
+    SHIELD_BASH_TIMING.recoveryEnd-SHIELD_BASH_TIMING.impact});
 }
 function isShieldTurnAction(action){
   return !!(action&&action.shieldTimeline&&action.actorId==='knight');
@@ -42263,7 +42371,10 @@ function activePlayerParryShieldPose(){
      the rider rig until the guard has visibly begun or release commits parry. */
   if(clip.phase==='prepare'&&(clip.pointerGestureMoved||
      ((clip.visualDelay||0)>0&&(clip.prepare||0)<=.001)))return null;
-  const T=PARRY_SHIELD_CLIP,p=PLAYER_PARRY_SHIELD_POSE_SCRATCH;
+  return parryShieldPoseForClip(clip,PLAYER_PARRY_SHIELD_POSE_SCRATCH);
+}
+function parryShieldPoseForClip(clip,p){
+  const T=PARRY_SHIELD_CLIP;
   p.active=true;p.kind='parry';p.t=clip.t;p.sweep=0;p.retreat=0;p.remount=0;
   p.settle=0;p.lunge=0;p.impact=0;p.cancel=clip.phase==='cancel'?1:0;
   p.releaseFrom=clamp(clip.releaseFrom||0,0,1);
@@ -42302,7 +42413,8 @@ function shieldBashPoseAt(t,p){
   p.flip=easeInOut(clamp((t-.26)/(T.flipEnd-.26),0,1));
   p.drive=easeInOut(clamp((t-.45)/(T.impact-.45),0,1));
   p.retreat=easeInOut(clamp((t-T.holdEnd)/(T.retreatEnd-T.holdEnd),0,1));
-  p.remount=easeInOut(clamp((t-T.retreatEnd)/(T.remountEnd-T.retreatEnd),0,1));
+  // Linear transfer clock; clear/faceTurn in the renderer ease once each.
+  p.remount=clamp((t-T.retreatEnd)/(T.remountEnd-T.retreatEnd),0,1);
   p.settle=easeInOut(clamp((t-T.remountEnd)/(T.recoveryEnd-T.remountEnd),0,1));
   p.lunge=p.drive*(1-p.retreat);
   p.impact=Math.sin(Math.PI*clamp((t-(T.impact-.055))/(T.holdEnd-T.impact+.055),0,1));
@@ -42340,6 +42452,7 @@ function preparedFocusIdleBowPose(pending,actor,pose=PLAYER_BOW_POSE_SCRATCH){
     native=pending?commandPreparationDamage(pending.command):10;
   pose.visible=.85;pose.raise=.65;pose.drawAmount=.30+.30*power/(native+power+1);
   pose.recoil=0;pose.chargeIntensity=.25+.75*power/(native+power+1);pose.preparedFocus=true;
+  pose.spatialTime=1.65+.85*pose.drawAmount;
   pose.recipe=bowAnimationRecipeById(source?pending.command.bowAnimationRecipeId:'BOW_PREP_FOCUS_CARRY');
   return pose;
 }
@@ -42373,6 +42486,12 @@ function activePlayerBowPose(){
   PLAYER_BOW_POSE_SCRATCH.recipe=recipe;
   PLAYER_BOW_POSE_SCRATCH.chargeIntensity=recipe.chargeIntensity||0;
   PLAYER_BOW_POSE_SCRATCH.preparedFocus=!!(action.command.chargeFocus||action.preparedFocus?.carry);
+  // Map the shared clip onto gameplay timing; projectile and damage timing stay unchanged.
+  PLAYER_BOW_POSE_SCRATCH.spatialTime=t<drawStart?1.65*clamp(t/Math.max(.001,drawStart),0,1):
+    t<drawEnd?1.65+.85*clamp((t-drawStart)/Math.max(.001,drawEnd-drawStart),0,1):
+    t<releaseAt?2.5+.74*clamp((t-drawEnd)/Math.max(.001,releaseAt-drawEnd),0,1):
+    t<fadeStart?3.25+.60*clamp(afterRelease/Math.max(.001,fadeStart-releaseAt),0,1):
+    3.85+1.95*clamp((t-fadeStart)/Math.max(.001,recipe.recoveryTime),0,1);
   return PLAYER_BOW_POSE_SCRATCH;
 }
 function emitBowRelease(action,index){
@@ -52709,6 +52828,188 @@ const HEALTH_LAB_BUTTONS=Object.freeze([
 ]);
 let healthLabState=null;
 const horseCoatLab={page:0,paused:false,rider:false,clock:0,lastTime:0};
+/* Opt-in spatial rig. Existing authored clips retain their coordinates until
+   individually migrated. All new joints and attachments live in model space. */
+const SpatialRiderRig={
+  add:(a,b)=>a.map((v,i)=>v+b[i]),sub:(a,b)=>a.map((v,i)=>v-b[i]),
+  mul:(a,s)=>a.map(v=>v*s),dot:(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0),
+  mix:(a,b,t)=>a.map((v,i)=>lerp(v,b[i],t)),
+  unit(a){return this.mul(a,1/(Math.hypot(...a)||1));},
+  arm(root,target,pole,upper=5.2,lower=5.0){
+    const delta=this.sub(target,root),distance=clamp(Math.hypot(...delta),.21,upper+lower-.015),
+      axis=this.unit(delta),hand=this.add(root,this.mul(axis,distance)),
+      along=(upper*upper-lower*lower+distance*distance)/(2*distance),
+      raw=this.sub(pole,root),bend=this.unit(this.sub(raw,this.mul(axis,this.dot(raw,axis)))),
+      elbow=this.add(this.add(root,this.mul(axis,along)),
+        this.mul(bend,Math.sqrt(Math.max(0,upper*upper-along*along))));
+    return {root,elbow,hand};
+  },
+  rotate(p,yaw){return [p[0]*Math.cos(yaw)+p[2]*Math.sin(yaw),p[1],
+    -p[0]*Math.sin(yaw)+p[2]*Math.cos(yaw)];},
+  project(p,yaw){const q=this.rotate(p,yaw);return [q[0],q[1]+.30*q[2],q[2]];}
+};
+const bowRigLab={t:0,last:0,speed:1,paused:false,yaw:0,actor:0,joints:false,clip:0};
+function riderLabClips(){return [
+  {name:'BOW',duration:5.8},
+  {name:'SWORD',duration:BACK_SWORD_TIMING.settleEnd},
+  {name:'PARRY',duration:PARRY_SHIELD_CLIP.prepare+.25+PARRY_SHIELD_CLIP.settleEnd},
+  {name:'BASH',duration:SHIELD_BASH_TIMING.recoveryEnd},
+  {name:'DUCK',duration:CFG.DUCK_TIME+.35}
+];}
+function riderLabOptions(s){
+  const o={gallop:0},t=s.t;
+  if(s.clip===0)o.bowAction={visible:1,raise:1,spatialTime:t,
+    recipe:bowAnimationRecipeById('BOW_STANDARD')};
+  if(s.clip===1)o.swordAction=backSwordPoseAt(t,{});
+  if(s.clip===2){
+    const prepareTime=PARRY_SHIELD_CLIP.prepare,releaseAt=prepareTime+.25;
+    o.shieldAction=parryShieldPoseForClip(t<releaseAt?
+      {phase:t<prepareTime?'prepare':'hold',t,prepare:clamp(t/prepareTime,0,1),releaseFrom:1}:
+      {phase:'release',t:t-releaseAt,releaseFrom:1},{});
+  }
+  if(s.clip===3)o.shieldAction=shieldBashPoseAt(t,{});
+  if(s.clip===4)o.duck=t<.15||t>.15+CFG.DUCK_TIME?0:duckPostureAmountAt(t-.15);
+  return o;
+}
+function sampleSpatialBow(t){
+  const R=SpatialRiderRig,keys=[
+    [0,[-3,1,-5],[3,1,-5]],
+    [.55,[-3,-5,3],[3,1,-5]],
+    [1.1,[-2,-3,-6],[3,-7,3]],
+    [1.65,[3.7,-5,-6.9],[3.83,-5,-5.5]],
+    [2.5,[3.7,-5,-6.9],[4.25,-6.85,-1]],
+    [3.25,[3.7,-5,-6.9],[4.25,-6.85,-1]],
+    [3.43,[3.7,-5,-6.9],[4.85,-6.65,1]],
+    [3.85,[3.7,-5,-6.9],[4.85,-6.65,1]],
+    [4.5,[-2,0,-5],[3,1,-5]],
+    [5.15,[-3,-5,3],[3,1,-5]],
+    [5.8,[-3,1,-5],[3,1,-5]]
+  ];
+  let k=0;while(k<keys.length-2&&t>keys[k+1][0])k++;
+  const a=keys[k],b=keys[k+1],f=smoothStep(clamp((t-a[0])/(b[0]-a[0]),0,1)),
+    left=R.arm([-3,-2,0],R.mix(a[1],b[1],f),[-8,0,2]),
+    right=R.arm([3,-2,0],R.mix(a[2],b[2],f),[9,-3,4]),
+    grip=t<.55||t>5.15?[-3,-5,3]:left.hand,
+    draw=smoothStep(clamp((t-1.65)/.85,0,1)),released=t>=3.25,
+    string=released?R.add(grip,[0,0,1.4+Math.sin((t-3.25)*85)*.3*Math.exp(-(t-3.25)*12)]):
+      R.mix(R.add(grip,[0,0,1.4]),right.hand,draw),
+    phase=t<.55?'REACH BOW':t<1.1?'DRAW BOW / REACH QUIVER':t<1.65?'NOCK ARROW':
+      t<2.5?'DRAW STRING':t<3.25?'AIM / HOLD':t<3.43?'RELEASE':t<3.85?'FOLLOW THROUGH':
+      t<5.15?'RETURN BOW':'RETURN TO REINS';
+  return {left,right,grip,string,draw,released,phase};
+}
+function drawSpatialBowProp(p,t,project,highlight){
+  const R=SpatialRiderRig,segment=(a,b,w,c)=>{
+    const start=project(a),end=project(b);rigSegment(...start,...end,w,c);},
+    top=R.add(p.grip,[0,-8,1.7-p.draw*.5]),bottom=R.add(p.grip,[0,8,1.7-p.draw*.5]),
+    upper=R.add(p.grip,[0,-4,-1]),lower=R.add(p.grip,[0,4,-1]);
+  segment(top,upper,.72,'#b58a55');segment(upper,p.grip,.92,'#795230');
+  segment(p.grip,lower,.92,'#795230');segment(lower,bottom,.72,'#b58a55');
+  segment(top,p.string,.19,'#e4dec8');segment(bottom,p.string,.19,'#e4dec8');
+  if(t>=1.1&&t<3.25){
+    const start=t<1.65?p.right.hand:p.string,
+      direction=R.unit(R.sub(p.grip,p.string)),tip=R.add(start,R.mul(direction,13));
+    segment(start,tip,.34,'#d6bd8c');segment(tip,R.add(tip,R.mul(direction,.7)),.65,highlight);
+  }
+}
+function beginRiderLabDrag(start,x,y){
+  if(mode!=='healthlab'||!healthLabState.bowRig)return false;
+  const pt=toGame(x,y);
+  if(pt.x<12||pt.x>468||pt.y<563||pt.y>602)return false;
+  start.riderLabDrag=true;start.done=true;
+  return updateRiderLabDrag(start,x,y);
+}
+function updateRiderLabDrag(start,x,y){
+  if(!start?.riderLabDrag)return false;
+  if(mode==='healthlab'&&healthLabState.bowRig){
+    const pt=toGame(x,y);bowRigLab.paused=true;
+    bowRigLab.t=clamp((pt.x-20)/440,0,1)*riderLabClips()[bowRigLab.clip].duration;
+  }
+  return true;
+}
+function bowRigLabTap(pt){
+  const s=bowRigLab;
+  const duration=riderLabClips()[s.clip].duration;
+  if(pt.y>=112&&pt.y<=144){const i=Math.floor((pt.x-12)/94);
+    if(i>=0&&i<5){s.clip=i;s.t=0;s.actor=0;s.last=perfNow;}return;}
+  if(pt.y>=565&&pt.y<=602){s.t=clamp((pt.x-20)/440,0,1)*duration;s.paused=true;return;}
+  if(pt.y>=620&&pt.y<=662){
+    const i=Math.floor((pt.x-12)/94);
+    if(i===0)s.paused=!s.paused;
+    if(i===1){s.paused=true;s.t=Math.max(0,s.t-1/60);}
+    if(i===2){s.paused=true;s.t=Math.min(duration,s.t+1/60);}
+    if(i===3)s.speed=s.speed===1?.25:s.speed===.25?.1:1;
+    if(i===4){s.t=0;s.paused=false;}
+  }
+  if(pt.y>=676&&pt.y<=718){
+    const i=Math.floor((pt.x-12)/117);
+    if(i===0)s.yaw-=Math.PI/12;if(i===1)s.yaw+=Math.PI/12;
+    if(i===2&&s.clip===0)s.actor=s.actor===0?1:0;if(i===3)s.joints=!s.joints;
+  }
+}
+function drawBowRigLab(){
+  const s=bowRigLab,dt=Math.min(.05,Math.max(0,perfNow-s.last));s.last=perfNow;
+  const clips=riderLabClips(),clip=clips[s.clip];
+  if(!s.paused)s.t=(s.t+dt*s.speed)%clip.duration;
+  const R=SpatialRiderRig,p=sampleSpatialBow(s.t),queue=[],zoom=s.actor===0?7:6,
+    color=s.actor===0?'#aebbc5':'#6c8555',line=(a,b,w,c)=>queue.push({points:[a,b],w,c,
+      z:(R.rotate(a,s.yaw)[2]+R.rotate(b,s.yaw)[2])/2}),
+    point=q=>{const a=R.project(q,s.yaw);return [240+a[0]*zoom,350+a[1]*zoom];};
+  g.textAlign='center';g.font='bold 16px monospace';g.fillStyle='#d7b878';
+  for(const [i,c] of clips.entries())drawHealthLabButton({x:12+i*94,y:112,w:88,h:32,
+    label:c.name,col:s.clip===i?'#d7b878':'#aeb2c2'});
+  g.font='10px monospace';g.fillStyle='#aeb2c2';g.textAlign='center';
+  g.fillText(s.clip===0?p.phase:clip.name+' · GAME ANIMATION',240,156);
+  g.fillStyle='#151b20';g.fillRect(12,160,456,390);
+  if(s.actor===0){
+    drawSerJonathanRider(240,490,2.65,riderLabOptions(s));
+  }else{
+  line([-2,8,0],[2,8,0],5,'#624533');
+  for(const side of [-1,1]){
+    line([side*2,8,0],[side*4,13,-1],2.5,color);
+    line([side*4,13,-1],[side*4,19,0],2,'#4b5966');
+  }
+  line([0,8,0],[0,0,0],6,color);line([-3,-2,0],[3,-2,0],3,color);
+  line([0,-3,0],[0,-7,0],4.3,s.actor===0?'#c4ced5':'#bfa584');
+  line([0,-7.5,0],[0,-8.5,0],s.actor===0?4.6:7,s.actor===0?'#919da7':'#466643');
+  line([0,-9,0],[2,-12-s.actor,1],.7,s.actor===0?'#608bff':'#bda96c');
+  line([3,5,2],[4,-5,3],3,'#654637');
+  for(let i=0;i<3;i++)line([3.3+i*.6,-3,3],[3.3+i*.6,-8,3],.25,'#ddd1ac');
+  if(s.actor===2)for(let i=0;i<7;i++)line([-4+i*1.3,-1,2],[-5+i*1.6,6+(i%2)*2,3],2,
+    i%2?'#526a40':'#77824b');
+  for(const arm of [p.left,p.right]){
+    line(arm.root,arm.elbow,2,color);line(arm.elbow,arm.hand,1.6,color);
+    if(s.joints)for(const q of [arm.root,arm.elbow,arm.hand])line(q,R.add(q,[.01,0,0]),2.1,'#ffb35c');
+  }
+  const top=R.add(p.grip,[0,-8,1.7-p.draw*.5]),bottom=R.add(p.grip,[0,8,1.7-p.draw*.5]);
+  line(top,R.add(p.grip,[0,-4,-1]),.65,'#b58a55');
+  line(R.add(p.grip,[0,-4,-1]),p.grip,.8,'#795230');
+  line(p.grip,R.add(p.grip,[0,4,-1]),.8,'#795230');
+  line(R.add(p.grip,[0,4,-1]),bottom,.65,'#b58a55');
+  line(top,p.string,.13,'#e4dec8');line(bottom,p.string,.13,'#e4dec8');
+  if(s.t>=1.1&&s.t<3.65){
+    const nock=s.t<1.65?p.right.hand:p.string,
+      aimPose=sampleSpatialBow(3.25),
+      direction=R.unit(R.sub(p.grip,p.released?aimPose.right.hand:p.string)),
+      travel=p.released?(s.t-3.25)*100:0,
+      start=R.add(nock,R.mul(direction,travel)),tip=R.add(start,R.mul(direction,13));
+    line(start,tip,.22,'#d6bd8c');line(tip,R.add(tip,R.mul(direction,.7)),.65,'#dee6e7');
+  }
+  queue.sort((a,b)=>a.z-b.z);
+  for(const part of queue){const a=point(part.points[0]),b=point(part.points[1]);
+    g.strokeStyle=part.c;g.lineWidth=part.w*zoom;g.lineCap='round';
+    g.beginPath();g.moveTo(...a);g.lineTo(...b);g.stroke();}
+  }
+  g.textAlign='center';g.lineCap='butt';g.fillStyle='#414550';g.fillRect(20,575,440,8);
+  g.fillStyle='#d7b878';g.fillRect(20,575,440*s.t/clip.duration,8);
+  g.font='11px monospace';g.fillStyle='#e8e2d0';g.fillText(s.t.toFixed(2)+'s · '+
+    (s.actor===0?'REAR VIEW':Math.round(s.yaw*180/Math.PI)+'°')+' · CLICK TIMELINE TO SEEK',240,608);
+  for(const [i,label] of [s.paused?'PLAY':'PAUSE','FRAME -','FRAME +',s.speed+'x','RESTART'].entries())
+    drawHealthLabButton({x:12+i*94,y:620,w:88,h:42,label,col:'#d7b878'});
+  for(const [i,label] of ['RIG TURN -','RIG TURN +',s.actor===0?'SKELETON':'KNIGHT',s.joints?'JOINTS ON':'JOINTS OFF'].entries())
+    drawHealthLabButton({x:12+i*117,y:676,w:105,h:42,label,col:'#9ecbff'});
+  g.fillStyle='#8b8fa0';g.font='10px monospace';g.fillText('SHARED GAME BOW RIG · ROTATION IN SKELETON VIEW',240,750);
+}
 function horseCoatLabTap(pt){
   if(pt.y>=684&&pt.y<=726){
     if(pt.x<118)horseCoatLab.page=(horseCoatLab.page+4)%5;
@@ -52777,6 +53078,10 @@ function healthLabCycleMultiplier(direction){
 }
 function healthLabTap(pt){
   if(pt.x>16&&pt.x<108&&pt.y>28&&pt.y<66){healthLabState=null;setMode('debugcfg');SFX.duck();return;}
+  if(pt.x>=366&&pt.x<=468&&pt.y>=74&&pt.y<=108){
+    healthLabState.bowRig=!healthLabState.bowRig;bowRigLab.last=perfNow;return;
+  }
+  if(healthLabState.bowRig){bowRigLabTap(pt);return;}
   if(pt.x>=366&&pt.x<=468&&pt.y>=28&&pt.y<=66){
     healthLabState.coats=!healthLabState.coats;horseCoatLab.lastTime=perfNow;return;
   }
@@ -52822,6 +53127,8 @@ function drawHealthLab(){
   g.strokeStyle='#ff6b70';g.lineWidth=2;g.strokeRect(16,28,92,38);
   g.textAlign='center';g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.fillText('◄ BACK',62,52);
   g.font='bold 18px monospace';g.fillStyle='#ff6b70';g.fillText('UI LAB',VW/2,54);
+  drawHealthLabButton({x:366,y:74,w:102,h:34,label:s.bowRig?'HEALTH':'ANIM LAB',col:'#9ecbff'});
+  if(s.bowRig){drawBowRigLab();return;}
   drawHealthLabButton({x:366,y:28,w:102,h:38,label:s.coats?'HEALTH':'HORSE COATS',col:'#d7b878'});
   if(s.coats){drawHorseCoatLab();return;}
   g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('ONE HEART = EXACTLY 144 LOGICAL FILL CELLS',VW/2,78);
@@ -53372,6 +53679,7 @@ function drawActiveMinibossWorld(){
 }
 let firstRenderPending=true;
 function render(){
+  worldFxShakeX=0;worldFxShakeY=0;
   const stage=BIO();
   g.setTransform(1,0,0,1,0,0);
   g.fillStyle='#05070c'; g.fillRect(0,0,cvs.width,cvs.height);
@@ -53386,6 +53694,7 @@ function render(){
     renderShakeX=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1701));
     renderShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(renderShakeX,renderShakeY);
+    worldFxShakeX=renderShakeX;worldFxShakeY=renderShakeY;
   }
 
   if(env==='cave'){ stage.arena(); }
