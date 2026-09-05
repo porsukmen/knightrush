@@ -1562,7 +1562,8 @@ try{
       (afflictionChargeOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
         'affliction-charge-audit.js'),'utf8'):'')+
       (squireOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
-        'squire-audit.js'),'utf8'):''),
+        'squire-audit.js'),'utf8')+'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'squire-hunter-audit.js'),'utf8'):''),
     source=(bootOnly?match[1]:parentStrengthOnly?parentStrengthSource:
       exhaustiveFeature?exhaustiveFeatureSource:
       exhaustiveDelivery?exhaustiveDeliverySource:
@@ -2038,6 +2039,8 @@ try{
     const audit=sandbox.__squireAudit;
     console.log('SQUIRE_AUDIT '+JSON.stringify(audit));
     if(!audit||!audit.passed)throw new Error('Squire base vertical-slice audit failed');
+    console.log('SQUIRE_HUNTER_AUDIT '+JSON.stringify(sandbox.__squireHunterAudit));
+    if(!sandbox.__squireHunterAudit?.passed)throw new Error('Squire Hunter audit failed');
   }
   if(bootOnly){console.log(`BOOT_RUNTIME_OK ${file}`);process.exit(0);}
   if(combatRoutesOnly){

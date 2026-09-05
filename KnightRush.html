@@ -2171,7 +2171,8 @@ function drawSerJonathanRider(x,y,scale,o){
     swordAction=o.swordAction||null,
     bow=o.bowAction||null,bowActive=!shieldActive&&!!(bow&&bow.visible>0),
     counter=clamp(o.counter||0,0,1),callSignal=clamp(o.callSignal||0,0,1),
-    squireVariant=!!o.squire,squireBulk=squireVariant?clamp(o.squireBulk||0,0,1.16):0,
+    squireVariant=!!o.squire,squireHunter=!!o.squireHunter,
+    squireBulk=squireVariant?clamp(o.squireBulk||0,0,1.16):0,
     squireRankLevel=squireVariant?clamp(Math.floor(o.squireRankLevel||0),0,3):0,
     squireWeaponThicknessGrowth=squireVariant?clamp(
       Number(o.squireWeaponThicknessGrowth)||1,.65,4):1,
@@ -2192,8 +2193,9 @@ function drawSerJonathanRider(x,y,scale,o){
     horsePoint=appearance?.horsePoint||horseStripe,
     horseStockings=Math.max(0,Math.floor(appearance?.horseStockings||0)),
     horsePattern=appearance?.horsePattern||0,
-    armor=appearance?.armor||'#919da7',armorD=appearance?.armorDark||'#4b5966',
-    armorL=appearance?.armorLight||'#c4ced5',steel=appearance?.steel||'#aebbc5',
+    armor=(squireHunter?appearance?.hunter?.cloth:appearance?.armor)||'#919da7',
+    armorD=squireHunter?shade(armor,-28):appearance?.armorDark||'#4b5966',
+    armorL=squireHunter?shade(armor,18):appearance?.armorLight||'#c4ced5',steel=appearance?.steel||'#aebbc5',
     steelL=appearance?.steelLight||'#edf4f7',plume=appearance?.plume||o.feather||'#268ee8',
     swordGrip=appearance?.sword?.grip||'#4059a8',
     swordGuard=appearance?.sword?.guard||'#6f91d8',
@@ -2692,13 +2694,25 @@ function drawSerJonathanRider(x,y,scale,o){
   let bowCenterX=shoulderX,bowCenterY=shoulderY-5.2,bowHalfWidth=7.2;
   const spatialBow=bowActive?sampleSpatialBow(Number.isFinite(bow.spatialTime)?bow.spatialTime:
     bow.preparedFocus?1.65+.85*clamp(bow.drawAmount||0,0,1):
-    (bow.raise||0)<1?1.65*(bow.raise||0):1.65+.85*clamp(bow.drawAmount||0,0,1)):null,
+    (bow.raise||0)<1?1.65*(bow.raise||0):1.65+.85*clamp(bow.drawAmount||0,0,1),bow.aimYaw||0):null,
     bowPoint=q=>{const p=SpatialRiderRig.project(q,0);return [shoulderX+p[0]*1.23,shoulderY+.8+(p[1]+2)*1.23];};
   if(spatialBow){
     [leftHandX,leftHandY]=bowPoint(spatialBow.left.hand);
     [leftElbowX,leftElbowY]=bowPoint(spatialBow.left.elbow);
     [rightHandX,rightHandY]=bowPoint(spatialBow.right.hand);
     [rightElbowX,rightElbowY]=bowPoint(spatialBow.right.elbow);
+    // Mounted prop windows hand IK ownership back to the actual moving reins.
+    const clipTime=Number.isFinite(bow.spatialTime)?bow.spatialTime:2.5,
+      armWeight=smoothStep(clamp(clipTime/.55,0,1))*
+        (1-smoothStep(clamp((clipTime-5.15)/.65,0,1)));
+    leftHandX=lerp(restingLeftHandX,leftHandX,armWeight);
+    leftHandY=lerp(restingLeftHandY,leftHandY,armWeight);
+    leftElbowX=lerp(restingLeftElbowX,leftElbowX,armWeight);
+    leftElbowY=lerp(restingLeftElbowY,leftElbowY,armWeight);
+    rightHandX=lerp(restingRightHandX,rightHandX,armWeight);
+    rightHandY=lerp(restingRightHandY,rightHandY,armWeight);
+    rightElbowX=lerp(restingRightElbowX,rightElbowX,armWeight);
+    rightElbowY=lerp(restingRightElbowY,rightElbowY,armWeight);
   }else if(bowActive){
     const raise=bow.raise||0,draw=bow.drawAmount||0,recoil=bow.recoil||0;
     bowCenterY=lerp(shoulderY+.5,shoulderY-5.2,raise)+recoil*1.5;
@@ -2953,6 +2967,7 @@ function drawSerJonathanRider(x,y,scale,o){
     bashShieldInnerLayer=bashShieldActive&&shieldTurn>=.5,
     shieldInnerLayer=parryShieldInnerLayer||bashShieldInnerLayer,
     drawCurrentShield=()=>{
+      if(squireHunter)return;
       if(shieldActive)drawSerJonathanShield(shieldCenterX,shieldCenterY,
         shieldTurn,shieldTilt,shieldScale,shieldDepthScale,shieldPalette);
       else drawSerJonathanMountedShield25D(duckPose,mountedShieldScale,shieldPalette,{
@@ -3124,10 +3139,10 @@ function drawSerJonathanRider(x,y,scale,o){
     }
   };
   if(!heldSwordOnBackPlane)drawHeldSword();
-  if(spatialBow){
+  if(spatialBow&&!(bow.spatialTime<1.1||bow.spatialTime>4.8)){
     drawSpatialBowProp(spatialBow,Number.isFinite(bow.spatialTime)?bow.spatialTime:2.5,
-      bowPoint,bow.recipe?.glowColor||'#afcfff');
-  }else if(bowActive){
+      bowPoint,bow.recipe?.glowColor||'#afcfff',squireHunter?appearance?.bow:null);
+  }else if(bowActive&&!spatialBow){
     const recipe=bow.recipe||bowAnimationRecipeById('BOW_STANDARD'),draw=bow.drawAmount||0,
       leftX=bowCenterX-bowHalfWidth,rightX=bowCenterX+bowHalfWidth,
       limbY=bowCenterY+2.1+draw*.9,stringY=rightHandY,
@@ -3156,7 +3171,21 @@ function drawSerJonathanRider(x,y,scale,o){
   rigQuad(headX-1.15,helmetProjection.bottomY-.18,
     headX+1.15,helmetProjection.bottomY-.18,
     shoulderX+1.45,shoulderY+.35,shoulderX-1.45,shoulderY+.35,armorD);
-  if(squireVariant)drawSquireHelmet25D(headX,headY,duckPose.headPitch,helmetScale,
+  if(squireHunter){
+    const hat=appearance?.hunter?.hat||'#42623e',trim=appearance?.hunter?.trim||'#58412b',
+      hp=helmetProjection;
+    rigQuad(headX-2.0*helmetScale,hp.planeY,headX+2.0*helmetScale,hp.planeY,
+      headX+1.7*helmetScale,hp.bottomY,headX-1.7*helmetScale,hp.bottomY,armorD);
+    rigPolygon([[headX-3.8*helmetScale,hp.planeY+.35*helmetScale],
+      [headX-2.0*helmetScale,hp.planeY-1.7*helmetScale],
+      [headX+4.1*helmetScale,hp.planeY-3.25*helmetScale],
+      [headX+2.2*helmetScale,hp.planeY-.1*helmetScale],
+      [headX+3.0*helmetScale,hp.planeY+.65*helmetScale]],hat);
+    rigSegment(headX-3.2*helmetScale,hp.planeY+.3*helmetScale,
+      headX+2.6*helmetScale,hp.planeY+.45*helmetScale,.55*helmetScale,shade(hat,24));
+    rigSegment(headX-2*helmetScale,hp.planeY-.35*helmetScale,
+      headX+2.5*helmetScale,hp.planeY-.9*helmetScale,.45*helmetScale,trim);
+  }else if(squireVariant)drawSquireHelmet25D(headX,headY,duckPose.headPitch,helmetScale,
     armor,armorD,armorL,steelL,appearance?.helmetBand);
   else drawSerJonathanHelmet25D(headX,headY,duckPose.headPitch,duckPose.headScale,
     armor,armorD,armorL,steelL);
@@ -3234,8 +3263,8 @@ function drawSerJonathanRider(x,y,scale,o){
   /* Pauldrons belong to the articulated shoulder joints, not the torso's idle
      centre. The old anchors left two square caps floating when either arm
      raised for Call, sword draw or shield work. */
-  rigJoint(leftShoulderX,leftShoulderY,3.05*farDepthScale,armorL);
-  rigJoint(rightShoulderX,rightShoulderY,3.05*farDepthScale,armorL);
+  rigJoint(leftShoulderX,leftShoulderY,(squireHunter?2.1:3.05)*farDepthScale,armorL);
+  rigJoint(rightShoulderX,rightShoulderY,(squireHunter?2.1:3.05)*farDepthScale,armorL);
   /* Rear view keeps most limbs behind the cuirass, but these tiny outer elbow
      caps stop the arms from disappearing without exposing them across the back. */
   g.globalAlpha=1-duckFold*.72;
@@ -3247,6 +3276,24 @@ function drawSerJonathanRider(x,y,scale,o){
        rider -> moving full sword -> scabbard -> shield.
      The sword therefore slides UNDER the scabbard rather than being painted on
      top of it. Its exposed length comes only from translation, never scaling. */
+  // Rear equipment: compact belt quiver and diagonal bow, beneath the shield.
+  // Active draw/stow uses the very same prop, not a second spawning bow.
+  if(!squireVariant||squireHunter||bowActive){
+    const qx=shoulderX+4.15,qy=hipY-2.1;
+    const bowPalette=squireHunter?appearance?.bow:null;
+    if(squireHunter)rigSegment(leftShoulderX+.8,leftShoulderY+.8,qx,qy,.58,
+      appearance?.hunter?.trim||'#58412b');
+    rigQuad(qx-1.3,qy-1.8,qx+1.5,qy-2.25,qx+2.0,qy+.65,qx-.85,qy+1.2,bowPalette?.quiver||'#684931');
+    rigSegment(qx-1.15,qy-1.55,qx+1.6,qy-2.0,.55,'#bd9d61');
+    for(let i=0;i<3;i++){
+      const ax=qx+.05+i*.65,ay=qy-1.85-i*.15;
+      rigSegment(ax,ay,ax+2.8,ay-1.55,.20,bowPalette?.arrowShaft||'#ba9561');
+      rigSegment(ax+2.1,ay-1.15,ax+2.8,ay-1.55,.65,bowPalette?.arrowFeather||'#d5dbe6');
+    }
+    if(!bowActive)drawSpatialBowProp(sampleSpatialBow(0),0,bowPoint,'#afcfff',bowPalette);
+    else if(bow.spatialTime<1.1||bow.spatialTime>4.8)
+      drawSpatialBowProp(spatialBow,bow.spatialTime,bowPoint,bow.recipe?.glowColor||'#afcfff',bowPalette);
+  }
   if(heldSwordOnBackPlane)drawHeldSword();
   drawMountedBackSword();
 
@@ -7024,19 +7071,19 @@ function drawCoin(x,y,s,t){
 }
 /* the one true arrow: steel broadhead, cedar shaft, two fletch vanes — used for
    pickups, the HUD count, and the shot itself, so it always reads as the same arrow */
-function drawArrowSprite(x,y,s,ang,glow){
+function drawArrowSprite(x,y,s,ang,glow,palette=null){
   g.save(); g.translate(x,y); g.rotate(ang); g.scale(s,s);
   if(glow){ g.shadowColor=typeof glow==='string'?glow:'#c0f79a'; g.shadowBlur=10; }
-  g.fillStyle='#8a6a3a'; g.fillRect(-1.1,-9,2.2,20);              // cedar shaft
-  g.fillStyle='#c9a86a'; g.fillRect(-1.1,-9,1,20);
-  g.fillStyle='#dfe8ff';                                          // steel BROADHEAD
+  g.fillStyle=palette?.arrowShaft||'#8a6a3a'; g.fillRect(-1.1,-9,2.2,20);              // cedar shaft
+  g.fillStyle=palette?.edge||'#c9a86a'; g.fillRect(-1.1,-9,1,20);
+  g.fillStyle=palette?.arrowHead||'#dfe8ff';                                          // steel BROADHEAD
   g.beginPath(); g.moveTo(0,-17); g.lineTo(4.4,-8); g.lineTo(1.1,-9.4);
   g.lineTo(-1.1,-9.4); g.lineTo(-4.4,-8); g.closePath(); g.fill();
-  g.fillStyle='#aeb8d8'; g.beginPath(); g.moveTo(0,-17); g.lineTo(-4.4,-8); g.lineTo(-1.1,-9.4); g.closePath(); g.fill();
-  g.fillStyle='#c0f79a';                                          // fletch vanes
+  g.fillStyle=palette?.arrowHead?shade(palette.arrowHead,-24):'#aeb8d8'; g.beginPath(); g.moveTo(0,-17); g.lineTo(-4.4,-8); g.lineTo(-1.1,-9.4); g.closePath(); g.fill();
+  g.fillStyle=palette?.arrowFeather||'#c0f79a';                                          // fletch vanes
   g.beginPath(); g.moveTo(-1.1,6); g.lineTo(-4.6,11); g.lineTo(-1.1,11.5); g.closePath(); g.fill();
   g.beginPath(); g.moveTo(1.1,6); g.lineTo(4.6,11); g.lineTo(1.1,11.5); g.closePath(); g.fill();
-  g.fillStyle='#8fd06a';
+  g.fillStyle=palette?.wrap||'#8fd06a';
   g.fillRect(-1.1,7.6,2.2,1); g.fillRect(-1.1,9.6,2.2,1);         // binding wraps
   g.fillStyle='#e8e2d0'; g.fillRect(-1.4,11.5,2.8,1.6);           // nock
   g.shadowBlur=0; g.restore();
@@ -9191,7 +9238,14 @@ function randomSquireAppearance(){
     leather=pick(SQUIRE_VISUAL_COLORS.leather),shieldFace=pick(SQUIRE_VISUAL_COLORS.shield),
     shieldRim=pick(SQUIRE_VISUAL_COLORS.metal),emblem=pick(SQUIRE_VISUAL_COLORS.emblem),
     blade=pick(SQUIRE_VISUAL_COLORS.metal),coat=randomSquireHorseCoat(),
-    horse=coat.body,horsePattern=coat.pattern;
+    horse=coat.body,horsePattern=coat.pattern,
+    hunterCloth=pick(['#58734b','#3f6254','#738052','#626d47','#435f45',
+      '#795b40','#9b7955','#b69a72','#a99b7b','#526f88','#6e8997','#777c79']),
+    hunterHat=pick(['#42623e','#596947','#768052','#415e55',
+      '#715137','#9a7650','#b89c72','#536e86','#75909c','#787a70']),
+    bowWood=pick(['#b97936','#956744','#c29860','#785446']),
+    bowLimb=pick(['#39302a','#484140','#504733','#363e43']),
+    arrowFeather=pick(['#91b9cc','#d5bc75','#b4c58d','#c6959f','#b4a6d3']);
   return Object.freeze({armor,armorDark:shade(armor,-30),
     armorLight:pick(SQUIRE_VISUAL_COLORS.metal),steel,steelLight:shade(steel,28),
     plume:pick(SQUIRE_VISUAL_COLORS.plume),horse,
@@ -9199,6 +9253,10 @@ function randomSquireAppearance(){
     horseStripe:coat.stripe||shade(horse,-38),horsePoint:coat.point||shade(horse,-32),
     horseStockings:coat.stockings||0,horsePattern,horseCoatFamily:coat.family,
     helmetBand:pick(SQUIRE_VISUAL_COLORS.emblem),
+    hunter:Object.freeze({cloth:hunterCloth,hat:hunterHat,trim:leather}),
+    bow:Object.freeze({limb:bowLimb,wood:bowWood,edge:shade(bowWood,28),
+      wrap:leather,string:'#d2c9b2',quiver:pick(SQUIRE_VISUAL_COLORS.leather),
+      arrowShaft:shade(bowWood,12),arrowHead:blade,arrowFeather}),
     sword:Object.freeze({blade,edge:shade(blade,35),grip:leather,
       guard:pick(SQUIRE_VISUAL_COLORS.emblem),sheath:pick(SQUIRE_VISUAL_COLORS.leather)}),
     shield:Object.freeze({style:'squire',rim:shieldRim,rimDark:shade(shieldRim,-32),
@@ -9215,6 +9273,7 @@ const squire={
   deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
   visualX:-60,lastX:VW/2-58,
   appearance:null,profile:null,profileKey:'',swordFxPose:null,
+  hunterReady:null,hunterFollow:null,deathHunter:false,
 };
 function resetSquireCombat(){
   Object.assign(squire,{present:false,active:false,health:0,maxHealth:SQUIRE_BASE.maxHealth,
@@ -9225,11 +9284,12 @@ function resetSquireCombat(){
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:-1,
     deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
     visualX:-60,lastX:VW/2-58,
-    appearance:null,profile:null,profileKey:'',swordFxPose:null});
+    appearance:null,profile:null,profileKey:'',swordFxPose:null,
+    hunterReady:null,hunterFollow:null,deathHunter:false});
 }
 function equippedSquireCommand(){
   const command=typeof runSkill==='function'?runSkill('call_squire'):null;
-  return command&&command.squireGuardDepth?command:null;
+  return command&&(command.squireGuardDepth||command.squireHunterDepth)?command:null;
 }
 function squireVeterancyPower(){
   const value=Math.max(0,Number(squire.veterancy)||0),cap=SQUIRE_BASE.veterancySoftCap;
@@ -9259,6 +9319,8 @@ function setSkillLabSquireVeterancy(value){
 }
 function squireProgressionMaxHealth(){
   const command=equippedSquireCommand();if(!command)return SQUIRE_BASE.maxHealth;
+  if(command.squireHunterDepth)return Math.max(1,command.squireBaseMaxHealth+
+    Math.floor(effectiveSquireVeterancy()*(command.squireHunterHealthPerVet||.06)));
   const effective=effectiveSquireVeterancy(),thresholdHealth=(effective>=3?1:0)+(effective>=8?1:0);
   return Math.max(1,(command.squireBaseMaxHealth||SQUIRE_BASE.maxHealth)+thresholdHealth);
 }
@@ -9271,11 +9333,13 @@ function syncSquireProgressionHealth(fillNewSlots=false){
 }
 function squireVisualBulk(){
   const command=equippedSquireCommand();if(!command)return 0;
+  if(command.squireHunterDepth)return 0;
   const rank=squireVeterancyRank();
   return clamp((command.squireBulk||0)+(rank.bulkBonus||0)+
     Math.min(.035,(squire.veterancy||0)*.004),0,1.16);
 }
 function squireWeaponThicknessGrowth(){
+  if(equippedSquireCommand()?.squireHunterDepth)return 1;
   const command=equippedSquireCommand(),depth=clamp(
     Math.floor(command?.squireGuardDepth||0),0,4),
     rank=squireVeterancyRank().visualLevel,
@@ -9571,6 +9635,12 @@ function squireFormationX(){
   return clamp(knightX+side*62,42,VW-42);
 }
 function updateSquire(dt){
+  if(squire.hunterFollow){
+    if(squire.hunterFollow.action)squire.hunterFollow.t=Math.max(0,
+      squire.hunterFollow.action.t-squire.hunterFollow.releaseAt);
+    else squire.hunterFollow.t+=dt;
+    if(squire.hunterFollow.t>=1.5)squire.hunterFollow=null;
+  }
   if(squire.parryT>=0){squire.parryT+=dt;if(squire.parryT>1.02)squire.parryT=-1;}
   if(squire.callSignalT>=0){
     squire.callSignalT+=dt;
@@ -9655,9 +9725,11 @@ function drawSquire(captureRecall=false){
   if(dying&&squire.deathT>=SQUIRE_DEATH_BURST_AT&&!captureRecall)return;
   const deathTime=dying?Math.max(0,squire.deathT):0,
     arrival=clamp((squire.arrivalT||0)/.8,0,1),
-    shieldAction=dying?null:activeSquireShieldPose(),shieldLunge=shieldAction?.lunge||0,
-    swordAction=dying||shieldAction?null:activeSquireSwordPose(),
-    attack=dying||shieldAction||swordAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
+    hunter=dying?squire.deathHunter:!!equippedSquireCommand()?.squireHunterDepth,
+    bowAction=dying?null:activeSquireBowPose(),
+    shieldAction=dying||hunter?null:activeSquireShieldPose(),shieldLunge=shieldAction?.lunge||0,
+    swordAction=dying||shieldAction||bowAction?null:activeSquireSwordPose(),
+    attack=dying||shieldAction||swordAction||bowAction?0:(boss?Math.max(0,boss.allyAttackAnim||0):0),
     strike=Math.sin((1-attack)*Math.PI)*(attack>0?1:0),
     cheer=dying||squire.cheerT===undefined?0:Math.sin(clamp(squire.cheerT/.72,0,1)*Math.PI),
     baseX=squire.present?squire.visualX:squire.lastX,
@@ -9674,16 +9746,16 @@ function drawSquire(captureRecall=false){
   drawRider(x,y,scale,{gallop:squire.present&&arrival<1?perfNow*1.7:
       perfNow*(.34+horsePanic*4.4),
     lean:0,duck:0,air:0,rigId:'ser_jonathan',feather:'#d7b878',horse:'#4f3425',
-    appearance,squire:true,squireBulk:visualBulk,
+    appearance,squire:true,squireHunter:hunter,squireBulk:visualBulk,
     squireRankLevel:rankLevel,
     squireWeaponThicknessGrowth:weaponThickness,
     swordFxTarget:squire,
     riderFall,attack, counter:0,parry:0,swordCombo:null,swordAction,
-    bowAction:null,shieldAction});
+    bowAction,shieldAction});
   if(dying&&deathTime<.18){
     g.globalCompositeOperation='screen';g.globalAlpha=(1-deathTime/.18)*.82;
     drawRider(x,y,scale,{gallop:perfNow*.34,lean:0,duck:0,air:0,
-      rigId:'ser_jonathan',appearance,squire:true,squireBulk:visualBulk,
+      rigId:'ser_jonathan',appearance,squire:true,squireHunter:hunter,squireBulk:visualBulk,
       squireRankLevel:rankLevel,
       squireWeaponThicknessGrowth:weaponThickness,riderFall,
       attack:0,counter:0,parry:0,swordCombo:null,bowAction:null,shieldAction:null});
@@ -11926,7 +11998,15 @@ const SHIELD_BASH_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   SHIELD_BASH_ROUTES.map(route=>[route.id,route])));
 const SQUIRE_GUARD_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   SQUIRE_GUARD_ROUTES.map(route=>[route.id,route])));
-const CLASS_SKILL_ROUTES=Object.freeze([...SHIELD_BASH_ROUTES,...SQUIRE_GUARD_ROUTES]);
+const SQUIRE_HUNTER_ROUTES=Object.freeze([
+  classSkillRouteNode({id:'squire_hunter_form',skillId:'call_squire',depth:1,parentId:null,
+    name:'HUNTER SQUIRE',styleId:'HUNTER',buildAspect:'SQUIRE_HUNTER',col:'#a6c881',usesQuality:true,
+    progressionLabel:'FORM',
+    summary:'A small mounted archer who builds Mark and prepares a coordinated shot for the Knight.',
+    debugSummaryTr:'Avcı Formu: Kalkan yerine yay, sadak ve Robin Hood şapkası. Marking Shot düşük hasar ve biriken Mark katkısı verir. Ready Shot yayı gerip bekler: Knight Mark patlatırsa bonus, patlatmazsa mevcut Marklardan küçük bir patlama, Mark yoksa ufak ek hasar. Parry veya dodge vermez.',
+    patch:{squireHunterDepth:1}})
+]);
+const CLASS_SKILL_ROUTES=Object.freeze([...SHIELD_BASH_ROUTES,...SQUIRE_GUARD_ROUTES,...SQUIRE_HUNTER_ROUTES]);
 const CLASS_SKILL_ROUTE_BY_ID=Object.freeze(Object.fromEntries(
   CLASS_SKILL_ROUTES.map(route=>[route.id,route])));
 const SQUIRE_GUARD_QUALITY_RECIPE_BY_ID=Object.freeze(Object.fromEntries(
@@ -12013,12 +12093,45 @@ function compileSquireGuardQuality(command,lineage,rarityByDepth){
   command.legendaryStamps=[];refreshSkillRarityResonance(command);
   return command;
 }
+const SQUIRE_HUNTER_QUALITY_RECIPES=Object.freeze(Object.fromEntries(SQUIRE_HUNTER_ROUTES.map(
+  route=>[route.id,Object.freeze({id:route.id,depth:route.depth,
+    baseAttributeId:'SQUIRE_HUNTER',baseAttributeAxis:'HUNTER_SHOT',baseAttributeShare:0,
+    qualityProfile:Object.freeze({HUNTER_SHOT:.45,HUNTER_READY:.35,VETERANCY_EFFICIENCY:.10,DURABILITY:.10})})])));
+function compileSquireHunterQuality(command,lineage,rarityByDepth){
+  const path=lineage.map(route=>({routeId:route.id,depth:route.depth,
+    rarity:rarityByDepth?.[route.depth]||'COMMON'}));
+  if(path.some(entry=>!SKILL_RARITY_SYNTHESIS_ECONOMY[entry.rarity]))return null;
+  const ledger=compileSkillQualityLedger(path,SQUIRE_HUNTER_QUALITY_RECIPES,{includeStructural:true}),
+    axes=ledger.axisCredits,shot=axes.HUNTER_SHOT||0,ready=axes.HUNTER_READY||0,
+    health=axes.DURABILITY||0,efficiency=axes.VETERANCY_EFFICIENCY||0,
+    history=path.map((entry,index)=>Object.freeze({...squireGuardQualityHistoryNode(
+      lineage[index],entry.rarity,ledger.receipts[index]),familyId:'SQUIRE_HUNTER',buildAspect:'SQUIRE_HUNTER'}));
+  Object.assign(command,{squireHunterDepth:1,squireGuardDepth:0,squireBulk:0,
+    squireBaseMaxHealth:1+Math.floor(health/8),squireHunterHealthPerVet:.06+health*.003,
+    squireVeterancyEfficiency:.75+efficiency*.025,
+    squireHunterShotDamage:stableCombatNumber(4+shot*.28),
+    squireHunterMarkCredit:stableCombatNumber(1+shot*.025),
+    squireHunterReadyPower:stableCombatNumber(4+ready*.30),
+    squireHunterReadyCapacity:1+Math.floor(ready/12),
+    squireEncourageHeal:1,squireParryOnHit:false,squirePreparedParryMove:false,
+    evolutionHistory:history,evolutionMutationIds:history.map(node=>node.routeId),
+    mutationIds:history.map(node=>node.routeId),synthesisHistory:history.slice(),
+    synthesisActive:true,synthesisEconomyApplied:true,synthesisBaseResolveCost:1,
+    formAspectId:'SQUIRE_HUNTER',lineageAspect:'STABLE',evolutionRarity:history.at(-1).rarity,
+    synthesisCompilerVersion:SKILL_QUALITY_COMPILER_VERSION,
+    synthesisEffectiveQuality:ledger.effectiveQuality,synthesisDepthBonus:ledger.depthBonus,
+    synthesisAxisCredits:axes,synthesisQualityReceipts:Array.from(ledger.receipts),
+    legendaryStampSlots:history.filter(node=>node.legendaryStampSlot).length,legendaryStamps:[]});
+  refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;
+  refreshSkillRarityResonance(command);return command;
+}
 function compileClassSkillRoute(routeId,rarityByDepth=moveTreeSynthesisRarityByDepth){
   const route=CLASS_SKILL_ROUTE_BY_ID[routeId],definition=route&&BASE_TURN_SKILL_BY_ID&&
     BASE_TURN_SKILL_BY_ID[route.skillId];if(!route||!definition)return null;
   const command=createRunSkill(definition),lineage=classSkillRouteLineage(routeId);
   for(const layer of lineage)Object.assign(command,layer.patch||{});
-  if(route.usesQuality&&!compileSquireGuardQuality(command,lineage,rarityByDepth))return null;
+  if(route.usesQuality&&!(route.styleId==='HUNTER'?compileSquireHunterQuality:
+    compileSquireGuardQuality)(command,lineage,rarityByDepth))return null;
   command.name=route.name;command.col=route.col;command.classRouteId=route.id;
   command.classStyleId=route.styleId;command.evolutionDepth=route.depth;
   /* Every evolution remains the same physical Shield Bash clip. Route patches
@@ -13234,7 +13347,9 @@ const COMBAT_DELIVERY_PROFILES=new DefinitionRegistry('combat delivery profile')
     animationProfile:'SHIELD_IMPACT',patterns:['SINGLE','SEQUENTIAL'],
     timings:['IMMEDIATE','DELAYED_RELEASE']}),
   combatDeliveryProfile({id:'COMPANION_STRIKE',actor:'COMPANION',family:'MELEE',targeting:'ENEMY',
-    animationProfile:'COMPANION_CONTACT',patterns:['SINGLE','SEQUENTIAL'],timings:['IMMEDIATE']})
+    animationProfile:'COMPANION_CONTACT',patterns:['SINGLE','SEQUENTIAL'],timings:['IMMEDIATE']}),
+  combatDeliveryProfile({id:'COMPANION_BOW',actor:'COMPANION',family:'PROJECTILE',targeting:'ENEMY',
+    animationProfile:'BOW_SHOT',patterns:['SINGLE'],timings:['IMMEDIATE']})
 ].forEach(profile=>COMBAT_DELIVERY_PROFILES.register(profile));
 Object.freeze(COMBAT_DELIVERY_PROFILES.ids);Object.freeze(COMBAT_DELIVERY_PROFILES.list);
 Object.freeze(COMBAT_DELIVERY_PROFILES.byId);Object.freeze(COMBAT_DELIVERY_PROFILES);
@@ -14040,12 +14155,17 @@ function resolveBowAnimationRecipe(command,charge=0,recipeIdOverride=null){
 }
 function buildBowActionTimeline(command,delivery,charge=0,distance=600,markAtStart=0,
     postureAtStart=0,postureMax=CFG.BOSS_POSTURE_MAX){
-  if(!delivery||delivery.family!=='PROJECTILE'||delivery.profileId!=='OWNER_BOW')return null;
+  if(!delivery||delivery.family!=='PROJECTILE'||
+     !['OWNER_BOW','COMPANION_BOW'].includes(delivery.profileId))return null;
   const requestedRecipeId=WEAPON_ANIMATION_FAMILIES.get('BOW').commandRecipeId(command),
     finisherReady=requestedRecipeId==='BOW_POSTURE_FINISHER'&&
       postureAtStart>=Math.max(1,postureMax)*(command.postureThresholdRatio||.5),
-    recipe=resolveBowAnimationRecipe(command,charge,
+    authoredRecipe=resolveBowAnimationRecipe(command,charge,
       finisherReady?'BOW_POSTURE_FINISHER_READY':requestedRecipeId),
+    // Give the full back-to-hand clip time to read without slowing projectile flight.
+    recipe=Object.freeze({...authoredRecipe,raiseTime:Math.max(1.10,authoredRecipe.raiseTime),
+      drawTime:Math.max(.42,authoredRecipe.drawTime),holdTime:Math.max(.12,authoredRecipe.holdTime),
+      recoveryTime:Math.max(1.25,authoredRecipe.recoveryTime)}),
     hits=Math.max(1,command&&command.hits||1),
     flightTime=Math.max(.08,Math.max(1,Number(distance)||600)/recipe.arrowSpeed),
     firstRelease=recipe.raiseTime+recipe.drawTime+recipe.holdTime,
@@ -41091,8 +41211,31 @@ function squireCombatProfile(){
       route?.squireVeterancyEfficiency,route?.squireVeterancyDamagePerPoint,
       route?.squireCoveringCrossDamageBonus,route?.squireGuardBashPosture,
       route?.squireVeterancyPosturePerPoint,route?.squireShieldThresholdDiscount,
-      route?.squirePreparedParryMove,guardDepth].join('|');
+      route?.squirePreparedParryMove,guardDepth,route?.squireHunterShotDamage,
+      route?.squireHunterMarkCredit,route?.squireHunterReadyPower,route?.squireHunterReadyCapacity].join('|');
   if(squire.profile&&squire.profileKey===key)return squire.profile;
+  if(route?.squireHunterDepth){
+    const damage=stableCombatNumber(route.squireHunterShotDamage+morale*.5+effectiveVeterancy*.22),
+      markCredit=stableCombatNumber(route.squireHunterMarkCredit+effectiveVeterancy*.015),
+      readyPower=stableCombatNumber(route.squireHunterReadyPower+morale*.45+effectiveVeterancy*.20),
+      fightDamage=stableDamage((SQUIRE_BASE.slashDamage+morale*SQUIRE_BASE.encourageDamagePerStack)/2),
+      col=squire.appearance?.bow?.arrowFeather||'#a6c881';
+    squire.profileKey=key;
+    squire.profile=Object.freeze({id:'squire',name:'HUNTER SQUIRE',col,
+      fightName:'SQUIRE SLASH',fightDamage,fightHitDamages:Object.freeze([fightDamage,fightDamage]),
+      fightHits:2,fightHitInterval:BACK_SWORD_TIMING.crossContact-BACK_SWORD_TIMING.contact,
+      fightPosture:0,fightAddsChain:false,fightPreparedParry:false,
+      skills:Object.freeze([
+        Object.freeze({id:'squire_marking_shot',name:'MARKING SHOT',source:'COMPANION',skill:true,
+          squireMove:true,squireHunterBow:true,cost:0,damage,hits:1,posture:0,addsChain:false,
+          canCrit:false,col,squireMarkCredit:markCredit,deliveryProfileId:'COMPANION_BOW',
+          bowAnimationRecipeId:'BOW_STANDARD'}),
+        Object.freeze({id:'squire_ready_shot',name:'READY SHOT',source:'COMPANION',skill:true,
+          squireMove:true,squireHunterBow:true,squireReadyShot:true,cost:1,damage:0,hits:0,
+          posture:0,addsChain:false,canCrit:false,col,readyPower,
+          readyCapacity:route.squireHunterReadyCapacity,deliveryProfileId:'COMPANION_BOW'})])});
+    return squire.profile;
+  }
   const slashDamage=SQUIRE_BASE.slashDamage+morale*SQUIRE_BASE.encourageDamagePerStack+
       Math.floor(effectiveVeterancy*(route?.squireVeterancyDamagePerPoint||0))+
       (route?.squireCoveringCrossDamageBonus||0),
@@ -41132,12 +41275,12 @@ function squireClassCommand(base){
   if(!base)return base;
   if(squire.present&&!squire.active)return {...base,name:'SQUIRE RIDING IN',
     squireAction:'ARRIVING',squireSupport:true,col:'#8f8062'};
-  if(squire.present)return {...base,name:'ENCOURAGE '+(base.squireGuardDepth?'GUARD SQUIRE':'SQUIRE'),squireAction:'ENCOURAGE',
+  if(squire.present)return {...base,name:'ENCOURAGE '+(base.squireHunterDepth?'HUNTER':base.squireGuardDepth?'GUARD SQUIRE':'SQUIRE'),squireAction:'ENCOURAGE',
     squireSupport:true,col:'#c0f79a'};
   const cooldown=squireCooldownTurns();
   if(cooldown>0)return {...base,name:'SQUIRE · '+cooldown+' TURN'+(cooldown===1?'':'S'),
     squireAction:'COOLDOWN',squireSupport:true,col:'#716957',squireCooldown:cooldown};
-  return {...base,name:base.squireGuardDepth?'CALL GUARD SQUIRE':'CALL SQUIRE',squireAction:'CALL',
+  return {...base,name:base.squireHunterDepth?'CALL HUNTER SQUIRE':base.squireGuardDepth?'CALL GUARD SQUIRE':'CALL SQUIRE',squireAction:'CALL',
     squireSupport:true,col:'#d7b878'};
 }
 function knightTurnSkills(){
@@ -41258,7 +41401,11 @@ function combatTurnHitDamageBreakdown(base,markPayload=0,extraChainBonus=0,chain
 function bossMark(){return boss?Math.max(0,Math.min(MARK_TECHNICAL_CAP,boss.mark||0)):0;}
 function addBossMark(amount){
   if(!boss||!(amount>0))return 0;
-  const before=bossMark(),gain=Math.max(0,Math.floor(Number(amount)||0));
+  // Fractional contributions belong to the target's shared Mark reserve, not
+  // to a Squire life or a particular weapon. Integer weapon events are unchanged.
+  const total=Math.max(0,Number(amount)||0)+Math.max(0,boss.markFraction||0),
+    gain=Math.floor(total+1e-9),before=bossMark();
+  boss.markFraction=Number(Math.max(0,total-gain).toFixed(6));
   boss.mark=Math.min(MARK_TECHNICAL_CAP,before+gain);return boss.mark-before;
 }
 function applyBossMarkEvent(amount,source='COMMAND'){
@@ -41990,7 +42137,8 @@ function summonSquire(){
     activateOnPlayerPhase:serial+1,readyOnPlayerPhase:0,encouragement:0,
     arrivalT:0,deathT:-1,deathBurst:false,deathSide:1,callSignalT:0,visualX:-48,lastX:target,
     deathVisualBulk:0,deathRankLevel:0,deathWeaponThickness:1,
-    appearance:randomSquireAppearance(),profile:null,profileKey:''});
+    appearance:randomSquireAppearance(),profile:null,profileKey:'',
+    hunterReady:null,hunterFollow:null,deathHunter:false});
   burst(target,PLAYER_Y-20,18,[squire.appearance.plume,squire.appearance.armorLight,
     squire.appearance.shield.face],130,90,3.2,.7);
   floater(target,PLAYER_Y-116,'SQUIRE CALLED','#d7b878',18);SFX.relic();
@@ -42010,6 +42158,53 @@ function encourageSquire(){
     floater(x,PLAYER_Y-128,'MORALE +1','#ffe37a',17);
   }
   squire.cheerT=0;SFX.relic();
+}
+const SQUIRE_HUNTER_READY_TIME=1.65;
+function cancelSquireReadyShot(animate=true){
+  if(squire.hunterReady&&animate&&squire.present)
+    squire.hunterFollow={t:0,cancel:true};
+  squire.hunterReady=null;
+  if(!animate)squire.hunterFollow=null;
+}
+function performSquireReadyShot(command){
+  if(!isPlayerTurn()||activeTurnActorId()!=='ally'||!squirePartyReady()||
+     !equippedSquireCommand()?.squireHunterDepth||!turnCommandAvailable(command,'ally'))return false;
+  const apCost=turnCommandApCost(command),cost=turnCommandResolveCost(command);
+  if(!activeSkillLabCombat())squire.ap=Math.max(0,squire.ap-apCost);
+  boss.resolve-=cost;markTurnSkillUsedThisPhase(command,'ally');
+  cancelSquireReadyShot(false);
+  boss.phase='playerResolve';boss.playerMenu='skills';boss.playerActionReturnMenu='skills';
+  boss.playerActionTimer=SQUIRE_HUNTER_READY_TIME;
+  boss.turnAction={command,actorId:'ally',supportOnly:true,t:0,hits:0,hitIndex:0};
+  SFX.swipe();return true;
+}
+function resolveSquireReadyShot(action,index){
+  if(index!==0||action.actorId!=='knight'||action.supportOnly||
+     !squirePartyReady()||!squire.hunterReady)return 0;
+  const prepared=squire.hunterReady,plan=action.markPlan||{},
+    // The plan retains pre-consumption Marks, including weapons that cash out
+    // at action start. Do not mistake their emptied target for an unmarked one.
+    plannedPayload=(plan.markDamageByHit||[]).reduce((sum,value)=>sum+Math.max(0,value||0),0),
+    knightDetonates=(plan.consumedTotal||0)>0&&plannedPayload>0,
+    power=Math.max(0,prepared.power),capacity=Math.max(1,prepared.capacity||1);
+  let damage,mode,consumed=0;
+  if(knightDetonates){damage=power+plannedPayload*.10;mode='MARK ASSIST';}
+  else if(bossMark()>0){
+    consumed=Math.min(bossMark(),capacity);boss.mark=Math.max(0,bossMark()-consumed);
+    damage=power*.5*consumed/capacity;mode='SMALL DETONATION';
+  }else {damage=power*.3;mode='SUPPORT SHOT';}
+  squire.hunterReady=null;
+  const geometry=bowTurnActionGeometry('ally');
+  // Flight was scheduled ahead of contact; never launch a delayed second arrow.
+  if(squire.hunterFollow?.action===action){
+    squire.hunterFollow.t=squire.hunterFollow.flightTime;
+    squire.hunterFollow.action=null;
+  }else squire.hunterFollow={t:.18,flightTime:.18,cancel:false,
+    from:{...geometry.from},to:{...geometry.to}};
+  action.squireReadyResult=Object.freeze({mode,damage:stableCombatNumber(damage),consumed});
+  floater(geometry.to.x,geometry.to.y-28,mode+' +'+damagePart(damage),
+    squire.appearance?.bow?.arrowFeather||'#a6c881',13);
+  return stableCombatNumber(damage);
 }
 function performSquireSupportAction(command){
   if(!isPlayerTurn()||!turnCommandAvailable(command,'knight')||
@@ -42129,6 +42324,11 @@ function finishPlayerAction(){
   if(!isTurnCombat()||boss.phase!=='playerResolve') return;
   const finishedAction=boss.turnAction;
   if(finishedAction&&finishedAction.supportOnly){
+    if(finishedAction.command.squireReadyShot&&squirePartyReady()){
+      squire.hunterReady=Object.freeze({power:finishedAction.command.readyPower,
+        capacity:finishedAction.command.readyCapacity,phase:boss.playerPhaseSerial});
+      floater(squire.visualX,PLAYER_Y-104,'READY SHOT · HOLD','#a6c881',15);
+    }
     boss.turnAction=null;boss.phase='player';boss.playerActionTimer=0;
     boss.playerMenu=boss.playerActionReturnMenu||'skills';
     floater(VW/2,286,'AP '+boss.ap+'/'+boss.apMax+' · RESOLVE '+boss.resolve+'/'+boss.resolveMax,
@@ -42313,23 +42513,25 @@ function installBossPosturePrimer(amount,amplification=0,breakPower=0){
 }
 
 const BOW_ACTION_GEOMETRY_SCRATCH={from:{x:0,y:0},to:{x:0,y:0},distance:1};
-function bowTurnActionGeometry(){
+function bowTurnActionGeometry(actorId='knight'){
   const geometry=BOW_ACTION_GEOMETRY_SCRATCH,projection=boss?proj(boss.z):null;
-  geometry.from.x=laneX(player.x,1);geometry.from.y=PLAYER_Y-88;
+  geometry.from.x=actorId==='ally'?squire.visualX:laneX(player.x,1);
+  geometry.from.y=actorId==='ally'?PLAYER_Y+9-88*.72:PLAYER_Y-88;
   geometry.to.x=boss?laneX(boss.x,projection.t):VW/2;
   geometry.to.y=projection?projection.y-66*projection.s:170;
   geometry.distance=Math.max(1,Math.hypot(geometry.to.x-geometry.from.x,
     geometry.to.y-geometry.from.y));
   return geometry;
 }
-function isBowTurnAction(action){return !!(action&&action.bowTimeline&&action.actorId==='knight');}
+function isBowTurnAction(action){return !!(action&&action.bowTimeline&&
+  (action.actorId==='knight'||action.command?.squireHunterBow));}
 const SQUIRE_SWORD_TIMELINE=Object.freeze({
   /* The authored X has two blade contacts, so combat must resolve twice too. */
   contacts:Object.freeze([BACK_SWORD_TIMING.contact,BACK_SWORD_TIMING.crossContact]),
   recoveryEnd:BACK_SWORD_TIMING.settleEnd
 });
 function buildSquireSwordTimeline(command,actorId){
-  return actorId==='ally'&&command?.squireMove&&!command.squireShieldBash?
+  return actorId==='ally'&&command?.squireMove&&!command.squireShieldBash&&!command.squireHunterBow?
     SQUIRE_SWORD_TIMELINE:null;
 }
 /* Shield Bash is an authored prop transfer, not a reskinned sword swing. The
@@ -42456,14 +42658,32 @@ function preparedFocusIdleBowPose(pending,actor,pose=PLAYER_BOW_POSE_SCRATCH){
   pose.recipe=bowAnimationRecipeById(source?pending.command.bowAnimationRecipeId:'BOW_PREP_FOCUS_CARRY');
   return pose;
 }
+function solveBowAimYaw(aimGeometry,actorScale=1.02){
+  // Solve in the same projected space as the drawn arrow, not screen angle = yaw.
+  let low=-.9,high=.9;
+  for(let i=0;i<14;i++){
+    const yaw=(low+high)/2,pose=sampleSpatialBow(2.5,yaw),
+      grip=SpatialRiderRig.project(pose.grip,0),nock=SpatialRiderRig.project(pose.string,0),
+      originX=aimGeometry.from.x+grip[0]*3*1.23*actorScale,
+      originY=aimGeometry.from.y+(grip[1]+2)*3*1.23*actorScale,
+      slope=(grip[0]-nock[0])/Math.max(.001,nock[1]-grip[1]),
+      targetSlope=(aimGeometry.to.x-originX)/Math.max(1,originY-aimGeometry.to.y);
+    if(slope<targetSlope)low=yaw;else high=yaw;
+  }
+  return (low+high)/2;
+}
 function activePlayerBowPose(){
+  PLAYER_BOW_POSE_SCRATCH.aimYaw=solveBowAimYaw(bowTurnActionGeometry());
   const action=boss&&boss.turnAction;
-  if(!isBowTurnAction(action)){
+  if(!isBowTurnAction(action)||action.actorId!=='knight'){
     // Preparation glow cannot mask actual sword/parry/counter choreography.
     if(action||player.parryAnim>0||player.counterAnim>0||player.attackAnim>0||
        player.swordCombo||player.swordPreviewT>=0)return null;
     return preparedFocusIdleBowPose(pendingPrimaryChargeRelease(),boss);
   }
+  return sampleBowActionPose(action,PLAYER_BOW_POSE_SCRATCH);
+}
+function sampleBowActionPose(action,pose){
   const timeline=action.bowTimeline,recipe=timeline.recipe,t=action.t,releases=timeline.releases,
     shotIndex=Math.min(releases.length-1,Math.max(0,action.nextReleaseIndex||0)),
     releaseAt=releases[shotIndex],previousRelease=shotIndex?releases[shotIndex-1]:0,
@@ -42478,24 +42698,44 @@ function activePlayerBowPose(){
   else if(t>=drawEnd&&t<releaseAt)drawAmount=1;
   else if(t>=releaseAt&&afterRelease<recipe.releaseTime)
     drawAmount=1-easeOut(clamp(afterRelease/recipe.releaseTime,0,1));
-  PLAYER_BOW_POSE_SCRATCH.visible=visible;
-  PLAYER_BOW_POSE_SCRATCH.raise=easeOut(clamp(t/recipe.raiseTime,0,1));
-  PLAYER_BOW_POSE_SCRATCH.drawAmount=drawAmount*recipe.drawStrength;
-  PLAYER_BOW_POSE_SCRATCH.recoil=Math.sin(Math.PI*clamp(afterRelease/recipe.releaseTime,0,1))*
+  pose.visible=visible;
+  pose.raise=easeOut(clamp(t/recipe.raiseTime,0,1));
+  pose.drawAmount=drawAmount*recipe.drawStrength;
+  pose.recoil=Math.sin(Math.PI*clamp(afterRelease/recipe.releaseTime,0,1))*
     recipe.releaseRecoil;
-  PLAYER_BOW_POSE_SCRATCH.recipe=recipe;
-  PLAYER_BOW_POSE_SCRATCH.chargeIntensity=recipe.chargeIntensity||0;
-  PLAYER_BOW_POSE_SCRATCH.preparedFocus=!!(action.command.chargeFocus||action.preparedFocus?.carry);
+  pose.recipe=recipe;
+  pose.chargeIntensity=recipe.chargeIntensity||0;
+  pose.preparedFocus=!!(action.command.chargeFocus||action.preparedFocus?.carry);
   // Map the shared clip onto gameplay timing; projectile and damage timing stay unchanged.
-  PLAYER_BOW_POSE_SCRATCH.spatialTime=t<drawStart?1.65*clamp(t/Math.max(.001,drawStart),0,1):
+  pose.spatialTime=t<drawStart?1.65*clamp(t/Math.max(.001,drawStart),0,1):
     t<drawEnd?1.65+.85*clamp((t-drawStart)/Math.max(.001,drawEnd-drawStart),0,1):
     t<releaseAt?2.5+.74*clamp((t-drawEnd)/Math.max(.001,releaseAt-drawEnd),0,1):
     t<fadeStart?3.25+.60*clamp(afterRelease/Math.max(.001,fadeStart-releaseAt),0,1):
     3.85+1.95*clamp((t-fadeStart)/Math.max(.001,recipe.recoveryTime),0,1);
-  return PLAYER_BOW_POSE_SCRATCH;
+  return pose;
+}
+const SQUIRE_BOW_POSE_SCRATCH={visible:0,raise:0,drawAmount:0,recoil:0,recipe:null};
+function activeSquireBowPose(){
+  if(!squire.present||!equippedSquireCommand()?.squireHunterDepth)return null;
+  const action=boss?.turnAction,pose=SQUIRE_BOW_POSE_SCRATCH;
+  pose.aimYaw=solveBowAimYaw(bowTurnActionGeometry('ally'),.72);
+  if(action?.actorId==='ally'&&isBowTurnAction(action))return sampleBowActionPose(action,pose);
+  let t;
+  if(action?.actorId==='ally'&&action.command?.squireReadyShot)
+    t=2.5*clamp(action.t/SQUIRE_HUNTER_READY_TIME,0,1);
+  else if(squire.hunterReady&&!squire.hunterFollow?.action)t=2.8;
+  else if(squire.hunterFollow){
+    const follow=squire.hunterFollow;
+    t=follow.cancel?lerp(2.8,5.8,smoothStep(clamp(follow.t/1.5,0,1))):
+      follow.t<.22?3.25+.60*follow.t/.22:3.85+1.95*clamp((follow.t-.22)/1.25,0,1);
+  }else return null;
+  Object.assign(pose,{visible:1,raise:1,drawAmount:t>=2.5&&t<3.25?1:0,
+    recoil:0,chargeIntensity:0,preparedFocus:false,spatialTime:t,
+    recipe:bowAnimationRecipeById('BOW_STANDARD')});
+  return pose;
 }
 function emitBowRelease(action,index){
-  const recipe=action.bowTimeline.recipe,point=bowTurnActionGeometry().from,
+  const recipe=action.bowTimeline.recipe,point=bowTurnActionGeometry(action.actorId).from,
     intensity=.55+recipe.trailStrength*.45;
   SFX.arrow();
   burst(point.x,point.y,Math.round(3+4*intensity),[recipe.trailColor,recipe.glowColor,'#ffffff'],
@@ -43014,12 +43254,24 @@ function resolveTurnActionHit(action){
     damage=stableCombatNumber(damage+afflictionDetonationBonus);
     damageResult={...damageResult,afflictionDetonation:afflictionDetonationBonus,exactFinal:damage,final:damage};
   }
+  const squireReadyDamage=resolveSquireReadyShot(action,index);
+  if(squireReadyDamage>0){
+    // The companion's once-only payload does not inherit Knight Crit/Chain or
+    // recursively fire weapon detonation hooks.
+    damage=stableCombatNumber(damage+squireReadyDamage);
+    damageResult={...damageResult,squireReady:squireReadyDamage,exactFinal:damage,final:damage};
+  }
+  if(command.squireMarkCredit>0){
+    const gained=applyBossMarkEvent(command.squireMarkCredit,'SQUIRE_MARKING_SHOT');
+    floater(squire.visualX,PLAYER_Y-98,gained?'MARK +'+gained:
+      'MARK RESERVE '+Math.round((boss.markFraction||0)*100)+'%',command.col,12);
+  }
   const shieldImpact=isShieldTurnAction(action)||isSquireShieldTurnAction(action),
     squireSwordImpact=action.actorId==='ally'&&!!action.swordTimeline,
     p=proj(boss.z),x=laneX(boss.x,p.t),
     y=p.y-(shieldImpact?22:70)*p.s,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
-  if(action.actorId==='ally')boss.allyAttackAnim=1;
+  if(action.actorId==='ally'&&!command.squireHunterBow)boss.allyAttackAnim=1;
   else if(isBowTurnAction(action)){
     player.swordCombo=null;player.attackAnim=0;player.counterAnim=0;
   }else if(shieldImpact){
@@ -43438,11 +43690,24 @@ function emitSquireSwordCutParticles(secondCut=false){
   emitSwordPoseParticles(squire,boss?.turnAction?.t,count,colors,speed,gravity,
     size,life,fallbackX,fallbackY);
 }
+function scheduleSquireReadyFlight(action){
+  if(action.actorId!=='knight'||action.supportOnly||action.hitIndex!==0||
+     !squirePartyReady()||!squire.hunterReady||action.squireReadyFlightStarted)return;
+  const contactAt=action.bowTimeline? action.bowTimeline.contacts[0]:action.impactDelay,
+    flightTime=Math.min(.18,Math.max(.001,contactAt)),releaseAt=Math.max(0,contactAt-flightTime);
+  if(!Number.isFinite(contactAt)||action.t<releaseAt)return;
+  const geometry=bowTurnActionGeometry('ally');
+  action.squireReadyFlightStarted=true;
+  squire.hunterFollow={t:Math.max(0,action.t-releaseAt),cancel:false,action,releaseAt,flightTime,
+    from:{...geometry.from},to:{...geometry.to}};
+  SFX.arrow();
+}
 function updateTurnAction(dt){
   const action=boss&&boss.turnAction;if(!action)return;
   if(action.supportOnly){action.t+=dt;return;}
   boss.allyAttackAnim=Math.max(0,(boss.allyAttackAnim||0)-dt*3.2);
   action.t+=dt;
+  scheduleSquireReadyFlight(action);
   if(action.shieldTimeline&&!action.shieldUnhookCue&&action.t>=SHIELD_BASH_TIMING.detachEnd){
     action.shieldUnhookCue=true;SFX.swipe();
   }
@@ -43597,6 +43862,7 @@ function resolvePendingClassShieldGrant(action){
 function performPlayerAction(command,options=null){
   if(!isPlayerTurn()||!command) return false;
   if(command.squireSupport)return performSquireSupportAction(command);
+  if(command.squireReadyShot)return performSquireReadyShot(command);
   assertPersistentChainCommand(command,'Player action');
   skillTooltipIndex=-1;
   const actorId=activeTurnActorId(),skill=command.skill===true,
@@ -43620,6 +43886,7 @@ function performPlayerAction(command,options=null){
      (boss.resolve||0)<cost){SFX.duck();return false;}
   if(!freeFollowUp&&turnSkillUsedThisPhase(command,actorId)){SFX.duck();return false;}
   if(!freeFollowUp)markTurnSkillUsedThisPhase(command,actorId);
+  if(actorId==='ally'&&command.squireMove)cancelSquireReadyShot(false);
   if(command.source==='CLASS'){
     command=prepareClassSkillCommand(command);
   }else command=claimClassArmorExposure(command);
@@ -43908,9 +44175,17 @@ function performPlayerAction(command,options=null){
     detonationPostureTotal=commandDetonationPostureAmount(command,markPlan,chainStacks,
       boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX,bossBleed(),chargeSpent),
     detonationPostureSeal=commandDetonationPostureSealAmount(command,markPlan),
-    bowGeometry=actorId==='knight'&&delivery.profileId==='OWNER_BOW'?bowTurnActionGeometry():null,
-    bowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance,
+    bowGeometry=(actorId==='knight'||command.squireHunterBow)&&
+      ['OWNER_BOW','COMPANION_BOW'].includes(delivery.profileId)?
+      bowTurnActionGeometry(actorId):null,
+    rawBowTimeline=bowGeometry?buildBowActionTimeline(command,delivery,chargeSpent,bowGeometry.distance,
       markPlan.markAtStart,boss.posture||0,boss.postureMax||CFG.BOSS_POSTURE_MAX):null,
+    bowTimeline=rawBowTimeline&&command.squireHunterBow?Object.freeze({...rawBowTimeline,
+      recipe:Object.freeze({...rawBowTimeline.recipe,arrowScale:.72,
+        glowColor:squire.appearance?.bow?.arrowFeather||'#a6c881',
+        trailColor:squire.appearance?.bow?.arrowFeather||'#a6c881',
+        impactColor:squire.appearance?.bow?.arrowHead||'#dce4eb',
+        impactShake:0,hitStop:0,impactScale:.7,trailStrength:.22})}):rawBowTimeline,
     shieldTimeline=(actorId==='knight'||command.squireShieldBash)?
       buildShieldBashTimeline(command,delivery):null,
     swordTimeline=buildSquireSwordTimeline(command,actorId),
@@ -44260,6 +44535,8 @@ function resolveSquireIntercept(reason){
   squire.present=false;squire.active=false;squire.deathT=0;squire.deathBurst=false;
   squire.deathVisualBulk=deathVisualBulk;squire.deathRankLevel=deathRankLevel;
   squire.deathWeaponThickness=deathWeaponThickness;
+  squire.deathHunter=!!equippedSquireCommand()?.squireHunterDepth;
+  cancelSquireReadyShot(false);
   squire.ap=0;squire.encouragement=0;squire.veterancy=0;
   squire.preparedParry=false;squire.defenseVeterancyEligible=false;
   squire.profile=null;squire.profileKey='';
@@ -46412,9 +46689,17 @@ function drawBowMechanicCue(action,timeline,geometry){
   }
   g.restore();
 }
+function bowFlightArrowScale(actorId='knight'){
+  const R=SpatialRiderRig,geometry=bowTurnActionGeometry(actorId),
+    scale=actorId==='ally'?.72:1.02,
+    pose=sampleSpatialBow(3.24,solveBowAimYaw(geometry,scale)),
+    direction=R.unit(R.sub(pose.grip,pose.string)),
+    start=R.project(pose.string,0),end=R.project(R.add(pose.string,R.mul(direction,14.5)),0);
+  return Math.hypot(end[0]-start[0],end[1]-start[1])*1.23*U*scale/30.1;
+}
 function drawTurnActionProjectile(){
   const action=boss&&boss.turnAction;if(!isBowTurnAction(action))return;
-  const timeline=action.bowTimeline,recipe=timeline.recipe,geometry=bowTurnActionGeometry(),
+  const timeline=action.bowTimeline,recipe=timeline.recipe,geometry=bowTurnActionGeometry(action.actorId),
     pulse=.5+.5*Math.sin(perfNow*15),packet=action.delivery.pattern==='SIMULTANEOUS_PACKET';
   drawBowMechanicCue(action,timeline,geometry);
   for(let index=0;index<timeline.releases.length;index++){
@@ -46440,9 +46725,10 @@ function drawTurnActionProjectile(){
     const preparedHeavy=['PREP_DET_PRIMER','PREP_CHAIN_WAIT','PREP_POSTURE_BREACH','PREP_AFF_SEQUENCE'].includes(recipe.mechanicCue),
       preparedExtra=action.command.preparedChainRoles?.[index]?.normal===null;
     const pureSplit=recipe.mechanicCue==='PREP_FOCUS_SPLIT';
-    drawArrowSprite(x,y,recipe.arrowScale*(preparedHeavy&&index===timeline.releases.length-1?1.7:preparedExtra?.8:
+    drawArrowSprite(x,y,bowFlightArrowScale(action.actorId)*(preparedHeavy&&index===timeline.releases.length-1?1.7:preparedExtra?.8:
       pureSplit&&index===0?1.25:1),
-      angle+Math.PI/2,preparedExtra||pureSplit&&index>0?'#ffe37a':recipe.glowColor);
+      angle+Math.PI/2,preparedExtra||pureSplit&&index>0?'#ffe37a':recipe.glowColor,
+      action.command.squireHunterBow?squire.appearance?.bow:null);
     g.shadowBlur=0;g.restore();
   }
   const aftershot=action.criticalAftershotTimeline;
@@ -46461,6 +46747,13 @@ function drawTurnActionProjectile(){
 function drawProjectiles(){
   if(!boss) return;
   drawTurnActionProjectile();
+  const follow=squire.hunterFollow;
+  if(squire.present&&follow&&!follow.cancel&&follow.t<(follow.flightTime||.18)){
+    const t=clamp(follow.t/(follow.flightTime||.18),0,1),from=follow.from,to=follow.to,
+      x=lerp(from.x,to.x,t),y=lerp(from.y,to.y,t)-Math.sin(t*Math.PI)*10;
+    drawArrowSprite(x,y,bowFlightArrowScale('ally'),Math.atan2(to.y-from.y,to.x-from.x)+Math.PI/2,
+      squire.appearance?.bow?.arrowFeather,squire.appearance?.bow);
+  }
   const p1={x:laneX(player.x,1),y:PLAYER_Y-70}, p2=proj(boss.z);
   const bx=laneX(boss.x,p2.t), by=p2.y-60*p2.s;
   for(const pr of projectiles){
@@ -49474,14 +49767,15 @@ function drawSquireCombatHUD(){
   g.strokeRect(x+.5,y+.5,w-1,h-1);
   g.textAlign='left';g.font='bold 11px monospace';
   g.fillStyle=squire.present?'#f1d9a5':'#9c9177';
-  g.fillText(squire.present?'SQUIRE · '+rank.name+'  ♥ '+squire.health+'/'+squire.maxHealth:
+  g.fillText(squire.present?(equippedSquireCommand()?.squireHunterDepth?'HUNTER':'SQUIRE')+
+    ' · '+rank.name+'  ♥ '+squire.health+'/'+squire.maxHealth:
     'SQUIRE RECOVERING',x+9,y+13);
   g.font='8px monospace';g.fillStyle=active?'#c0f79a':'#aeb2c2';
   g.fillText(squire.present?(active?'SQUIRE AP '+squire.ap+'/'+squire.apMax+' · MORALE '+squire.encouragement:
     'RIDING IN · ACTIVE NEXT TURN'):'CALL READY IN '+cooldown+' TURN'+(cooldown===1?'':'S'),x+9,y+27);
   if(squire.present){g.fillStyle=squire.preparedParry?'#ffe37a':'#9ecbff';
     g.fillText('VETERANCY '+(squire.veterancy||0)+' · EFFECTIVE '+effectiveSquireVeterancy()+
-      (squire.preparedParry?' · PARRY READY':''),x+9,y+40);}
+      (squire.hunterReady?' · SHOT READY':squire.preparedParry?' · PARRY READY':''),x+9,y+40);}
 }
 function drawHUD(){
   g.save(); g.translate(0,uiTop);           // keep the HUD clear of phone notches / islands
@@ -49644,7 +49938,7 @@ function skillButtonSubtitle(skill){
     return text+(resonance?' · '+resonance:'');
   };
   if(skill.squireAction==='CALL')return '1AP · '+skill.cost+'R · '+
-    (skill.squireGuardDepth?(skill.squireBaseMaxHealth+' HEALTH · VETERANCY GROWTH'):
+    (skill.squireGuardDepth||skill.squireHunterDepth?(skill.squireBaseMaxHealth+' HEALTH · VETERANCY GROWTH'):
       'ARRIVES NOW · ACTS NEXT TURN');
   if(skill.squireAction==='ARRIVING')return 'CALLED THIS TURN · READY NEXT TURN';
   if(skill.squireAction==='ENCOURAGE')return squire.health<squire.maxHealth
@@ -49652,6 +49946,9 @@ function skillButtonSubtitle(skill){
       '1AP · '+skill.cost+'R · MORALE +1';
   if(skill.squireAction==='COOLDOWN')return 'RETURNS IN '+skill.squireCooldown+' TURN'+
     (skill.squireCooldown===1?'':'S');
+  if(skill.squireReadyShot)return '1 SQUIRE AP · 1R · HOLD FOR KNIGHT';
+  if(skill.squireHunterBow)return '1 SQUIRE AP · 0R · '+damagePart(skill.damage)+
+    ' DMG · +'+damagePart(skill.squireMarkCredit)+' MARK';
   if(skill.squireMove)return skill.squireShieldBash
     ?'1 SQUIRE AP · 1R · '+skill.posture+' POST · SHIELD +'+(skill.squireShieldGrant||0)
     :'1 SQUIRE AP · 0R · '+healthDamageText(turnDamage(skill.damage))+' DMG'+
@@ -49798,6 +50095,23 @@ function commandBowAnimationText(command){
     Math.round(recipe.arrowSpeed)+'.';
 }
 function skillTooltipContent(command){
+  if(command.squireReadyShot)return {paragraphs:[
+    'Yayı gerer ve Knightın sonraki doğrudan isabetini bekler. 1 Squire AP ve 1 ortak Resolve harcar; Knight AP harcamaz.',
+    'Knight Mark patlatırsa +'+damagePart(command.readyPower)+' hasar ve Mark patlama hasarının %10u kadar ek destek verir. Fazladan Mark tüketmez.',
+    'Knight Mark patlatmazsa en fazla '+command.readyCapacity+' mevcut Mark tüketir; tam miktarda +'+
+      damagePart(command.readyPower*.5)+' hasar verir. Daha az Mark varsa katkı orantılıdır.',
+    'Mark yoksa +'+damagePart(command.readyPower*.3)+' küçük ok hasarı. Bir hazırlık yalnızca bir sonucu üretir; Crit/Chain ile tekrar çarpılmaz.',
+    'Knight vurana kadar tur değişimlerinde yayı gergin tutar. Başka bir Squire hareketi veya Squire ölümü hazırlığı bozar. Bu form parry/dodge vermez.'
+  ]};
+  if(command.squireHunterBow)return {paragraphs:[
+    'Tek yay atışı: '+damagePart(command.damage)+' hasar ve +'+damagePart(command.squireMarkCredit)+' Mark katkısı. Posture, Chain veya Crit vermez.',
+    'Mark katkısı şans değildir. Tam olmayan kısmı bossun ortak Mark rezervinde kalır; 1e ulaşınca görünür Marka dönüşür. Silah değiştirmek veya Squireın ölmesi bunu silmez.',
+    '1 Squire AP, 0 Resolve. Quality, Morale ve Veterancy katkıyı artırır. Knightın APsi korunur.'
+  ]};
+  if(command.squireHunterDepth&&command.squireAction==='ENCOURAGE')return {paragraphs:[
+    'Eksik can varsa 1 can iyileştirir. Can doluysa mevcut Morale +1 verir.',
+    'Morale atış hasarını ve Ready Shot gücünü artırır; etkili Veterancyye de katkı verir. Çağrıldığı tur kullanılamaz.'
+  ]};
   if(command.evolutionText){
     const additions=[],markText=commandMarkRuleCombatText(command),economy=skillSynthesisEconomyText(command),
       resonance=skillRarityResonanceText(command),critText=commandCritCombatText(command),
@@ -52871,45 +53185,73 @@ function riderLabOptions(s){
   if(s.clip===4)o.duck=t<.15||t>.15+CFG.DUCK_TIME?0:duckPostureAmountAt(t-.15);
   return o;
 }
-function sampleSpatialBow(t){
+function sampleSpatialBow(t,aimYaw=0){
   const R=SpatialRiderRig,keys=[
     [0,[-3,1,-5],[3,1,-5]],
-    [.55,[-3,-5,3],[3,1,-5]],
-    [1.1,[-2,-3,-6],[3,-7,3]],
-    [1.65,[3.7,-5,-6.9],[3.83,-5,-5.5]],
-    [2.5,[3.7,-5,-6.9],[4.25,-6.85,-1]],
-    [3.25,[3.7,-5,-6.9],[4.25,-6.85,-1]],
-    [3.43,[3.7,-5,-6.9],[4.85,-6.65,1]],
-    [3.85,[3.7,-5,-6.9],[4.85,-6.65,1]],
-    [4.5,[-2,0,-5],[3,1,-5]],
-    [5.15,[-3,-5,3],[3,1,-5]],
+    [.55,[2,-2,2],[3,1,-5]],
+    [1.1,[5,-1,-4],[5,4,2]],
+    [1.65,[3.7,-6.9,-6.2],[3.83,-6.65,-4.8]],
+    [2.5,[3.7,-7.4,-6.2],[4.25,-6.3,-1]],
+    [3.25,[3.7,-7.4,-6.2],[4.25,-6.3,-1]],
+    [3.43,[3.7,-7.4,-6.2],[4.85,-6.1,1]],
+    [3.85,[3.7,-7.4,-6.2],[4.85,-6.1,1]],
+    [4.5,[5,0,-4],[3,1,-5]],
+    [5.15,[2,-2,2],[3,1,-5]],
     [5.8,[-3,1,-5],[3,1,-5]]
   ];
   let k=0;while(k<keys.length-2&&t>keys[k+1][0])k++;
   const a=keys[k],b=keys[k+1],f=smoothStep(clamp((t-a[0])/(b[0]-a[0]),0,1)),
-    left=R.arm([-3,-2,0],R.mix(a[1],b[1],f),[-8,0,2]),
-    right=R.arm([3,-2,0],R.mix(a[2],b[2],f),[9,-3,4]),
-    grip=t<.55||t>5.15?[-3,-5,3]:left.hand,
+    aimWeight=smoothStep(clamp((t-1.1)/.55,0,1))*(1-smoothStep(clamp((t-3.85)/1.3,0,1))),
+    yaw=clamp(Number.isFinite(aimYaw)?aimYaw:0,-.9,.9)*aimWeight,
+    rotate=q=>[q[0]*Math.cos(yaw)-q[2]*Math.sin(yaw),q[1],q[0]*Math.sin(yaw)+q[2]*Math.cos(yaw)],
+    left=R.arm([-3,-2,0],rotate(R.mix(a[1],b[1],f)),rotate([-8,0,2])),
+    right=R.arm([3,-2,0],rotate(R.mix(a[2],b[2],f)),rotate([9,-3,4])),
+    grip=t<.55||t>5.15?[2,-2,2]:left.hand,
+    deployed=smoothStep(clamp((t-.55)/1.10,0,1))*(1-smoothStep(clamp((t-4.5)/.65,0,1))),
+    back=R.unit(rotate(R.mix([.877,.48,0],[.103,.206,.973],deployed))),
+    rawUp=rotate(R.mix([.48,-.877,0],[.08,-.996,0],deployed)),
+    up=R.unit(R.sub(rawUp,R.mul(back,rawUp[0]*back[0]+rawUp[1]*back[1]+rawUp[2]*back[2]))),
     draw=smoothStep(clamp((t-1.65)/.85,0,1)),released=t>=3.25,
-    string=released?R.add(grip,[0,0,1.4+Math.sin((t-3.25)*85)*.3*Math.exp(-(t-3.25)*12)]):
-      R.mix(R.add(grip,[0,0,1.4]),right.hand,draw),
+    string=released?R.add(grip,R.mul(back,1.4+Math.sin((t-3.25)*85)*.3*Math.exp(-(t-3.25)*12))):
+      R.mix(R.add(grip,R.mul(back,1.4)),right.hand,draw),
     phase=t<.55?'REACH BOW':t<1.1?'DRAW BOW / REACH QUIVER':t<1.65?'NOCK ARROW':
       t<2.5?'DRAW STRING':t<3.25?'AIM / HOLD':t<3.43?'RELEASE':t<3.85?'FOLLOW THROUGH':
       t<5.15?'RETURN BOW':'RETURN TO REINS';
-  return {left,right,grip,string,draw,released,phase};
+  return {left,right,grip,string,draw,released,phase,up,back};
 }
-function drawSpatialBowProp(p,t,project,highlight){
+function drawSpatialBowProp(p,t,project,highlight,palette=null){
   const R=SpatialRiderRig,segment=(a,b,w,c)=>{
     const start=project(a),end=project(b);rigSegment(...start,...end,w,c);},
-    top=R.add(p.grip,[0,-8,1.7-p.draw*.5]),bottom=R.add(p.grip,[0,8,1.7-p.draw*.5]),
-    upper=R.add(p.grip,[0,-4,-1]),lower=R.add(p.grip,[0,4,-1]);
-  segment(top,upper,.72,'#b58a55');segment(upper,p.grip,.92,'#795230');
-  segment(p.grip,lower,.92,'#795230');segment(lower,bottom,.72,'#b58a55');
-  segment(top,p.string,.19,'#e4dec8');segment(bottom,p.string,.19,'#e4dec8');
+    up=p.up||[0,-1,0],
+    side=p.back||[0,0,1],
+    top=R.add(R.add(p.grip,R.mul(up,8)),R.mul(side,1.4)),
+    bottom=R.add(R.add(p.grip,R.mul(up,-8)),R.mul(side,1.4));
+  // Wood tips, dark recurved limbs and wraps all share the bow/string plane.
+  for(const sign of [-1,1]){
+    const at=(height,bend)=>R.add(R.add(p.grip,R.mul(up,height*sign)),R.mul(side,bend)),
+      root=at(1.1,-.2),belly=at(3.5,-1.35+p.draw*.35),
+      shoulder=at(5.5,-.75+p.draw*.35),neck=at(6.5,.6),
+      tip=sign===1?top:bottom;
+    segment(p.grip,root,1.05,palette?.wrap||'#353938');
+    segment(root,belly,.83,palette?.limb||'#39302a');
+    segment(belly,shoulder,.64,palette?.limb||'#493b2e');
+    segment(shoulder,neck,.65,palette?.limb||'#60432b');
+    segment(neck,tip,.9,palette?.wood||'#b97936');
+    segment(neck,tip,.28,palette?.edge||'#e3ab5b');
+    segment(at(6.3,.4),at(6.7,.78),1.04,palette?.wrap||'#444844');
+    segment(at(.9,-.16),at(1.45,-.4),1.02,palette?.wrap||'#444844');
+    segment(root,belly,.16,palette?.wood||'#a07a50');
+  }
+  segment(top,p.string,.19,palette?.string||'#e4dec8');segment(bottom,p.string,.19,palette?.string||'#e4dec8');
   if(t>=1.1&&t<3.25){
     const start=t<1.65?p.right.hand:p.string,
       direction=R.unit(R.sub(p.grip,p.string)),tip=R.add(start,R.mul(direction,13));
-    segment(start,tip,.34,'#d6bd8c');segment(tip,R.add(tip,R.mul(direction,.7)),.65,highlight);
+    const point=project(R.add(tip,R.mul(direction,1.5))),
+      shaft=project(start),dx=point[0]-shaft[0],dy=point[1]-shaft[1],
+      length=Math.max(.001,Math.hypot(dx,dy));
+    // The same sprite is used in flight; its nock stays anchored to the string.
+    drawArrowSprite((shaft[0]+dx*13.1/30.1)*U,(shaft[1]+dy*13.1/30.1)*U,
+      length*U/30.1,Math.atan2(dy,dx)+Math.PI/2,false,palette);
   }
 }
 function beginRiderLabDrag(start,x,y){
@@ -52981,11 +53323,16 @@ function drawBowRigLab(){
     line(arm.root,arm.elbow,2,color);line(arm.elbow,arm.hand,1.6,color);
     if(s.joints)for(const q of [arm.root,arm.elbow,arm.hand])line(q,R.add(q,[.01,0,0]),2.1,'#ffb35c');
   }
-  const top=R.add(p.grip,[0,-8,1.7-p.draw*.5]),bottom=R.add(p.grip,[0,8,1.7-p.draw*.5]);
-  line(top,R.add(p.grip,[0,-4,-1]),.65,'#b58a55');
-  line(R.add(p.grip,[0,-4,-1]),p.grip,.8,'#795230');
-  line(p.grip,R.add(p.grip,[0,4,-1]),.8,'#795230');
-  line(R.add(p.grip,[0,4,-1]),bottom,.65,'#b58a55');
+  const up=p.up||[0,-1,0],
+    back=p.back||[0,0,1],
+    top=R.add(R.add(p.grip,R.mul(up,8)),R.mul(back,1.4)),
+    bottom=R.add(R.add(p.grip,R.mul(up,-8)),R.mul(back,1.4)),
+    upper=R.add(R.add(p.grip,R.mul(up,4)),R.mul(back,-1.35+p.draw*.35)),
+    lower=R.add(R.add(p.grip,R.mul(up,-4)),R.mul(back,-1.35+p.draw*.35));
+  line(top,upper,.65,'#b58a55');
+  line(upper,p.grip,.8,'#795230');
+  line(p.grip,lower,.8,'#795230');
+  line(lower,bottom,.65,'#b58a55');
   line(top,p.string,.13,'#e4dec8');line(bottom,p.string,.13,'#e4dec8');
   if(s.t>=1.1&&s.t<3.65){
     const nock=s.t<1.65?p.right.hand:p.string,

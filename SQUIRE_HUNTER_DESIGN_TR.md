@@ -1,6 +1,26 @@
 # Squire Avcı — tasarım notları
 
-Henüz implement edilmedi. Kabul edilen kararlar ile açık öneriler ayrılmıştır.
+İlk dönüşüm (Hunter Squire / upgrade 1) uygulandı. Upgrade 2–4 aşağıda gelecek tasarım olarak tutuluyor; henüz oyunda değiller.
+
+## Uygulanan ilk yükseltme
+
+- Call Squire → Hunter Squire rotası mevcut class/Quality/rarity sistemi üzerinden seçilir. Base ve Guard rotaları korunur.
+- MARKING SHOT: tek, düşük hasarlı ok. Common'da en az 1 Mark verir; ek kesirli katkı hedefin ortak rezervinde birikir. 1 Squire AP, 0 Resolve. Crit, Chain, Posture ve Bleed katkısı yoktur.
+- READY SHOT: 1 Squire AP ve 1 ortak Resolve ile 1.65 saniyede yayı gerer; Knight'ın sonraki doğrudan saldırısının ilk isabetini bekler. Hazırlık tek kullanımlıktır.
+- Knight'ın saldırı planı Mark patlatıyorsa ek Mark tüketmeden güçlü bonus verir. Knight Mark patlatmıyorsa mevcut Marklardan kapasitesi kadarını tüketip daha küçük patlama yapar. Mark yoksa küçük direct damage verir.
+- Başka bir Squire hareketi hazırlığı bozar. Hazırlık tur değişimlerinde korunur, Knight vurana kadar bekler; ölüm/reset sırasında temizlenir. Bu formda savunma atışı veya Perfect Dodge yoktur.
+- FIGHT aynı çift yakın dövüş vuruşu olarak kalır. Morale ve Veterancy mevcut sistemlerden gelir. HP için hard cap eklenmez.
+- Knight'ın mevcut yay animasyonu Squire ölçeğinde (0.72) kullanılır. Şapka, sadak ve sade avcı kıyafeti bulunur; kalkan kaldırılır, gövde büyümez.
+- Kıyafet, yay parçaları ve okun sap/uç/tüy renkleri uyumlu paletlerden seçilir; kareler arasında yeniden rastgeleleştirilmez. Sonraki fiziksel dönüşümler ertelenmiştir.
+
+İlk formun Quality bütçesi: atış %45, hazırlık %35, Veterancy verimliliği %10, can %10. Bunlar stat yüzdesi değil, mevcut Quality defterindeki eksen paylarıdır.
+
+Temel ayar formülleri (S: atış, R: hazırlık, H: can, V: Veterancy eksen kredisi):
+
+- Atış hasarı `4 + 0.28*S`; Mark katkısı `1 + 0.025*S`.
+- Hazırlık gücü `4 + 0.30*R`; tüketim kapasitesi `1 + floor(R/12)`.
+- Knight patlatma bonusu `güç + Knight Mark hasarı*0.10`; kendi küçük patlaması `güç*0.50*tüketilen/kapasite`; Marksız bonus `güç*0.30`.
+- Başlangıç canı `1 + floor(H/8)`; etkili Veterancy başına can katkısı `0.06 + 0.003*H`; Veterancy verimliliği `0.75 + 0.025*V`. Savaş profili mevcut Morale/Veterancy katkılarını ayrıca uygular.
 
 ## Kabul edilen temel
 
@@ -22,7 +42,7 @@ Henüz implement edilmedi. Kabul edilen kararlar ile açık öneriler ayrılmı�
 - Upgrade 4: Covering Shot, saldırı katkıları gelişir. Knight'a darbe isabet edecekken hazırlık savunmaya harcanabilir: gelen saldırıya ateş eder, bir Perfect Dodge sağlar ve hazırlık biter.
 - Bir hazırlık saldırı veya savunma olarak tüketilir. Kaçınma adedi stat hard cap'i değil, bu hazırlığın tek kullanımlık etkisidir.
 
-Önceki çalışma önerileri (uygulama öncesinde kesinleştirilecek): yardımcı atış Markları tüketmez; tetikleme Knight'ın ilk doğrudan isabetidir; Mark tüketiminden önce hedef durumu okunur; hazırlık sonraki düşman fazının sonunda biter; başka Squire hareketi hazırlığı bozar.
+İlk formda Knight'ın Mark patlatma planı korunarak okunur; bu sayede Knight Markları önceden tüketse de güçlü ortak atış dalı kaybolmaz. Yalnızca Knight'ın patlatmadığı dalda Avcı az sayıda Mark tüketir.
 
 ## Görünüm ve animasyon
 
@@ -33,9 +53,9 @@ Henüz implement edilmedi. Kabul edilen kararlar ile açık öneriler ayrılmı�
 - Parça parça, uyumlu rastgele kıyafet renkleri. Şapka tüyü upgrade/rütbeyle komik ölçüde büyüyebilir.
 - Son formda yapraklı örtüye sinme, atışta açılma ve yeniden sinme karakteristiği.
 - Organik omuz/dirsek/el zincirleri; çekiş eli yüz yanında dayanak noktasına gelir. Yay, kiriş ve ok eklemleri takip eder. Örtü bağlantıları gövdeye bağlı, serbest uçları hafif gecikmelidir.
-- Hareketler netleşince ilk ve son form üzerinde iskelet denemesi yapılacak; sonra tüm rota uygulanacak.
+- İlk form mevcut Knight yay iskeletini kullanır. Son form ve sonraki fiziksel değişimler gelecek çalışmadır.
 
-## Henüz onaylanmamış Quality dağılımı önerisi
+## Quality dağılımı — ilk satır uygulandı, diğerleri öneri
 
 Paylar stat yüzdesi değil Quality bütçesi payıdır.
 
@@ -46,4 +66,4 @@ Paylar stat yüzdesi değil Quality bütçesi payıdır.
 | 3 | %40 | %35 | %15 | %10 |
 | 4 | %30 | %40 | %15 | %15 |
 
-İlk move henüz tasarım aşamasında. Önceki Marking/Tracker/Hunting/Ghost Shot önerileri kesinleşmiş kabul edilmez. Sayısal değerler ve dönüşüm formülleri, ilk move netleşince birlikte belirlenecek.
+İlk move MARKING SHOT olarak uygulandı. Tracker/Hunting/Ghost Shot ve sonraki formüller henüz kesinleşmiş değildir. Küçük Bleed yan katkısı bu ilk uygulamaya eklenmedi.
