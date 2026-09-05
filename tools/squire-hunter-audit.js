@@ -18,7 +18,8 @@
     shot.squireMarkCredit>=1&&ready.squireReadyShot&&ready.cost===1);
   assert('noGuardPowersOrBulk',squireVisualBulk()===0&&!squire.parryOnHit&&!squire.preparedParry&&
     shot.posture===0&&shot.addsChain===false&&!ready.squirePreparedParry);
-  assert('plainFightRetained',fightCommand('ally').hits===2&&!fightCommand('ally').squireHunterBow);
+  assert('hunterFightIsSingleBowShot',fightCommand('ally').hits===1&&fightCommand('ally').squireHunterBow&&
+    fightCommand('ally').deliveryProfileId==='COMPANION_BOW'&&!fightCommand('ally').squireMarkCredit);
   const palette=squire.appearance.bow;
   assert('persistentPartPalette',Object.isFrozen(palette)&&palette.arrowHead&&palette.arrowFeather&&
     palette.wood&&palette.wrap&&squire.appearance.hunter.hat);
@@ -58,6 +59,12 @@
     Math.abs(boss.markFraction-((fractionalTotal+.8)%1))<1e-5);
   const reserveBefore=boss.markFraction;applyBossMarkEvent(2,'WEAPON_AUDIT');
   assert('integerWeaponEventsPreserveReserve',Math.abs(boss.markFraction-reserveBefore)<1e-5);
+  freshPhase();
+  const fightMarks=boss.mark,fightReserve=boss.markFraction;
+  assert('hunterFightStarts',performPlayerAction(fightCommand('ally')));
+  assert('hunterFightUsesBowTimeline',!!boss.turnAction.bowTimeline&&!boss.turnAction.swordTimeline);
+  stepAction();
+  assert('hunterFightDoesNotAddMark',boss.mark===fightMarks&&boss.markFraction===fightReserve);
 
   freshPhase();boss.mark=0;const readyAp=boss.ap,readyResolve=boss.resolve;
   assert('readyStarts',performPlayerAction(ready));

@@ -9,7 +9,7 @@
 - READY SHOT: 1 Squire AP ve 1 ortak Resolve ile 1.65 saniyede yayı gerer; Knight'ın sonraki doğrudan saldırısının ilk isabetini bekler. Hazırlık tek kullanımlıktır.
 - Knight'ın saldırı planı Mark patlatıyorsa ek Mark tüketmeden güçlü bonus verir. Knight Mark patlatmıyorsa mevcut Marklardan kapasitesi kadarını tüketip daha küçük patlama yapar. Mark yoksa küçük direct damage verir.
 - Başka bir Squire hareketi hazırlığı bozar. Hazırlık tur değişimlerinde korunur, Knight vurana kadar bekler; ölüm/reset sırasında temizlenir. Bu formda savunma atışı veya Perfect Dodge yoktur.
-- FIGHT aynı çift yakın dövüş vuruşu olarak kalır. Morale ve Veterancy mevcut sistemlerden gelir. HP için hard cap eklenmez.
+- Avcı FIGHT tek yay atışıdır; önceki çift vuruşun toplam hasarını korur, Mark eklemez. Avcı'nın kılıcı/kını çizilmez; sırtında yay ve sadak kalır. Base/Guard FIGHT değişmez. Morale ve Veterancy mevcut sistemlerden gelir. HP için hard cap eklenmez.
 - Knight'ın mevcut yay animasyonu Squire ölçeğinde (0.72) kullanılır. Şapka, sadak ve sade avcı kıyafeti bulunur; kalkan kaldırılır, gövde büyümez.
 - Kıyafet, yay parçaları ve okun sap/uç/tüy renkleri uyumlu paletlerden seçilir; kareler arasında yeniden rastgeleleştirilmez. Sonraki fiziksel dönüşümler ertelenmiştir.
 
@@ -28,7 +28,7 @@ Temel ayar formülleri (S: atış, R: hazırlık, H: can, V: Veterancy eksen kre
 - Mevcut weapon/class Quality ve rarity sistemi kullanılır. Yeni rank/rarity sistemi kurulmaz.
 - Hard cap kullanılmaz. Can, Mark, hazırlık bonusları ve Veterancy katkıları dinamik ölçeklenir.
 - Normal ilerleyişte final Avcı yaklaşık 2 can; yüksek Quality/Legendary ağırlıklı ilerleyişte yaklaşık 4 can denge hedefidir. Bunlar üst sınır değildir. Guard'dan daha düşük can yatırımı olur.
-- Mevcut FIGHT korunur. AP/Resolve rework sırasında kullanıcı yeniden değerlendirebilir.
+- Avcı FIGHT yay atışına dönüştürülmüştür; AP/Resolve rework sırasında yeniden değerlendirilebilir.
 - Avcı bow ve Mark odaklıdır; Bleed çok küçük yan katkıdır. Parry kazanmaz.
 - Morale ve Veterancy mevcut sistemlerdir; her upgrade'in katkıları ayrıca ayarlanır.
 

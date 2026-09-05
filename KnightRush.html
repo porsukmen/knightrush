@@ -2466,6 +2466,7 @@ function drawSerJonathanRider(x,y,scale,o){
     mountedHiltVisible=!swordActive||(swordAction&&
       (swordAction.extract<=.015||swordAction.sheath>=.985)),
     drawMountedBackSword=()=>{
+      if(squireHunter)return;
       const sheathWidth=squireVariant?1.72*squireWeaponWidthScale:1.72;
       rigSegment(backSwordTipX,backSwordTipY,backSwordMouthX,backSwordMouthY,
         sheathWidth,swordSheath);
@@ -3015,7 +3016,7 @@ function drawSerJonathanRider(x,y,scale,o){
          begins; never wait for insertion and visibly cross the rider again. */
       swordAction.align>.001||swordAction.sheath>.001)),
     drawHeldSword=()=>{
-    if(!swordActive||!heldSwordVisible)return;
+    if(squireHunter||!swordActive||!heldSwordVisible)return;
     /* Recruit starts with Jonathan's exact body-to-sword proportions. The
        explicit Guard/Veterancy growth above is the only Squire size bonus. */
     const rawBladeX=swordTipX,
@@ -41222,8 +41223,8 @@ function squireCombatProfile(){
       col=squire.appearance?.bow?.arrowFeather||'#a6c881';
     squire.profileKey=key;
     squire.profile=Object.freeze({id:'squire',name:'HUNTER SQUIRE',col,
-      fightName:'SQUIRE SLASH',fightDamage,fightHitDamages:Object.freeze([fightDamage,fightDamage]),
-      fightHits:2,fightHitInterval:BACK_SWORD_TIMING.crossContact-BACK_SWORD_TIMING.contact,
+      fightName:'SQUIRE SHOT',fightDamage:stableCombatNumber(fightDamage*2),fightHunterBow:true,
+      fightHits:1,fightHitInterval:0,
       fightPosture:0,fightAddsChain:false,fightPreparedParry:false,
       skills:Object.freeze([
         Object.freeze({id:'squire_marking_shot',name:'MARKING SHOT',source:'COMPANION',skill:true,
@@ -42067,8 +42068,10 @@ function fightCommand(actorId=activeTurnActorId()){
       addsChain:profile.fightAddsChain===undefined?true:profile.fightAddsChain,
       squireMove:profile.id==='squire',canCrit:profile.id==='squire'?false:undefined,
       squirePreparedParry:profile.fightPreparedParry===true,
+      squireHunterBow:profile.fightHunterBow===true,
+      bowAnimationRecipeId:profile.fightHunterBow?'BOW_STANDARD':undefined,
       col:profile.col,slash:-.12,
-      deliveryProfileId:'COMPANION_STRIKE'};
+      deliveryProfileId:profile.fightHunterBow?'COMPANION_BOW':'COMPANION_STRIKE'};
   }
   const weapon=activeWeapon();
   return {id:'fight_'+weapon.id,name:weapon.name+' ATTACK',source:'WEAPON',skill:false,cost:0,
