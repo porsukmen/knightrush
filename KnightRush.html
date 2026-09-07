@@ -774,6 +774,7 @@ function handleAction(a,pt,parryIntent=null){
     return;
   }
   if(settingsOpen){ if(a==='tap'&&pt) settingsTap(pt); return; }
+  if(journeyEvent){ handleJourneyEventAction(a,pt); return; }
   if(paused){
     if(a==='tap'&&pt&&moveLabPauseTap(pt)) return;
     if(a==='tap'&&pt&&pt.x>VW/2-90&&pt.x<VW/2+90){
@@ -787,7 +788,8 @@ function handleAction(a,pt,parryIntent=null){
   }
   if(mode==='menu'){
     if(a==='tap'&&pt){
-      if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>404&&pt.y<454){ uiConfirm(); }
+      if(pt.x>VW/2-166&&pt.x<VW/2-6&&pt.y>404&&pt.y<454){ pendingJourneyPrototype=false; uiConfirm(); }
+      else if(pt.x>VW/2+6&&pt.x<VW/2+166&&pt.y>404&&pt.y<454){ pendingJourneyPrototype=true; uiConfirm(); }
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>468&&pt.y<510){ setMode('relicdex'); SFX.swipe(); }
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>524&&pt.y<566){
         menuMsg='brave knight, close the tab to truly leave'; menuMsgT=perfNow+2.5;
@@ -795,7 +797,7 @@ function handleAction(a,pt,parryIntent=null){
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>580&&pt.y<612){ setMode('debugcfg'); SFX.swipe(); }
       else if(pt.x>VW-140&&pt.x<VW-10&&pt.y>VH-82&&pt.y<VH-40){ clSel=0; setMode('changelog'); SFX.swipe(); }
       else if(pt.x>10&&pt.x<140&&pt.y>VH-82&&pt.y<VH-40){ settingsOpen=true; SFX.swipe(); }
-    } else if(a==='up') uiConfirm();
+    } else if(a==='up'){ pendingJourneyPrototype=false; uiConfirm(); }
     return;
   }
   if(mode==='relicdex'){ if(a==='tap'||a==='up'||a==='down'){ setMode('menu'); SFX.duck(); } return; }
@@ -2421,14 +2423,37 @@ function drawSerJonathanRider(x,y,scale,o){
     restingRightElbowX=rightElbowX,restingRightElbowY=rightElbowY,
     restingRightHandX=rightHandX,restingRightHandY=rightHandY;
   const mountedShieldScale=1.05,activeShieldScale=1.13,
-    mountedShieldAnchor=serJonathanProjectTorsoPoint(duckPose,0,.55,-.22),
+    mountedShieldWorld=serJonathanTorsoWorldPoint(duckPose,0,.55,-.22),
+    mountedShieldAnchor=serJonathanProjectWorldPoint(mountedShieldWorld,duckPose.hipY),
     mountedShieldY=mountedShieldAnchor.y-poseDriveY,
     mountedShieldDepth=1;
-  /* Zelda-like back carry: the blue scabbard runs below the shield from the
-     left hip to the right shoulder. Both endpoints follow the projected spine,
-     so ducking or falling changes its perspective instead of sliding a 2D prop. */
-  const backSwordTipAnchor=serJonathanProjectTorsoPoint(duckPose,-4.55,.03,-.34),
-    backSwordMouthAnchor=serJonathanProjectTorsoPoint(duckPose,4.05,.86,-.38),
+  /* The back sword is one rigid prop centred on the torso. Projecting every
+     point independently made the long hilt travel through a wider perspective
+     arc than the scabbard. A flat screen-space projection fixed that drift but
+     also erased Duck's depth. Use one affine 2.5D torso basis instead: its
+     centre and up axis pitch into depth, while every scabbard and hilt point
+     shares that exact basis and therefore cannot hinge independently. */
+  const backSwordCenter=serJonathanTorsoWorldPoint(duckPose,-.25,.50,-.36),
+    backSwordLocalTip={x:-4.30,up:-3.50},
+    backSwordLocalMouth={x:4.30,up:3.50},
+    backSwordLocalDX=backSwordLocalMouth.x-backSwordLocalTip.x,
+    backSwordLocalUp=backSwordLocalMouth.up-backSwordLocalTip.up,
+    backSwordLocalLength=Math.hypot(backSwordLocalDX,backSwordLocalUp)||1,
+    backSwordLocalUX=backSwordLocalDX/backSwordLocalLength,
+    backSwordLocalUpUnit=backSwordLocalUp/backSwordLocalLength,
+    backSwordLocalNX=-backSwordLocalUpUnit,
+    backSwordLocalUpNormal=backSwordLocalUX,
+    /* BOTW reference model: one real plane on the back. The low tip and high
+       hilt are projected at their own depth, but every point comes from this
+       single rigid local transform—no independent screen-space corrections. */
+    projectBackSwordLocal=(local,normalDepth=0)=>{
+      const c=Math.cos(duckPose.torsoPitch),s=Math.sin(duckPose.torsoPitch);
+      return serJonathanProjectWorldPoint({x:backSwordCenter.x+local.x,
+        y:backSwordCenter.y+local.up*c-normalDepth*s,
+        z:backSwordCenter.z+local.up*s+normalDepth*c},duckPose.hipY);
+    },
+    backSwordTipAnchor=projectBackSwordLocal(backSwordLocalTip),
+    backSwordMouthAnchor=projectBackSwordLocal(backSwordLocalMouth),
     rawBackSwordTipX=backSwordTipAnchor.x-swordTurn*.12,
     rawBackSwordTipY=backSwordTipAnchor.y-poseDriveY*.10,
     backSwordMouthX=backSwordMouthAnchor.x+swordTurn*.26,
@@ -2455,14 +2480,21 @@ function drawSerJonathanRider(x,y,scale,o){
     backSwordLength=Math.hypot(backSwordDX,backSwordDY)||1,
     backSwordUX=backSwordDX/backSwordLength,backSwordUY=backSwordDY/backSwordLength,
     backSwordNX=-backSwordUY,backSwordNY=backSwordUX,
+    projectBackSwordHilt=distance=>{
+      const p=projectBackSwordLocal({
+        x:backSwordLocalMouth.x+backSwordLocalUX*distance,
+        up:backSwordLocalMouth.up+backSwordLocalUpUnit*distance});
+      return {x:p.x+swordTurn*.26,y:p.y-poseDriveY*.84,z:p.z};
+    },
     knightGripLength=3.27,
     knightHandFromGuard=1.52,
     squireGripLength=knightGripLength*squireWeaponLengthScale,
     squireHandFromGuard=knightHandFromGuard*squireWeaponLengthScale,
     mountedGuardOffset=squireVariant ? .48*squireWeaponLengthScale : .48,
     hiltSeatDistance=squireVariant?mountedGuardOffset+squireHandFromGuard:2.0,
-    hiltSeatX=backSwordMouthX+backSwordUX*hiltSeatDistance,
-    hiltSeatY=backSwordMouthY+backSwordUY*hiltSeatDistance,
+    hiltSeat=projectBackSwordHilt(hiltSeatDistance),
+    hiltSeatX=hiltSeat.x,
+    hiltSeatY=hiltSeat.y,
     /* The mounted and held hilts exchange ownership on one exact threshold.
        Without this split the reach phase showed a second sword in Jonathan's
        rein hand while the real sword was still visibly seated on his back. */
@@ -2470,37 +2502,79 @@ function drawSerJonathanRider(x,y,scale,o){
       (swordAction.extract<=.015||swordAction.sheath>=.985)),
     drawMountedBackSword=()=>{
       if(squireHunter)return;
-      const sheathWidth=squireVariant?1.72*squireWeaponWidthScale:1.72;
-      rigSegment(backSwordTipX,backSwordTipY,backSwordMouthX,backSwordMouthY,
-        sheathWidth,swordSheath);
-      rigSegment(backSwordTipX+backSwordNX*.34,backSwordTipY+backSwordNY*.34,
-        backSwordMouthX+backSwordNX*.34,backSwordMouthY+backSwordNY*.34,
-        squireVariant ? .48*squireWeaponWidthScale : .48,
-        shade(swordSheath,34));
-      rigJoint(backSwordTipX,backSwordTipY,squireVariant?
-        1.08*squireWeaponWidthScale:1.08,shade(swordSheath,-34));
-      const mouthHalf=squireVariant ? .92*squireWeaponWidthScale : .92;
-      rigSegment(backSwordMouthX-backSwordNX*mouthHalf,backSwordMouthY-backSwordNY*mouthHalf,
-        backSwordMouthX+backSwordNX*mouthHalf,backSwordMouthY+backSwordNY*mouthHalf,
-        squireVariant ? .72*squireWeaponLengthScale : .72,steelL);
+      const localAtDistance=distance=>({
+          x:backSwordLocalMouth.x+backSwordLocalUX*distance,
+          up:backSwordLocalMouth.up+backSwordLocalUpUnit*distance}),
+        projectSurface=(local,side=0,roll=0)=>{
+          const planar=side*Math.cos(roll);
+          return projectBackSwordLocal({x:local.x+backSwordLocalNX*planar,
+            up:local.up+backSwordLocalUpNormal*planar},-side*Math.sin(roll));
+        },
+        drawTipLocal={
+          x:backSwordLocalMouth.x+(backSwordLocalTip.x-backSwordLocalMouth.x)*
+            squireWeaponLengthScale,
+          up:backSwordLocalMouth.up+(backSwordLocalTip.up-backSwordLocalMouth.up)*
+            squireWeaponLengthScale},
+        sheathHalf=(squireVariant?1.72*squireWeaponWidthScale:1.72)*.5,
+        tipHalf=sheathHalf*.72,
+        tipLeft=projectSurface(drawTipLocal,tipHalf),
+        tipRight=projectSurface(drawTipLocal,-tipHalf),
+        mouthLeft=projectSurface(backSwordLocalMouth,sheathHalf),
+        mouthRight=projectSurface(backSwordLocalMouth,-sheathHalf);
+      /* A projected quadrilateral lets the near tip and far mouth own different
+         apparent widths, matching the BOTW low-angle reference. */
+      rigPolygon([[tipLeft.x,tipLeft.y],[tipRight.x,tipRight.y],
+        [mouthRight.x,mouthRight.y],[mouthLeft.x,mouthLeft.y]],swordSheath);
+      rigSegment(tipLeft.x,tipLeft.y,mouthLeft.x,mouthLeft.y,
+        squireVariant ? .48*squireWeaponWidthScale : .48,shade(swordSheath,34));
+      const tipCenter=projectSurface(drawTipLocal);
+      rigJoint(tipCenter.x,tipCenter.y,(squireVariant?
+        1.08*squireWeaponWidthScale:1.08)*tipCenter.scale,shade(swordSheath,-34));
+      const mouthHalf=squireVariant ? .92*squireWeaponWidthScale : .92,
+        mouthGuardLeft=projectSurface(backSwordLocalMouth,mouthHalf),
+        mouthGuardRight=projectSurface(backSwordLocalMouth,-mouthHalf);
+      rigSegment(mouthGuardLeft.x,mouthGuardLeft.y,mouthGuardRight.x,mouthGuardRight.y,
+        (squireVariant ? .72*squireWeaponLengthScale : .72)*
+          (mouthGuardLeft.scale+mouthGuardRight.scale)*.5,steelL);
       if(mountedHiltVisible){
-        const guardX=backSwordMouthX+backSwordUX*mountedGuardOffset,
-          guardY=backSwordMouthY+backSwordUY*mountedGuardOffset,
+        const guardLocal=localAtDistance(mountedGuardOffset),
+          guard=projectSurface(guardLocal),
+          guardX=guard.x,guardY=guard.y,
+          hiltPose=smoothStep(duckFold),
           gripLength=squireVariant?squireGripLength:knightGripLength,
           gripWidth=squireVariant?1.34*squireWeaponWidthScale:1.34,
           guardHalf=squireVariant?1.62*squireWeaponWidthScale:1.62,
           guardWidth=squireVariant ? .90*squireWeaponLengthScale : .90,
-          pommelX=guardX+backSwordUX*gripLength,
-          pommelY=guardY+backSwordUY*gripLength;
-        rigSegment(guardX,guardY,pommelX,pommelY,gripWidth,swordGrip);
-        rigSegment(guardX-backSwordNX*guardHalf,guardY-backSwordNY*guardHalf,
-          guardX+backSwordNX*guardHalf,guardY+backSwordNY*guardHalf,guardWidth,swordGuard);
-        rigJoint(guardX-backSwordNX*(guardHalf-.07),guardY-backSwordNY*(guardHalf-.07),
-          squireVariant ? .68*squireWeaponWidthScale : .68,swordGuard);
-        rigJoint(guardX+backSwordNX*(guardHalf-.07),guardY+backSwordNY*(guardHalf-.07),
-          squireVariant ? .68*squireWeaponWidthScale : .68,swordGuard);
+          pommelLocal=localAtDistance(mountedGuardOffset+gripLength),
+          pommel=projectSurface(pommelLocal),
+          pommelX=pommel.x,pommelY=pommel.y,
+          /* A restrained roll is applied inside the same 3D model. It changes
+             both grip faces and guard endpoints—never their screen position by
+             an unrelated animation. */
+          hiltRoll=hiltPose*Math.PI*.08,
+          gripHalf=gripWidth*.5,
+          gripGuardLeft=projectSurface(guardLocal,gripHalf,hiltRoll),
+          gripGuardRight=projectSurface(guardLocal,-gripHalf,hiltRoll),
+          gripPommelLeft=projectSurface(pommelLocal,gripHalf,hiltRoll),
+          gripPommelRight=projectSurface(pommelLocal,-gripHalf,hiltRoll),
+          leftGuard=projectSurface(guardLocal,guardHalf,hiltRoll),
+          rightGuard=projectSurface(guardLocal,-guardHalf,hiltRoll),
+          endpointRadius=(squireVariant ? .68*squireWeaponWidthScale : .68)*
+            Math.max(.82,Math.cos(hiltRoll));
+        rigPolygon([[gripGuardLeft.x,gripGuardLeft.y],[gripGuardRight.x,gripGuardRight.y],
+          [gripPommelRight.x,gripPommelRight.y],[gripPommelLeft.x,gripPommelLeft.y]],swordGrip);
+        rigSegment(gripGuardLeft.x,gripGuardLeft.y,gripPommelLeft.x,gripPommelLeft.y,
+          Math.max(.12,gripWidth*.18),shade(swordGrip,-34));
+        rigSegment(gripGuardRight.x,gripGuardRight.y,
+          gripPommelRight.x,gripPommelRight.y,
+          Math.max(.10,gripWidth*.11),shade(swordGrip,22));
+        rigSegment(leftGuard.x,leftGuard.y,rightGuard.x,rightGuard.y,
+          Math.max(.34,guardWidth*Math.cos(hiltRoll)),swordGuard);
+        rigJoint(leftGuard.x,leftGuard.y,endpointRadius,swordGuard);
+        rigJoint(rightGuard.x,rightGuard.y,endpointRadius,shade(swordGuard,10));
         rigJoint(pommelX,pommelY,squireVariant?
-          .92*squireWeaponWidthScale:.92,shade(swordGuard,18));
+          .92*squireWeaponWidthScale*pommel.scale:.92*pommel.scale,
+          shade(swordGuard,18));
         rigJoint(guardX,guardY,.52,'#7fc9ff');
       }
     };
@@ -2699,7 +2773,23 @@ function drawSerJonathanRider(x,y,scale,o){
   const spatialBow=bowActive?sampleSpatialBow(Number.isFinite(bow.spatialTime)?bow.spatialTime:
     bow.preparedFocus?1.65+.85*clamp(bow.drawAmount||0,0,1):
     (bow.raise||0)<1?1.65*(bow.raise||0):1.65+.85*clamp(bow.drawAmount||0,0,1),bow.aimYaw||0):null,
-    bowPoint=q=>{const p=SpatialRiderRig.project(q,0);return [shoulderX+p[0]*1.23,shoulderY+.8+(p[1]+2)*1.23];};
+    bowPoint=q=>{
+      const p=SpatialRiderRig.project(q,0),legacy=[shoulderX+p[0]*1.23,
+          shoulderY+.8+(p[1]+2)*1.23];
+      if(duckFold<=.001)return legacy;
+      /* Bow model space now rides the same pitched torso basis as the mounted
+         shield. At duck=0 the exact legacy pixels are preserved; during the
+         crouch its vertical axis moves into depth and visibly foreshortens. */
+      const localDown=(q[1]+2)*1.23,localDepth=(q[2]||0)*1.23,
+        c=Math.cos(duckPose.torsoPitch),s=Math.sin(duckPose.torsoPitch),
+        projected=serJonathanProjectWorldPoint({
+          x:duckPose.shoulderWorld.x+q[0]*1.23,
+          y:duckPose.shoulderWorld.y-localDown*c-localDepth*s,
+          z:duckPose.shoulderWorld.z-localDown*s+localDepth*c},duckPose.hipY),
+        pitched=[shoulderX+(projected.x-duckPose.shoulder.x),
+          shoulderY+.8+(projected.y-duckPose.shoulder.y)];
+      return [lerp(legacy[0],pitched[0],duckFold),lerp(legacy[1],pitched[1],duckFold)];
+    };
   if(spatialBow){
     [leftHandX,leftHandY]=bowPoint(spatialBow.left.hand);
     [leftElbowX,leftElbowY]=bowPoint(spatialBow.left.elbow);
@@ -3024,8 +3114,10 @@ function drawSerJonathanRider(x,y,scale,o){
        explicit Guard/Veterancy growth above is the only Squire size bonus. */
     const rawBladeX=swordTipX,
       rawBladeY=swordTipY,
-      bladeX=rightHandX+(rawBladeX-rightHandX)*swordForeshorten,
-      bladeY=rightHandY+(rawBladeY-rightHandY)*swordForeshorten,
+      heldSwordDepthScale=lerp(1,duckPose.armScale,duckFold),
+      heldSwordPitchScale=lerp(1,Math.cos(duckPose.torsoPitch)*duckPose.armScale,duckFold),
+      bladeX=rightHandX+(rawBladeX-rightHandX)*swordForeshorten*heldSwordDepthScale,
+      bladeY=rightHandY+(rawBladeY-rightHandY)*swordForeshorten*heldSwordPitchScale,
       dx=bladeX-rightHandX,dy=bladeY-rightHandY,len=Math.hypot(dx,dy)||1,
       ux=dx/len,uy=dy/len,nx=-uy,ny=ux,reveal=swordReveal,
       /* rightHand is the palm on Squire's grip, not the guard itself. This same
@@ -9133,6 +9225,68 @@ function drawVignette(){
 let obstacles=[], pickups=[], roadsideScenery=[], projectiles=[], hazards=[];
 let nextSpawnAt=0, nextTreeAt=0, nextPondAt=0;   // nextPondAt paces the swamp's ground ponds
 
+/* NEW-menu prototype: a deliberately isolated route-choice vertical slice. */
+const JOURNEY_CHOICE_DISTANCE=165;
+const JOURNEY_EVENTS=Object.freeze([
+  Object.freeze({title:'THE WOUNDED SCOUT',body:'A royal scout lies beneath a split oak.',
+    options:Object.freeze([
+      Object.freeze({label:'BIND HIS WOUNDS',detail:'Threat -12 · Gold +2',threat:-12,gold:2}),
+      Object.freeze({label:'TAKE HIS MAP',detail:'Threat +8 · Gold +10',threat:8,gold:10})])}),
+  Object.freeze({title:'WITCHLIGHT SHRINE',body:'Blue flame asks for either faith or coin.',
+    options:Object.freeze([
+      Object.freeze({label:'KNEEL AT THE FLAME',detail:'Threat -8',threat:-8,gold:0}),
+      Object.freeze({label:'PLUNDER THE OFFERING',detail:'Threat +18 · Gold +14',threat:18,gold:14})])}),
+  Object.freeze({title:'THE TOLL KEEPER',body:'An iron mask bars the moonlit bridge.',
+    options:Object.freeze([
+      Object.freeze({label:'PAY THE OLD TOLL',detail:'Gold -4 · Threat -6',threat:-6,gold:-4}),
+      Object.freeze({label:'RIDE HIM DOWN',detail:'Threat +15 · Gold +8',threat:15,gold:8})])})
+]);
+let pendingJourneyPrototype=false,runJourneyPrototype=false,journeyThreat=0,
+  journeyChoices=[],journeyChoiceSpawned=false,journeyEvent=null,journeyEventSelection=0;
+class JourneyChoiceEntity{
+  constructor(z){this.z=z;this.prevZ=z;this.resolved=false;}
+}
+function updateJourneyPrototype(mv){
+  if(!runJourneyPrototype)return;
+  if(!journeyChoiceSpawned&&dist+SPAWN_FAR>JOURNEY_CHOICE_DISTANCE){
+    journeyChoiceSpawned=true;journeyChoices.push(new JourneyChoiceEntity(JOURNEY_CHOICE_DISTANCE-dist));
+  }
+  for(const choice of journeyChoices){
+    choice.prevZ=choice.z;choice.z-=mv;
+    if(!choice.resolved&&choice.z<2.4){
+      choice.resolved=true;
+      const lane=clamp(Math.round(player.x),0,2);
+      if(lane===0) openJourneyEvent();
+      else if(lane===1) floater(VW/2,190,'SAFE ROAD · THREAT UNCHANGED','#c0f79a',15);
+      else{ journeyThreat=clamp(journeyThreat+22,0,100);awardGold(12);
+        floater(VW/2,190,'RISK CACHE · +12 GOLD · +22 THREAT','#ffd23a',15);SFX.relic(); }
+    }
+  }
+  cullBehind(journeyChoices,-8);
+}
+function openJourneyEvent(){
+  journeyEvent=JOURNEY_EVENTS[(stageRouteSeed>>>3)%JOURNEY_EVENTS.length];journeyEventSelection=0;SFX.swipe();
+}
+function resolveJourneyEvent(index){
+  const option=journeyEvent.options[index],before=gold;
+  journeyThreat=clamp(journeyThreat+option.threat,0,100);
+  if(option.gold>=0)awardGold(option.gold);else gold=Math.max(0,gold+option.gold);
+  const actualGold=gold-before;
+  floater(VW/2,190,(option.threat>=0?'+':'')+option.threat+' THREAT · '+
+    (actualGold>=0?'+':'')+actualGold+' GOLD',option.threat>0?'#ff7a82':'#c0f79a',15);
+  journeyEvent=null;SFX.relic();
+}
+function handleJourneyEventAction(a,pt){
+  if(a==='left')journeyEventSelection=0;
+  else if(a==='right'||a==='down')journeyEventSelection=1;
+  else if(a==='up')resolveJourneyEvent(journeyEventSelection);
+  else if(a==='tap'){
+    if(pt&&pt.y>=486&&pt.y<=548){journeyEventSelection=pt.x<VW/2?0:1;resolveJourneyEvent(journeyEventSelection);}
+    else if(!pt||(pt.x===VW/2&&pt.y===VH/2))resolveJourneyEvent(journeyEventSelection);
+  }
+  if(journeyEvent)SFX.swipe();
+}
+
 /* One lean entity works for trees, cypress trunks, basalt columns, or any future
    roadside prop. It carries only projection data; the active stage owns the art. */
 class RoadsideSceneryEntity{
@@ -9293,6 +9447,7 @@ function spawnLoopEntities(){
     const worldPos=nextSpawnAt; nextSpawnAt+=CFG.SPAWN_GAP;   // the runway before the cave stays clean
     if(worldPos>stageEnd-40) continue;                    // clear runway before the boss
     if(hasMiniboss&&Math.abs(worldPos-minibossAtDist)<26) continue; // clear its encounter runway
+    if(runJourneyPrototype&&Math.abs(worldPos-JOURNEY_CHOICE_DISTANCE)<28)continue;
     spawnPattern(worldPos-dist);
   }
   /* the active stage miniboss (spawned once per loop) */
@@ -10093,16 +10248,21 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   if(!unstoppable&&resolveSquireCoveringShot())return;
   if(chargedDefense&&chargedDefense.status==='DEFENDING')chargedDefense.streakBroken=true;
   resetDetonationDefenseFuseStreak();
-  const damageUnits=unstoppable?player.currentHealthUnits:incomingPlayerDamageUnits(baseHeartDamage);
-  const wouldBeLethal=!healthEnabled||damageUnits>=player.currentHealthUnits;
+  let damageUnits=unstoppable?player.currentHealthUnits:incomingPlayerDamageUnits(baseHeartDamage);
+  if(!unstoppable&&damageUnits<=0)return;
   /* Living Bastion's prepared parry is an explicit Squire action and therefore
      meets the incoming attack before stored Knight shields are considered. */
   if(!unstoppable&&resolvePreparedSquireParry(reason))return;
-  if(!unstoppable&&consumeShield(wouldBeLethal)){ // execution finishers bypass shields
+  const shieldAbsorption=!unstoppable?absorbPlayerShieldDamage(damageUnits):null;
+  if(shieldAbsorption)damageUnits=shieldAbsorption.remaining;
+  const wouldBeLethal=!healthEnabled||damageUnits>=player.currentHealthUnits,
+    relicBlocked=!unstoppable&&damageUnits>0&&consumeLethalShieldRelic(wouldBeLethal);
+  if((shieldAbsorption?.consumed||0)>0||relicBlocked){
     player.invuln=1.2; SFX.shield(); flash('#9ecbff',.5); shake(8,.3); stopTime(.09);
     burst(laneX(player.x,1),PLAYER_Y-40,22,['#9ecbff','#ffffff'],220,120,4,.8);
-    floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE!','#9ecbff',20);
-    return;
+    floater(laneX(player.x,1),PLAYER_Y-90,'SHIELD BROKE'+
+      (shieldAbsorption?.consumed>1?' ×'+shieldAbsorption.consumed:'!'),'#9ecbff',20);
+    if(damageUnits<=0||relicBlocked)return;
   }
   /* Temporary shields remain the first defence. Once they are gone, a living
      Squire intercepts one complete boss hit; runner obstacles and finishers never
@@ -12146,7 +12306,8 @@ Object.freeze(CLASS_SKILLS.byId);Object.freeze(CLASS_SKILLS);
 
 function classSkillRouteNode(data){
   return Object.freeze({kind:'EVOLUTION',type:'STABLE',variant:'STABLE',resultAspect:'STABLE',
-    rarity:'FIXED',col:'#9ecbff',prototypeContract:true,classSkillRoute:true,...data,
+    rarity:'FIXED',col:'#9ecbff',prototypeContract:true,classSkillRoute:true,
+    usesQuality:data.skillId==='shield_bash',...data,
     parents:Object.freeze(data.parentId?[data.parentId]:[]),details:Object.freeze(data.details||[])});
 }
 const VOLATILE_SHIELD_POSTURE_DAMAGE=14;
@@ -12159,8 +12320,8 @@ const SHIELD_BASH_ROUTES=Object.freeze([
 
   classSkillRouteNode({id:'shield_bash_guard_style',skillId:'shield_bash',depth:2,
     parentId:'shield_bash_reinforced',name:'GUARD STYLE',styleId:'GUARD',buildAspect:'SHIELD_GUARD',col:'#9ecbff',
-    summary:'Create one temporary hit shield after the bash.',
-    debugSummaryTr:'Vuruştan sonra 1 normal shield verir. Biriktirilen diğer shield kaynaklarına limit koymaz.',
+    summary:'Create one temporary shield that absorbs up to one heart of damage.',
+    debugSummaryTr:'Vuruştan sonra 1 normal shield verir. Her shield en fazla 1 kalplik hasarı emer; fazlası sonraki shielda veya cana gider. Biriktirilen diğer shield kaynaklarına limit koymaz.',
     patch:{classShieldGrant:1}}),
   classSkillRouteNode({id:'shield_bash_posture_style',skillId:'shield_bash',depth:2,
     parentId:'shield_bash_reinforced',name:'BREAK STYLE',styleId:'POSTURE',buildAspect:'SHIELD_BREAK',col:'#ffe37a',
@@ -12212,10 +12373,10 @@ const SHIELD_BASH_ROUTES=Object.freeze([
     patch:{damage:16,posture:40,classPostureAftershock:18,classPostureOverflowDamageRate:.60}}),
   classSkillRouteNode({id:'shield_bash_setup_capstone',skillId:'shield_bash',depth:4,
     parentId:'shield_bash_setup_mastery',name:'TOTAL EXPOSURE',styleId:'SETUP',buildAspect:'SHIELD_SETUP',col:'#ff9a3a',
-    summary:'Expose all Weapon damage created during the remaining phase.',
-    debugSummaryTr:'Turun kalanında Weapon Skill direct damagei %20 artar; aynı skilllerin Mark Detonation paketi de armor düşüşünü kullanır.',
+    summary:'Expose every immediate damage packet created by Weapon Skills during the remaining phase.',
+    debugSummaryTr:'Turun kalanında bütün Weapon Skill anlık hasar paketleri %20 artar. Direct darbe, Mark Detonation ve gelecekteki skill-içi ikincil paketler dahildir; gecikmeli durum tickleri dahil değildir.',
     patch:{classArmorExposeRate:.20,classArmorExposeMode:'PHASE_WEAPONS',
-      classArmorExposeIncludesDetonation:true}}),
+      classArmorExposeIncludesSkillPackets:true}}),
   classSkillRouteNode({id:'shield_bash_cycle_capstone',skillId:'shield_bash',depth:4,
     parentId:'shield_bash_cycle_mastery',name:'VOLATILE REFORGE',styleId:'CYCLE',buildAspect:'SHIELD_CYCLE',col:'#c06cff',
     summary:'Rebuild a normal shield from empty; detonate an existing guard into one Volatile Shield.',
@@ -12422,13 +12583,96 @@ function compileSquireHunterQuality(command,lineage,rarityByDepth){
   refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;
   refreshSkillRarityResonance(command);return command;
 }
+/* Shield Bash uses the same additive Quality wallet as Weapon Skills. Authored
+   route patches are the exact Common result; only rarity Quality above Common
+   becomes bonus output. Integer shields buy from one cumulative lineage bank so
+   mixed rarities genuinely stack without ever exposing fractional shields. */
+const SHIELD_BASH_SHIELD_CREDIT_STEP=8;
+const SHIELD_BASH_QUALITY_RECIPE_BY_ID=Object.freeze(Object.fromEntries(
+  SHIELD_BASH_ROUTES.map(route=>[route.id,Object.freeze({id:route.id,depth:route.depth,
+    baseAttributeId:'SHIELD_BASH',baseAttributeAxis:'DIRECT_DAMAGE',baseAttributeShare:0,
+    qualityProfile:Object.freeze(
+      route.id==='shield_bash_reinforced'?{DIRECT_DAMAGE:.50,POSTURE:.50}:
+      route.id==='shield_bash_guard_style'?{SHIELD_GRANT:.60,DIRECT_DAMAGE:.25,POSTURE:.15}:
+      route.id==='shield_bash_guard_mastery'?{SHIELD_GRANT:.70,DIRECT_DAMAGE:.20,POSTURE:.10}:
+      route.id==='shield_bash_guard_capstone'?{SHIELD_GRANT:.75,DIRECT_DAMAGE:.15,POSTURE:.10}:
+      route.id==='shield_bash_posture_style'?{DIRECT_DAMAGE:.25,POSTURE:.75}:
+      route.id==='shield_bash_posture_mastery'?{DIRECT_DAMAGE:.20,AFTERSHOCK:.80}:
+      route.id==='shield_bash_posture_capstone'?{DIRECT_DAMAGE:.15,POSTURE:.45,
+        AFTERSHOCK:.20,OVERFLOW:.20}:
+      route.id==='shield_bash_setup_style'?{EXPOSURE:.60,DIRECT_DAMAGE:.25,POSTURE:.15}:
+      route.id==='shield_bash_setup_mastery'?{EXPOSURE:.70,DIRECT_DAMAGE:.20,POSTURE:.10}:
+      route.id==='shield_bash_setup_capstone'?{EXPOSURE:.75,DIRECT_DAMAGE:.15,POSTURE:.10}:
+      route.id==='shield_bash_cycle_style'?{BURST_DAMAGE:.40,BURST_POSTURE:.30,SHIELD_GRANT:.30}:
+      route.id==='shield_bash_cycle_mastery'?{BURST_DAMAGE:.45,BURST_POSTURE:.35,SHIELD_GRANT:.20}:
+      {BURST_DAMAGE:.30,BURST_POSTURE:.25,VOLATILE_POSTURE:.25,SHIELD_GRANT:.20})
+  })])));
+function shieldBashQualityHistoryNode(route,rarity,receipt){
+  const economy=SKILL_RARITY_SYNTHESIS_ECONOMY[rarity];
+  return Object.freeze({mutationId:route.id,routeId:route.id,familyId:'SHIELD_BASH',
+    kind:'EVOLUTION',variant:'STABLE',type:'STABLE',resultAspect:'STABLE',rarity,
+    depth:route.depth,name:route.name,buildAspect:route.buildAspect,
+    qualityContribution:economy.quality,rarityQualityContribution:economy.quality,
+    structuralQualityContribution:receipt.structuralQuality,
+    resolvePressureContribution:economy.resolvePressure,depthLeverage:receipt.depthLeverage,
+    effectiveQualityContribution:receipt.effectiveQuality,qualityAllocation:receipt.allocation,
+    powerAllocation:receipt.powerAllocation,legendaryStampSlot:receipt.legendaryStampSlot,
+    legendaryStampId:null,synthesized:true});
+}
+function compileShieldBashQuality(command,lineage,rarityByDepth){
+  const path=lineage.map(route=>Object.freeze({routeId:route.id,depth:route.depth,
+      rarity:rarityByDepth&&rarityByDepth[route.depth]||'COMMON'}));
+  if(path.some(entry=>!SKILL_RARITY_SYNTHESIS_ECONOMY[entry.rarity]))return null;
+  const ledger=compileSkillQualityLedger(path,SHIELD_BASH_QUALITY_RECIPE_BY_ID,
+      {includeStructural:true}),premiumCredits=Object.create(null),premiumPower=Object.create(null);
+  for(const entry of path){
+    const recipe=SHIELD_BASH_QUALITY_RECIPE_BY_ID[entry.routeId],
+      quality=Math.max(0,SKILL_RARITY_SYNTHESIS_ECONOMY[entry.rarity].quality-
+        SKILL_RARITY_SYNTHESIS_ECONOMY.COMMON.quality),
+      effective=quality*(SKILL_SYNTHESIS_DEPTH_LEVERAGE[entry.depth]||1);
+    for(const [axis,weight] of Object.entries(recipe.qualityProfile)){
+      premiumCredits[axis]=(premiumCredits[axis]||0)+effective*weight;
+      premiumPower[axis]=(premiumPower[axis]||0)+effective*weight*SKILL_QUALITY_POWER_UNIT;
+    }
+  }
+  command.damage=stableCombatNumber((command.damage||0)+(premiumPower.DIRECT_DAMAGE||0));
+  command.posture=stableCombatNumber((command.posture||0)+(premiumPower.POSTURE||0));
+  if(command.classPostureAftershock!==undefined)command.classPostureAftershock=
+    stableCombatNumber(command.classPostureAftershock+(premiumPower.AFTERSHOCK||0));
+  if(command.classShieldBurstDamage!==undefined)command.classShieldBurstDamage=
+    stableCombatNumber(command.classShieldBurstDamage+(premiumPower.BURST_DAMAGE||0));
+  if(command.classShieldBurstPosture!==undefined)command.classShieldBurstPosture=
+    stableCombatNumber(command.classShieldBurstPosture+(premiumPower.BURST_POSTURE||0));
+  if(command.classVolatileBlockPosture!==undefined)command.classVolatileBlockPosture=
+    stableCombatNumber(command.classVolatileBlockPosture+(premiumPower.VOLATILE_POSTURE||0));
+  if(command.classPostureOverflowDamageRate!==undefined)command.classPostureOverflowDamageRate=
+    stableCombatNumber(command.classPostureOverflowDamageRate+(premiumCredits.OVERFLOW||0)/100);
+  if(command.classArmorExposeRate!==undefined)command.classArmorExposeRate=
+    stableCombatNumber(command.classArmorExposeRate+(premiumCredits.EXPOSURE||0)/100);
+  command.classShieldRarityCredits=stableCombatNumber(premiumCredits.SHIELD_GRANT||0);
+  command.classShieldRarityBonus=Math.floor((command.classShieldRarityCredits+1e-7)/
+    SHIELD_BASH_SHIELD_CREDIT_STEP);
+  const history=path.map((entry,index)=>shieldBashQualityHistoryNode(
+    lineage[index],entry.rarity,ledger.receipts[index]));
+  Object.assign(command,{evolutionHistory:history,
+    evolutionMutationIds:history.map(node=>node.routeId),mutationIds:history.map(node=>node.routeId),
+    synthesisHistory:history.slice(),synthesisActive:true,synthesisEconomyApplied:true,
+    synthesisBaseResolveCost:1,formAspectId:lineage.at(-1).buildAspect,lineageAspect:'STABLE',
+    evolutionRarity:history.at(-1).rarity,synthesisCompilerVersion:SKILL_QUALITY_COMPILER_VERSION,
+    synthesisEffectiveQuality:ledger.effectiveQuality,synthesisDepthBonus:ledger.depthBonus,
+    synthesisAxisCredits:ledger.axisCredits,synthesisQualityReceipts:Array.from(ledger.receipts),
+    legendaryStampSlots:history.filter(node=>node.legendaryStampSlot).length,legendaryStamps:[]});
+  refreshSkillSynthesisEconomy(command);command.cost=command.synthesisProjectedResolveCost;
+  refreshSkillRarityResonance(command);return command;
+}
 function compileClassSkillRoute(routeId,rarityByDepth=moveTreeSynthesisRarityByDepth){
   const route=CLASS_SKILL_ROUTE_BY_ID[routeId],definition=route&&BASE_TURN_SKILL_BY_ID&&
     BASE_TURN_SKILL_BY_ID[route.skillId];if(!route||!definition)return null;
   const command=createRunSkill(definition),lineage=classSkillRouteLineage(routeId);
   for(const layer of lineage)Object.assign(command,layer.patch||{});
-  if(route.usesQuality&&!(route.styleId==='HUNTER'?compileSquireHunterQuality:
-    compileSquireGuardQuality)(command,lineage,rarityByDepth))return null;
+  const qualityCompiler=route.skillId==='shield_bash'?compileShieldBashQuality:
+    route.styleId==='HUNTER'?compileSquireHunterQuality:compileSquireGuardQuality;
+  if(route.usesQuality&&!qualityCompiler(command,lineage,rarityByDepth))return null;
   command.name=route.name;command.col=route.col;command.classRouteId=route.id;
   command.classStyleId=route.styleId;command.evolutionDepth=route.depth;
   /* Every evolution remains the same physical Shield Bash clip. Route patches
@@ -12443,7 +12687,7 @@ function compileClassSkillRoute(routeId,rarityByDepth=moveTreeSynthesisRarityByD
     command.evolutionText.push('Quality: '+latest.rarity+' katmanı '+latest.qualityContribution+
       ' Quality taşır; bütün önceki katmanların bütçesi korunur. Toplam Quality '+
       command.synthesisQuality+', Resolve Pressure '+command.synthesisResolvePressure+
-      ', Call/Encourage Resolve bedeli '+command.cost+'.');}
+      ', hareket Resolve bedeli '+command.cost+'.');}
   command.frameMutation=route;return command;
 }
 
@@ -43329,6 +43573,18 @@ function resolvePostureDetonationFinal(command,action,causedBreak,postureBefore,
       floater(x,y-122,'DETONATION FUSE · NEXT POSTURE','#c995ff',14);
   }
 }
+function mergeTurnDamageBreakdown(target,extra,includeMark=false){
+  if(includeMark)target.mark=extra.mark;
+  target.break=stableCombatNumber(target.break+extra.break);
+  target.exactFinal=target.final=stableCombatNumber(target.final+extra.final);
+  return target;
+}
+function appendTurnDamageComponent(target,key,amount,breakAmount=0){
+  target[key]=amount;
+  if(breakAmount)target.break=stableCombatNumber(target.break+breakAmount);
+  target.exactFinal=target.final=stableCombatNumber(target.final+amount);
+  return target.final;
+}
 function resolveTurnActionHit(action){
   if(!action||!boss||action.hitIndex>=action.hits)return false;
   const command=action.command,index=action.hitIndex++,markConsumed=action.markPlan.consumedByHit[index]||0,
@@ -43491,7 +43747,7 @@ function resolveTurnActionHit(action){
       postureRatio*Math.max(0,Number(command.detonationAdaptiveDamageRate)||0)+
       pressureRate+executionRate+
       (selfOpenedBreak?Math.max(0,Number(command.detonationPostureBreakBonusRate)||0):0)+
-      detonationCritRate)*(armorContext&&armorContext.includesDetonation?
+      detonationCritRate)*(armorContext&&armorContext.includesSkillPackets?
         1+Math.max(0,Number(armorContext.rate)||0):1));
   let damageResult,damage;
   if(orderedFuse){
@@ -43502,10 +43758,8 @@ function resolveTurnActionHit(action){
         directBroken,chainBonus(),critical,critMultiplier),
       detonationResult=combatTurnHitDamageBreakdown(0,contactDetonationPayload,0,0,
         boss.playerTurnBreak===true,0,false,critMultiplier);
-    damage=stableCombatNumber(directResult.final+detonationResult.final);
-    damageResult={...directResult,mark:detonationResult.mark,
-      break:stableCombatNumber(directResult.break+detonationResult.break),
-      exactFinal:damage,final:damage};
+    damageResult=mergeTurnDamageBreakdown(directResult,detonationResult,true);
+    damage=damageResult.final;
   }else if(orderedCharge){
     const directResult=combatTurnHitDamageBreakdown(base,contactDetonationPayload,
         commandHitExtraChainBonus(command,index)+contextChainBonus,damageChain,
@@ -43515,9 +43769,8 @@ function resolveTurnActionHit(action){
         Number(command.chargePostureBreachDamagePerCharge)||0):0)),
       deferredResult=combatTurnHitDamageBreakdown(deferredBase,0,0,0,
         boss.playerTurnBreak===true,0,false,critMultiplier);
-    damage=stableCombatNumber(directResult.final+deferredResult.final);
-    damageResult={...directResult,break:stableCombatNumber(directResult.break+
-      deferredResult.break),exactFinal:damage,final:damage};
+    damageResult=mergeTurnDamageBreakdown(directResult,deferredResult);
+    damage=damageResult.final;
   }else if(command.markDetonationEventMode==='CRIT_POSTURE_SHOTGUN'){
     /* Ordinary pellets share the action-start Break snapshot. Only the paid
        priority Apex lets its whole direct packet use its freshly opened Break;
@@ -43528,9 +43781,8 @@ function resolveTurnActionHit(action){
         chainBonus(),critical,critMultiplier),
       detonationResult=combatTurnHitDamageBreakdown(0,contactDetonationPayload,0,0,
         action.breakAtStart,0,false,critMultiplier);
-    damage=stableCombatNumber(directResult.final+detonationResult.final);
-    damageResult={...directResult,mark:detonationResult.mark,
-      break:stableCombatNumber(directResult.break+detonationResult.break),exactFinal:damage,final:damage};
+    damageResult=mergeTurnDamageBreakdown(directResult,detonationResult,true);
+    damage=damageResult.final;
   }else{
     damageResult=combatTurnHitDamageBreakdown(base,contactDetonationPayload,
       commandHitExtraChainBonus(command,index)+contextChainBonus,
@@ -43543,37 +43795,29 @@ function resolveTurnActionHit(action){
     // Otherwise sufficiently high Chain would make non-Crit insurance beat a Crit.
     const extra=combatTurnHitDamageBreakdown(preparedCriticalBonus,0,0,0,
       boss.playerTurnBreak===true,0,false);
-    damage=stableCombatNumber(damage+extra.final);
-    damageResult={...damageResult,preparedCritical:extra.final,
-      break:stableCombatNumber(damageResult.break+extra.break),exactFinal:damage,final:damage};
+    damage=appendTurnDamageComponent(damageResult,'preparedCritical',extra.final,extra.break);
   }
   const preparedAfflictionBonus=preparedAfflictionDirectBonus(action,index);
   if(preparedAfflictionBonus>0){
     const extra=combatTurnHitDamageBreakdown(preparedAfflictionBonus,0,0,0,
       boss.playerTurnBreak===true,0,false);
-    damage=stableCombatNumber(damage+extra.final);
-    damageResult={...damageResult,preparedAffliction:extra.final,
-      break:stableCombatNumber(damageResult.break+extra.break),exactFinal:damage,final:damage};
+    damage=appendTurnDamageComponent(damageResult,'preparedAffliction',extra.final,extra.break);
   }
   const preparedFocusBonus=preparedFocusDirectBonus(action,index);
   if(preparedFocusBonus>0){
     const extra=combatTurnHitDamageBreakdown(preparedFocusBonus,0,0,0,
       boss.playerTurnBreak===true,0,false);
-    damage=stableCombatNumber(damage+extra.final);
-    damageResult={...damageResult,preparedFocus:extra.final,
-      break:stableCombatNumber(damageResult.break+extra.break),exactFinal:damage,final:damage};
+    damage=appendTurnDamageComponent(damageResult,'preparedFocus',extra.final,extra.break);
   }
   if(afflictionDetonationBonus>0){
     // Independent paid relationship damage: no Crit or implicit Chain multiplier.
-    damage=stableCombatNumber(damage+afflictionDetonationBonus);
-    damageResult={...damageResult,afflictionDetonation:afflictionDetonationBonus,exactFinal:damage,final:damage};
+    damage=appendTurnDamageComponent(damageResult,'afflictionDetonation',afflictionDetonationBonus);
   }
   const squireReadyDamage=resolveSquireReadyShot(action,index);
   if(squireReadyDamage>0){
     // The companion's once-only payload does not inherit Knight Crit/Chain or
     // recursively fire weapon detonation hooks.
-    damage=stableCombatNumber(damage+squireReadyDamage);
-    damageResult={...damageResult,squireReady:squireReadyDamage,exactFinal:damage,final:damage};
+    damage=appendTurnDamageComponent(damageResult,'squireReady',squireReadyDamage);
   }
   if(command.squireMarkCredit>0){
     const gained=applyBossMarkEvent(command.squireMarkCredit,'SQUIRE_MARKING_SHOT');
@@ -44101,7 +44345,7 @@ function claimClassArmorExposure(command){
   if(exposure.mode==='NEXT_WEAPON'&&exposure.consumed)return command;
   if(exposure.mode==='NEXT_WEAPON')exposure.consumed=true;
   return {...command,classArmorExposureContext:Object.freeze({rate:exposure.rate,
-    includesDetonation:exposure.includesDetonation===true})};
+    includesSkillPackets:exposure.includesSkillPackets===true})};
 }
 function resolveClassSkillFinal(action,causedBreak,postureBefore,nativePosture,x,y){
   const command=action&&action.command;if(!command||command.source!=='CLASS')return;
@@ -44138,20 +44382,24 @@ function resolveClassSkillFinal(action,causedBreak,postureBefore,nativePosture,x
     boss.classArmorExposure={phaseSerial:boss.playerPhaseSerial,
       rate:Math.max(0,Number(command.classArmorExposeRate)||0),
       mode:command.classArmorExposeMode||'NEXT_WEAPON',
-      includesDetonation:command.classArmorExposeIncludesDetonation===true,consumed:false};
+      includesSkillPackets:command.classArmorExposeIncludesSkillPackets===true,consumed:false};
     floater(x,y-104,'ARMOR OPEN · +'+Math.round(boss.classArmorExposure.rate*100)+
       '% WEAPON DMG','#ff9a3a',14);
   }
-  let normal=Math.max(0,Math.floor(Number(command.classShieldGrant)||0));
+  const rarityShieldBonus=Math.max(0,Math.floor(Number(command.classShieldRarityBonus)||0));
+  let normal=Math.max(0,Math.floor(Number(command.classShieldGrant)||0))+rarityShieldBonus;
   if(command.classShieldAtStart===0&&command.classShieldGrantIfEmpty!==undefined)
-    normal=Math.max(normal,Math.max(0,Math.floor(Number(command.classShieldGrantIfEmpty)||0)));
+    normal=Math.max(normal,Math.max(0,Math.floor(Number(command.classShieldGrantIfEmpty)||0))+
+      rarityShieldBonus);
   if(causedBreak)normal+=Math.max(0,Math.floor(Number(command.classShieldGrantOnBreak)||0));
   /* Volatile Reforge always leaves a guard: empty starts rebuild one normal
      shield, while a real detonation replaces that normal grant with exactly
      one purple shield. It never grants both from the same bash. */
   const volatile=burstCount>0?Math.max(0,
     Math.floor(Number(command.classVolatileShieldGrant)||0)):0;
-  if(volatile>0)normal=0;
+  /* Volatile Reforge keeps one purple identity shield. Integer rarity upgrades
+     stack beside it as normal shields instead of multiplying purple explosions. */
+  if(volatile>0)normal=rarityShieldBonus;
   if(normal||volatile)action.pendingClassShieldGrant={normal,volatile,
     volatilePosture:Math.max(0,Number(command.classVolatileBlockPosture)||0),
     /* A replacement from Shield Cycle appears on the exact HUD explosion
@@ -49427,17 +49675,27 @@ function resolveVolatileShieldBlock(posture){
   floater(bossX,bossY-104,'VOLATILE GUARD · POSTURE +'+damagePart(applied),'#c995ff',15);
   return applied;
 }
-function consumeShield(wouldBeLethal=false){
-  if(player.shieldCharges>0){
-    player.shieldCharges--;
-    if(player.volatileShieldCharges>0){
-      player.volatileShieldCharges--;
-      const posture=player.volatileShieldPosture;
-      if(!player.volatileShieldCharges)player.volatileShieldPosture=0;
-      resolveVolatileShieldBlock(posture);
-    }
-    return true;
-  }
+function shieldDamageAbsorption(damageUnits,charges){
+  const damage=Math.max(0,Math.round(Number(damageUnits)||0)),
+    consumed=Math.min(Math.max(0,Math.floor(Number(charges)||0)),
+      Math.ceil(damage/PLAYER_HEALTH_CONTRACT.unitsPerHeart)),
+    absorbed=Math.min(damage,consumed*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+  return {consumed,absorbed,remaining:damage-absorbed};
+}
+function absorbPlayerShieldDamage(damageUnits){
+  const result=shieldDamageAbsorption(damageUnits,player.shieldCharges);
+  if(!result.consumed)return result;
+  const volatile=Math.min(result.consumed,Math.max(0,player.volatileShieldCharges||0)),
+    posture=player.volatileShieldPosture||0;
+  emitHudShieldShatter(result.consumed,volatile);
+  player.shieldCharges-=result.consumed;
+  player.volatileShieldCharges-=volatile;
+  if(!player.volatileShieldCharges)player.volatileShieldPosture=0;
+  // Each consumed purple shield contributes once, as one combined impact.
+  if(volatile)resolveVolatileShieldBlock(volatile*posture);
+  return result;
+}
+function consumeLethalShieldRelic(wouldBeLethal=false){
   if(!wouldBeLethal)return false;
   for(const r of relics) if(r&&r.type==='shield'&&r.charged){ r.charged=false; return true; }
   return false;
@@ -49595,6 +49853,8 @@ function resetRun(){
   resetSquireCombat();
   allyTrail.length=0; allyTrailStart=0;
   obstacles=[]; pickups=[]; roadsideScenery=[]; hazards=[]; projectiles=[]; particles.length=0; floaters.length=0; slashes.length=0;
+  runJourneyPrototype=false;journeyThreat=0;journeyChoices=[];journeyChoiceSpawned=false;
+  journeyEvent=null;journeyEventSelection=0;
   hudShieldShatters.length=0;
   nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,alive:true,attackAnim:0,counterAnim:0,
@@ -49742,8 +50002,10 @@ function uiConfirm(){
   else if(mode==='score'&&modeT>0.6){ resetRun(); setMode('menu'); }  // fresh board behind the menu
 }
 function startRun(i){
+  const launchJourneyPrototype=pendingJourneyPrototype&&!debugRun;
   charSel=i; playerChar=CHARS[i];
   resetRun();
+  runJourneyPrototype=launchJourneyPrototype;journeyThreat=runJourneyPrototype?18:0;pendingJourneyPrototype=false;
   if(debugRun){                                   // apply the debug rig AFTER the fresh board
     loop=debugLoop; biome=biomeOf(loop); oakUsed=false;
     relics=[null,null,null,null,null];
@@ -49757,7 +50019,7 @@ function startRun(i){
   else if(debugRun&&debugBossStart) startBoss();
   else if(debugRun&&debugMiniStart) startMiniboss(1,true);
 }
-function leaveCharSel(){ setMode(debugRun?'debugcfg':'menu'); SFX.duck(); }
+function leaveCharSel(){ pendingJourneyPrototype=false;setMode(debugRun?'debugcfg':'menu'); SFX.duck(); }
 function charselTap(pt){
   if(pt.x>VW/2-70&&pt.x<VW/2+70&&pt.y>620&&pt.y<664){ leaveCharSel(); return; }
   for(let i=0;i<CHARS.length;i++){
@@ -50109,6 +50371,33 @@ function drawSquireCombatHUD(){
     g.fillText('VETERANCY '+(squire.veterancy||0)+' · EFFECTIVE '+effectiveSquireVeterancy()+
       (squire.hunterReady?' · SHOT READY':squire.preparedParry?' · PARRY ×'+Number(squire.preparedParry):''),x+9,y+40);}
 }
+function drawJourneyThreatHUD(){
+  if(!runJourneyPrototype)return;
+  const x=VW/2-92,y=52,w=184;
+  g.fillStyle='#050910cc';g.fillRect(x,y,w,29);g.strokeStyle='#ff7a8288';g.strokeRect(x,y,w,29);
+  g.fillStyle='#28131c';g.fillRect(x+52,y+17,w-60,5);
+  g.fillStyle=journeyThreat<50?'#ffe37a':'#ff4d3a';g.fillRect(x+52,y+17,(w-60)*journeyThreat/100,5);
+  g.textAlign='left';g.font='bold 10px monospace';g.fillStyle='#ff9aa2';g.fillText('THREAT',x+8,y+20);
+  g.textAlign='right';g.fillText(journeyThreat+'/100',x+w-8,y+12);
+}
+function drawJourneyEventOverlay(){
+  if(!journeyEvent)return;
+  g.fillStyle='rgba(3,5,10,.82)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  const x=54,y=244,w=VW-108,h=322;
+  g.fillStyle='#090e18';g.fillRect(x,y,w,h);g.strokeStyle='#b08ae0';g.lineWidth=2;g.strokeRect(x,y,w,h);
+  g.textAlign='center';g.font='bold 12px monospace';g.fillStyle='#b08ae0';g.fillText('JOURNEY EVENT',VW/2,y+31);
+  g.font='bold 25px monospace';g.fillStyle='#e8e2d0';g.fillText(journeyEvent.title,VW/2,y+75);
+  g.font='14px monospace';g.fillStyle='#aeb2c2';g.fillText(journeyEvent.body,VW/2,y+112);
+  for(let i=0;i<2;i++){
+    const bx=i?VW/2+7:x+18,bw=w/2-25,selected=i===journeyEventSelection;
+    g.fillStyle=selected?'#172337':'#070b12';g.fillRect(bx,486,bw,62);
+    g.strokeStyle=selected?'#7fc9ff':'#8b8fa0';g.lineWidth=selected?2:1;g.strokeRect(bx,486,bw,62);
+    g.font='bold 12px monospace';g.fillStyle=selected?'#e8f6ff':'#d0d3dc';g.fillText(journeyEvent.options[i].label,bx+bw/2,511);
+    g.font='10px monospace';g.fillStyle=journeyEvent.options[i].threat>0?'#ff7a82':'#c0f79a';
+    g.fillText(journeyEvent.options[i].detail,bx+bw/2,533);
+  }
+  g.font='10px monospace';g.fillStyle='#8b8fa0';g.fillText('choose with ← → and ENTER, or tap',VW/2,y+h-9);
+}
 function drawHUD(){
   g.save(); g.translate(0,uiTop);           // keep the HUD clear of phone notches / islands
   g.textAlign='left'; g.font='bold 20px monospace';
@@ -50135,6 +50424,7 @@ function drawHUD(){
   g.fillStyle='#3f7bff'; g.fillRect(bx,by,bw*clamp(dist/stageDistance(),0,1),7);
   g.fillStyle=pack>0?'#9ecbff':'#8b8fa0'; g.fillRect(bx+bw*CFG.MINIBOSS_AT-2,by-3,5,13);
   g.fillStyle='#ff4d3a'; g.fillRect(bx+bw-3,by-3,5,13);
+  drawJourneyThreatHUD();
   /* relic slots */
   for(let i=0;i<5;i++) drawRelicSlot(14+i*43,66,38,relics[i]);
   let shieldAnchor;
@@ -50300,8 +50590,16 @@ function skillButtonSubtitle(skill){
     if(skill.classPostureAftershock)effects.push('WAVE +'+damagePart(skill.classPostureAftershock)+' POST');
     if(burstDamage||burstPosture)effects.push('BURST EACH +'+damagePart(burstDamage)+' DMG / '+
       damagePart(burstPosture)+' POST');
-    if(skill.classShieldGrant)effects.push('SHIELD +'+skill.classShieldGrant);
-    if(skill.classVolatileShieldGrant)effects.push('VOLATILE +'+skill.classVolatileShieldGrant);
+    const shieldBonus=Math.max(0,Math.floor(Number(skill.classShieldRarityBonus)||0));
+    if(skill.classVolatileShieldGrant)effects.push('REBUILD '+
+      (Math.max(0,Math.floor(Number(skill.classShieldGrant)||0))+shieldBonus)+
+      ' SHIELD · 1 VOLATILE MAX');
+    else if(skill.classShieldGrant){
+      const normal=Math.max(0,Math.floor(Number(skill.classShieldGrant)||0))+shieldBonus,
+        empty=skill.classShieldGrantIfEmpty===undefined?normal:
+          Math.max(normal,Math.max(0,Math.floor(Number(skill.classShieldGrantIfEmpty)||0))+shieldBonus);
+      effects.push('SHIELD +'+normal+(empty!==normal?' / EMPTY +'+empty:''));
+    }
     if(skill.classArmorExposeRate)effects.push('ARMOR -'+Math.round(skill.classArmorExposeRate*100)+'%');
     return finish('1AP · '+skill.cost+'R · '+healthDamageText(turnDamage(skill.damage))+' DMG'+
       (effects.length?' · '+effects.join(' · '):''));
@@ -51323,10 +51621,13 @@ function drawMenu(){
   drawRider(VW/2,PLAYER_Y-40,1.3,{gallop:(perfNow*1.4)%1,rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,
     chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman});
   const btnBg=(x,y,w,h)=>{ g.fillStyle='rgba(5,9,16,0.55)'; g.fillRect(x,y,w,h); };
-  btnBg(VW/2-80,404,160,50);
+  btnBg(VW/2-166,404,160,50);btnBg(VW/2+6,404,160,50);
   g.strokeStyle='#ffe37a'; g.lineWidth=2+Math.sin(perfNow*5);
-  g.strokeRect(VW/2-80,404,160,50);
-  g.font='bold 22px monospace'; g.fillStyle='#ffe37a'; g.fillText('▶ PLAY',VW/2,437);
+  g.strokeRect(VW/2-166,404,160,50);
+  g.font='bold 20px monospace'; g.fillStyle='#ffe37a'; g.fillText('▶ PLAY',VW/2-86,437);
+  g.strokeStyle='#7fc9ff';g.strokeRect(VW/2+6,404,160,50);
+  g.fillStyle='#7fc9ff';g.fillText('✦ NEW',VW/2+86,437);
+  g.font='10px monospace';g.fillStyle='#9ecbff';g.fillText('JOURNEY PROTOTYPE',VW/2+86,394);
   btnBg(VW/2-80,468,160,42);
   g.strokeStyle='#b08ae0'; g.lineWidth=2; g.strokeRect(VW/2-80,468,160,42);
   g.font='bold 16px monospace'; g.fillStyle='#b08ae0'; g.fillText('RELIC CODEX',VW/2,495);
@@ -51752,77 +52053,62 @@ function moveTreeSynthesisSelectedNode(){
   if(route&&route.runtimeReadiness==='MATERIALIZED')return selected;
   return moveTreeSynthesisRecipe(selected)&&selected.depth<=2?selected:null;
 }
+function weaponSkillRouteLineage(route){
+  const catalogue=route&&WEAPON_SKILL_ROUTE_CATALOGS.byId[route.skillId],lineage=[];
+  let current=route,remaining=4;
+  while(current&&remaining--){lineage.unshift(current);
+    current=current.parentId&&catalogue?catalogue.get(current.parentId):null;}
+  return lineage.length===route.depth?lineage:null;
+}
+const SHARPSHOOT_PREVIEW_COMPILER_BY_FORM_SLOT=Object.freeze({
+  1:(path,r)=>synthesizeSharpshootMarkPath(r[1],path[1].id,r[2],
+    path[2]?.id||null,r[3],path[3]?.id||null,r[4]),
+  2:(path,r)=>path[2]?synthesizeSharpshootChainDescendantPath(r[1],r[2],path[2].id,
+    r[3],path[3]?.id||null,r[4]):synthesizeSharpshootChainPath(r[1],path[1].id,r[2]),
+  3:(path,r)=>synthesizeSharpshootPosturePath(r[1],path[1].id,r[2],
+    path[2]?.id||null,r[3],path[3]?.id||null,r[4]),
+  4:(path,r)=>synthesizeSharpshootCriticalPath(r[1],path[1].id,r[2],
+    path[2]?.id||null,r[3],path[3]?.id||null,r[4]),
+  5:(path,r)=>synthesizeSharpshootAfflictionPath(r[1],path[1].id,r[2],
+    path[2]?.id||null,r[3],path[3]?.id||null,r[4]),
+  6:(path,r)=>synthesizeSharpshootChargePath(r[1],path[1].id,r[2],
+    path[2]?.id||null,r[3],path[3]?.id||null,r[4])
+});
+const WEAPON_SKILL_PREVIEW_COMPILERS=Object.freeze({
+  mark_burst:(route,path,rarities)=>route.depth===1?
+    synthesizeMarkBurstFormRoute(route,rarities[1]):
+    synthesizeMarkBurstDetonationPath(rarities[1],path[1].id,rarities[2],
+      path[2]?.id||null,rarities[3],path[3]?.id||null,rarities[4]),
+  sharpshoot:(route,path,rarities)=>route.depth===1?
+    synthesizeSharpshootFormRoute(route,rarities[1]):
+    (SHARPSHOOT_PREVIEW_COMPILER_BY_FORM_SLOT[route.formSlot]?.(path,rarities)||null)
+});
+const WEAPON_SKILL_PREVIEW_COMPILER_AUDIT=RUN_BOOT_AUDITS&&(()=>{
+  let routes=0;
+  for(const definition of WEAPON_SKILLS.list){
+    const catalogue=WEAPON_SKILL_ROUTE_CATALOGS.byId[definition.id];
+    if(catalogue&&catalogue.routes.some(route=>route.runtimeReadiness==='MATERIALIZED')&&
+       typeof WEAPON_SKILL_PREVIEW_COMPILERS[definition.id]!=='function')
+      throw new Error(definition.id+' needs one registered route preview compiler');
+    for(const route of catalogue?catalogue.routes:[])
+      if(route.runtimeReadiness==='MATERIALIZED'){
+        if(!compileWeaponSkillRoutePreview(route,moveTreeSynthesisRarityByDepth))
+          throw new Error(route.id+' failed its registered route preview compiler');
+        routes++;
+      }
+  }
+  return Object.freeze({passed:true,skills:Object.keys(WEAPON_SKILL_PREVIEW_COMPILERS).length,routes});
+})();
+function compileWeaponSkillRoutePreview(route,rarities){
+  const compiler=route&&WEAPON_SKILL_PREVIEW_COMPILERS[route.skillId],
+    path=route&&weaponSkillRouteLineage(route);
+  return typeof compiler==='function'&&path?compiler(route,path,rarities):null;
+}
 function moveTreeSynthesisPreviewCommand(node){
   if(node&&node.classSkillRoute)return compileClassSkillRoute(node.id,moveTreeSynthesisRarityByDepth);
   const route=weaponSkillRouteFromNode(node),formRarity=moveTreeSynthesisRarityByDepth[1];
-  if(route&&route.runtimeReadiness==='MATERIALIZED'){
-    if(route.skillId==='mark_burst'){
-      if(route.depth===1)return synthesizeMarkBurstFormRoute(route,formRarity);
-      if(route.depth===2)return synthesizeMarkBurstDetonationPath(formRarity,route.id,
-          moveTreeSynthesisRarityByDepth[2]);
-      if(route.depth===3){
-        const specialization=MARK_BURST_ROUTE_BY_ID[route.parentId];
-        if(specialization)return (
-          synthesizeMarkBurstDetonationPath(formRarity,specialization.id,
-            moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]));
-      }
-      if(route.depth===4){
-        const twist=MARK_BURST_ROUTE_BY_ID[route.parentId],specialization=twist&&
-          MARK_BURST_ROUTE_BY_ID[twist.parentId];
-        if(specialization)return (
-          synthesizeMarkBurstDetonationPath(formRarity,specialization.id,
-            moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],
-            route.id,moveTreeSynthesisRarityByDepth[4]));
-      }
-      return null;
-    }
-    if(route.depth===1)return synthesizeSharpshootFormRoute(route,formRarity);
-    if(route.depth===2)return route.formSlot===2?
-      synthesizeSharpshootChainPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
-      route.formSlot===3?
-        synthesizeSharpshootPosturePath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
-      route.formSlot===4?
-        synthesizeSharpshootCriticalPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
-      route.formSlot===5?
-        synthesizeSharpshootAfflictionPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
-      route.formSlot===6?
-        synthesizeSharpshootChargePath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]):
-        synthesizeSharpshootMarkPath(formRarity,route.id,moveTreeSynthesisRarityByDepth[2]);
-    const parent=SHARPSHOOT_MARK_ROUTE_BY_ID[route.parentId];
-    if(route.depth===3)return parent&&(route.formSlot===2?
-      synthesizeSharpshootChainDescendantPath(formRarity,moveTreeSynthesisRarityByDepth[2],route.id,
-        moveTreeSynthesisRarityByDepth[3]):
-      route.formSlot===3?synthesizeSharpshootPosturePath(formRarity,parent.id,
-        moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]):
-      route.formSlot===4?synthesizeSharpshootCriticalPath(formRarity,parent.id,
-        moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]):
-      route.formSlot===5?synthesizeSharpshootAfflictionPath(formRarity,parent.id,
-        moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]):
-      route.formSlot===6?synthesizeSharpshootChargePath(formRarity,parent.id,
-        moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]):
-      synthesizeSharpshootMarkPath(formRarity,parent.id,
-        moveTreeSynthesisRarityByDepth[2],route.id,moveTreeSynthesisRarityByDepth[3]));
-    const twist=route.depth===4&&parent,
-      specialization=twist&&SHARPSHOOT_MARK_ROUTE_BY_ID[twist.parentId];
-    return specialization&&(route.formSlot===2?
-      synthesizeSharpshootChainDescendantPath(formRarity,moveTreeSynthesisRarityByDepth[2],twist.id,
-        moveTreeSynthesisRarityByDepth[3],route.id,moveTreeSynthesisRarityByDepth[4]):
-      route.formSlot===3?synthesizeSharpshootPosturePath(formRarity,specialization.id,
-        moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
-        moveTreeSynthesisRarityByDepth[4]):
-      route.formSlot===4?synthesizeSharpshootCriticalPath(formRarity,specialization.id,
-        moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
-        moveTreeSynthesisRarityByDepth[4]):
-      route.formSlot===5?synthesizeSharpshootAfflictionPath(formRarity,specialization.id,
-        moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
-        moveTreeSynthesisRarityByDepth[4]):
-      route.formSlot===6?synthesizeSharpshootChargePath(formRarity,specialization.id,
-        moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
-        moveTreeSynthesisRarityByDepth[4]):
-      synthesizeSharpshootMarkPath(formRarity,specialization.id,
-        moveTreeSynthesisRarityByDepth[2],twist.id,moveTreeSynthesisRarityByDepth[3],route.id,
-        moveTreeSynthesisRarityByDepth[4]));
-  }
+  if(route&&route.runtimeReadiness==='MATERIALIZED')
+    return compileWeaponSkillRoutePreview(route,moveTreeSynthesisRarityByDepth);
   const recipe=moveTreeSynthesisRecipe(node);if(!recipe||recipe.depth>2)return null;
   return recipe.depth===1?synthesizeF1StablePath(formRarity):
     synthesizeF1StablePath(formRarity,node.id,moveTreeSynthesisRarityByDepth[2]);
@@ -52894,7 +53180,16 @@ function moveTreeSynthesisRaritySnapshot(command){
     weightedBaseChainRate:Number((CFG.CHAIN_BONUS*Math.max(1,command.chainBonusWeight||1)*100).toFixed(1)),
     chainRamp:(command.chainScalingRampPerHit||0)>0,
     weight:command.deliveryWeight||1,
-    posture:command.posture||0,critChance:Number(((command.critChance||0)*100).toFixed(1)),
+    posture:command.posture||0,
+    shieldGrant:(command.classShieldGrant||0)+(command.classShieldRarityBonus||0),
+    shieldRarityBonus:command.classShieldRarityBonus||0,
+    shieldBurstDamage:command.classShieldBurstDamage||0,
+    shieldBurstPosture:command.classShieldBurstPosture||0,
+    armorExposure:Number(((command.classArmorExposeRate||0)*100).toFixed(1)),
+    postureAftershock:command.classPostureAftershock||0,
+    postureOverflowRate:Number(((command.classPostureOverflowDamageRate||0)*100).toFixed(1)),
+    volatilePosture:command.classVolatileBlockPosture||0,
+    critChance:Number(((command.critChance||0)*100).toFixed(1)),
     critPrecision:Number(((command.critPrecisionGain||0)*100).toFixed(1)),
     critExpected:Number(((command.synthesisCritExpectedRate||command.critChance||0)*100).toFixed(1)),
     critMultiplier:Number((command.critDamageMultiplier||CFG.CRIT_DAMAGE_MULT).toFixed(2)),
@@ -53039,6 +53334,15 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         if(entry.stats.squireGuardDepth>=3)
           lines.push('PARRY '+entry.stats.squireParryPosture+' POST'+
             (entry.stats.squireParryCount?' · '+entry.stats.squireParryCount+' USE':' (FINAL)'));
+      }else if(entry.command.baseId==='shield_bash'){
+        lines.push(entry.stats.damage+' DMG · '+entry.stats.posture+' POST');
+        lines.push(entry.stats.armorExposure?entry.stats.armorExposure+'% WEAPON':
+          entry.stats.shieldBurstDamage?('EACH +'+damagePart(entry.stats.shieldBurstDamage)+
+            ' DMG / '+damagePart(entry.stats.shieldBurstPosture)+' POST'):
+          entry.stats.postureAftershock?('WAVE +'+damagePart(entry.stats.postureAftershock)+' POST'):
+          entry.stats.shieldGrant?(entry.stats.shieldGrant+' SHIELD'):'IMPACT');
+        lines.push((entry.stats.shieldRarityBonus?'RARITY +'+entry.stats.shieldRarityBonus+' · ':'')+
+          entry.stats.cost+' COST');
       }else if(entry.command.baseId==='mark_burst'){
         lines.push(entry.stats.damage+' DMG · '+entry.stats.hits+' HIT');
         lines.push(entry.stats.preparation?('PREP +'+damagePart(entry.stats.preparation)+
@@ -53091,6 +53395,15 @@ function drawMoveTreeSynthesisRarityLadder(node,rect){
         ['B.POST',entry.stats.squireGuardPosture-selected.stats.squireGuardPosture],
         ['P.POST',entry.stats.squireParryPosture-selected.stats.squireParryPosture],
         ['PARRY',entry.stats.squireParryCount-selected.stats.squireParryCount],
+        ['COST',entry.stats.cost-selected.stats.cost]
+      ]:entry.command.baseId==='shield_bash'?[
+        ['DMG',entry.stats.damage-selected.stats.damage],
+        ['POST',entry.stats.posture-selected.stats.posture],
+        ['SHD',entry.stats.shieldGrant-selected.stats.shieldGrant],
+        ['BURST',entry.stats.shieldBurstDamage-selected.stats.shieldBurstDamage],
+        ['B.POST',entry.stats.shieldBurstPosture-selected.stats.shieldBurstPosture],
+        ['ARM%',entry.stats.armorExposure-selected.stats.armorExposure],
+        ['WAVE',entry.stats.postureAftershock-selected.stats.postureAftershock],
         ['COST',entry.stats.cost-selected.stats.cost]
       ]:[
         ['DMG',entry.stats.damage-selected.stats.damage],
@@ -53873,15 +54186,16 @@ function healthLabExact(delta){
   healthLabState.message=(delta<0?'REMOVED ':'RESTORED ')+Math.abs(delta)+' EXACT CELL'+(Math.abs(delta)===1?'':'S');
 }
 function healthLabApplyHit(){
-  if(healthLabState.shieldCharges>0){healthLabState.shieldCharges--;
-    healthLabState.message='SHIELD ABSORBED THE WHOLE HIT';return;}
-  const damage=Math.max(1,Math.round(PLAYER_HEALTH_CONTRACT.unitsPerHeart*healthLabState.damageMultiplier)),
+  const incoming=Math.max(1,Math.round(PLAYER_HEALTH_CONTRACT.unitsPerHeart*healthLabState.damageMultiplier)),
+    absorption=shieldDamageAbsorption(incoming,healthLabState.shieldCharges),damage=absorption.remaining,
     before=healthLabState.currentUnits;
+  healthLabState.shieldCharges-=absorption.consumed;
   healthLabSetCurrent(healthLabState.currentUnits-damage);
   healthLabState.heartFlashFromUnits=before;
   healthLabState.heartFlashToUnits=healthLabState.currentUnits;
   healthLabState.heartFlashStartedAt=perfNow;
-  healthLabState.message='1 HEART HIT × '+healthLabState.damageMultiplier+' = '+damage+' DAMAGE';
+  healthLabState.message=absorption.consumed?'SHIELD -'+absorption.consumed+' · '+
+    damage+' HEALTH DAMAGE':'1 HEART HIT × '+healthLabState.damageMultiplier+' = '+damage+' DAMAGE';
 }
 function healthLabCycleMultiplier(direction){
   let index=HEALTH_LAB_MULTIPLIERS.indexOf(healthLabState.damageMultiplier);
@@ -54293,6 +54607,7 @@ function update(dt){
     }
     return;
   }
+  if(journeyEvent)return;
 
   updatePlayer(dt);
   if(mode==='run'){
@@ -54302,6 +54617,7 @@ function update(dt){
     for(const o of obstacles){ o.prevZ=o.z; o.z-=mv; }
     for(const c of pickups){ c.prevZ=c.z; c.z-=mv; }
     for(const t of roadsideScenery) t.z-=mv;
+    updateJourneyPrototype(mv);
     /* roots stay alive until their TALL upper arm has fully cleared the screen —
        they slide off the bottom organically like everything else (the extended
        phone-bottom included: nothing may vanish while still visible) */
@@ -54402,6 +54718,19 @@ function drawObstacleEntity(o,stage){
       g.fillStyle='#ffd23a'; g.fillText('!',laneX(o.lane,p.t),p.y-70*p.s); }
     worldA=1; g.globalAlpha=1;
   } else drawObstacle(o,p);
+}
+function drawJourneyChoice(choice){
+  const p=proj(choice.z),labels=['? EVENT','SAFE ROAD','RISK CACHE'],colors=['#b08ae0','#c0f79a','#ffd23a'];
+  g.globalAlpha=spawnFade(choice.z);
+  for(let lane=0;lane<3;lane++){
+    const x=laneX(lane,p.t),w=Math.max(16,76*p.s),h=Math.max(12,34*p.s);
+    g.fillStyle='#050910dd';g.fillRect(x-w/2,p.y-h-13*p.s,w,h);
+    g.strokeStyle=colors[lane];g.lineWidth=Math.max(1,2*p.s);g.strokeRect(x-w/2,p.y-h-13*p.s,w,h);
+    g.fillStyle=colors[lane];g.fillRect(x-2*p.s,p.y-13*p.s,4*p.s,16*p.s);
+    if(p.s>.18){g.textAlign='center';g.font='bold '+Math.max(7,12*p.s)+'px monospace';
+      g.fillText(labels[lane],x,p.y-h/2-9*p.s);}
+  }
+  g.globalAlpha=1;
 }
 function drawPickupEntity(c){
   if(c.z>effZFar) return;
@@ -54533,6 +54862,7 @@ function render(){
     if(o.type.frontLayer&&o.z<1.3&&o.z>o.type.cullZ-.2&&!(overArch&&o.z>-2.2)){ frontObs.push(o); continue; }
     queueWorldDraw(o.z,drawObstacleEntity,o);
   }
+  for(const choice of journeyChoices)queueWorldDraw(choice.z,drawJourneyChoice,choice);
   for(const c of pickups) queueWorldDraw(c.z,drawPickupEntity,c);
   if(boss)queueWorldDraw(boss.z,drawActiveBossWorld);
   if(minibossFight)queueWorldDraw(minibossFight.z,drawActiveMinibossWorld);
@@ -54585,7 +54915,7 @@ function render(){
          transform avoids sub-pixel/raster drift that inverse shake translation
          caused when pixel sprites rounded onto the backing-canvas grid. */
       g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-      drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();
+      drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyEventOverlay();
       if(mode==='bossintro') drawBossIntro();
       if(mode==='evolution')drawSkillEvolutionScreen();
       if(mode==='relic') drawRelicScreen();

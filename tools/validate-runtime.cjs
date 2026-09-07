@@ -1444,7 +1444,8 @@ try{
     afflictionFocusOnly=process.argv.includes('--affliction-focus'),
     afflictionChargeOnly=process.argv.includes('--affliction-charge'),
     squireOnly=process.argv.includes('--squire'),
-    hasFocusedAudits=chargeFocusOnly||chargeAfflictionOnly||chargeCriticalOnly||chargePostureOnly||chargeChainOnly||chargeDetonationOnly||chargeSpecsOnly||criticalPostureOnly||criticalFocusOnly||criticalAfflictionOnly||criticalChargeOnly||arrowScalingOnly||globalChainOnly||afflictionSpecsOnly||afflictionDetonationOnly||afflictionChainOnly||afflictionPostureOnly||afflictionCriticalOnly||afflictionFocusOnly||afflictionChargeOnly||squireOnly,
+    shieldBashOnly=process.argv.includes('--shield-bash'),
+    hasFocusedAudits=shieldBashOnly||chargeFocusOnly||chargeAfflictionOnly||chargeCriticalOnly||chargePostureOnly||chargeChainOnly||chargeDetonationOnly||chargeSpecsOnly||criticalPostureOnly||criticalFocusOnly||criticalAfflictionOnly||criticalChargeOnly||arrowScalingOnly||globalChainOnly||afflictionSpecsOnly||afflictionDetonationOnly||afflictionChainOnly||afflictionPostureOnly||afflictionCriticalOnly||afflictionFocusOnly||afflictionChargeOnly||squireOnly,
     bootOnly=process.argv.includes('--boot-only')||(hasFocusedAudits&&!process.argv.includes('--quick')),
     adjacentOnly=process.argv.includes('--adjacent'),
     exhaustiveFeature=process.argv.includes('--exhaustive-feature'),
@@ -1498,14 +1499,22 @@ try{
           if(!boss.turnAction||boss.phase!=='playerResolve')
             throw new Error('action did not create playerResolve state');
           if(!boss.turnAction.bowTimeline)throw new Error('action has no Bow timeline');
+          /* A completed action may intentionally enqueue one or more free
+             follow-up/recoil actions. Audit the whole linked resolve chain,
+             not only the first timeline's initial playerActionTimer. */
+          const frameBudget=1800;
           let frames=0;
-          while(boss.phase==='playerResolve'&&frames++<600){
+          while(boss.turnAction&&boss.phase==='playerResolve'&&frames<frameBudget){
             updateTurnAction(1/60);boss.playerActionTimer-=1/60;
             if(boss.playerActionTimer<=0)finishPlayerAction();
+            frames++;
           }
           totalFrames+=frames;maxFrames=Math.max(maxFrames,frames);
           const log=skillLabSession.lastLog;
-          if(frames>=600)throw new Error('action did not resolve within 600 frames');
+          if(boss.turnAction)throw new Error('action did not resolve within its '+
+            frameBudget+'-frame timeline budget; active='+(boss.turnAction?.command?.id||'none')+
+            ', freeFollowUp='+!!boss.turnAction?.freeFollowUp+', t='+(boss.turnAction?.t||0).toFixed(3)+
+            ', timer='+(boss.playerActionTimer||0).toFixed(3));
           if(boss.turnAction)throw new Error('turnAction survived its timeline');
           if(!(boss.hp<hpBefore))throw new Error('action dealt no Health damage');
           if(!log||!log.hits.length)throw new Error('action produced no hit log');
@@ -1561,6 +1570,8 @@ try{
         'affliction-focus-audit.js'),'utf8'):'')+
       (afflictionChargeOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
         'affliction-charge-audit.js'),'utf8'):'')+
+      (shieldBashOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
+        'shield-bash-audit.js'),'utf8'):'')+
       (squireOnly?'\n'+fs.readFileSync(require('node:path').join(__dirname,
         'squire-audit.js'),'utf8')+'\n'+fs.readFileSync(require('node:path').join(__dirname,
         'squire-hunter-audit.js'),'utf8'):''),
@@ -1915,6 +1926,23 @@ try{
         apBefore,apAfter:boss.ap,resolveBefore,resolveAfter:boss.resolve,
         returnedToPlayer:boss.phase==='player',hitLogged:!!(skillLabSession.lastLog&&
           skillLabSession.lastLog.hits.length)};
+    })();
+    globalThis.__journeyPrototypeAudit=(()=>{
+      setMode('menu');pendingJourneyPrototype=false;
+      handleAction('tap',{x:VW/2+86,y:429});
+      const newOpened=mode==='charsel'&&pendingJourneyPrototype;
+      startRun(0);const isolatedRun=runJourneyPrototype&&journeyThreat===18;
+      dist=JOURNEY_CHOICE_DISTANCE-SPAWN_FAR+1;updateJourneyPrototype(0);
+      const signSpawned=journeyChoices.length===1;
+      player.x=2;journeyChoices[0].z=2;updateJourneyPrototype(0);
+      const riskResolved=journeyThreat===40&&gold===12;
+      openJourneyEvent();const eventTitle=journeyEvent.title,beforeThreat=journeyThreat;
+      resolveJourneyEvent(1);const eventResolved=!journeyEvent&&journeyThreat>=beforeThreat;
+      drawJourneyChoice(new JourneyChoiceEntity(12));drawJourneyThreatHUD();
+      setMode('menu');handleAction('tap',{x:VW/2-86,y:429});startRun(0);
+      const playUnchanged=!runJourneyPrototype&&journeyThreat===0&&journeyChoices.length===0;
+      return {passed:newOpened&&isolatedRun&&signSpawned&&riskResolved&&eventResolved&&playUnchanged,
+        newOpened,isolatedRun,signSpawned,riskResolved,eventResolved,playUnchanged,eventTitle};
     })();`:
       adjacentOnly?adjacentSource:match[1])+focusedSource;
   /* Full-history coverage grows deliberately with every materialized family.
@@ -2034,6 +2062,11 @@ try{
     const audit=sandbox.__afflictionChargeAudit;
     console.log('AFFLICTION_CHARGE_AUDIT '+JSON.stringify(audit));
     if(!audit||!audit.passed)throw new Error('F5S6 targeted audit failed');
+  }
+  if(shieldBashOnly){
+    const audit=sandbox.__shieldBashAudit;
+    console.log('SHIELD_BASH_AUDIT '+JSON.stringify(audit));
+    if(!audit||!audit.passed)throw new Error('Shield Bash targeted audit failed');
   }
   if(squireOnly){
     const audit=sandbox.__squireAudit;
@@ -2192,10 +2225,13 @@ try{
       detonationFocusCombat=sandbox.__detonationFocusCombatAudit,
       detonationChainCombat=sandbox.__detonationChainCombatAudit,
       detonationPostureCombat=sandbox.__detonationPostureCombatAudit,
-      combatInteraction=sandbox.__combatInteractionAudit;
+      combatInteraction=sandbox.__combatInteractionAudit,
+      journeyPrototype=sandbox.__journeyPrototypeAudit;
     if(!bowRouteRecipe||!bowRouteRecipe.passed||bowRouteRecipe.recipes<20||
        bowRouteRecipe.routeMappings<100)
       throw new Error('Quick Bow route recipe gate failed: '+JSON.stringify(bowRouteRecipe));
+    if(!journeyPrototype||!journeyPrototype.passed)
+      throw new Error('NEW journey prototype gate failed: '+JSON.stringify(journeyPrototype));
     if(!weaponBaseAttribute||!weaponBaseAttribute.passed||weaponBaseAttribute.skills!==2||
        weaponBaseAttribute.weapons!==1||weaponBaseAttribute.animationFamilies!==1||
        weaponBaseAttribute.globalAttributes!==7||weaponBaseAttribute.attributesPerSkill!==6||
@@ -2546,6 +2582,7 @@ try{
     console.log('SKILL_HIERARCHY '+JSON.stringify(weaponSkillHierarchy));
     console.log('DETONATION_BASE '+JSON.stringify(detonationBase));
     console.log('COMBAT_INTERACTION '+JSON.stringify(combatInteraction));
+    console.log('JOURNEY_PROTOTYPE '+JSON.stringify(journeyPrototype));
     console.log('QUICK_RUNTIME_OK '+file);
     console.log('CHAIN_FORM_AUDIT '+JSON.stringify(chainForm));
     console.log('POSTURE_FORM_AUDIT '+JSON.stringify(postureForm));
