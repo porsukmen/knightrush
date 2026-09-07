@@ -197,10 +197,11 @@
   boss.phase='player';boss.state='idle';boss.turnAction=null;boss.playerPhaseSerial=1;
   summonSquire();squire.active=true;squire.ap=1;
   const guardProfile=squireCombatProfile(),guardBash=guardProfile.skills.find(skill=>
-      skill.squireShieldBash),coveringCross=guardProfile.skills.find(skill=>
-      skill.squirePreparedParry),guardKitReady=squire.maxHealth===legendaryGuard.squireBaseMaxHealth&&
-      guardProfile.name==='GUARD SQUIRE'&&guardBash?.squireShieldGrant===1&&
-      coveringCross?.name==='COVERING CROSS'&&squireVisualBulk()>=1;
+      skill.squireShieldBash),coveringCross=guardProfile.skills[0],
+    guardKitReady=squire.maxHealth===legendaryGuard.squireBaseMaxHealth&&
+      guardProfile.name==='GUARD SQUIRE'&&guardBash?.squireShieldGrant===0&&
+      guardBash.squirePreparedParryCount===legendaryGuard.squirePreparedParryBaseCount&&guardBash.squirePreparedParry&&
+      coveringCross?.name==='COVERING CROSS'&&!coveringCross.squirePreparedParry&&squireVisualBulk()>=1;
   const normalFightDoesNotPrepare=guardProfile.fightName==='SQUIRE SLASH'&&
     guardProfile.fightPreparedParry!==true&&fightCommand('ally').squirePreparedParry!==true;
   const noFreeVeterancy=!awardSquireDefenseVeterancy()&&squire.veterancy===0;
@@ -219,6 +220,80 @@
   let guardRenderSafe=true;
   try{drawSquire();for(const t of [0,.18,.34,.52,.76,.96]){squire.parryT=t;drawSquire();}}
   catch(error){guardRenderSafe=false;}
+  const guardPreparationChecks={},checkGuard=(name,value)=>{
+    guardPreparationChecks[name]=!!value;if(!value)throw new Error('Guard preparation: '+name);
+  };
+  const preparationByRarity={};
+  for(const rarity of ['COMMON','UNCOMMON','RARE','LEGENDARY']){
+    const route=compileClassSkillRoute('squire_living_bastion',{1:rarity,2:rarity,3:rarity,4:rarity});
+    replaceRunSkill('call_squire',route);
+    const counts=[0,2,5,9].map(v=>{squire.veterancy=v;return squireCombatProfile().skills[1].squirePreparedParryCount;});
+    preparationByRarity[rarity]={quality:route.squirePreparedParryQuality,counts};
+    checkGuard('paidRankScaling'+rarity,counts[0]===route.squirePreparedParryBaseCount&&
+      counts[1]===counts[0]&&counts[2]===counts[0]&&counts[3]===counts[0]+1);
+    checkGuard('noPassiveParry'+rarity,!route.squireParryOnHit);
+  }
+  checkGuard('rarityHistoryScalesCapacity',preparationByRarity.COMMON.counts[0]===1&&
+    preparationByRarity.LEGENDARY.counts[0]>preparationByRarity.RARE.counts[0]&&
+    preparationByRarity.RARE.counts[0]>preparationByRarity.UNCOMMON.counts[0]);
+  const rarityNames=['COMMON','UNCOMMON','RARE','LEGENDARY'],historyCache=new Map(),
+    compileHistory=indices=>{
+      const key=indices.join('');if(!historyCache.has(key))historyCache.set(key,
+        compileClassSkillRoute('squire_living_bastion',Object.fromEntries(indices.map((r,i)=>[i+1,rarityNames[r]]))));
+      return historyCache.get(key);
+    },ownedStats=['squireBaseMaxHealth','squireVeterancyEfficiency','squireVeterancyDamagePerPoint',
+      'squireGuardBashPosture','squireParryPosture','squireCoveringCrossDamageBonus','squirePreparedParryBaseCount'];
+  for(let n=0;n<256;n++){
+    const indices=[(n>>6)&3,(n>>4)&3,(n>>2)&3,n&3],route=compileHistory(indices),
+      progress=route.squirePreparedParryProgress;
+    if(Math.abs(progress.spent+progress.reserve-progress.credit)>.0002)
+      throw new Error('Guard preparation wallet lost power: '+indices);
+    const paid=route.synthesisQualityReceipts.reduce((sum,r)=>sum+(r.powerAllocation.PREPARED_PARRY||0),0);
+    if(Math.abs(paid-progress.credit)>.0002)throw new Error('Guard preparation history receipt mismatch');
+    for(let layer=0;layer<4;layer++)if(indices[layer]<3){
+      const next=indices.slice();next[layer]++;const stronger=compileHistory(next);
+      if(ownedStats.some(stat=>stronger[stat]<route[stat]))throw new Error('Guard history regression: '+indices+' layer '+layer);
+      if(!ownedStats.some(stat=>stronger[stat]>route[stat]))throw new Error('Guard rarity has no visible improvement');
+    }
+  }
+  checkGuard('all256HistoriesPaidAndMonotonic',historyCache.size===256);
+  const early=compileHistory([3,0,0,0]),late=compileHistory([0,0,0,3]),
+    commonFoundation=compileClassSkillRoute('squire_guard_form',{1:'COMMON'}),
+    legendaryFoundation=compileClassSkillRoute('squire_guard_form',{1:'LEGENDARY'});
+  checkGuard('earlyLegendaryFoundationSurvives',early.squireBaseMaxHealth>late.squireBaseMaxHealth&&
+    early.squireGuardBashPosture>late.squireGuardBashPosture&&
+    legendaryFoundation.squireBaseMaxHealth>commonFoundation.squireBaseMaxHealth&&
+    early.synthesisQualityReceipts[0].effectiveQuality===legendaryFoundation.synthesisQualityReceipts[0].effectiveQuality);
+  checkGuard('lateLegendarySpecializes',late.squirePreparedParryProgress.credit>early.squirePreparedParryProgress.credit&&
+    late.squireParryPosture>early.squireParryPosture);
+  const stackCounts=[[0,0,0,0],[3,0,0,0],[3,3,0,0],[3,3,3,0],[3,3,3,3]]
+    .map(h=>compileHistory(h).squirePreparedParryBaseCount);
+  checkGuard('legendaryStackPreserved',stackCounts.at(-1)>stackCounts[1]&&
+    stackCounts.every((v,i)=>!i||v>=stackCounts[i-1]));
+  replaceRunSkill('call_squire',legendaryGuard);squire.veterancy=9;
+  boss.phase='player';boss.state='idle';boss.turnAction=null;boss.partyActor='ally';
+  boss.playerPhaseSerial++;boss.ap=9;boss.resolve=99;boss.posture=0;boss.hp=100000;
+  squire.ap=1;squire.active=true;squire.parryT=-1;squire.preparedParry=20;
+  const preparedShieldBefore=player.shieldCharges,finalBash=squireCombatProfile().skills[1];
+  checkGuard('bashStillUsesShieldAnimation',performPlayerAction(finalBash)&&
+    isSquireShieldTurnAction(boss.turnAction)&&!!activeSquireShieldPose());
+  resolveAction();
+  checkGuard('bashPreparesWithoutStackingOrShields',squire.preparedParry===finalBash.squirePreparedParryCount&&
+    player.shieldCharges===preparedShieldBefore);
+  boss.phase='dodge';boss.state='strike';boss.attack={steps:[move]};boss.sequenceIndex=0;
+  const parryHealth=squire.health,parryKnightHealth=player.currentHealthUnits;
+  for(let left=finalBash.squirePreparedParryCount;left>0;left--){
+    boss.phase='dodge';boss.state='strike';boss.posture=0;
+    checkGuard('paidParryConsumed'+left,resolvePreparedSquireParry('AUDIT')&&squire.preparedParry===left-1);
+  }
+  checkGuard('allPaidParriesDamageFree',squire.health===parryHealth&&player.currentHealthUnits===parryKnightHealth);
+  checkGuard('noUnpaidParry',!resolvePreparedSquireParry('AUDIT'));
+  boss.phase='dodge';boss.state='idle';squire.preparedParry=2;
+  beginPlayerTurn();checkGuard('expiresAfterOneDefense',!squire.preparedParry);
+  boss.phase='dodge';squire.parryOnHit=true;squire.parryT=-1;
+  const unpreparedHealth=squire.health;
+  resolveSquireIntercept('AUDIT');
+  checkGuard('unpreparedHitNeverParries',squire.health===unpreparedHealth-1&&squire.parryT===-1);
   const passed=initialSkills.length===4&&callStarted&&callFrames<180&&called&&callEconomy&&
     encourageLockedOnCallTurn&&appearanceAuthored&&summonRenderSafe&&coatVariantsRenderSafe&&
     deathRenderSafe&&
@@ -236,7 +311,13 @@
     knightLandedPoseHeld&&knightRecallFx&&guardQualityLedger&&guardKitReady&&
     normalFightDoesNotPrepare&&noFreeVeterancy&&earnedVeterancy&&rankContract&&
     preparedParryResolved&&guardRenderSafe;
-  return {passed,skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
+  return {passed,guardPreparationChecks,preparationByRarity,
+    mixedHistoryExamples:Object.fromEntries([["LCCC",early],["CCCL",late],
+      ["LLCC",compileHistory([3,3,0,0])],["LLLC",compileHistory([3,3,3,0])]].map(([key,route])=>
+      [key,{health:route.squireBaseMaxHealth,bash:route.squireGuardBashPosture,
+        parryPosture:route.squireParryPosture,parries:route.squirePreparedParryBaseCount,
+        reserve:route.squirePreparedParryProgress.reserve}])),
+    skills:initialSkills.length,callStarted,callFrames,called,callEconomy,
     encourageLockedOnCallTurn,appearanceAuthored,
     summonRenderSafe,coatVariantsRenderSafe,deathRenderSafe,
     activated,encourageStarted,encourageFrames,encouraged,fightBalanced,slashStarted,slashSwordTimeline,
