@@ -1931,18 +1931,31 @@ try{
       setMode('menu');pendingJourneyPrototype=false;
       handleAction('tap',{x:VW/2+86,y:429});
       const newOpened=mode==='charsel'&&pendingJourneyPrototype;
-      startRun(0);const isolatedRun=runJourneyPrototype&&journeyThreat===18;
-      dist=JOURNEY_CHOICE_DISTANCE-SPAWN_FAR+1;updateJourneyPrototype(0);
-      const signSpawned=journeyChoices.length===1;
-      player.x=2;journeyChoices[0].z=2;updateJourneyPrototype(0);
-      const riskResolved=journeyThreat===40&&gold===12;
-      openJourneyEvent();const eventTitle=journeyEvent.title,beforeThreat=journeyThreat;
-      resolveJourneyEvent(1);const eventResolved=!journeyEvent&&journeyThreat>=beforeThreat;
-      drawJourneyChoice(new JourneyChoiceEntity(12));drawJourneyThreatHUD();
+      startRun(0);const isolatedRun=runJourneyPrototype&&journey.phase==='approach';
+      dist=JOURNEY_FORK_DISTANCE-10;player.lane=0;player.x=0;
+      const turnAccepted=tryJourneyCornerTurn()&&journey.phase==='turning',
+        startsLeft=Math.abs(laneX(0,1)-(VW/2-150))<.001;
+      updateJourneyPrototype(1.1,0);
+      const camera=journeyCameraPose(),cameraTurned=journey.phase==='settling'&&
+        Math.abs(camera.yaw+Math.PI/2)<.001&&player.lane===1,
+        roadWidens=journeyBranchWidth(0)===.36&&journeyBranchWidth(24)>.36&&
+          journeyBranchWidth(24)<1&&journeyBranchWidth(48)===1&&
+          journeyProjectWorld(camera.x-60,camera.z).z>50;
+      drawJourneyTurningRoadSystem();journey.branchTravel=48;updateJourneyPrototype(0,0);
+      const oldRoadRestored=journey.phase==='branch';
+      resetRun();runJourneyPrototype=true;journey=createJourneyState();
+      dist=JOURNEY_FORK_DISTANCE-20;player.lane=0;player.x=0;updateJourneyPrototype(1/60,0);
+      const normalGate=obstacles.some(o=>o.journeyGate&&o.type.solid&&o.lanes.length>=1&&o.lanes.length<=3);
+      dist=JOURNEY_FORK_DISTANCE+1;updateJourneyPrototype(1/60,0);
+      const noForcedDeath=player.alive&&journey.phase==='main';
+      resetRun();setMode('run');runJourneyPrototype=true;journey=createJourneyState();
+      dist=JOURNEY_FORK_DISTANCE+1;player.lane=1;player.x=1;updateJourneyPrototype(1/60,0);
+      const mainContinues=journey.phase==='main'&&player.alive;
       setMode('menu');handleAction('tap',{x:VW/2-86,y:429});startRun(0);
-      const playUnchanged=!runJourneyPrototype&&journeyThreat===0&&journeyChoices.length===0;
-      return {passed:newOpened&&isolatedRun&&signSpawned&&riskResolved&&eventResolved&&playUnchanged,
-        newOpened,isolatedRun,signSpawned,riskResolved,eventResolved,playUnchanged,eventTitle};
+      const playUnchanged=!runJourneyPrototype&&journey===null;
+      return {passed:newOpened&&isolatedRun&&turnAccepted&&startsLeft&&cameraTurned&&roadWidens&&oldRoadRestored&&
+          normalGate&&noForcedDeath&&mainContinues&&playUnchanged,newOpened,isolatedRun,turnAccepted,startsLeft,
+        cameraTurned,roadWidens,oldRoadRestored,normalGate,noForcedDeath,mainContinues,playUnchanged};
     })();`:
       adjacentOnly?adjacentSource:match[1])+focusedSource;
   /* Full-history coverage grows deliberately with every materialized family.
