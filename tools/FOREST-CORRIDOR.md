@@ -80,6 +80,54 @@ video is generated unless requested; inspect directly through FOREST TEST.
 
 ### Active particle-ground optimization
 
+Reference-led 2D tree redesign: user supplied broadleaf tree photos and approved
+structural changes, not photographic textures. Six skeletons now use thicker,
+jointed tapering limbs. Foliage paints every shadow silhouette first, then every
+mid-tone mass, then irregular leaf detail, preventing each cluster from stamping
+a dark rim over previous highlights. Branchlets remain visible in portions of
+the crown. Gallery and native world rendering inspected; boot/diff passed.
+Shapes are generated only when building existing sprite/HD caches; no new
+per-frame leaf simulation or image assets. Placement/horizon closure remains
+pending model approval. Use '2D tree design', reserving 2.5D for angle/depth
+transformations per the user's terminology preference.
+
+Current tree-family trial: six fixed seeded models selected by world tree
+variant, mirrored per road side. Models 4 and 6 carry inward overhanging
+branches for later staggered horizon occlusion composition. TreeGallery.html
+embeds KnightRush.html?treegallery=1 for a numbered six-card comparison.
+Models 1-3 retain the original family, 4-6 add new crown layouts, lean and long
+branches. New branch-bearing trunk canvases are wider to avoid clipped limbs.
+This expands potential sprite/HD memory; mobile memory tuning and placement
+approval remain pending. No forced horizon closure or new gameplay geometry.
+Hill and curved-road preview are disabled. Boot and native gallery/render smoke
+passed; no new browser/GPU performance certification or automatic Git push.
+
+ENDLESS PREVIEW OVERRIDE: no distance completion or collision damage interrupts
+FOREST TEST. World motion and bounded chunk retirement continue. The visual
+ridge stays 125/210m ahead for composition inspection; it is NOT traversable
+world terrain. Initial obstacle samples pass once, not an endless gameplay
+course. Pause/menu exits. This supersedes the short distance90 stop below.
+
+CURRENT HILL COMPOSITION TRIAL: fixed rise foot125/crest210/height13 masks
+the infinite road endpoint. Ground-overlay geometry is depth sorted; far
+tree silhouettes provably below the conservative ridge bound are skipped.
+Only the first two existing obstacles (before foot125) are shown. Corridor
+stops at distance90 for visual approval BEFORE reaching the slope. This is
+not yet traversable terrain: player height, obstacle elevation and continuing
+beyond the crest are intentionally not implemented. Normal PLAY unchanged.
+Prior full-distance course audits require adapting to this temporary stop.
+Boot/diff pass; GPU browser visual verification still user-side.
+
+Playable obstacle trial: FOREST TEST now prebuilds six obstacles at world
+60/108/156/208/260/316 (stone/root/pond twice), each with a safe lane. Updates
+sync relative z/prevZ and run the production swept collision resolver after
+player movement. Original isolated demo stone is no longer drawn. No production
+PLAY spawning change. tools/forest-course-audit.cjs checks damage, jump, duck,
+safe lane and reset isolation. Old no-collision corridor audits are historical
+and need migration before use. Existing obstacle artwork is deliberately reused;
+root art is visibly older than the giant-tree art and pond projection needs
+visual approval. Browser GPU performance and input timing are not certified.
+
 Close-tree extension: the existing lazy 2x foliage re-authoring now also covers
 bark and roots whenever device footprint exceeds one source pixel. Same world
 positions and far filtering; no per-frame re-authoring. Extra bark HD storage

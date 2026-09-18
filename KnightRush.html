@@ -753,6 +753,7 @@ function armSkillLabTooltipHold(start,cx,cy){
   return true;
 }
 function handleAction(a,pt,parryIntent=null){
+  if(forestPreparing)return;
   SFX.init();
   if(skillTooltipIndex>=0){if(a==='tap')dismissSkillTooltip();return;}
   if(skillLabTooltipMutationId){
@@ -794,7 +795,7 @@ function handleAction(a,pt,parryIntent=null){
         menuMsg='brave knight, close the tab to truly leave'; menuMsgT=perfNow+2.5;
         try{ window.close(); }catch(e){} }
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>580&&pt.y<612){ setMode('debugcfg'); SFX.swipe(); }
-      else if(pt.x>VW/2-100&&pt.x<VW/2+100&&pt.y>628&&pt.y<664){ startForestCorridor(); }
+      else if(pt.x>VW/2-100&&pt.x<VW/2+100&&pt.y>628&&pt.y<664){ startForestCorridorPrepared(); }
       else if(pt.x>VW-140&&pt.x<VW-10&&pt.y>VH-82&&pt.y<VH-40){ clSel=0; setMode('changelog'); SFX.swipe(); }
       else if(pt.x>10&&pt.x<140&&pt.y>VH-82&&pt.y<VH-40){ settingsOpen=true; SFX.swipe(); }
     } else if(a==='up'){ pendingJourneyPrototype=false; uiConfirm(); }
@@ -55182,6 +55183,87 @@ function prepareForestCorridor(){
   }
   for(const [index,chunk] of state.chunks)if(chunk.end<dist-64){state.chunks.delete(index);state.retired++;}
 }
+let forestPreparing=false;
+const forestBakedManifest={"0":{"parts":[{"file":"part-0.png","left":-204,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-1.png","left":-326,"top":-764,"width":634,"height":366,"depth":-0.05}],"tiny":"tiny-0.png"},"1":{"parts":[{"file":"part-0.png","left":-204,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-1.png","left":-326,"top":-764,"width":634,"height":366,"depth":-0.05},{"file":"part-2.png","left":-104,"top":-470,"width":132,"height":468,"depth":0}],"tiny":"tiny-1.png"},"2":{"parts":[{"file":"part-0.png","left":-204,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-1.png","left":-326,"top":-764,"width":634,"height":366,"depth":-0.05},{"file":"part-3.png","left":-104,"top":-562,"width":258,"height":574,"depth":0}],"tiny":"tiny-2.png"},"3":{"parts":[{"file":"part-4.png","left":-186,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-5.png","left":-302,"top":-768,"width":620,"height":378,"depth":-0.05}],"tiny":"tiny-3.png"},"4":{"parts":[{"file":"part-4.png","left":-186,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-5.png","left":-302,"top":-768,"width":620,"height":378,"depth":-0.05},{"file":"part-6.png","left":-28,"top":-470,"width":132,"height":468,"depth":0}],"tiny":"tiny-4.png"},"5":{"parts":[{"file":"part-4.png","left":-186,"top":-690,"width":390,"height":704,"depth":0},{"file":"part-5.png","left":-302,"top":-768,"width":620,"height":378,"depth":-0.05},{"file":"part-7.png","left":-154,"top":-562,"width":258,"height":574,"depth":0}],"tiny":"tiny-5.png"},"6":{"parts":[{"file":"part-8.png","left":-300,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-9.png","left":-422,"top":-740,"width":842,"height":402,"depth":-0.05}],"tiny":"tiny-6.png"},"7":{"parts":[{"file":"part-8.png","left":-300,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-9.png","left":-422,"top":-740,"width":842,"height":402,"depth":-0.05},{"file":"part-10.png","left":-46,"top":-430,"width":206,"height":428,"depth":0}],"tiny":"tiny-7.png"},"8":{"parts":[{"file":"part-8.png","left":-300,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-9.png","left":-422,"top":-740,"width":842,"height":402,"depth":-0.05},{"file":"part-11.png","left":-46,"top":-450,"width":330,"height":460,"depth":0}],"tiny":"tiny-8.png"},"9":{"parts":[{"file":"part-12.png","left":-306,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-13.png","left":-428,"top":-754,"width":842,"height":432,"depth":-0.05}],"tiny":"tiny-9.png"},"10":{"parts":[{"file":"part-12.png","left":-306,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-13.png","left":-428,"top":-754,"width":842,"height":432,"depth":-0.05},{"file":"part-14.png","left":-160,"top":-430,"width":206,"height":428,"depth":0}],"tiny":"tiny-10.png"},"11":{"parts":[{"file":"part-12.png","left":-306,"top":-672,"width":606,"height":686,"depth":0},{"file":"part-13.png","left":-428,"top":-754,"width":842,"height":432,"depth":-0.05},{"file":"part-15.png","left":-284,"top":-450,"width":330,"height":460,"depth":0}],"tiny":"tiny-11.png"},"12":{"parts":[{"file":"part-16.png","left":-168,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-17.png","left":-276,"top":-720,"width":750,"height":424,"depth":-0.05}],"tiny":"tiny-12.png"},"13":{"parts":[{"file":"part-16.png","left":-168,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-17.png","left":-276,"top":-720,"width":750,"height":424,"depth":-0.05},{"file":"part-18.png","left":-94,"top":-434,"width":128,"height":432,"depth":0}],"tiny":"tiny-13.png"},"14":{"parts":[{"file":"part-16.png","left":-168,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-17.png","left":-276,"top":-720,"width":750,"height":424,"depth":-0.05},{"file":"part-19.png","left":-94,"top":-434,"width":370,"height":444,"depth":0}],"tiny":"tiny-14.png"},"15":{"parts":[{"file":"part-20.png","left":-364,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-21.png","left":-466,"top":-728,"width":756,"height":438,"depth":-0.05}],"tiny":"tiny-15.png"},"16":{"parts":[{"file":"part-20.png","left":-364,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-21.png","left":-466,"top":-728,"width":756,"height":438,"depth":-0.05},{"file":"part-22.png","left":-34,"top":-434,"width":128,"height":432,"depth":0}],"tiny":"tiny-16.png"},"17":{"parts":[{"file":"part-20.png","left":-364,"top":-672,"width":532,"height":686,"depth":0},{"file":"part-21.png","left":-466,"top":-728,"width":756,"height":438,"depth":-0.05},{"file":"part-23.png","left":-276,"top":-434,"width":370,"height":444,"depth":0}],"tiny":"tiny-17.png"},"18":{"parts":[{"file":"part-24.png","left":-178,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-25.png","left":-292,"top":-768,"width":604,"height":418,"depth":-0.05}],"tiny":"tiny-18.png"},"19":{"parts":[{"file":"part-24.png","left":-178,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-25.png","left":-292,"top":-768,"width":604,"height":418,"depth":-0.05},{"file":"part-26.png","left":-118,"top":-438,"width":146,"height":436,"depth":0}],"tiny":"tiny-19.png"},"20":{"parts":[{"file":"part-24.png","left":-178,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-25.png","left":-292,"top":-768,"width":604,"height":418,"depth":-0.05},{"file":"part-27.png","left":-208,"top":-494,"width":280,"height":500,"depth":0}],"tiny":"tiny-20.png"},"21":{"parts":[{"file":"part-28.png","left":-192,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-29.png","left":-304,"top":-768,"width":592,"height":418,"depth":-0.05}],"tiny":"tiny-21.png"},"22":{"parts":[{"file":"part-28.png","left":-192,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-29.png","left":-304,"top":-768,"width":592,"height":418,"depth":-0.05},{"file":"part-30.png","left":-28,"top":-438,"width":146,"height":436,"depth":0}],"tiny":"tiny-22.png"},"23":{"parts":[{"file":"part-28.png","left":-192,"top":-696,"width":370,"height":710,"depth":0},{"file":"part-29.png","left":-304,"top":-768,"width":592,"height":418,"depth":-0.05},{"file":"part-31.png","left":-72,"top":-494,"width":280,"height":500,"depth":0}],"tiny":"tiny-23.png"},"24":{"parts":[{"file":"part-32.png","left":-126,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-33.png","left":-214,"top":-768,"width":420,"height":340,"depth":-0.05}],"tiny":"tiny-24.png"},"25":{"parts":[{"file":"part-32.png","left":-126,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-33.png","left":-214,"top":-768,"width":420,"height":340,"depth":-0.05},{"file":"part-34.png","left":-90,"top":-496,"width":110,"height":494,"depth":0}],"tiny":"tiny-25.png"},"26":{"parts":[{"file":"part-32.png","left":-126,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-33.png","left":-214,"top":-768,"width":420,"height":340,"depth":-0.05},{"file":"part-35.png","left":-90,"top":-560,"width":202,"height":572,"depth":0}],"tiny":"tiny-26.png"},"27":{"parts":[{"file":"part-36.png","left":-110,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-37.png","left":-198,"top":-768,"width":416,"height":344,"depth":-0.05}],"tiny":"tiny-27.png"},"28":{"parts":[{"file":"part-36.png","left":-110,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-37.png","left":-198,"top":-768,"width":416,"height":344,"depth":-0.05},{"file":"part-38.png","left":-20,"top":-496,"width":110,"height":494,"depth":0}],"tiny":"tiny-28.png"},"29":{"parts":[{"file":"part-36.png","left":-110,"top":-716,"width":236,"height":730,"depth":0},{"file":"part-37.png","left":-198,"top":-768,"width":416,"height":344,"depth":-0.05},{"file":"part-39.png","left":-112,"top":-560,"width":202,"height":572,"depth":0}],"tiny":"tiny-29.png"},"30":{"parts":[{"file":"part-40.png","left":-202,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-41.png","left":-316,"top":-762,"width":824,"height":482,"depth":-0.05}],"tiny":"tiny-30.png"},"31":{"parts":[{"file":"part-40.png","left":-202,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-41.png","left":-316,"top":-762,"width":824,"height":482,"depth":-0.05},{"file":"part-42.png","left":-98,"top":-454,"width":132,"height":452,"depth":0}],"tiny":"tiny-31.png"},"32":{"parts":[{"file":"part-40.png","left":-202,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-41.png","left":-316,"top":-762,"width":824,"height":482,"depth":-0.05},{"file":"part-43.png","left":-192,"top":-500,"width":576,"height":514,"depth":0}],"tiny":"tiny-32.png"},"33":{"parts":[{"file":"part-44.png","left":-404,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-45.png","left":-512,"top":-768,"width":832,"height":486,"depth":-0.05}],"tiny":"tiny-33.png"},"34":{"parts":[{"file":"part-44.png","left":-404,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-45.png","left":-512,"top":-768,"width":832,"height":486,"depth":-0.05},{"file":"part-46.png","left":-34,"top":-454,"width":132,"height":452,"depth":0}],"tiny":"tiny-34.png"},"35":{"parts":[{"file":"part-44.png","left":-404,"top":-680,"width":606,"height":694,"depth":0},{"file":"part-45.png","left":-512,"top":-768,"width":832,"height":486,"depth":-0.05},{"file":"part-47.png","left":-384,"top":-502,"width":576,"height":516,"depth":0}],"tiny":"tiny-35.png"},"36":{"parts":[{"file":"part-48.png","left":-290,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-49.png","left":-420,"top":-416,"width":832,"height":188,"depth":-0.05}],"tiny":"tiny-36.png"},"37":{"parts":[{"file":"part-48.png","left":-290,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-49.png","left":-420,"top":-416,"width":832,"height":188,"depth":-0.05},{"file":"part-50.png","left":-56,"top":-276,"width":214,"height":276,"depth":0}],"tiny":"tiny-37.png"},"38":{"parts":[{"file":"part-48.png","left":-290,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-49.png","left":-420,"top":-416,"width":832,"height":188,"depth":-0.05},{"file":"part-51.png","left":-56,"top":-296,"width":338,"height":304,"depth":0}],"tiny":"tiny-38.png"},"39":{"parts":[{"file":"part-52.png","left":-296,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-53.png","left":-436,"top":-416,"width":866,"height":190,"depth":-0.05}],"tiny":"tiny-39.png"},"40":{"parts":[{"file":"part-52.png","left":-296,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-53.png","left":-436,"top":-416,"width":866,"height":190,"depth":-0.05},{"file":"part-54.png","left":-158,"top":-276,"width":214,"height":276,"depth":0}],"tiny":"tiny-40.png"},"41":{"parts":[{"file":"part-52.png","left":-296,"top":-362,"width":586,"height":372,"depth":0},{"file":"part-53.png","left":-436,"top":-416,"width":866,"height":190,"depth":-0.05},{"file":"part-55.png","left":-282,"top":-296,"width":338,"height":304,"depth":0}],"tiny":"tiny-41.png"},"42":{"parts":[{"file":"part-56.png","left":-146,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-57.png","left":-266,"top":-768,"width":536,"height":224,"depth":-0.05}],"tiny":"tiny-42.png"},"43":{"parts":[{"file":"part-56.png","left":-146,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-57.png","left":-266,"top":-768,"width":536,"height":224,"depth":-0.05},{"file":"part-58.png","left":-84,"top":-604,"width":104,"height":602,"depth":0}],"tiny":"tiny-43.png"},"44":{"parts":[{"file":"part-56.png","left":-146,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-57.png","left":-266,"top":-768,"width":536,"height":224,"depth":-0.05},{"file":"part-59.png","left":-84,"top":-664,"width":114,"height":662,"depth":0}],"tiny":"tiny-44.png"},"45":{"parts":[{"file":"part-60.png","left":-150,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-61.png","left":-268,"top":-768,"width":534,"height":232,"depth":-0.05}],"tiny":"tiny-45.png"},"46":{"parts":[{"file":"part-60.png","left":-150,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-61.png","left":-268,"top":-768,"width":534,"height":232,"depth":-0.05},{"file":"part-62.png","left":-20,"top":-604,"width":104,"height":602,"depth":0}],"tiny":"tiny-46.png"},"47":{"parts":[{"file":"part-60.png","left":-150,"top":-720,"width":296,"height":734,"depth":0},{"file":"part-61.png","left":-268,"top":-768,"width":534,"height":232,"depth":-0.05},{"file":"part-63.png","left":-30,"top":-656,"width":114,"height":654,"depth":0}],"tiny":"tiny-47.png"},"48":{"parts":[{"file":"part-64.png","left":-296,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-65.png","left":-408,"top":-490,"width":860,"height":326,"depth":-0.05}],"tiny":"tiny-48.png"},"49":{"parts":[{"file":"part-64.png","left":-296,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-65.png","left":-408,"top":-490,"width":860,"height":326,"depth":-0.05},{"file":"part-66.png","left":-116,"top":-244,"width":256,"height":252,"depth":0}],"tiny":"tiny-49.png"},"50":{"parts":[{"file":"part-64.png","left":-296,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-65.png","left":-408,"top":-490,"width":860,"height":326,"depth":-0.05},{"file":"part-67.png","left":-116,"top":-374,"width":334,"height":384,"depth":0}],"tiny":"tiny-50.png"},"51":{"parts":[{"file":"part-68.png","left":-338,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-69.png","left":-464,"top":-492,"width":870,"height":326,"depth":-0.05}],"tiny":"tiny-51.png"},"52":{"parts":[{"file":"part-68.png","left":-338,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-69.png","left":-464,"top":-492,"width":870,"height":326,"depth":-0.05},{"file":"part-70.png","left":-140,"top":-244,"width":256,"height":252,"depth":0}],"tiny":"tiny-52.png"},"53":{"parts":[{"file":"part-68.png","left":-338,"top":-436,"width":634,"height":448,"depth":0},{"file":"part-69.png","left":-464,"top":-492,"width":870,"height":326,"depth":-0.05},{"file":"part-71.png","left":-218,"top":-372,"width":334,"height":382,"depth":0}],"tiny":"tiny-53.png"},"54":{"parts":[{"file":"part-72.png","left":-78,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-73.png","left":58,"top":-594,"width":418,"height":340,"depth":-0.05}],"tiny":"tiny-54.png"},"55":{"parts":[{"file":"part-72.png","left":-78,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-73.png","left":58,"top":-594,"width":418,"height":340,"depth":-0.05},{"file":"part-74.png","left":-38,"top":-304,"width":242,"height":304,"depth":0}],"tiny":"tiny-55.png"},"56":{"parts":[{"file":"part-72.png","left":-78,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-73.png","left":58,"top":-594,"width":418,"height":340,"depth":-0.05},{"file":"part-75.png","left":-38,"top":-410,"width":242,"height":420,"depth":0}],"tiny":"tiny-56.png"},"57":{"parts":[{"file":"part-76.png","left":-372,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-77.png","left":-492,"top":-602,"width":422,"height":354,"depth":-0.05}],"tiny":"tiny-57.png"},"58":{"parts":[{"file":"part-76.png","left":-372,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-77.png","left":-492,"top":-602,"width":422,"height":354,"depth":-0.05},{"file":"part-78.png","left":-204,"top":-304,"width":242,"height":304,"depth":0}],"tiny":"tiny-58.png"},"59":{"parts":[{"file":"part-76.png","left":-372,"top":-566,"width":450,"height":580,"depth":0},{"file":"part-77.png","left":-492,"top":-602,"width":422,"height":354,"depth":-0.05},{"file":"part-79.png","left":-204,"top":-410,"width":242,"height":420,"depth":0}],"tiny":"tiny-59.png"},"60":{"parts":[{"file":"part-80.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-81.png","left":-236,"top":-768,"width":478,"height":404,"depth":-0.05}],"tiny":"tiny-60.png"},"61":{"parts":[{"file":"part-80.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-81.png","left":-236,"top":-768,"width":478,"height":404,"depth":-0.05},{"file":"part-82.png","left":-102,"top":-432,"width":126,"height":430,"depth":0}],"tiny":"tiny-61.png"},"62":{"parts":[{"file":"part-80.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-81.png","left":-236,"top":-768,"width":478,"height":404,"depth":-0.05},{"file":"part-83.png","left":-160,"top":-446,"width":206,"height":444,"depth":0}],"tiny":"tiny-62.png"},"63":{"parts":[{"file":"part-84.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-85.png","left":-248,"top":-768,"width":482,"height":394,"depth":-0.05}],"tiny":"tiny-63.png"},"64":{"parts":[{"file":"part-84.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-85.png","left":-248,"top":-768,"width":482,"height":394,"depth":-0.05},{"file":"part-86.png","left":-24,"top":-432,"width":126,"height":430,"depth":0}],"tiny":"tiny-64.png"},"65":{"parts":[{"file":"part-84.png","left":-160,"top":-720,"width":320,"height":734,"depth":0},{"file":"part-85.png","left":-248,"top":-768,"width":482,"height":394,"depth":-0.05},{"file":"part-87.png","left":-48,"top":-448,"width":208,"height":446,"depth":0}],"tiny":"tiny-65.png"},"66":{"parts":[{"file":"part-88.png","left":-264,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-89.png","left":-378,"top":-630,"width":542,"height":318,"depth":-0.05}],"tiny":"tiny-66.png"},"67":{"parts":[{"file":"part-88.png","left":-264,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-89.png","left":-378,"top":-630,"width":542,"height":318,"depth":-0.05},{"file":"part-90.png","left":-46,"top":-270,"width":134,"height":270,"depth":0}],"tiny":"tiny-67.png"},"68":{"parts":[{"file":"part-88.png","left":-264,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-89.png","left":-378,"top":-630,"width":542,"height":318,"depth":-0.05},{"file":"part-91.png","left":-46,"top":-296,"width":206,"height":306,"depth":0}],"tiny":"tiny-68.png"},"69":{"parts":[{"file":"part-92.png","left":-142,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-93.png","left":-184,"top":-632,"width":564,"height":312,"depth":-0.05}],"tiny":"tiny-69.png"},"70":{"parts":[{"file":"part-92.png","left":-142,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-93.png","left":-184,"top":-632,"width":564,"height":312,"depth":-0.05},{"file":"part-94.png","left":-88,"top":-270,"width":134,"height":270,"depth":0}],"tiny":"tiny-70.png"},"71":{"parts":[{"file":"part-92.png","left":-142,"top":-572,"width":406,"height":586,"depth":0},{"file":"part-93.png","left":-184,"top":-632,"width":564,"height":312,"depth":-0.05},{"file":"part-95.png","left":-160,"top":-296,"width":206,"height":306,"depth":0}],"tiny":"tiny-71.png"}};
+const forestBakedImages=new Map();
+const forestRuntimeDescriptors=new Map();
+let forestBakedWarmCanvas=null;
+let forestBakedClock=0;
+function forestBakedKey(v,side){const n=v*12,s=Math.min(11,Math.floor(n)),r=n-Math.floor(n);
+  return (s*2+(side>0?1:0))*3+(r<.25?0:r<.7?1:2);}
+function forestBakedImage(file){
+  let entry=forestBakedImages.get(file);
+  if(!entry){const image=new Image();entry={image,ready:false,used:0};forestBakedImages.set(file,entry);
+    image.onload=()=>{
+      if(!forestBakedWarmCanvas){forestBakedWarmCanvas=document.createElement('canvas');forestBakedWarmCanvas.width=128;forestBakedWarmCanvas.height=128;}
+      const c=forestBakedWarmCanvas.getContext('2d');c.clearRect(0,0,128,128);c.drawImage(image,0,0,128,128);
+      entry.ready=true;
+    };image.onerror=()=>{entry.failed=true;};image.src='assets/forest-baked/'+file;}
+  entry.used=forestBakedClock;return entry.ready?entry.image:null;
+}
+function forestRuntimeArt(v,side,sharp=false,medium=false){
+  if(typeof Image==='undefined')return forestGiantArt(v,side);
+  const key=forestBakedKey(v,side),spec=forestBakedManifest[key],tiny=forestBakedImage(spec.tiny),cacheKey=key+':'+(sharp?medium?'mid':'sharp':'tiny');
+  const cached=forestRuntimeDescriptors.get(cacheKey);
+  if(cached){let valid=true;
+    if(sharp)for(let i=0;i<spec.parts.length;i++)if(forestBakedImage((medium?'mid-':'')+spec.parts[i].file)!==cached[i].levels[0].canvas){valid=false;break;}
+    if(valid)return cached;forestRuntimeDescriptors.delete(cacheKey);
+  }
+  const art=[];
+  if(sharp)for(const p of spec.parts){const image=forestBakedImage(medium?'mid-'+p.file:p.file);
+    if(!image)return null;art.push({...p,levels:[{canvas:image,factor:medium?2:.5}],baked:true});}
+  if(!tiny)return null;
+  art.distant=tiny;art.distantLevels=[{canvas:tiny,factor:1}];forestRuntimeDescriptors.set(cacheKey,art);return art;
+}
+function prepareForestBaked(){
+  if(typeof Image==='undefined')return;
+  if(!forestCorridor)return;
+  forestBakedClock++;
+  // Decode only the active corridor's next few seconds at full quality.
+  const chunks=forestCorridor?forestCorridor.chunks.values():[forestCorridorChunk(0),forestCorridorChunk(1),forestCorridorChunk(2),forestCorridorChunk(3)];
+  const distance=forestCorridor?dist:0;
+  for(const chunk of chunks){if(chunk.end<distance-30||chunk.index*128>distance+420)continue;
+    for(const tree of chunk.trees)if(tree.z-distance>-25&&tree.z-distance<420){
+      const spec=forestBakedManifest[forestBakedKey(tree.v,tree.x)];
+      for(const p of spec.parts)forestBakedImage(p.file);
+    }}
+  let bytes=0;for(const e of forestBakedImages.values())if(e.ready)bytes+=e.image.width*e.image.height*4;
+  // Keep current/lookahead assets pinned; evict old decoded sources beyond 128 MiB.
+  for(const [key,e] of [...forestBakedImages].sort((a,b)=>a[1].used-b[1].used)){
+    if(bytes<=128*1048576)break;
+    if(key.startsWith('tiny-')||key.startsWith('mid-')||e.used>=forestBakedClock-1)continue;
+    bytes-=e.image.width*e.image.height*4;forestBakedImages.delete(key);forestRuntimeDescriptors.clear();
+  }
+}
+async function startForestCorridorPrepared(){
+  if(forestPreparing)return;
+  forestPreparing=true;
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;z-index:99999;display:grid;place-content:center;background:#101b16;color:#ded6b9;font:18px system-ui;text-align:center';
+  const label=document.createElement('div');label.textContent='Orman hazırlanıyor…';overlay.appendChild(label);document.body.appendChild(overlay);
+  const yieldPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+  try{
+    await yieldPaint();startForestCorridor();
+    for(const spec of Object.values(forestBakedManifest)){
+      forestBakedImage(spec.tiny);for(const p of spec.parts)forestBakedImage('mid-'+p.file);
+    }
+    prepareForestBaked();
+    const began=performance.now();
+    while(true){
+      const entries=[...forestBakedImages.values()],ready=entries.filter(e=>e.ready).length;
+      if(entries.some(e=>e.failed))throw Error('Orman görselleri yüklenemedi');
+      label.textContent='Orman hazırlanıyor · '+Math.round(ready/entries.length*100)+'%';
+      if(ready===entries.length)break;
+      if(performance.now()-began>20000)throw Error('Orman yüklemesi zaman aşımına uğradı');
+      await yieldPaint();
+    }
+    label.textContent='Sahne hazırlanıyor…';await yieldPaint();
+    // Warm the real floor shader, texture bands and first scene behind the cover.
+    render();await yieldPaint();render();await yieldPaint();
+    lastTime=performance.now();hadFocus=document.hasFocus();
+  }catch(error){setMode('menu');console.error(error);}
+  finally{overlay.remove();forestPreparing=false;}
+}
 function startForestCorridor(){
   pendingJourneyPrototype=true;debugRun=false;startRun(charSel);
   journey.phase='main';obstacles=[];pickups=[];roadsideScenery=[];
@@ -55189,18 +55271,40 @@ function startForestCorridor(){
   const stone=new ObstacleEntity('boulder',260,['jump',null,null],'L');stone.seed=731;
   forestCorridor={chunks:new Map(),next:0,created:0,retired:0,nearestNew:Infinity,
     stone,stoneZ:260,finished:false};
+  // Small authored gameplay trial; all obstacles exist before the run starts.
+  const sequence=[['boulder',60,[null,'jump',null],'M'],
+    ['root',108,['duck','duck',null],'L'],
+    ['pond',156,[null,'jump','jump'],'R'],
+    ['boulder',208,['jump','jump',null],'L'],
+    ['root',260,[null,'duck','duck'],'R'],
+    ['pond',316,['jump','jump',null],'L']];
+  forestCorridor.course=sequence.map(([kind,z,req,side],i)=>{
+    const entity=new ObstacleEntity(kind,z,req,side);entity.seed=731+i*97;entity.treeV=.37;
+    return {entity,z};
+  });
+  obstacles=forestCorridor.course.map(item=>item.entity);
   prepareForestCorridor();forestCorridor.nearestNew=Infinity;
 }
 function updateForestCorridor(dt){
-  if(forestCorridor.finished)return;
-  dist=Math.min(FOREST_CORRIDOR.end,dist+dt*FOREST_CORRIDOR.speed);roadScroll=dist;
-  prepareForestCorridor();forestCorridor.finished=dist>=FOREST_CORRIDOR.end;
+  const before=dist;
+  dist+=dt*FOREST_CORRIDOR.speed;roadScroll=dist;
+  runDistance+=dist-before;
+  for(const item of forestCorridor.course){item.entity.prevZ=item.entity.z;item.entity.z=item.z-dist;}
+  // Endless render preview: collisions must not interrupt visual inspection.
+  prepareForestCorridor();forestCorridor.finished=false;
 }
 function drawForestCorridor(){
   const distant=[];
   // Ground-only composition trial: no added understory or scattered prop layer.
   for(const chunk of forestCorridor.chunks.values())for(const tree of chunk.trees){
     const depth=14+tree.z-dist;
+    // Fully buried silhouettes behind the fixed ridge need no raster work.
+    if(false&&tree.z>dist+210){
+      const horizon=HORIZON_Y-(GROUND_Y-HORIZON_Y)*14/60,rise=(GROUND_Y-horizon)*14,
+        ridgeDepth=224,ridgeY=horizon+rise/ridgeDepth-13*525/ridgeDepth,
+        treeTop=horizon+rise/depth-48*525/depth;
+      if(treeTop>ridgeY+18)continue;
+    }
     // Below half a logical pixel, no identifiable tree can be seen. New chunks
     // are prepared further away than this threshold; nothing fades or grows in.
     if(depth>0&&784*525/16/depth>=.5){
@@ -55208,7 +55312,38 @@ function drawForestCorridor(){
     }
   }
   forestGiantDistanceLayer(distant);
-  forestObstacle(forestCorridor.stone,[0,0,forestCorridor.stoneZ]);forestFlush();
+  for(const item of forestCorridor.course)if(item.z<125)forestObstacle(item.entity,[0,0,item.z]);
+  forestFlush();
+}
+function forestBend(depth){
+  // Curved-road trial disabled pending tree-family composition approval.
+  return 0;
+}
+function forestHillTrial(){
+  // Endless composition preview holds the ridge ahead while world details
+  // continue moving. This is not yet traversable terrain.
+  const foot=dist+125,crest=dist+210,height=13,cam=forestWorldFrame.camera,
+    horizon=HORIZON_Y-(GROUND_Y-HORIZON_Y)*14/60,rise=(GROUND_Y-horizon)*14,
+    depth=crest-cam.z+14;
+  if(depth<14)return;
+  const scale=525/depth,cy=horizon+rise/depth-height*scale;
+  const edge=x=>cy+Math.pow((x-VW*.53)/VW,2)*18;
+  forestWorldFrame.faces.push({depth,draw:()=>{
+    const bottom=horizon+rise/Math.max(1,foot-cam.z+14),left=[],right=[];
+    // Broad grassy shoulder and a softly rounded rise across the view.
+    g.fillStyle='#263020';g.beginPath();g.moveTo(0,bottom);
+    for(let x=0;x<=VW;x+=12)g.lineTo(x,edge(x));
+    g.lineTo(VW,bottom);g.closePath();g.fill();
+    // The earth path reaches the crest, instead of narrowing into infinity.
+    for(let i=0;i<=24;i++){
+      const t=i/24,z=foot+(crest-foot)*t,h=height*t*t*(3-2*t),d=z-cam.z+14;
+      if(d<1)continue;
+      const s=525/d,y=horizon+rise/d-h*s;
+      left.push([VW/2-5.5*s,y]);right.push([VW/2+5.5*s,y]);
+    }
+    g.fillStyle='#493b26';g.beginPath();
+    left.concat(right.reverse()).forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();g.fill();
+  }});
 }
 function forestWorldEnabled(){return runJourneyPrototype&&!!journey&&biome==='forest'&&env==='forest';}
 const forestUnderstoryCache=new Map();
@@ -55250,15 +55385,32 @@ function forestReferenceUndergrowth(){
 /* One authored 2.5D tree family. Bark/root and crown are separately cached
    cutouts at fixed world depths, never screen-pinned borders or mesh models. */
 const forestGiantSprites=new Map();
+const forestTreeNames=['Yuvarlak meşe','Geniş taç','Yatık gövde','Çift çatallı','Uzun dar taç','Yola uzanan',
+  'Bodur meşe','Yüksek tepe','Alçak çatal','Rüzgâr eğimi','Sivri taç','Kırık dal'];
+// Authored by the user in sarmasik.png; local unscaled tree coordinates.
+const forestAuthoredVines=[[[[148,-556.7],[142.7,-550],[124,-551.3]],[[73.3,-511.3],[90.7,-511.3],[98.7,-507.3],[106.7,-508.7]],[[65.3,-450],[50.7,-452.7],[37.3,-459.3],[24,-459.3],[14.7,-455.3],[1.3,-439.3],[1.3,-411.3],[17.3,-390],[16,-368.7],[12,-356.7],[13.3,-332.7],[22.7,-310],[40,-300.7]],[[-37.3,-278],[0,-254],[21.3,-246],[37.3,-232.7]],[[-36,-195.3],[-1.3,-175.3],[9.3,-158],[8,-131.3],[-12,-116.7],[-25.3,-115.3],[-30.7,-104.7],[-34.7,-86],[-34.7,-64.7],[-30.7,-54],[-20,-46],[5.3,-46],[28,-36.7],[38.7,-26],[56,6]]],[[[162.7,-434],[158.7,-430],[148,-390]],[[261.3,-420.7],[269.3,-422],[277.3,-412.7]],[[261.3,-420.7],[252,-420.7],[233.3,-444.7],[222.7,-444.7],[198.7,-434],[185.3,-415.3]],[[102.7,-398],[96,-358],[90.7,-346]],[[46.7,-372.7],[44,-340.7],[37.3,-320.7],[20,-288.7],[9.3,-287.3],[5.3,-283.3],[-6.7,-251.3],[-5.3,-196.7],[-1.3,-183.3],[1.3,-178],[4,-178],[9.3,-164.7],[12,-138],[6.7,-111.3],[-6.7,-90],[-24,-72.7],[-33.3,-48.7],[-32,-7.3],[-28,0.7],[-21.3,4.7]]],[[[241.3,-379.3],[246.7,-376.7],[262.7,-376.7],[270.7,-364.7]],[[198.7,-371.3],[208,-366],[214.7,-366]],[[174.7,-344.7],[166.7,-348.7],[140,-347.3],[125.3,-328.7],[118.7,-311.3],[113.3,-307.3],[102.7,-307.3],[82.7,-314],[68,-314],[53.3,-308.7],[30.7,-282],[13.3,-243.3],[6.7,-218],[6.7,-194],[10.7,-179.3],[25.3,-159.3],[25.3,-134],[16,-108.7],[0,-92.7],[-9.3,-76.7],[-10.7,-46],[2.7,-24.7],[20,-6],[36,4.7],[42.7,4.7]]],[[[-202.7,-455.3],[-198.7,-462],[-188,-468.7],[-185.3,-486],[-180,-486],[-172,-482],[-154.7,-482],[-145.3,-478],[-133.3,-458],[-121.3,-456.7],[-116,-450]],[[-110.7,-386],[-106.7,-380.7],[-97.3,-387.3],[-65.3,-386]],[[-69.3,-318],[-66.7,-314],[-30.7,-312.7],[-9.3,-306],[9.3,-295.3],[29.3,-276.7]],[[-20,-240.7],[-4,-234],[21.3,-214],[29.3,-200.7],[29.3,-183.3]],[[-24,-155.3],[-10.7,-152.7],[14.7,-136.7],[30.7,-119.3],[34.7,-111.3],[34.7,-103.3]],[[-33.3,-78],[-21.3,-66],[1.3,-55.3],[26.7,-38],[65.3,-0.7]]],[[[105.3,-551.3],[101.3,-554],[84,-552.7],[78.7,-547.3],[77.3,-534],[70.7,-520.7],[50.7,-519.3]],[[44,-464.7],[12,-463.3],[1.3,-454],[-4,-439.3],[-4,-412.7],[4,-376.7],[4,-359.3],[0,-348.7],[-18.7,-338],[-18.7,-319.3],[-13.3,-306],[-6.7,-299.3],[4,-279.3],[4,-271.3],[-6.7,-252.7],[-32,-230]],[[5.3,-196.7],[-1.3,-188.7],[-26.7,-182]],[[13.3,-158],[4,-143.3],[-25.3,-123.3]],[[21.3,-92.7],[5.3,-70],[-9.3,-55.3],[-9.3,-43.3],[-1.3,-16.7],[8,-3.3],[18.7,2]]],[[[-129.3,-478],[-124,-463.3],[-124,-448.7]],[[-153.3,-475.3],[-153.3,-482],[-160,-492.7],[-174.7,-495.3],[-185.3,-479.3],[-185.3,-470]],[[-80,-455.3],[-77.3,-447.3],[-78.7,-426],[-90.7,-407.3]],[[260,-450],[277.3,-440.7],[285.3,-439.3],[298.7,-439.3],[328,-447.3],[348,-447.3],[362.7,-435.3],[378.7,-435.3]],[[169.3,-424.7],[189.3,-416.7],[220,-414]],[[-36,-403.3],[-36,-384.7],[-41.3,-363.3],[-40,-330],[-13.3,-303.3],[13.3,-259.3]],[[134.7,-368.7],[125.3,-368.7],[110.7,-374],[86.7,-390],[61.3,-387.3],[36,-372.7],[21.3,-354],[22.7,-327.3],[32,-307.3],[32,-284.7],[28,-274],[18.7,-262],[13.3,-259.3]],[[201.3,-340.7],[189.3,-326],[188,-319.3]],[[232,-335.3],[253.3,-344.7],[268,-364.7],[312,-367.3],[334.7,-350],[356,-350],[361.3,-344.7],[360,-332.7],[341.3,-315.3],[340,-304.7]],[[149.3,-330],[133.3,-308.7],[129.3,-283.3]],[[86.7,-306],[85.3,-290],[78.7,-274],[64,-262],[42.7,-254],[12,-227.3]],[[13.3,-259.3],[10.7,-247.3],[12,-227.3]],[[12,-227.3],[10.7,-204.7],[16,-178],[14.7,-162],[6.7,-146],[-24,-104.7],[-25.3,-88.7],[-24,-79.3],[-16,-63.3],[9.3,-30],[13.3,-19.3],[14.7,8.7]]],[[[134.7,-397],[134.7,-382.8],[128,-360.6],[110.7,-328.3]],[[174.7,-390.9],[194.7,-429.3],[224,-429.3],[244,-445.5],[260,-445.5],[266.7,-437.4],[270.7,-401],[278.7,-380.8],[273.3,-348.5]],[[66.7,-358.6],[65.3,-314.1],[54.7,-293.9],[36,-279.8],[-36,-241.4]],[[44,-217.2],[21.3,-209.1],[-13.3,-205.1],[-46.7,-182.8]],[[45.3,-132.3],[25.3,-128.3],[22.7,-122.2],[4,-110.1],[-20,-106.1],[-29.3,-100],[-41.3,-83.8],[-41.3,-59.6],[-32,-41.4],[29.3,15.2]]],[[[-5.3,-650],[5.3,-646],[16,-646]],[[-12,-624.7],[-10.7,-619.3],[-5.3,-618],[0,-610],[0,-591.3],[-8,-575.3],[-8,-555.3],[-12,-538],[-16,-532.7],[-16,-523.3],[-9.3,-511.3],[10.7,-492.7],[14.7,-484.7],[14.7,-467.3],[8,-452.7],[-4,-438],[-22.7,-422],[-20,-403.3]],[[17.3,-386],[16,-367.3],[9.3,-356.7],[-10.7,-338],[-14.7,-328.7],[-14.7,-314],[14.7,-276.7],[20,-260.7]],[[-17.3,-222],[-5.3,-214],[9.3,-194],[9.3,-158],[5.3,-146],[-1.3,-142],[-2.7,-130],[-10.7,-111.3],[-10.7,-88.7],[-4,-56.7],[14.7,-34],[22.7,-18],[22.7,-10]]],[[[212,-522.9],[202.7,-511.4],[198.7,-486.7],[184,-465.7],[189.3,-439]],[[97.3,-437.1],[113.3,-441],[118.7,-433.3],[117.3,-406.7],[113.3,-402.9],[114.7,-383.8],[120,-380],[137.3,-309.5],[142.7,-294.3],[146.7,-292.4]],[[165.3,-410.5],[173.3,-385.7]],[[138.7,-361],[149.3,-349.5],[160,-326.7]],[[104,-317.1],[113.3,-290.5],[124,-271.4],[132,-263.8]],[[88,-281],[92,-258.1],[109.3,-225.7]],[[60,-241],[60,-201],[70.7,-176.2],[80,-166.7]],[[14.7,-170.5],[25.3,-159],[36,-132.4],[52,-111.4],[53.3,-100],[45.3,-84.8],[33.3,-75.2],[24,-75.2],[17.3,-69.5],[-8,-71.4],[-13.3,-65.7],[-12,-42.9],[8,-25.7],[13.3,-16.2],[12,-2.9],[-2.7,10.5]]],[[[109.3,-480.2],[117.3,-461.1],[132,-448.4]],[[73.3,-370.6],[80,-356.3],[84,-354.8],[101.3,-327.8]],[[40,-243.7],[57.3,-231],[74.7,-202.4]],[[17.3,-173.8],[37.3,-156.3],[54.7,-124.6],[54.7,-113.5]],[[-4,-94.4],[1.3,-81.7],[12,-73.8],[28,-53.2],[40,-46.8],[49.3,-26.2],[56,2.4]]],[[[-65.3,-394],[-61.3,-382],[-62.7,-359.3]],[[-90.7,-390],[-90.7,-407.3],[-102.7,-419.3],[-105.3,-426],[-113.3,-434],[-136,-439.3],[-153.3,-426],[-153.3,-418],[-146.7,-408.7],[-149.3,-375.3]],[[-33.3,-366],[-30.7,-360.7],[-29.3,-334],[-16,-315.3],[-9.3,-296.7],[0,-288.7],[13.3,-283.3],[20,-272.7]],[[-14.7,-216.7],[0,-203.3],[14.7,-171.3],[16,-156.7],[10.7,-136.7],[-14.7,-91.3],[-18.7,-79.3],[-18.7,-64.7],[-5.3,-48.7],[28,-28.7],[36,-16.7]]],[[[108,-317.6],[112,-333.3],[117.3,-341.2],[128,-339.6],[134.7,-328.6],[141.3,-325.5],[145.3,-298.8],[153.3,-283.1],[154.7,-270.6],[160,-267.5],[164,-259.6]],[[84,-312.9],[88,-289.4]],[[57.3,-267.5],[38.7,-286.3],[20,-286.3],[2.7,-273.7],[-1.3,-264.3],[-1.3,-248.6],[6.7,-234.5],[4,-211],[-1.3,-198.4],[-13.3,-184.3],[-18.7,-165.5],[-29.3,-163.9],[-34.7,-151.4],[-34.7,-124.7],[-24,-99.6],[-12,-80.8],[-1.3,-74.5],[9.3,-60.4],[30.7,-2.4]]]];
+const forestCrownSprites=new Map(),forestCloseSprites=new Map(),forestBarkSprites=new Map(),forestFittedVines=new Map();
 function forestGiantArt(variant,side=1){
-  const shape=Math.floor(variant*3)%3,key=shape*2+(side>0?1:0),mirror=side>0?-1:1;
+  const pick=variant*forestTreeNames.length,shape=Math.max(0,Math.min(forestTreeNames.length-1,Math.floor(pick))),
+    skin=0,roll=pick-Math.floor(pick),plants=roll<.25?0:roll<.7?1:2,
+    formKey=shape*2+(side>0?1:0),key=formKey*3+plants,mirror=side>0?-1:1;
   if(forestGiantSprites.has(key))return forestGiantSprites.get(key);
-  const R=n=>sRnd(key*139.7+n*17.31),layers=[];
-  const layer=(width,height,left,top,depth,paint)=>{
-    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-    const ctx=canvas.getContext('2d');ctx.translate(-left,-top);ctx.scale(mirror,1);paint(ctx);
-    const levels=[{canvas,factor:1}];
-    for(const factor of [4/3,2,8/3,4,16/3,8,32/3,16]){
+  const R=n=>sRnd(formKey*139.7+n*17.31),layers=[];let plantLayer=null;
+  const layer=(width,height,left,top,depth,paint,crop=false)=>{
+    let canvas=document.createElement('canvas');canvas.width=width/2;canvas.height=height/2;
+    const ctx=canvas.getContext('2d');ctx.scale(.5,.5);ctx.translate(-left,-top);ctx.scale(mirror,1);paint(ctx);
+    if(crop){
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      let x0=canvas.width,y0=canvas.height,x1=0,y1=0;
+      for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]){
+        x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}
+      x0=Math.max(0,x0-2);y0=Math.max(0,y0-2);x1=Math.min(canvas.width-1,x1+2);y1=Math.min(canvas.height-1,y1+2);
+      const small=document.createElement('canvas');small.width=x1-x0+1;small.height=y1-y0+1;
+      small.getContext('2d').drawImage(canvas,x0,y0,small.width,small.height,0,0,small.width,small.height);
+      left+=x0*2;top+=y0*2;width=small.width*2;height=small.height*2;canvas=small;
+    }
+    const levels=[{canvas,factor:2}];
+    for(const factor of [8/3,4,16/3,8,32/3,16]){
       const small=document.createElement('canvas');small.width=width/factor;small.height=height/factor;
       const c=small.getContext('2d');c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(canvas,0,0,small.width,small.height);
       levels.push({canvas:small,factor});
@@ -55267,83 +55419,437 @@ function forestGiantArt(variant,side=1){
   };
   const poly=(c,points,color)=>{c.fillStyle=color;c.beginPath();
     points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();};
-  // Branches and bole are a single anchored cutout. Large bark plates follow
-  // the taper; tiny highlights occupy only the moon-facing edge.
-  layer(512,768,-256,-752,0,c=>{
-    const lean=(shape-1)*9;
-    for(const side of [-1,1]){
-      poly(c,[[side*14,-340],[side*65,-391],[side*143,-410],[side*236,-488],
-        [side*224,-495],[side*130,-434],[side*62,-423],[side*22,-390]],'#38291f');
-      poly(c,[[side*26,-424],[side*73,-475],[side*116,-565],[side*181,-596],
-        [side*176,-606],[side*102,-579],[side*54,-496],[side*16,-461]],'#493322');
+  // Each family has its own branching skeleton. Tips are shared with the crown
+  // generator, so leaves grow from branches rather than unrelated screen spots.
+  const forms=[
+    {lean:0,wide:1,branches:[[-8,-350,-104,-460,-199,-547],[0,-414,103,-520,181,-584],[-3,-480,-60,-597,-72,-670],[3,-505,58,-614,72,-684]]},
+    {lean:-8,wide:1.1,branches:[[-8,-292,-152,-393,-295,-461],[2,-319,167,-420,300,-484],[-4,-414,-90,-543,-143,-598],[5,-431,108,-548,164,-609],[0,-510,10,-615,21,-662]]},
+    {lean:55,wide:.82,branches:[[15,-270,148,-345,299,-400],[27,-370,189,-455,359,-492],[35,-458,125,-558,235,-609],[44,-510,12,-599,-64,-637],[8,-337,-93,-424,-163,-494]]},
+    {lean:5,wide:.94,branches:[[-11,-283,-120,-429,-171,-583],[10,-295,131,-449,185,-610],[-9,-421,-45,-576,-56,-686],[13,-426,76,-568,101,-691]]},
+    {lean:-22,wide:.72,branches:[[-10,-357,-89,-486,-121,-596],[0,-408,64,-521,105,-626],[-15,-491,-53,-617,-55,-699],[-13,-548,28,-641,41,-712]]},
+    {lean:25,wide:1.03,branches:[[9,-254,170,-329,339,-384],[18,-350,204,-419,399,-474],[22,-435,142,-541,241,-596],[-7,-327,-100,-445,-196,-517],[24,-506,-4,-617,-38,-675]]},
+    {lean:0,wide:1.45,height:.66,crown:1.15,branches:[[-12,-290,-155,-405,-285,-450],[12,-290,165,-405,290,-460],[0,-340,-60,-475,-100,-530],[5,-360,65,-490,110,-540]]},
+    {lean:-8,wide:.65,branches:[[-6,-515,-82,-595,-140,-658],[5,-535,83,-615,144,-670],[0,-580,10,-660,15,-716]]},
+    {lean:0,wide:1.05,height:.7,split:true,branches:[[-12,-105,-115,-330,-198,-536],[12,-105,145,-335,222,-566],[-110,-325,-235,-432,-290,-503],[140,-330,277,-435,332,-500],[-102,-300,-87,-490,-73,-609],[133,-300,105,-490,85,-615]]},
+    {lean:160,wide:.83,height:.84,branches:[[65,-275,218,-352,346,-405],[92,-392,235,-470,367,-508],[129,-490,212,-578,289,-626]]},
+    {lean:0,wide:.7,crown:.66,branches:[[-6,-326,-102,-422,-154,-474],[6,-365,104,-448,155,-504],[-4,-463,-62,-543,-90,-595],[4,-497,64,-571,87,-627],[0,-561,0,-651,0,-716]]},
+    {lean:-27,wide:1.12,height:.85,broken:true,branches:[[-9,-320,-145,-425,-258,-489],[-15,-429,-114,-530,-180,-597],[-22,-515,15,-602,46,-654]]}
+  ],form=forms[shape];
+  const branch=(c,points,width,bark='#443222',highlight='#65492f')=>{
+    // Shared vertices and monotonically decreasing widths: no segment resets.
+    const distances=[0];
+    for(let i=1;i<points.length;i++)distances.push(distances[i-1]+Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]));
+    const left=[],right=[],lit=[];
+    for(let i=0;i<points.length;i++){
+      const p=points[i],a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],
+        dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1,
+        w=width*(1-.94*distances[i]/Math.max(1,distances[distances.length-1])),nx=-dy/len,ny=dx/len;
+      left.push([p[0]+nx*w,p[1]+ny*w]);right.push([p[0]-nx*w,p[1]-ny*w]);
+      lit.push([p[0]+nx*w*.42,p[1]+ny*w*.42]);
     }
-    poly(c,[[-101,5],[-66,-14],[-46,-61],[-34,-162],[-27,-333],[-19+lean,-513],
-      [-7+lean,-675],[8+lean,-680],[17+lean,-524],[27,-348],[34,-168],[45,-60],[67,-16],[99,6],
-      [48,10],[18,3],[-21,8]],'#2b201a');
-    poly(c,[[-39,-33],[-29,-177],[-24,-354],[-15+lean,-536],[-6+lean,-668],
-      [3+lean,-668],[7,-338],[11,-150],[25,-27],[12,2]],'#59402b');
-    poly(c,[[12,0],[23,-159],[18,-369],[9+lean,-604],[17+lean,-522],[28,-344],
-      [35,-148],[49,-36],[79,4]],'#3d2e23');
-    for(let row=0;row<22;row++){
-      const y=-29-row*27,w=29-row*.7,shift=lean*Math.max(0,(-y-330)/340);
-      for(let col=0;col<3;col++){
-        const x=shift-w+col*w*.66+R(row*9+col)*5,h=16+R(row*7+col+4)*20;
-        poly(c,[[x,y],[x-2,y-h*.55],[x+1,y-h],[x+7,y-h-3],[x+10,y-h*.5],[x+7,y+2]],
-          ['#684a30','#493525','#34271f'][(col+row)%3]);
-        c.fillStyle=col===0?'#88613c':'#211c19';c.fillRect(x,y-h+2,2,h*.7);
+    poly(c,left.concat(right.reverse()),bark);
+    poly(c,lit.concat(points.slice().reverse()),highlight);
+    if(!form.split){
+      const outline=left.concat(right);
+      c.save();c.beginPath();outline.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.clip();
+      const total=distances[distances.length-1],step=58;
+      for(let d=12;d<total-12;d+=step){
+        let seg=1;while(seg<distances.length-1&&distances[seg]<d)seg++;
+        const a=points[seg-1],b=points[seg],len=distances[seg]-distances[seg-1],
+          t=(d-distances[seg-1])/len,tx=(b[0]-a[0])/len,ty=(b[1]-a[1])/len,
+          w=width*(1-.94*d/total),h=32;
+        for(const offset of [-.35,.4]){
+          const x=a[0]+(b[0]-a[0])*t-ty*w*offset,y=a[1]+(b[1]-a[1])*t+tx*w*offset,
+            bw=Math.min(7,w*.45);
+          poly(c,[[x,y],[x+tx*h*.4-ty*bw,y+ty*h*.4+tx*bw],
+            [x+tx*h,y+ty*h],[x+tx*h*.75+ty*bw*.5,y+ty*h*.75-tx*bw*.5]],'#392c20');
+        }
+      }
+      c.restore();
+    }
+  };
+  const vinePath=(c,points,soft=false)=>{
+    c.beginPath();c.moveTo(...points[0]);
+    for(let i=1;i<points.length-1;i++){
+      const a=points[i-1],b=points[i],d=points[i+1];
+      if(!soft){c.lineTo(...b);continue;}
+      // Midpoint quadratic chain removes tiny reversals instead of merely
+      // rounding their corners. Every segment shares its neighbour's tangent.
+      c.quadraticCurveTo(b[0],b[1],(b[0]+d[0])*.5,(b[1]+d[1])*.5);
+    }
+    c.lineTo(...points[points.length-1]);c.stroke();
+  };
+  const paintPlants=(c,onlyVine=false)=>{
+    const wide=form.wide,lean=form.lean;
+    const moss=(x,y,s,flip=1)=>poly(c,[[x,y],[x-8*s*flip,y-12*s],[x-6*s*flip,y-35*s],
+      [x+4*s*flip,y-47*s],[x+3*s*flip,y-24*s],[x+10*s*flip,y-10*s]],'#435036');
+    if(!onlyVine){moss(-29*wide,-6,1.1);moss(18*wide+lean*.17,-115,.7,-1);}
+    // Prefer low, outward-reaching limbs with more exposed wood below the crown.
+    const selected=[0,1,4,0,0,3,1,0,1,0,0,0][shape],b=form.broken?[10,-250,89,-307,125,-347]:form.branches[selected];
+    if(!onlyVine)moss(b[2]*.9,b[3]+18,.48,selected%2?1:-1);
+    if(plants<2)return;
+    // Preserve the user's routes, gaps, forks and dangling ends. No procedural rerouting.
+    c.strokeStyle='#71834b';c.fillStyle='#71834b';c.lineWidth=2.6;c.lineCap='round';c.lineJoin='round';
+    let thornIndex=0;
+    let routes=forestFittedVines.get(formKey);
+    if(!routes){
+      routes=forestAuthoredVines[shape].map(p=>p.map(v=>v.slice()));
+      // Local art corrections: preserve the user's layout, relax cramped turns.
+      const corrections={
+        5:{
+          5:[[-36,-403],[-39,-374],[-38,-347],[-29,-325],[-10,-303],[7,-278],[13.3,-259.3]],
+          6:[[135,-369],[112,-374],[88,-385],[65,-385],[44,-375],[29,-358],[25,-337],[29,-311],[29,-286],[22,-269],[13.3,-259.3]],
+          8:[[232,-335],[253,-345],[270,-360],[292,-365],[315,-363],[338,-352],[353,-348],[359,-339],[353,-328],[343,-317],[340,-305]],
+          10:[[87,-306],[84,-289],[73,-273],[56,-262],[38,-253],[22,-239],[12,-227.3]]
+        },
+        6:{
+          0:[[143,-402],[137,-382],[126,-364],[113,-348]],
+          1:[[176,-405],[194,-423],[218,-430],[240,-440],[257,-441],[268,-430],[271,-407],[277,-385],[275,-357]],
+          2:[[70,-353],[65,-325],[53,-304],[34,-286],[7,-270],[-29,-253]],
+          3:[[44,-217],[20,-211],[-9,-206],[-37,-193]]
+        },
+        7:{
+          1:[[-10,-623],[-4,-610],[-2,-590],[-7,-570],[-12,-550],[-13,-532],[-7,-516],[5,-502],[11,-485],[10,-468],[1,-452],[-12,-437],[-20,-421],[-20,-404]],
+          2:[[16,-385],[14,-366],[3,-351],[-10,-336],[-13,-320],[-6,-304],[8,-284],[17,-264]],
+          3:[[-18,-222],[-4,-209],[7,-190],[9,-169],[3,-148],[-5,-127],[-10,-106],[-9,-85],[-2,-62],[12,-39],[21,-20],[23,-10]]
+        },
+        11:{
+          0:[[109,-324],[117,-337],[125,-342],[132,-339],[135,-330],[137,-314],[143,-297],[150,-281],[153,-267]],
+          1:[[77,-312],[83,-305],[90,-297]],
+          2:[[58,-276],[44,-285],[27,-286],[12,-280],[4,-269],[3,-253],[7,-236],[5,-216],[-2,-197],[-13,-181],[-22,-167],[-31,-150],[-33,-130],[-27,-108],[-16,-87],[-1,-71],[13,-46],[30,-3]]
+        }
+      };
+      if(corrections[shape])for(const [i,p] of Object.entries(corrections[shape]))routes[Number(i)]=p;
+      if(shape>=4){
+        const wood=forestBarkSprites.get(formKey),canvas=wood.levels[0].canvas,
+          W=canvas.width,H=canvas.height,pixels=canvas.getContext('2d').getImageData(0,0,W,H).data,
+          height=form.height||1,
+          solid=(x,y)=>x>=0&&y>=0&&x<W&&y<H&&pixels[(y*W+x)*4+3]>128,
+          toPixel=p=>[(p[0]*mirror-wood.left)/2,(p[1]*height-wood.top)/2];
+        routes=routes.map(original=>{
+          const fitted=original.map(p=>p.slice());
+          for(let i=0;i<original.length;i++){
+            const [px,py]=toPixel(original[i]),x=Math.round(px),y=Math.round(py),inside=solid(x,y),
+              endpoint=i===0||i===original.length-1;
+            // Interior front-face points stay put. Only edge crossings need fitting.
+            if(inside&&!endpoint)continue;
+            const radius=endpoint?8:5;let best=radius*radius,hit=null;
+            for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+              const xx=x+dx,yy=y+dy,d=(xx-px)**2+(yy-py)**2;
+              if(d>=best||!solid(xx,yy))continue;
+              if(solid(xx-1,yy)&&solid(xx+1,yy)&&solid(xx,yy-1)&&solid(xx,yy+1))continue;
+              best=d;hit=[xx,yy];
+            }
+            if(!hit)continue; // Far outside = authored hanging tendril, not a wrap.
+            const target=[(hit[0]*2+wood.left)*mirror,(hit[1]*2+wood.top)/height],
+              shift=[target[0]-original[i][0],target[1]-original[i][1]];
+            fitted[i]=target;
+            if(endpoint){
+              // Spread the endpoint correction over the adjacent curve, no new hook.
+              const j=i===0?1:i-1;
+              if(original[j]){const distance=Math.hypot(original[j][0]-original[i][0],original[j][1]-original[i][1]),
+                weight=.5*Math.max(0,1-distance/35);
+                fitted[j]=[original[j][0]+shift[0]*weight,original[j][1]+shift[1]*weight];}
+            }
+          }
+          return fitted;
+        });
+      }
+      forestFittedVines.set(formKey,routes);
+    }
+    for(const path of routes){
+      vinePath(c,path,true);
+      let since=0;
+      for(let i=1;i<path.length;i++){
+        const a=path[i-1],b=path[i],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
+        since+=len;if(since<48||len<4)continue;since=0;
+        const t=.5,x=a[0]+dx*t,y=a[1]+dy*t,tx=dx/len,ty=dy/len,side=thornIndex++%2?1:-1;
+        poly(c,[[x-tx*2,y-ty*2],[x-ty*side*6+tx*2,y+tx*side*6+ty*2],[x+tx*3,y+ty*3]],'#71834b');
       }
     }
-    for(const side of [-1,1])for(let i=0;i<3;i++){
-      const end=side*(53+i*25),base=side*(12+i*8),y=-20-i*12;
-      poly(c,[[base,-84+i*15],[end*.64,y-2],[end,7-i*4],[end-9*side,11-i*4],
-        [end*.5,y+5],[base-7*side,-30]],i%2?'#60462d':'#413323');
-    }
-    for(let i=0;i<12;i++){
-      const y=-6-R(i+410)*110,x=-33+R(i+420)*16;
-      c.fillStyle=i%3?'#3d5130':'#56673a';c.fillRect(x,y,3+R(i+430)*7,3+R(i+440)*7);
-    }
-  });
-  // Broad interlocking leaf groups, with a dark interior and readable lobed
-  // edges. They are painted once; no per-leaf work in the frame loop.
-  layer(1024,576,-512,-768,2.5,c=>{
-    const leaf=(x,y,w,h,color)=>poly(c,[[x-w*.5,y],[x-w*.38,y-h*.26],[x-w*.25,y-h*.26],
-      [x-w*.18,y-h*.5],[x+w*.13,y-h*.5],[x+w*.24,y-h*.3],[x+w*.4,y-h*.24],
-      [x+w*.5,y],[x+w*.34,y+h*.18],[x+w*.28,y+h*.37],[x,y+h*.5],
-      [x-w*.18,y+h*.3],[x-w*.37,y+h*.28]],color);
-    // Three genuinely different silhouettes, not the same blanket with jitter:
-    // high/narrow, lateral/open, and a single inward-reaching lower bough.
-    const groups=[
-      [[-129,-650,167,115],[40,-677,190,120],[154,-590,156,112],[-92,-507,137,92],[65,-552,143,98]],
-      [[-315,-476,190,113],[-161,-558,163,112],[18,-651,176,115],[206,-586,179,108],
-        [355,-493,174,108],[147,-430,138,91]],
-      [[-176,-611,162,106],[2,-663,177,116],[152,-553,159,112],[-219,-466,133,87],
-        [116,-383,137,85],[253,-344,164,97],[379,-294,142,88]]
-    ][shape];
-    if(shape===2){
-      poly(c,[[0,-409],[83,-408],[167,-377],[270,-359],[384,-310],[380,-298],
-        [263,-340],[160,-356],[72,-386],[0,-382]],'#493323');
-      poly(c,[[30,-405],[84,-403],[166,-373],[271,-355],[366,-316],
-        [268,-348],[164,-366],[80,-395]],'#765135');
-      poly(c,[[183,-367],[216,-421],[271,-448],[275,-442],[227,-413],[198,-357]],'#4c3525');
-    }
-    for(let j=0;j<groups.length;j++){
-      const [gx,gy,w,h]=groups[j],x=gx+(R(j+501)-.5)*25,y=gy+(R(j+511)-.5)*24;
-      leaf(x,y,w,h,'#0d2115');
-      for(let k=0;k<10;k++){
-        const angle=k/10*TAU,px=x+Math.cos(angle)*w*.4,py=y+Math.sin(angle)*h*.37;
-        leaf(px,py,26+R(j*21+k)*25,16+R(j*31+k)*15,k%3?'#15331d':'#224323');
+    return;
+    const mid=[b[0]+(b[2]-b[0])*.48+lean*.2,b[1]+(b[3]-b[1])*.43],
+      trunk=[0,4,7,9].includes(shape),
+      pts=trunk?[[0,-45],[lean*.25,-170],[lean*.58,-390],[lean*.93,-620]]:
+        shape===8?[[16,-40],[54,-180],[145,-335],[222,-566]]:
+        form.broken?[[10,-250],[89,-307],[125,-347]]:[[b[0],b[1]],mid,[b[2],b[3]],[b[4],b[5]]],ds=[0];
+    for(let i=1;i<pts.length;i++)ds.push(ds[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+    const total=ds[ds.length-1],edge=pts.map((p,i)=>{
+      const a=pts[Math.max(0,i-1)],z=pts[Math.min(pts.length-1,i+1)],dx=z[0]-a[0],dy=z[1]-a[1],len=Math.hypot(dx,dy),
+        w=trunk?[28*wide,23*wide,18,9][i]:(shape===8?39:form.broken?22:27*wide)*(1-.94*ds[i]/total);
+      return [-dy/len*w,dx/len*w];
+    });
+    const at=(d,side)=>{let i=0;while(i<pts.length-2&&ds[i+1]<d)i++;
+      const t=(d-ds[i])/(ds[i+1]-ds[i]);
+      if(trunk){
+        const y=pts[i][1]+(pts[i+1][1]-pts[i][1])*t,w=wide*(shape===0?1.6:1.2),
+          left=[[-45*w,-18],[-31*w,-69],[-24*w,-172],[-25*w,-241],[-18*w,-348],[-18,-437],[-7,-660]],
+          right=[[46*w,-22],[30*w,-74],[23*w,-196],[26*w,-325],[23,-435],[8,-668]],
+          edgeX=list=>{let j=0;while(j<list.length-2&&list[j+1][1]>y)j++;
+            const a=list[j],b=list[j+1];return a[0]+(b[0]-a[0])*(y-a[1])/(b[1]-a[1]);},
+          lo=edgeX(left),hi=edgeX(right);
+        return [lo+(hi-lo)*(side+1)/2-lean*y/668,y];
       }
-      for(let k=0;k<12;k++){
-        const px=x+(R(j*47+k+621)-.5)*w*.85,py=y+(R(j*51+k+743)-.5)*h*.65;
-        leaf(px,py,21+R(k*19+j)*27,12+R(k*13+j)*17,
-          ['#27482a','#305330','#1b3921','#122c1c'][k%4]);
-        if(k%5===0){c.fillStyle='#52643a';c.fillRect(px-6,py-3,7,2);}
+      return [0,1].map(k=>pts[i][k]+(pts[i+1][k]-pts[i][k])*t+side*(edge[i][k]+(edge[i+1][k]-edge[i][k])*t));};
+    const draw=(p,soft=false)=>{c.strokeStyle='#71834b';c.lineWidth=2.5;c.lineJoin='round';vinePath(c,p,soft);};
+    const path=[[25*wide,5]];
+    // Ground-to-branch route respects the lean, with a broad turn into the socket.
+    const root=pts[0];
+    for(let i=1;i<=12;i++){const t=i/12,y=root[1]*t;
+      path.push([root[0]*t+Math.sin(t*Math.PI*([2,6].includes(shape)?2:2.5))*wide*13*(1-t*.5),y]);}
+    const begin=trunk?(shape===9?total*.5:shape===0?total*.19:total*.025):total*.04;
+    // Start the turn further down the approach, not in a short sideways hook.
+    path.splice(Math.max(1,path.length-3));
+    for(let i=0;i<=8;i++){const t=i/8;path.push(at(begin*t,t*t*(3-2*t)));}
+    const thorn=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1,
+      tx=dx/len,ty=dy/len,x=a[0],y=a[1];
+      poly(c,[[x-tx*2,y-ty*2],[x-ty*8+tx*2,y+tx*8+ty*2],[x+tx*3,y+ty*3]],'#71834b');};
+    for(const i of [3,6,9,12])thorn(path[i],path[i+1]);
+    if(shape===2){path.push(at(total*.26,0));draw(path,true);return;}
+    const turns=form.broken?3:trunk?6:5;
+    if(trunk){
+      const limit=total*.98,step=(limit-begin)/turns;
+      let d=begin,lead=path;
+      while(d<limit-12){
+        const crossing=Math.min(step*.68,limit-d);
+        let target=d;
+        // Move the crossing above sockets instead of flattening the helix.
+        for(let pass=0;pass<form.branches.length+1;pass++){
+          const y0=at(target,0)[1],y1=at(Math.min(limit,target+crossing),0)[1];
+          const hits=form.branches.filter(b=>b[1]+22>=y1&&b[1]-22<=y0);
+          if(!hits.length)break;
+          const clearY=Math.min(...hits.map(b=>b[1]-25));
+          let next=target;while(next<limit&&at(next,0)[1]>clearY)next+=3;
+          if(next===target)break;target=next;
+        }
+        target=Math.min(target,limit);
+        if(target>d){
+          const climb=[];const n=Math.max(2,Math.ceil((target-d)/10));
+          for(let i=0;i<=n;i++){
+            const t=i/n;climb.push(at(d+(target-d)*t,1-.13*Math.sin(Math.PI*t)));
+          }
+          lead=lead?lead.concat(climb.slice(1)):climb;
+        }
+        if(target>=limit-8){if(lead)draw(lead,true);break;}
+        const finish=Math.min(limit,target+crossing),front=[];
+        for(let i=0;i<=24;i++)front.push(at(target+(finish-target)*i/24,Math.cos(Math.PI*i/24)));
+        draw(lead?lead.concat(front.slice(1)):front,true);lead=null;
+        thorn(front[12],front[13]);
+        d=finish+step*.22; // hidden rear half; next visible turn starts at the edge
+      }
+      return;
+    }
+    let carried=path;
+    for(let turn=0;turn<turns;turn++){
+      const start=begin+(total*.96-begin)*turn/turns,span=(total*.96-begin)/turns,front=[];
+      // A branch socket is not a cylindrical trunk surface. Keep the vine
+      // on the front centre through that entire turn, never wrap through wood.
+      const y0=at(start,0)[1],y1=at(start+span,0)[1],socket=trunk&&form.branches.some(b=>
+        b[1]>=Math.min(y0,y1)-38&&b[1]<=Math.max(y0,y1)+38);
+      for(let i=0;i<=24;i++){
+        const t=i/24,d=start+span*(socket?1:.83)*t;
+        const fromCentre=!!carried&&turn>0;
+        let side=Math.cos((fromCentre?.5:0)*Math.PI+t*Math.PI*(fromCentre?.5:1));
+        if(socket){
+          // Ease to the centre well before the socket, then remain there.
+          const ease=Math.min(1,t*4);side=fromCentre?0:(1-ease)*(1-ease)*(1+2*ease);
+        }
+        front.push(at(d,side));
+      }
+      if(carried){draw(carried.concat(front.slice(1)),true);carried=null;}else draw(front,true);
+      thorn(front[12],front[13]);
+      if(socket&&turn<turns-1){
+        // Continuous on-surface transition into the next turn; no sharp jump.
+        carried=[front[22],front[23],front[24]];
       }
     }
-  });
+  };
+  const paintWood=(c,plantPass=false)=>{
+    c.scale(1,form.height||1);
+    if(form.split){
+      // Authored as one fork: grain and lighting follow each root-to-tip flow.
+      const base='#503824',light='#755235',shadow='#35291e',moss='#435036';
+      if(!plantPass){
+      for(const b of form.branches.slice(2))branch(c,[[b[0],b[1]],[b[2],b[3]],[b[4],b[5]]],10,base,light);
+      branch(c,[[-12,-40],[-45,-175],[-115,-330],[-198,-536]],37,base,light);
+      branch(c,[[16,-40],[54,-180],[145,-335],[222,-566]],39,base,light);
+      poly(c,[[-95,10],[-54,-20],[-36,-72],[-36,-150],[-54,-196],[-26,-170],
+        [2,-135],[32,-178],[64,-205],[39,-135],[38,-68],[59,-18],[103,10],[29,5],[5,10],[-28,5]],base);
+      // Broad bark ridges split with the fork, rather than continuing vertically.
+      poly(c,[[-83,5],[-43,-30],[-27,-94],[-30,-150],[-63,-219],[-90,-287],
+        [-69,-259],[-39,-195],[-10,-146],[-9,-90],[-23,-33],[-40,-9]],light);
+      poly(c,[[20,5],[8,-42],[14,-104],[36,-162],[74,-232],[103,-279],
+        [91,-240],[49,-155],[30,-94],[29,-40],[63,4]],'#65472e');
+      poly(c,[[-7,-23],[-12,-83],[-5,-122],[2,-135],[15,-118],[11,-81],[4,-43]],shadow);
+      poly(c,[[-20,-100],[-29,-143],[-48,-177],[-55,-203],[-32,-172],[-13,-146]],'#3b2d20');
+      poly(c,[[24,-112],[43,-157],[63,-199],[78,-230],[65,-183],[40,-137]],shadow);
+      // Large, staggered plates turn with the branch axes; no tiny speckling.
+      for(const side of [-1,1]){
+        const path=side<0?[[-40,-165],[-115,-330],[-198,-536]]:[[45,-164],[145,-335],[222,-566]];
+        for(let i=0;i<5;i++){
+          const t=.08+i*.17,seg=t<.48?0:1,u=seg===0?t/.48:(t-.48)/.52,
+            a=path[seg],b=path[seg+1],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy),
+            tx=dx/len,ty=dy/len,x=a[0]+dx*u,y=a[1]+dy*u,w=9-i*1.3,h=42-i*4;
+          const pts=[[-w,0],[-w*.8,h*.5],[-w*.3,h],[w*.45,h*.84],[w,h*.18],[w*.4,-7]];
+          poly(c,pts.map(([n,d])=>[x-ty*n+tx*d,y+tx*n+ty*d]),i%2?'#65472e':'#3b2d20');
+          if(i===1||i===3)poly(c,[[x,y],[x+tx*h*.7,y+ty*h*.7],
+            [x+tx*h*.6-ty*4,y+ty*h*.6+tx*4],[x-ty*5,y+tx*5]],'#86603c');
+        }
+      }
+      poly(c,[[-48,-13],[-37,-56],[-28,-75],[-30,-39],[-20,-13],[-30,1]],shadow);
+      poly(c,[[40,-9],[34,-49],[42,-68],[46,-34],[75,5]],shadow);
+      return;
+      }
+      poly(c,[[-71,5],[-52,-14],[-48,-40],[-38,-48],[-42,-24],[-35,-10],[-48,2]],moss);
+      poly(c,[[-44,-22],[-41,-48],[-32,-58],[-35,-34]],'#59613c');
+      poly(c,[[30,-78],[34,-107],[47,-136],[49,-120],[42,-97],[42,-83]],moss);
+      poly(c,[[-102,-289],[-111,-321],[-107,-337],[-97,-313],[-93,-293]],moss);
+      poly(c,[[119,-304],[127,-330],[135,-342],[132,-317]],'#4e5938');
+      if(plants<2)return;
+      paintPlants(c,true);return;
+      // One root-to-tip vine, following the right fork into its outer twig.
+      const vine=(points,soft=false)=>{
+        c.strokeStyle='#71834b';c.lineWidth=2.5;c.lineJoin='bevel';c.lineCap='butt';
+        vinePath(c,points,soft);
+      };
+      const route=[[43,8],[42,-9],[33,-28],[29,-49],[33,-68],[43,-83],
+        [48,-108],[59,-136],[62,-158],[77,-185],[85,-211],[94,-236],
+        [103,-253],[118,-258],[126,-279],[133,-296],[136,-312],[140,-330]];
+      // Match branch()'s actual taper and shared vertex normals exactly.
+      const twig=[[140,-330],[277,-435],[332,-500]],lengths=[0];
+      for(let i=1;i<twig.length;i++)lengths.push(lengths[i-1]+Math.hypot(twig[i][0]-twig[i-1][0],twig[i][1]-twig[i-1][1]));
+      const total=lengths[2],edges=twig.map((p,i)=>{
+        const a=twig[Math.max(0,i-1)],b=twig[Math.min(2,i+1)],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy),
+          w=10*(1-.94*lengths[i]/total);
+        return [-dy/len*w,dx/len*w];
+      });
+      const coilPoint=(t,side)=>{
+        const d=t*total,i=d<lengths[1]?0:1,u=(d-lengths[i])/(lengths[i+1]-lengths[i]);
+        return [0,1].map(k=>twig[i][k]+(twig[i+1][k]-twig[i][k])*u+
+          side*(edges[i][k]+(edges[i+1][k]-edges[i][k])*u));
+      };
+      // Stay visibly on the front through the thick branch junction. Only
+      // begin wrapping after the twig clears the parent arm's silhouette.
+      route.push(coilPoint(.06,0),coilPoint(.13,.25),coilPoint(.20,1));
+      vine(route,true);
+      for(let turn=0;turn<4;turn++){
+        const front=[];
+        for(let j=0;j<=12;j++){
+          const t=.20+turn*.18+j/12*.15;
+          front.push(coilPoint(t,Math.cos(j/12*Math.PI)));
+        }
+        // A short back-facing return (0.03 of branch length) is occluded.
+        vine(front);
+        if(turn%2===0){const [x,y]=front[6];
+          poly(c,[[x-1,y+1],[x-5,y-6],[x+2,y-2]],'#71834b');}
+      }
+      for(const i of [4,7,10,13,16]){
+        const [x,y]=route[i];poly(c,[[x,y+2],[x-7,y-6],[x+1,y-3]],'#71834b');
+      }
+      return;
+    }
+    if(plantPass){paintPlants(c);return;}
+    const branchBase=shape%3===0?'#503824':'#59402b',
+      branchLight=shape%3===0?'#755235':'#79583a';
+    for(const b of form.branches){
+      const midX=b[0]+(b[2]-b[0])*.48+form.lean*.2,midY=b[1]+(b[3]-b[1])*.43;
+      const secondary=form.split&&Math.abs(b[0])>60;
+      branch(c,[[b[0],b[1]],[midX,midY],[b[2],b[3]],[b[4],b[5]]],
+        (secondary?10:27)*form.wide,branchBase,branchLight);
+    }
+    const lean=form.lean;
+    {
+      c.save();c.transform(1,0,-lean/668,shape===6?.8:1,0,0);
+      const wide=form.wide*(shape===0?1.6:1.2),
+        base=branchBase,light=branchLight,dark=shape===3?'#513925':'#453020';
+      // Continuous buttress-to-trunk contour; broad roots taper into the bole.
+      const outline=form.split?[[-72*wide,9],[-45*wide,-18],[-31*wide,-69],[-28,-146],
+        [-50,-191],[-27,-177],[0,-140],[29,-178],[54,-192],[30,-142],
+        [30*wide,-74],[46*wide,-22],[79*wide,10],[31,6],[8,10],[-25,5]]:
+        [[-72*wide,9],[-45*wide,-18],[-31*wide,-69],[-24*wide,-172],
+        [-25*wide,-241],[-18*wide,-348],[-18,-437],[-7,-660],
+        [8,-668],[23,-435],[26*wide,-325],[23*wide,-196],[30*wide,-74],
+        [46*wide,-22],[79*wide,10],[31,6],[8,10],[-25,5]];
+      poly(c,outline,base);
+      c.save();c.beginPath();outline.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.clip();
+      poly(c,[[-39*wide,-26],[-23*wide,-115],[-18*wide,-264],[-13*wide,-366],
+        [-5,-565],[4,-571],[7*wide,-335],[2*wide,-171],[13,-44],[7,3]],light);
+      poly(c,[[14,-10],[10*wide,-167],[13*wide,-310],[18,-444],[24*wide,-324],
+        [23*wide,-177],[32*wide,-57],[60*wide,7],[35,3]],dark);
+      // A few broad, angular cuts keep bark readable without fine texture.
+      c.save();c.beginPath();outline.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.clip();
+      for(const [x,y,h] of [[-15,-48,100],[15,-157,112],[-12,-278,92],[9,-389,105]]){
+        poly(c,[[x*wide,y],[x*wide-4,y-h*.45],[x*wide+1,y-h],
+          [x*wide+5,y-h*.4]],dark);
+      }
+      for(let i=0;i<7;i++){
+        const y=-38-i*62,x=(i%2?-9:8)*wide,h=35+R(i+62)*30;
+        poly(c,[[x,y],[x-7*wide,y-h*.3],[x-5*wide,y-h],[x+4*wide,y-h*.8],
+          [x+7*wide,y-h*.15]],i%3?'#493321':'#89613e');
+      }
+      // Socket shadows turn out toward each branch, interrupting the vertical grain.
+      for(const b of form.branches){
+        const x=b[0]+lean*b[1]/668,y=b[1],side=b[2]<b[0]?-1:1;
+        poly(c,[[x-side*8,y+31],[x+side*8,y+5],[x+side*28,y-22],
+          [x+side*20,y-26],[x,y-4]],'#35291e');
+      }
+      c.restore();
+      c.restore();
+      for(const side of [-1,1])for(let k=0;k<2;k++){
+        const end=side*(48+k*24)*wide;
+        poly(c,[[side*(13+k*6),-107+k*21],[end*.5,-30],[end,7-k*2],
+          [end-side*10,10-k*2],[side*15,-25]],k%2?light:base);
+      }
+      c.restore();
+      if(form.broken){
+        branch(c,[[10,-250],[89,-307],[125,-347]],22,base,light);
+        poly(c,[[108,-343],[112,-366],[121,-357],[130,-368],[137,-351],[128,-336]],light);
+      }
+    }
+  };
+  if(forestBarkSprites.has(formKey))layers.push(forestBarkSprites.get(formKey));
+  else {layer(1024,768,-512,-752,0,c=>paintWood(c),true);forestBarkSprites.set(formKey,layers[0]);}
+  if(plants){layer(1024,768,-512,-752,0,c=>paintWood(c,true),true);plantLayer=layers.pop();}
+  if(forestCrownSprites.has(formKey))layers.push(forestCrownSprites.get(formKey));
+  else {layer(1024,784,-512,-768,-.05,c=>{
+    c.scale(1,form.height||1);
+    const masses=[];
+    const patch=(x,y,w,h,color,seed)=>{
+      // Asymmetric broken contour, never a dark outlined oval.
+      const outline=[[-.52,.08],[-.44,-.12],[-.31,-.17],[-.33,-.32],[-.09,-.4],
+        [.02,-.32],[.2,-.44],[.36,-.27],[.33,-.12],[.53,-.03],[.43,.19],
+        [.24,.23],[.14,.38],[-.08,.29],[-.23,.39],[-.36,.2]];
+      poly(c,outline.map(([u,v],i)=>[x+(u+(R(seed+i)-.5)*.1)*w,y+(v+(R(seed+i+33)-.5)*.12)*h]),color);
+    };
+    for(let j=0;j<form.branches.length;j++){
+      const b=form.branches[j];
+      for(let n=0;n<4;n++){
+        const t=-.22+n*.4,x=b[2]+(b[4]-b[2])*t,y=b[3]+(b[5]-b[3])*t-18,
+          w=((shape===4?150:203)+R(j*17+n)*35)*(form.crown||1),h=120+R(j*23+n)*38;
+        masses.push({x,y,w,h,seed:j*211+n*47});
+      }
+    }
+    // All shadow silhouettes first: later clusters cannot stamp dark rims on
+    // earlier highlights. The crown is one connected lighting composition.
+    for(const m of masses)patch(m.x,m.y,m.w,m.h,'#1a3421',m.seed);
+    for(const m of masses)patch(m.x-5,m.y-11,m.w*.89,m.h*.83,'#244329',m.seed+300);
+    // All wood belongs to the trunk plane; a second projected branch skeleton
+    // in this offset leaf plane would detach or overlap at close distances.
+    for(const m of masses){
+      for(let k=0;k<30;k++){
+        const x=m.x+(R(m.seed+k*7+431)-.5)*m.w*.92,
+          y=m.y+(R(m.seed+k*11+519)-.5)*m.h*.63,
+          w=17+R(m.seed+k+701)*27,h=11+R(m.seed+k+811)*17;
+        // Muted common palette, no per-clump halo or glossy central blob.
+        patch(x,y,w,h,['#2d4b2c','#355532','#28482b','#3d5c35','#203d25'][k%5],m.seed+k*19);
+      }
+    }
+  },true);
+  forestCrownSprites.set(formKey,layers[1]);}
+  if(plantLayer)layers.push(plantLayer);
   const distant=document.createElement('canvas');distant.width=64;distant.height=49;
   const dc=distant.getContext('2d');dc.imageSmoothingEnabled=true;dc.imageSmoothingQuality='high';
-  for(const part of [layers[1],layers[0]])dc.drawImage(part.levels[0].canvas,
+  for(const part of [layers[0],...layers.slice(2),layers[1]])dc.drawImage(part.levels[0].canvas,
     (part.left+512)/16,(part.top+768)/16,part.width/16,part.height/16);
   layers.distant=distant;
   layers.distantLevels=[{canvas:distant,factor:1}];
@@ -55400,11 +55906,12 @@ function forestReferenceDistant(trees){
   const drawTree=(tree,target)=>{
 
     let levels=forestDistantArtCache.get(tree);
-    if(!levels){levels=forestGiantArt(tree.v,tree.x).distantLevels;forestDistantArtCache.set(tree,levels);}
+    if(!levels){const art=forestRuntimeArt(tree.v,tree.x);if(!art)return;levels=art.distantLevels;forestDistantArtCache.set(tree,levels);}
     const dx=tree.x-cx,dz=tree.z-cz,depth=follow+dx*sn+dz*cs,
-      s=525/depth,px=half+(dx*cs-dz*sn)*s,py=horizon+rise/depth;
+      s=525/depth,px=half+(dx*cs-dz*sn+forestBend(depth))*s,py=horizon+rise/depth;
     let level=levels[0];
     for(let i=levels.length-1;i>0;i--)if(levels[i].factor*s<=1){level=levels[i];break;}
+    if(px-32*s>480||px+32*s<0)return;
     target.drawImage(level.canvas,px-32*s,py-48*s,64*s,49*s);
   };
   if(rebuild){
@@ -55421,11 +55928,12 @@ function forestReferenceDistant(trees){
     g.drawImage(canvas,0,top,480,64);g.restore();}});
 }
 function forestGiantTree(x,z,variant){
-  const art=forestGiantArt(variant,x),frame=forestWorldFrame,camera=frame.camera,
+  const frame=forestWorldFrame,camera=frame.camera,art=forestRuntimeArt(variant,x,true,z-camera.z>=280),
     cs=camera.c,sn=camera.s,dx=x-camera.x,dz=z-camera.z,
     rootZ=FOREST_WORLD.follow+dx*sn+dz*cs,rootX=dx*cs-dz*sn,
     horizon=HORIZON_Y-(GROUND_Y-HORIZON_Y)*14/60,rise=(GROUND_Y-horizon)*14,
     half=VW/2,context=g,device=Math.max(1,viewScale),bottom=VH+PAD_BOT;
+  if(!art)return;
   if(rootZ>600){
     const scale=525/rootZ,px=half+rootX*scale,py=horizon+rise/rootZ;
     frame.faces.push({depth:rootZ,draw:()=>{context.globalAlpha=1;
@@ -55434,32 +55942,34 @@ function forestGiantTree(x,z,variant){
   }
   for(const part of art){
     const depth=FOREST_WORLD.follow+dx*sn+(z+part.depth-camera.z)*cs;if(depth<1.1)continue;
-    const side=dx*cs-(z+part.depth-camera.z)*sn,projection=525/depth,scale=projection/16,
+    const side=dx*cs-(z+part.depth-camera.z)*sn+forestBend(depth),projection=525/depth,scale=projection/16,
       left=half+side*projection+part.left*scale,top=horizon+rise/depth+part.top*scale;
     if(left>VW||left+part.width*scale<0||top>bottom||top+part.height*scale<-PAD_TOP)continue;
     const footprint=scale*device,levels=part.levels;let level=levels[0];
     for(let i=levels.length-1;i>0;i--)if(levels[i].factor*footprint<=1){level=levels[i];break;}
     // Bark's narrow plates flicker when switching mip sources. Use one source
     // with area-quality minification instead of discrete bark LOD transitions.
-    if(part.depth===0)level=footprint>.5?levels[0]:levels.find(l=>l.factor===2);
+    if(!part.baked&&part.depth===0)level=footprint>.5?levels[0]:levels.find(l=>l.factor===2);
     // Close roots/bark AND foliage are re-authored at 2x before source pixels
     // are enlarged on the device. Far filtering/caches stay unchanged.
-    if(footprint>1){
+    if(!part.baked&&footprint>1){
       if(!part.close){
         const canvas=document.createElement('canvas');canvas.width=part.width*2;canvas.height=part.height*2;
         const c=canvas.getContext('2d');c.scale(2,2);c.translate(-part.left,-part.top);
         c.scale(part.mirror,1);part.paint(c);part.close={canvas,factor:.5};
       }
+      forestCloseSprites.set(part,frame);
       level=part.close;
     }
     frame.faces.push({depth,draw:()=>{context.globalAlpha=1;
-      forestBlit(level.canvas,left,top,scale*level.factor,part.depth===0?'high':'low');}});
+      forestBlit(level.canvas,left,top,scale*level.factor,part.baked?'low':part.depth===0?'high':'low');}});
   }
 }
 function forestCamera(){const pose=journeyCameraPose();return {...pose,c:Math.cos(pose.yaw),s:Math.sin(pose.yaw)};}
 function forestCameraVertex(point,cam=forestWorldFrame.camera){
   const dx=point[0]-cam.x,dz=point[2]-cam.z;
-  return {x:dx*cam.c-dz*cam.s,y:point[1],z:FOREST_WORLD.follow+dx*cam.s+dz*cam.c};
+  const depth=FOREST_WORLD.follow+dx*cam.s+dz*cam.c;
+  return {x:dx*cam.c-dz*cam.s+forestBend(depth),y:point[1],z:depth};
 }
 function forestProjectCamera(p){
   /* Preserve the rider contact at z=14, but converge to ONE true horizon.
@@ -55624,6 +56134,9 @@ function forestFlush(front=false){
     /* Cover subpixel cracks between adjacent opaque ground/model faces. */
     g.strokeStyle=face.fill;g.lineWidth=.45;g.stroke();
   }forestWorldFrame.faceCount+=faces.length;faces.length=0;
+  if(!front)for(const [part,lastFrame] of forestCloseSprites){
+    if(lastFrame!==forestWorldFrame){part.close=null;forestCloseSprites.delete(part);}
+  }
 }
 function forestRoutePoint(x,h,z,side=false){
   return side?[-JOURNEY_LANE_WORLD-z,h,JOURNEY_FORK_DISTANCE-5+x]:[x,h,z];
@@ -55986,7 +56499,7 @@ function forestStylizedGround(){
       z0=Math.floor(zBottom/2)*2,t=(zBottom-z0)/2,half=viewportWidth/2,cx=camera.x,
       last=start+Math.ceil((dist+900-start)/2)*2-2;
     context.fillStyle='#493b26';context.beginPath();
-    const point=(x,z)=>{const depth=z+origin;context.lineTo(half+(x-cx)*525/depth,horizon+rise/depth);};
+    const point=(x,z)=>{const depth=z+origin;context.lineTo(half+(x-cx+forestBend(depth))*525/depth,horizon+rise/depth);};
     const edge=bank(z0,-1)*(1-t)+bank(z0+2,-1)*t;
     context.moveTo(half+(edge-cx)*525/(zBottom+origin),bottom);
     for(let z=z0+2;z<=last;z+=2)point(bank(z,-1),z);
@@ -56021,9 +56534,11 @@ function forestStylizedGround(){
         if(!straight){paint([[x,z],[x+w,z],[x+w,z+h],[x,z+h]],color);continue;}
         const d1=z+h+originZ;if(d1<minDepth)continue;
         const xa=x-originX,xb=xa+w,worldHalf=half*d1/525;
-        if(xb < -worldHalf||xa>worldHalf)continue;
+        if(!forestCorridor&&(xb < -worldHalf||xa>worldHalf))continue;
         const rawDepth=z+originZ,d0=rawDepth<minDepth?minDepth:rawDepth,s0=525/d0,s1=525/d1,
-          l0=half+xa*s0,r0=half+xb*s0,l1=half+xa*s1,r1=half+xb*s1;
+          bend0=forestBend(d0),bend1=forestBend(d1),
+          l0=half+(xa+bend0)*s0,r0=half+(xb+bend0)*s0,l1=half+(xa+bend1)*s1,r1=half+(xb+bend1)*s1;
+        if((r0<0&&r1<0)||(l0>viewportWidth&&l1>viewportWidth))continue;
         const y0=horizon+rise/d0,y1=horizon+rise/d1;
         context.moveTo(l0,y0);context.lineTo(r0,y0);context.lineTo(r1,y1);context.lineTo(l1,y1);context.closePath();
         visible=true;
@@ -56044,7 +56559,7 @@ function forestStylizedGround(){
       for(let i=0;i<vertices.length;i+=2){
         const dx=vertices[i]-cam.x,dz=vertices[i+1]-cam.z,
           depth=FOREST_WORLD.follow+dx*cam.s+dz*cam.c;
-        const scale=525/depth,px=half+(dx*cam.c-dz*cam.s)*scale,
+        const scale=525/depth,px=half+(dx*cam.c-dz*cam.s+forestBend(depth))*scale,
           py=horizon+rise/depth;
         if(i===0)context.moveTo(px,py);else context.lineTo(px,py);
       }
@@ -56263,7 +56778,25 @@ function drawForestWorld(){
   forestFlush();
 }
 let firstRenderPending=true;
+const forestTreeGalleryMode=new URLSearchParams(location.search).has('treegallery');
+function drawForestTreeGallery(skin=0){
+  g.setTransform(1,0,0,1,0,0);g.fillStyle='#101b16';g.fillRect(0,0,cvs.width,cvs.height);
+  g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  g.fillStyle='#e6dfc3';g.textAlign='center';g.font='bold 19px sans-serif';g.fillText('ORMAN · AĞAÇ AİLESİ',VW/2,28);
+  g.font='11px sans-serif';g.fillStyle='#a8b6a4';g.fillText('12 sabit model · sade gövde · farklı siluetler',VW/2,47);
+  for(let i=0;i<forestTreeNames.length;i++){
+    const x=6+(i%3)*158,y=62+Math.floor(i/3)*183,rootX=x+65,rootY=y+156,s=.16;
+    g.fillStyle='#1e2c22';g.fillRect(x,y,152,176);
+    g.save();g.beginPath();g.rect(x,y,152,158);g.clip();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+    const art=forestGiantArt((i+[.1,.45,.85][skin%3])/forestTreeNames.length,-1);
+    for(const part of [art[0],...art.slice(2),art[1]]){
+      g.save();g.translate(rootX,rootY);g.scale(s*part.mirror,s);part.paint(g);g.restore();
+    }
+    g.restore();g.fillStyle='#ded6b9';g.font='11px sans-serif';g.textAlign='left';g.fillText((i+1)+' · '+forestTreeNames[i],x+5,y+171);
+  }
+}
 function render(){
+  if(forestTreeGalleryMode){drawForestTreeGallery(Math.max(0,Math.min(2,Number(new URLSearchParams(location.search).get('plants'))||0)));return;}
   worldFxShakeX=0;worldFxShakeY=0;
   const stage=BIO(),newForest=forestWorldEnabled();
   g.setTransform(1,0,0,1,0,0);
@@ -56433,6 +56966,7 @@ let hadFocus=true;
 let debugFps=60;
 function frame(now){
   requestAnimationFrame(frame);
+  if(forestPreparing){lastTime=now;return;}
   const gap=(now-lastTime)/1000;
   if(gap>0&&gap<.6) debugFps=lerp(debugFps,1/gap,.08);
   /* watchdog: a long frame gap means the browser suspended us — freeze the run.
@@ -56725,6 +57259,9 @@ cvs.dataset.skillTreeSpreadAudit=SKILL_TREE_DESIGN_AUDIT.formSpread.toFixed(2)+'
   SKILL_TREE_DESIGN_AUDIT.spectrum.fromOrigin.join('.');
 }
 requestAnimationFrame(frame);
+if(typeof Image!=='undefined'&&!forestTreeGalleryMode){
+  setInterval(()=>{if(forestCorridor&&!forestPreparing)prepareForestBaked();},750);
+}
 bootCheckpoint('script-complete');
 if(BOOT_PROFILE_ENABLED)document.title='KR_BOOT '+BOOT_PROFILE.join('|');
 </script>

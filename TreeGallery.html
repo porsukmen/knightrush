@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knight Rush · Ağaç Galerisi</title>
+<style>html,body{margin:0;height:100%;background:#101b16;color:#ded6b9;font:14px system-ui}main{height:100%;display:flex;flex-direction:column}header{text-align:center;padding:8px;flex:none}a{color:#b6c9a6}iframe{border:0;display:block;flex:none}#viewport{overflow:auto;flex:1;min-height:0}button{background:#2d412e;color:#ded6b9;border:1px solid #6e8056;padding:5px 12px;cursor:pointer}label{display:inline-block;margin:7px}input{vertical-align:middle}</style>
+<main><header><a href="KnightRush.html">Oyun</a> · <a target="trees" href="KnightRush.html?treegallery=1&plants=0">Sade</a> · <a target="trees" href="KnightRush.html?treegallery=1&plants=1">Yosun</a> · <a target="trees" href="KnightRush.html?treegallery=1&plants=2">Sarmaşık</a></header>
+<header><button id="less" aria-label="Uzaklaştır">−</button><label>Zoom <input id="zoom" type="range" min="1" max="5" step=".25" value="1"><output id="amount">100%</output></label><button id="more" aria-label="Yakınlaştır">+</button><button id="reset">Sığdır</button><div>Yakınlaştırınca aşağı/yana kaydırarak detayları inceleyebilirsin.</div></header>
+<div id="viewport"><iframe id="gallery" name="trees" src="KnightRush.html?treegallery=1&plants=2" title="On iki ağaç modelinin karşılaştırması"></iframe></div></main>
+<script>
+const zoom=document.getElementById('zoom'),frame=document.getElementById('gallery'),viewport=document.getElementById('viewport');
+function resize(){const base=Math.min(viewport.clientWidth/480,viewport.clientHeight/800),scale=base*Number(zoom.value);
+frame.style.width=Math.round(480*scale)+'px';frame.style.height=Math.round(800*scale)+'px';document.getElementById('amount').textContent=Math.round(zoom.value*100)+'%';}
+zoom.addEventListener('input',resize);
+for(const [id,delta] of [['less',-.5],['more',.5]])document.getElementById(id).onclick=()=>{zoom.value=Math.max(1,Math.min(5,Number(zoom.value)+delta));resize()};
+document.getElementById('reset').onclick=()=>{zoom.value=1;resize();viewport.scrollTo(0,0)};
+window.addEventListener('resize',resize);resize();
+</script></html>
