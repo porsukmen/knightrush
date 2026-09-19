@@ -17,13 +17,24 @@ const sandbox={console,document,localStorage:{getItem:()=>null,setItem:noop},
   addEventListener:noop,removeEventListener:noop,AudioContext:function(){},Uint8ClampedArray};
 sandbox.window=sandbox;sandbox.globalThis=sandbox;sandbox.visualViewport=null;
 const source=fs.readFileSync('KnightRush.html','utf8').match(/<script>([\s\S]*?)<\/script>/i)[1];
-vm.createContext(sandbox);vm.runInContext(source,sandbox,{timeout:30000});
+vm.createContext(sandbox);
+if(process.env.KNIGHT_AUDIT_SEED)vm.runInContext(`Math.random=(()=>{
+  let seed=${Number(process.env.KNIGHT_AUDIT_SEED)>>>0};
+  return ()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+})();`,sandbox);
+vm.runInContext(source,sandbox,{timeout:30000});
 const out=path.resolve('output/journey-ground-qa');fs.mkdirSync(out,{recursive:true});
 function shot(name,setup){vm.runInContext(setup+';render();',sandbox,{timeout:10000});
   fs.writeFileSync(path.join(out,name+'.png'),canvas.toBuffer('image/png'));}
 module.exports={sandbox,canvas,shot,out,run:code=>vm.runInContext(code,sandbox,{timeout:10000})};
 if(require.main===module){
 vm.runInContext("debugRun=false;godMode=false;startRun(0);runJourneyPrototype=true;journey=createJourneyState();",sandbox);
+vm.runInContext(`
+  if(forestWorldEnabled())throw new Error('Journey must use the original map renderer');
+  forestCorridor={};
+  if(!forestWorldEnabled())throw new Error('FOREST TEST lost its experimental renderer');
+  forestCorridor=null;
+`,sandbox);
 // The incoming treeline already exists before the swipe. Compare the actual
 // depth-sorted tree pixels on both sides of the turn's START boundary.
 vm.runInContext(`
@@ -306,6 +317,7 @@ for(const distance of [30,115,153]){
     for(let i=3;i<frame.length;i+=4)if(frame[i])throw new Error('Distant mouth was not culled');}
 }
 console.log('JOURNEY_PIXELS_OK full-width road identical; frames: '+out);
+if(process.argv.includes('--classic-only'))process.exit(0);
 // The new forest renderer has one pinhole camera for ALL ground contacts.
 vm.runInContext(`
   dist=153;runJourneyPrototype=true;journey=createJourneyState();
