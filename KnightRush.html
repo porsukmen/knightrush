@@ -75,7 +75,7 @@ const CFG = {
   SPEED_LOG_RATE  : 0.22,  // bends noticeably around cycle 10 without imposing a hard speed cap
   Z_FAR           : 60,    // draw/spawn horizon distance
   FOCAL           : 14,    // perspective focal length (smaller = more dramatic 3D)
-  LOOP_DIST       : 1323,  // loop-1 distance; stageDistance() scales this to preserve ride time
+  LOOP_DIST       : 1323*1.5,  // longer boss approach; stageDistance scales with pace
 
   /* --- player --- */
   JUMP_TIME       : 0.52,  // seconds airborne (snappy — back-to-back jumps now chain)
@@ -725,7 +725,7 @@ const SKILL_LAB_SPEED_SLIDER=Object.freeze({x:118,y:446,w:244,h:36,min:.65,max:1
    even when safe-area translation moves the rest of the HUD. Keep its tap target
    in that final screen space so tall-phone padding cannot desynchronise input. */
 const KNIGHT_RUSH_BTN={x:VW/2-147,y:VH-43,w:294,h:25};
-const GAMEPLAY_MODES=['run','boss','miniboss','bossintro'];
+const GAMEPLAY_MODES=['run','boss','miniboss','bossintro','journeyevent'];
 let settingsOpen=false;        // the settings sheet floats over the menu OR the pause screen
 let pausePhotoMode=false;      // hides pause chrome but deliberately keeps simulation frozen
 function activeBearTurntableLab(){
@@ -903,6 +903,7 @@ function handleAction(a,pt,parryIntent=null){
      && pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop){
     paused=true; pausePhotoMode=false;cancelMinigameGestures(); return;
   }
+  if(handleJourneyRoadEventAction(a,pt))return;
   if(handleMinigameAction(a,pt))return;
   if(a==='tap'&&pt&&activeBearTurntableLab()
      &&pt.x>BEAR_MOUTH_BTN.x&&pt.x<BEAR_MOUTH_BTN.x+BEAR_MOUTH_BTN.w
@@ -7179,7 +7180,14 @@ function drawObstacle(o,pIn){
   g.globalAlpha=worldA;
   const S=linS(p.t)*1.6, y=p.y;
   const xl=laneX(Math.min(...lanes)-0.44,p.t), xr=laneX(Math.max(...lanes)+0.44,p.t);
-  if(o.type.id==='pond'){
+  if(o.roadTheme==='disco'){
+    if(o.kind==='pond'){
+      g.beginPath();g.rect(-8,HORIZON_Y,VW+16,VH-HORIZON_Y+PAD_BOT);g.clip();
+    }
+    const zc=Math.min(zEff,CFG.Z_FAR);
+    drawDiscoRoadObstacle(o,p,S,(proj(zc-1.05).y-proj(zc+1.05).y)/2);
+  }
+  else if(o.type.id==='pond'){
     /* flat, so it also slides in THROUGH the horizon line, clipped to the ground */
     g.beginPath(); g.rect(-8,HORIZON_Y,VW+16,VH-HORIZON_Y+PAD_BOT); g.clip();
     const zc=Math.min(zEff,CFG.Z_FAR);
@@ -7198,6 +7206,110 @@ function drawObstacle(o,pIn){
   }
   else o.type.draw(o,xl,xr,y,S,lanes,p);
   g.restore(); worldA=1; g.globalAlpha=1;
+}
+/* Disco skins keep the original type, lane demands and relic interactions.
+   Paint each occupied lane separately: a safe lane must remain visibly open. */
+const DISCO_OBSTACLE_REASONS={
+  boulder:'A fallen speaker knocked you from the saddle',
+  root:'A stage cable swept you from the saddle',
+  pond:'Your horse slipped in spilled grape soda'
+};
+function drawDiscoRoadObstacle(o,p,S,ry){
+  for(const lane of o.lanes){
+    const left=laneX(lane-.44,p.t),right=laneX(lane+.44,p.t),w=right-left;
+    g.save();g.translate(left,p.y);g.scale(S,S);
+    const W=w/S;
+    if(o.kind==='boulder'){
+      // Fallen amp on its long side: steel corners, woven grille and two cones.
+      g.fillStyle='#11141d';g.fillRect(-2,-26,W+4,28);
+      g.fillStyle='#49485e';g.beginPath();g.moveTo(0,-26);g.lineTo(7,-33);
+      g.lineTo(W-5,-33);g.lineTo(W,-26);g.fill();
+      g.fillStyle='#727083';g.fillRect(W*.4,-33,W*.2,2);
+      g.fillStyle='#343440';g.fillRect(2,-24,W-4,23);
+      g.fillStyle='#242631';
+      for(let x=5;x<W-3;x+=5)g.fillRect(x,-22,2,19);
+      for(const cx of [W*.28,W*.72]){
+        g.fillStyle='#0c111c';g.fillRect(cx-9,-22,18,18);
+        g.fillStyle='#686579';g.fillRect(cx-7,-21,14,2);g.fillRect(cx-8,-19,2,11);
+        g.fillStyle='#393a50';g.fillRect(cx-6,-18,12,11);
+        g.fillStyle='#131925';g.fillRect(cx-3,-15,6,6);
+      }
+      g.fillStyle='#949098';
+      for(const x of [0,W-5]){g.fillRect(x,-26,5,4);g.fillRect(x,-3,5,4);}
+      g.fillStyle='#d69d67';g.fillRect(W*.47,-25,W*.08,3);
+      g.fillStyle='#15131d';g.fillRect(W*.5-5,-30,10,2);
+    }else if(o.kind==='root'){
+      const duck=o.req[lane]==='duck';
+      if(duck){
+        // Two road-rig uprights suspend a sagging cable at the root clearance.
+        g.fillStyle='#252433';g.fillRect(-3,-89,5,89);g.fillRect(W-2,-89,5,89);
+        g.fillStyle='#625769';g.fillRect(-3,-89,2,86);g.fillRect(W-2,-89,2,86);
+        for(const x of [-4,W-3]){
+          g.fillStyle='#dca966';g.fillRect(x,-37,7,4);g.fillRect(x,-28,7,4);
+          g.fillStyle='#14151f';g.fillRect(x-3,-1,13,3);
+        }
+        for(let strand=0;strand<3;strand++){
+          g.beginPath();g.moveTo(-1,-82+strand*4);g.lineTo(W*.2,-69+strand*4);
+          g.lineTo(W*.42,-62+strand*4);g.lineTo(W*.65,-61+strand*4);
+          g.lineTo(W*.84,-71+strand*4);g.lineTo(W+1,-82+strand*4);
+          g.strokeStyle='#121422';g.lineWidth=6;g.stroke();
+          g.strokeStyle=strand===1?'#be68ad':'#6d6589';g.lineWidth=2;g.stroke();
+        }
+        g.fillStyle='#282938';g.fillRect(W*.49,-64,12,14);
+        g.fillStyle='#d8b477';g.fillRect(W*.49+2,-62,3,10);
+      }else{
+        // Heavy coiled leads, not a thin line that looks safe to run through.
+        for(let row=0;row<3;row++){
+          g.beginPath();g.moveTo(1,-2-row*4);g.lineTo(W*.17,-8-row*4);
+          g.lineTo(W*.42,-3-row*4);g.lineTo(W*.68,-7-row*4);g.lineTo(W-2,-2-row*4);
+          g.strokeStyle='#121421';g.lineWidth=7;g.stroke();
+          g.strokeStyle=row===1?'#9a648d':'#6d718a';g.lineWidth=2;g.stroke();
+        }
+        for(const x of [W*.18,W*.69]){
+          g.fillStyle='#292c39';g.fillRect(x,-17,13,15);
+          g.fillStyle='#a5abb1';g.fillRect(x+2,-16,3,13);
+          g.fillStyle='#d4ad69';g.fillRect(x+13,-13,4,3);g.fillRect(x+13,-7,4,3);
+        }
+      }
+    }else if(o.kind==='pond'){
+      const R=Math.max(2,ry/S);
+      // A stepped, irregular spill (not another square dance-floor tile).
+      const spill=(inset,color)=>{
+        g.fillStyle=color;g.beginPath();
+        for(const [i,point] of [[.04,-.2],[.11,-.7],[.27,-.7],[.32,-1],[.6,-.9],
+          [.7,-.62],[.88,-.7],[.97,-.2],[.91,.36],[.77,.36],[.69,.88],
+          [.48,1],[.37,.72],[.17,.8],[.13,.35],[.04,.35]].entries()){
+          const x=W*.5+(point[0]-.5)*(W-inset*2),y=point[1]*(R-inset*.3);
+          if(i)g.lineTo(x,y);else g.moveTo(x,y);
+        }g.closePath();g.fill();
+      };
+      spill(0,'#2c153c');spill(2,'#70368f');spill(7,'#9244ad');
+      g.fillStyle='#b66fce';g.fillRect(W*.19,-R*.45,W*.23,2);
+      g.fillRect(W*.53,R*.48,W*.17,2);
+      g.fillStyle='#ce9fdd';g.fillRect(W*.22,-R*.45,5,1);
+      for(let b=0;b<5;b++){
+        const x=W*(.2+sRnd(o.seed+b*19)*.55),y=R*(-.5+sRnd(o.seed+b*31)*1.1);
+        g.fillStyle='#562871';g.fillRect(x,y,3,3);
+        g.fillStyle='#d5a7e4';g.fillRect(x,y,2,1);
+      }
+      // Empty ribbed 2 L PET bottle lying beside the spill; pale transparent
+      // body, purple grape-soda wrapper and an open neck pointing at the liquid.
+      g.save();g.translate(W-23,-R-2);g.rotate(-.18);
+      g.fillStyle='#192331';g.fillRect(-8,-4,28,11);
+      g.fillStyle='#607b86';g.fillRect(-5,-5,24,10);g.fillRect(-8,-3,3,6);
+      g.fillStyle='#a4bdc4';g.fillRect(-4,-4,21,2);g.fillRect(17,-3,3,7);
+      g.fillStyle='#344750';g.fillRect(-4,-1,21,5);
+      for(const x of [-3,0,14,17]){g.fillStyle='#78939d';g.fillRect(x,-3,1,7);}
+      g.fillStyle='#b777d0';g.fillRect(3,-4,10,9);
+      g.fillStyle='#733a96';g.fillRect(3,1,10,4);
+      g.fillStyle='#eee4bc';g.font='bold 3px monospace';g.textAlign='center';
+      g.fillText('GAZOZ',8,0);g.fillText('2L',8,4);
+      g.fillStyle='#a6c0c5';g.fillRect(-13,-2,5,4);
+      g.fillStyle='#26323d';g.fillRect(-14,-1,2,2);
+      g.fillStyle='#ad6dc4';g.fillRect(-18,5,4,3);g.restore();
+    }
+    g.restore();
+  }
 }
 /* per-biome obstacle skins: same shapes, native materials */
 const OBS_PAL={
@@ -7735,7 +7847,8 @@ const STAGE_DEFINITIONS=[
     bg:()=>{ drawBackground();
       if(runJourneyPrototype&&journey&&['turning','settling'].includes(journey.phase))
         drawJourneyTurningRoadSystem();
-      else{drawJourneyCurrentRoad();if(runJourneyPrototype)drawJourneyRouteSystem();} },
+      else{drawJourneyCurrentRoad();if(runJourneyPrototype)drawJourneyRouteSystem();}
+      drawJourneyDiscoGround(); },
     arena:drawCave,
     scenery:drawTree,
     atmosphereId:'forest', sceneryProfileId:'standard', obstaclePoolId:'classic',
@@ -8987,15 +9100,18 @@ function drawCave(){
   /* (no drifting motes, no mid-air drips — nothing floats in the lair) */
 }
 function drawBackground(){
+  const disco=journeyForestDiscoAt(dist)*journeyDiscoReveal(journeyForestDiscoEntryAt(dist)),blend=Math.round(disco*24)/24;
+  const forestColor=(normal,special)=>blend?mixCol(normal,special,blend):normal;
   /* the sky is swallowed by canopy — only one opening in the trees, dead ahead,
      lets the full moon through. everything else is deep, close, dark forest.  */
-  g.fillStyle='#05070c'; g.fillRect(0,-PAD_TOP,VW,HORIZON_Y+60+PAD_TOP);
+  g.fillStyle=forestColor('#05070c','#100b19'); g.fillRect(0,-PAD_TOP,VW,HORIZON_Y+60+PAD_TOP);
   /* the opening: a soft clearing of night sky around the moon */
   const mx=VW*0.56, my=118;
   g.save();
   g.beginPath(); g.ellipse(mx,my,118,86,0,0,TAU); g.clip();
   const sky=g.createRadialGradient(mx,my,10,mx,my,130);
-  sky.addColorStop(0,'#233052'); sky.addColorStop(.6,'#141b33'); sky.addColorStop(1,'#080b16');
+  sky.addColorStop(0,forestColor('#233052','#302b50'));
+  sky.addColorStop(.6,forestColor('#141b33','#21182f'));sky.addColorStop(1,forestColor('#080b16','#110c1c'));
   g.fillStyle=sky; g.fillRect(mx-130,my-100,260,200);
   /* pixel plus-shaped stars scattered near the moon */
   const stars=[[-86,-38],[-58,22],[74,-30],[96,14],[-24,-58],[52,-62],[30,44]];
@@ -9016,17 +9132,18 @@ function drawBackground(){
   g.fillRect(mx+8,my-12,4,4); g.fillRect(mx-16,my+4,4,4);
   g.restore();
   /* canopy: ragged leaf-mass silhouettes crowd in around the opening */
-  drawCanopy(mx,my);
+  drawCanopy(mx,my,blend);
   /* near-black parallax tree walls below the canopy */
-  drawRidge(HORIZON_Y+14, 74, '#0a0f0d', dist*0.10);
-  drawRidge(HORIZON_Y+22, 52, '#0d1410', dist*0.22);
+  drawRidge(HORIZON_Y+14, 74, forestColor('#0a0f0d','#171027'), dist*0.10);
+  drawRidge(HORIZON_Y+22, 52, forestColor('#0d1410','#221733'), dist*0.22);
   /* forest floor */
   const ground=g.createLinearGradient(0,HORIZON_Y,0,VH);
-  ground.addColorStop(0,'#131e17'); ground.addColorStop(.4,'#152218'); ground.addColorStop(1,'#0a130d');
+  ground.addColorStop(0,forestColor('#131e17','#22192e'));
+  ground.addColorStop(.4,forestColor('#152218','#291d35'));ground.addColorStop(1,forestColor('#0a130d','#100e1c'));
   g.fillStyle=ground; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
 }
-let canopyCache=null, canopyCachePad=-1, canopyCacheQ=-1;   // rebuilt on pad/scale change
-function drawCanopy(mx,my){
+let canopyCache=null, canopyCachePad=-1, canopyCacheQ=-1,canopyDiscoCache=null;   // rebuilt on pad/scale change
+function drawCanopy(mx,my,disco=0){
   /* the forest is CLAD in darkness: a solid leaf-mass ceiling covers the WHOLE sky
      (however tall the screen), parted only by one ragged clearing where the full
      moon and its stars look through. */
@@ -9036,6 +9153,7 @@ function drawCanopy(mx,my){
      it every frame (a big win on older phones); only the swaying fringe is live */
   const capTop=-4-PAD_TOP, capH=Math.ceil(skyB+42-capTop);
   if(!canopyCache||canopyCachePad!==PAD_TOP||canopyCacheQ!==viewScale){
+    canopyDiscoCache=null;
     canopyCachePad=PAD_TOP; canopyCacheQ=viewScale;
     /* build at DEVICE resolution (viewScale = device px per logical unit), so the
        blitted ceiling is as crisp as everything drawn live — no low-res look */
@@ -9096,8 +9214,19 @@ function drawCanopy(mx,my){
     g=gMain;                                   // cache built — back to the screen
   }
   g.drawImage(canopyCache,0,capTop,VW,capH);   // the whole static ceiling in ONE blit
+  if(disco>0){
+    // A second cached palette, not a per-frame rebuild or screen-wide filter.
+    if(!canopyDiscoCache){
+      canopyDiscoCache=document.createElement('canvas');
+      canopyDiscoCache.width=canopyCache.width;canopyDiscoCache.height=canopyCache.height;
+      const ctx=canopyDiscoCache.getContext('2d');ctx.drawImage(canopyCache,0,0);
+      ctx.globalCompositeOperation='source-atop';ctx.globalAlpha=.5;
+      ctx.fillStyle='#21142d';ctx.fillRect(0,0,canopyDiscoCache.width,canopyDiscoCache.height);
+    }
+    g.save();g.globalAlpha=disco;g.drawImage(canopyDiscoCache,0,capTop,VW,capH);g.restore();
+  }
   /* darker hanging fringe along the very top (hangs from the true screen top) */
-  g.fillStyle='#060b08';
+  g.fillStyle=disco?mixCol('#060b08','#130e1c',disco):'#060b08';
   for(let x=0;x<VW;x+=12){
     const drop=18+sRnd(x)*30 + Math.sin((x+dist*2)*0.05)*4;
     g.fillRect(x,-PAD_TOP,12,drop+PAD_TOP);
@@ -9206,12 +9335,16 @@ function drawRoad(){
 }
 /* huge forest trees with barked, mossy trunks and layered leaf masses —
    the knight should feel SMALL passing beneath them */
-function drawTree(x,y,s,v){
+function drawTree(x,y,s,v,disco=0){
   g.save(); g.translate(x,y); g.scale(s,s);
   const R=k=>sRnd(v*997.3+k*17.77);                  // deterministic per-tree jitter
   const vr=(v*4|0)%4;                                // FOUR distinct silhouettes
-  const dark=v>0.5?'#101f14':'#0c1a10', mid=v>0.5?'#16281a':'#122215', hi='#1d3320';
-  const bark='#241a10', barkL='#2f2315', barkD='#191108', moss='#31502e', mossL='#3e6338';
+  const blend=Math.round(clamp(disco,0,1)*24)/24;
+  const tint=(normal,special)=>blend?mixCol(normal,special,blend):normal;
+  const dark=tint(v>.5?'#101f14':'#0c1a10',v>.5?'#2e1c46':'#241d3c'),
+    mid=tint(v>.5?'#16281a':'#122215',v>.5?'#513567':'#3d3256'),hi=tint('#1d3320','#765389');
+  const bark=tint('#241a10','#2c1c28'),barkL=tint('#2f2315','#4f3347'),barkD=tint('#191108','#19101e'),
+    moss=tint('#31502e','#4c405d'),mossL=tint('#3e6338','#786080');
   const lean=(R(1)-0.5)*16;                          // every tree leans its own way
   /* one leaf mass: chunky offset rects + dithered rim (never centered) */
   const blob=(cx,cy,w,h,c)=>{
@@ -9327,8 +9460,8 @@ function createJourneyState(cornerDistance=JOURNEY_FORK_DISTANCE,direction=-1,au
   oldObstacles:[],oldPickups:[],nextSideTree:5};}
 function journeyActiveRoad(){return runJourneyPrototype&&journey&&
   ['turning','settling','branch'].includes(journey.phase);}
-/* Seeded, forward-only route graph. The map is schematic: scene coordinates
-   rebase after a junction, while every graph edge shares the stage odometer. */
+/* Seeded roads carry independent world positions and relative headings. Scene
+   coordinates rebase at junctions; every route shares the stage distance budget. */
 let pendingJourneySeed=null,journeyRunSeed=null;
 function journeyRandom(seed){
   let s=seed>>>0;
@@ -9339,45 +9472,627 @@ function newJourneySeed(){
   if(typeof crypto!=='undefined'&&crypto.getRandomValues)return crypto.getRandomValues(new Uint32Array(1))[0];
   return (Date.now()^Math.floor(Math.random()*4294967296))>>>0;
 }
+const JOURNEY_JUNCTION_PATTERNS=Object.freeze([
+  {id:'straight',directions:[0],weight:30},
+  {id:'right',directions:[1],weight:10},
+  {id:'left',directions:[-1],weight:10},
+  {id:'left-right',directions:[-1,1],weight:10},
+  {id:'left-straight',directions:[-1,0],weight:17},
+  {id:'straight-right',directions:[0,1],weight:17},
+  {id:'three-way',directions:[-1,0,1],weight:6}
+].map(p=>Object.freeze({...p,directions:Object.freeze(p.directions)})));
+function pickJourneyJunction(random,patterns=JOURNEY_JUNCTION_PATTERNS){
+  let roll=random()*patterns.reduce((sum,p)=>sum+p.weight,0);
+  for(const pattern of patterns){roll-=pattern.weight;if(roll<0)return pattern;}
+  return patterns[patterns.length-1];
+}
 function generateJourneyGraph(seed,total,stage=1){
-  const random=journeyRandom((seed^Math.imul(stage,0x9E3779B1))>>>0),nodes=[],layers=[];
-  const lengthRandom=journeyRandom((seed^Math.imul(stage,0x85EBCA6B))>>>0);
-  const weights=Array.from({length:6},()=>.15+lengthRandom()**2),weightSum=weights.reduce((a,b)=>a+b,0);
-  const fractions=[0];
-  for(const weight of weights)fractions.push(fractions[fractions.length-1]+.09+.46*weight/weightSum);
-  fractions[6]=1;
-  for(let row=0;row<fractions.length;row++){
-    const layer=[],cols=row<2||row===6?[1]:[0,1,2];
-    for(const col of cols){
-      const at=row===0?0:row===6?total:Math.round(total*(fractions[row]+(random()-.5)*.035));
-      // Reserve the former encounter roll so existing seeds keep their roads.
-      // The route-only trial has no minigame or intermediate fight nodes.
-      if(row===2||row===3||row===5)random();
-      const type=row===0?'start':row===6?'boss':'road';
-      const n={id:row===0?'start':row===6?'boss':row+'-'+col,row,col,at,type,
-        x:90+col*150,y:642-row*76,out:[],visited:row===0,result:null};
-      nodes.push(n);layer.push(n);
+  const random=journeyRandom((seed^Math.imul(stage,0x9E3779B1))>>>0);
+  const nodes=[],segments=[],scale=total/1984.5,minLength=150*scale,maxLength=300*scale;
+  const clearance=28*scale,vectors=[[0,-1],[1,0],[0,1],[-1,0]];
+  let serial=0,attempts=0;
+  const start={id:'start',row:0,at:0,baseAt:0,type:'start',worldX:0,worldY:0,heading:0,
+    out:[],visited:true,result:null};nodes.push(start);
+  const near=(a,b)=>Math.abs(a.worldX-b.worldX)<.0001&&Math.abs(a.worldY-b.worldY)<.0001;
+  const clear=(a,b)=>{
+    for(const s of segments){
+      // Adjacent edges meet at a real junction. No U-turn is offered, so these
+      // shared endpoints cannot cause a collinear backtracking overlap.
+      if(near(a,s.a)||near(a,s.b))continue;
+      const dx=Math.max(0,Math.min(a.worldX,b.worldX)-Math.max(s.a.worldX,s.b.worldX),
+        Math.min(s.a.worldX,s.b.worldX)-Math.max(a.worldX,b.worldX));
+      const dy=Math.max(0,Math.min(a.worldY,b.worldY)-Math.max(s.a.worldY,s.b.worldY),
+        Math.min(s.a.worldY,s.b.worldY)-Math.max(a.worldY,b.worldY));
+      if(Math.hypot(dx,dy)<clearance)return false;
     }
-    layers.push(layer);
+    return true;
+  };
+  function grow(node){
+    if(node.type==='boss')return true;
+    const remaining=total-node.baseAt;
+    const candidates=node.type==='start'?[JOURNEY_JUNCTION_PATTERNS[0]]:
+      JOURNEY_JUNCTION_PATTERNS.filter(p=>nodes.length<=80||p.directions.length===1);
+    const fallbackPieces=[];
+    while(candidates.length&&attempts<800){
+      const pattern=pickJourneyJunction(random,candidates);
+      candidates.splice(candidates.indexOf(pattern),1);
+      const patternNodes=nodes.length,patternSegments=segments.length;
+      // Prefer a complete piece; any fallback must record its actual pattern.
+      // Random construction order avoids favouring left branches for free space.
+      const directions=pattern.directions.map(direction=>({direction,key:random()}))
+        .sort((a,b)=>a.key-b.key).map(x=>x.direction);
+      for(const direction of directions){
+        let connected=false;
+        for(let attempt=0;attempt<5;attempt++){
+          if(++attempts>800)break;
+          const terminal=remaining<=maxLength*1.4;
+          const baseLength=terminal?remaining:Math.min(remaining-minLength,minLength+random()*(maxLength-minLength));
+          const nextId=(terminal?'boss-':'road-')+(++serial),edgeId=node.id+'>'+nextId;
+          const roadRandom=journeyRandom(journeyKeySeed(seed,'road:'+stage+':'+edgeId));
+          const special=node.type!=='start'&&!terminal&&baseLength>=140&&roadRandom()<JOURNEY_ROAD_RULES.specialChance;
+          const length=baseLength*(special?JOURNEY_ROAD_RULES.specialLengthScale:1);
+          const heading=(node.heading+direction+4)%4,[dx,dy]=vectors[heading];
+          const next={id:nextId,row:node.row+1,baseAt:terminal?total:node.baseAt+baseLength,
+            at:node.at+length,type:terminal?'boss':'road',
+            worldX:node.worldX+dx*length,worldY:node.worldY+dy*length,heading,
+            out:[],visited:false,result:null};
+          if(!clear(node,next))continue;
+          const nodeCount=nodes.length,segmentCount=segments.length;
+          const edge={id:edgeId,to:next.id,direction,heading,length,baseLength};
+          nodes.push(next);segments.push({a:node,b:next});
+          if(grow(next)){node.out.push(edge);connected=true;break;}
+          // A crowded child branch must not leave dangling geometry or event
+          // slots. Retry another length/direction at its parent instead.
+          nodes.length=nodeCount;segments.length=segmentCount;
+        }
+        if(!connected)break;
+      }
+      if(node.out.length===directions.length){
+        node.junction=pattern.id;node.out.sort((a,b)=>a.direction-b.direction);return true;
+      }
+      if(node.out.length){
+        const exits=node.out.slice().sort((a,b)=>a.direction-b.direction);
+        const viable=JOURNEY_JUNCTION_PATTERNS.find(p=>p.directions.join(',')===exits.map(e=>e.direction).join(','));
+        // Keep a proven complete alternative before rolling back. If the search
+        // budget runs out, do not throw away every successful route to the boss.
+        if(viable&&!fallbackPieces.some(p=>p.id===viable.id))fallbackPieces.push({
+          ...viable,nodes:nodes.slice(patternNodes),segments:segments.slice(patternSegments),exits});
+      }
+      nodes.length=patternNodes;segments.length=patternSegments;node.out=[];
+    }
+    if(fallbackPieces.length){
+      const viable=pickJourneyJunction(random,fallbackPieces);
+      nodes.push(...viable.nodes);segments.push(...viable.segments);
+      node.out=viable.exits;node.junction=viable.id;return true;
+    }
+    return false;
   }
-  for(let row=0;row<layers.length-1;row++)for(const node of layers[row]){
-    const candidates=layers[row+1].filter(n=>Math.abs(n.col-node.col)<=1);
-    // The entry always offers a real choice; subsequent nodes may be straight,
-    // a forced corner, left/right, or straight plus a corner.
-    let count=row===0?1:row===1?2:random()<.46?1:random()<.87?2:3;
-    const shuffled=candidates.map(n=>({n,key:random()})).sort((a,b)=>a.key-b.key);
-    node.out=shuffled.slice(0,Math.min(count,candidates.length)).map(({n})=>({
-      id:node.id+'>'+n.id,to:n.id,direction:Math.sign(n.col-node.col)
-    })).sort((a,b)=>a.direction-b.direction);
+  if(!grow(start)){
+    // Bounded generation: a pathological crowded seed still has a valid ride,
+    // rather than blocking the UI or leaving an unreachable terminal.
+    nodes.length=1;start.out=[];start.junction='straight';
+    const end={id:'boss-direct',row:1,at:total,baseAt:total,type:'boss',worldX:0,worldY:-total,
+      heading:0,out:[],visited:false,result:null};
+    nodes.push(end);start.out.push({id:'start>boss-direct',to:end.id,direction:0,heading:0,length:total,baseLength:total});
   }
-  // Remove unreachable nodes, not just their drawing. Every remaining node has
-  // a forward path to the single terminal boss by construction.
-  const reachable=new Set(),byId=new Map(nodes.map(n=>[n.id,n]));
-  const visit=id=>{if(reachable.has(id))return;reachable.add(id);byId.get(id).out.forEach(e=>visit(e.to));};
-  visit('start');
-  return {version:3,seed:seed>>>0,stage,total,nodes:nodes.filter(n=>reachable.has(n.id)),
-    status:'travel',from:'start',next:layers[1][0].id,armedId:null,pendingArm:false,
-    chosen:[],selection:null,event:null,bossAt:null};
+  const minX=Math.min(...nodes.map(n=>n.worldX)),maxX=Math.max(...nodes.map(n=>n.worldX));
+  const minY=Math.min(...nodes.map(n=>n.worldY)),maxY=Math.max(...nodes.map(n=>n.worldY));
+  const mapScale=Math.min(386/Math.max(1,maxX-minX),444/Math.max(1,maxY-minY));
+  for(const node of nodes){
+    node.x=240+(node.worldX-(minX+maxX)/2)*mapScale;
+    node.y=422+(node.worldY-(minY+maxY)/2)*mapScale;
+  }
+  return buildJourneyRoadPlan({version:7,seed:seed>>>0,stage,total,baseTotal:total,nodes,
+    mapBounds:{minX,maxX,minY,maxY,scale:mapScale},
+    status:'travel',from:'start',next:start.out[0].to,armedId:null,pendingArm:false,
+    chosen:[],selection:null,event:null,bossAt:null});
+}
+/* Road geography and encounter content are independent of junction generation.
+   Separate keyed random streams prevent event edits from rerolling the map. */
+const JOURNEY_ROAD_RULES=Object.freeze({specialChance:.20,continueChances:Object.freeze([.70,.45,.20]),
+  leadIn:64,normalExit:40,minPiece:36,normalEventChance:.35,specialLengthScale:3});
+const JOURNEY_ROAD_THEMES=Object.freeze({
+  forest:Object.freeze({id:'forest',kind:'normal',color:'#6ca477',label:'FOREST'}),
+  disco:Object.freeze({id:'disco',kind:'special',color:'#d58aff',label:'DISCO',finale:'disco_finale'}),
+  bloodwood:Object.freeze({id:'bloodwood',kind:'special',color:'#df7169',label:'ELITE',finale:'elite_finale'})
+});
+const JOURNEY_ROAD_EVENTS=Object.freeze({
+  roadside_quest:Object.freeze({id:'roadside_quest',kind:'normal',blocking:false}),
+  roadside_cache:Object.freeze({id:'roadside_cache',kind:'normal',blocking:false}),
+  disco_finale:Object.freeze({id:'disco_finale',kind:'special',blocking:true}),
+  elite_finale:Object.freeze({id:'elite_finale',kind:'special',blocking:true})
+});
+const journeyRoadEventHandlers=new Map();
+journeyRoadEventHandlers.set('disco_finale',{
+  start:context=>{
+    context.openMode(returnMode=>startDiscoDance('forest',returnMode));
+    context.game=discoGame;
+  },
+  returnResult:context=>({status:context.game.phase==='complete'?'completed':'skipped',
+    wins:context.game.wins,perfects:context.game.perfects}),
+  dispose:()=>{discoGame=null;}
+});
+let journeyRoadEventSession=null,journeyRoadSessionSerial=0;
+function journeyKeySeed(seed,key){
+  let h=seed>>>0;for(let i=0;i<key.length;i++)h=Math.imul(h^key.charCodeAt(i),16777619)>>>0;return h;
+}
+function buildJourneyRoadPlan(route){
+  const byId=new Map(route.nodes.map(n=>[n.id,n])),rules=JOURNEY_ROAD_RULES;
+  for(const node of route.nodes)for(const edge of node.out){
+    const end=byId.get(edge.to),length=end.at-node.at;
+    const random=journeyRandom(journeyKeySeed(route.seed,'road:'+route.stage+':'+edge.id));
+    const eventRandom=journeyRandom(journeyKeySeed(route.seed,'event:'+route.stage+':'+edge.id));
+    edge.pieces=[];edge.events=[];
+    const piece=(theme,start,finish,role,chance=null)=>{
+      const p={id:edge.id+':p'+edge.pieces.length,theme,kind:JOURNEY_ROAD_THEMES[theme].kind,
+        start,end:finish,role,continueChance:chance};edge.pieces.push(p);return p;
+    };
+    const slot=(definition,at,expiresAt,p)=>edge.events.push({id:edge.id+':'+definition,
+      definition,at,expiresAt,pieceId:p.id,theme:p.theme});
+    // No special region can swallow the boss exit or begin inside a turn.
+    const eligible=node.type!=='start'&&end.type!=='boss'&&(edge.baseLength??length)>=rules.leadIn+rules.normalExit+rules.minPiece;
+    const special=eligible&&random()<rules.specialChance;
+    if(special){
+      const theme=random()<.5?'disco':'bloodwood',lead=theme==='disco'?8:rules.leadIn,
+        exit=theme==='disco'?24:rules.normalExit,available=length-lead-exit;
+      const capacity=Math.min(4,Math.floor(available/rules.minPiece));let count=1;
+      while(count<capacity&&random()<rules.continueChances[count-1])count++;
+      piece('forest',node.at,node.at+lead,'entry');
+      for(let i=0;i<count;i++){
+        const p=piece(theme,node.at+lead+available*i/count,
+          node.at+lead+available*(i+1)/count,i===count-1?'finale':'continue',
+          rules.continueChances[i]??0);
+        if(i===count-1&&theme!=='disco')slot(JOURNEY_ROAD_THEMES[theme].finale,p.end-8,p.end,p);
+      }
+      if(theme==='disco'){
+        const at=Math.max(node.at+80,node.at+length*.52),p=edge.pieces.find(p=>at>=p.start&&at<p.end);
+        slot('disco_finale',at,p.end,p);
+      }
+      piece('forest',end.at-exit,end.at,'exit');
+    }else{
+      const p=piece('forest',node.at,end.at,'normal');
+      if(node.type!=='start'&&end.type!=='boss'&&length>110&&eventRandom()<rules.normalEventChance){
+        const definition=eventRandom()<.5?'roadside_quest':'roadside_cache';
+        slot(definition,node.at+64+eventRandom()*(length-110),end.at-30,p);
+      }
+    }
+    edge.preview={theme:edge.pieces.find(p=>p.kind==='special')?.theme||'forest',special};
+  }
+  route.activeEdge=byId.get('start').out[0].id;
+  route.eventRecords={};route.eventHistory=[];
+  route.total=journeyPlannedBossDistance(route);
+  return route;
+}
+function journeyPlannedBossDistance(route){
+  // Until a future choice is made, the HUD estimates straight / first exit.
+  // Special roads add real travel distance; normal roads keep their own length.
+  let node=route.nodes.find(n=>n.id===route.next);
+  while(node&&node.type!=='boss'){
+    const edge=node.out.find(e=>e.direction===0)||node.out[0];
+    node=route.nodes.find(n=>n.id===edge.to);
+  }
+  return node?node.at:route.baseTotal;
+}
+function journeyActiveEdge(route=journeyRoute){
+  if(!route)return null;
+  return route.nodes.find(n=>n.id===route.from)?.out.find(e=>e.id===route.activeEdge)||null;
+}
+function journeyRoadContext(){
+  const edge=journeyActiveEdge();if(!edge)return null;
+  const piece=edge.pieces.find(p=>dist<p.end)||edge.pieces[edge.pieces.length-1];
+  return {edge,piece,theme:JOURNEY_ROAD_THEMES[piece.theme]};
+}
+function journeyDiscoStrength(edge,at){
+  if(!edge||edge.preview.theme!=='disco')return 0;
+  const first=edge.pieces[0].start,last=edge.pieces[edge.pieces.length-1].end;
+  // World-distance envelope shared by trees, dance tiles and party props.
+  // Authored in world distance: decorated dirt first, purple woods farther in.
+  // Never depend on camera yaw, turn time or the moment this edge is selected.
+  const entry=smoothStep(clamp((at-first-30)/65,0,1));
+  return entry*smoothStep(clamp((last-at)/70,0,1));
+}
+function journeyForestDiscoAt(at){
+  return journeyDiscoStrength(journeyForestEdgeAt(at),at);
+}
+function journeyForestEdgeAt(at){
+  if(!journeyRoute||biome!=='forest'||env!=='forest')return null;
+  let edge=journeyActiveEdge(),node=journeyNode(journeyRoute.next);
+  // Preview only the physical straight continuation, never a different branch
+  // sharing the same odometer. Tree instances retain this value through turns.
+  while(node&&at>node.at){
+    edge=node.out.find(e=>e.direction===0);if(!edge)return null;
+    node=journeyNode(edge.to);
+  }
+  return edge;
+}
+function journeyForestDiscoEntryAt(at){
+  const edge=journeyForestEdgeAt(at);
+  return edge?.direction&&edge.preview.theme==='disco'?edge.id:null;
+}
+function journeyDiscoReveal(entryId){
+  // Kept as a compatibility hook; each location now owns its final palette.
+  return 1;
+}
+function journeyDiscoViewReveal(edge){
+  return journeyDiscoReveal(edge.direction?edge.id:null);
+}
+function journeyObstacleThemeAt(at){
+  if(!journeyRoute||biome!=='forest'||env!=='forest')return null;
+  let edge=journeyActiveEdge(),node=journeyNode(journeyRoute.next);
+  while(node&&at>node.at){
+    edge=node.out.find(e=>e.direction===0);if(!edge)return null;
+    node=journeyNode(edge.to);
+  }
+  // No hazards in decorative spill / lead-in / exit areas. Bind the skin at
+  // spawn time so an approaching turn cannot repaint an existing obstacle.
+  return edge?.pieces.find(piece=>at>=piece.start&&at<piece.end)?.theme==='disco'?'disco':null;
+}
+function journeyDiscoRoadViews(){
+  if(!journeyRoute||biome!=='forest'||env!=='forest'||!journey)return [];
+  const views=[],active=journeyActiveEdge();
+  const add=(edge,point,extra={})=>{if(edge?.preview.theme==='disco')views.push({edge,point,...extra});};
+  const spill=(edge,at,side)=>add(edge,(d,x)=>({x,z:d}),
+    {spill:true,begin:at-32,end:at+6,onlySide:side});
+  if(journeyActiveRoad()){
+    const origin=dist-journey.branchTravel,direction=journeyTurnDirection();
+    const from=journeyNode(journeyRoute.from),base=journey.phase==='turning'
+      ?lerp(from.at,journey.turnStartDist+journey.turnForward-journey.turnExitTravel,smoothStep(journey.turnT)):origin;
+    add(active,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-base),
+      z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-base))}));
+    if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side)=>({x:side,z:at}));
+    spill(active,from.at,direction);
+    // Unchosen party branches remain in the old junction while the camera
+    // turns, just like its trees; they are culled spatially, not on selection.
+    for(const edge of from.out){
+      if(edge.id===active?.id)continue;
+      if(edge.direction===0)add(edge,(at,side)=>({x:side,z:at}));
+      else{
+        const dir=edge.direction;spill(edge,from.at,dir);
+        add(edge,(at,side)=>({x:dir*(JOURNEY_LANE_WORLD+at-from.at),
+          z:journeyForkDistance()-5-dir*side*journeyBranchWidth(Math.max(0,at-from.at))}));
+      }
+    }
+  }else{
+    add(active,(at,side)=>({x:side,z:at}));
+    // Passing straight does not erase a still-visible side road. Its tiles,
+    // lights and crowd keep their world positions until the junction is behind us.
+    if(journeyRoute.pendingArm&&journey.passedNodeId){
+      const node=journeyNode(journey.passedNodeId);
+      if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side)=>({x:side,z:at}));
+      for(const edge of node.out){
+        if(!edge.direction)continue;
+        const direction=edge.direction;spill(edge,node.at,direction);
+        add(edge,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-node.at),
+          z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at))}));
+      }
+    }
+  }
+  if(journey.phase==='approach'&&!journeyRoute.pendingArm){
+    const node=journeyNode(journeyRoute.next);
+    for(const edge of node.out){
+      if(edge.direction===0)add(edge,(at,side)=>({x:side,z:at}));
+      else{const direction=edge.direction;spill(edge,node.at,direction);
+        add(edge,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-node.at),
+          z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at))}));}
+    }
+  }
+  return views;
+}
+function drawJourneyDiscoPatch(view,at,end,left,right,color,alpha){
+  let vertices=[[at,left],[at,right],[end,right],[end,left]].map(([d,s])=>{
+    const p=view.point(d,s);return {...journeyCameraPoint(p.x,p.z),u:0,v:0};
+  });
+  vertices=clipJourneyGroundPolygon(vertices,journeyDepthAtY(VH+PAD_BOT+24),true);
+  vertices=clipJourneyGroundPolygon(vertices,CFG.Z_FAR,false);
+  if(vertices.length<3)return;
+  g.globalAlpha=alpha;g.fillStyle=color;g.beginPath();
+  vertices.forEach((v,i)=>{const p=journeyProjectCamera(v.side,v.depth);if(i)g.lineTo(p.x,p.y);else g.moveTo(p.x,p.y);});
+  g.closePath();g.fill();
+}
+function drawJourneyDiscoGround(){
+  const views=journeyDiscoRoadViews();if(!views.length)return;
+  g.save();
+  for(const view of views){
+    if(view.spill)continue;
+    const begin=view.begin??view.edge.pieces[0].start,end=view.end??view.edge.pieces.at(-1).end;
+    // One polygon per full tile: splitting each tile midway left a subpixel
+    // horizontal seam that shimmered as the camera moved.
+    // Side entrances stop one tile earlier, at the marked edge of the junction.
+    for(let at=begin+(view.edge.direction?-1:-5);at<end;at+=4){
+      const center=view.point(at,0),camera=journeyCameraPoint(center.x,center.z);
+      if(camera.depth<-12||camera.depth>CFG.Z_FAR+8||Math.abs(camera.side)>camera.depth*3+40)continue;
+      const exit=smoothStep(clamp((end-at)/65,0,1));
+      // The dance floor itself reaches the mouth; no purple-dirt entry strip.
+      const tileMix=exit,soil='#22381e';
+      const seam=mixCol(soil,'#161723',Math.round(tileMix*32)/32);
+      // OPAQUE material. RGB interpolation only handles the road's exit;
+      // the old green road cannot show through translucent dance-floor sheets.
+      drawJourneyDiscoPatch(view,at,Math.min(at+4.02,end),-6.25,6.25,seam,1);
+      const row=Math.floor((at-begin+5)/4),palette=['#75417f','#31646d','#80633e','#414f83','#80365f'];
+      if(tileMix>0)for(let col=0;col<4;col++){
+        const left=-6+col*3,color=mixCol(soil,palette[(row*3+col*2)%palette.length],Math.round(tileMix*32)/32);
+        const rowStart=begin-5+row*4,start=Math.max(at,rowStart+.22),finish=Math.min(at+4,rowStart+3.72,end);
+        if(finish>start)drawJourneyDiscoPatch(view,start,finish,left+.12,left+2.84,color,1);
+      }
+      if(tileMix<.95){
+        const speck=mixCol(soil,'#74607c',.25),offset=sRnd(row*13)*8-4;
+        drawJourneyDiscoPatch(view,at+.5,Math.min(at+.75,end),offset,offset+.22,speck,1);
+        drawJourneyDiscoPatch(view,at+1.3,Math.min(at+1.46,end),-offset,-offset+.13,speck,1);
+      }
+    }
+  }
+  g.restore();
+}
+function drawJourneyDiscoVenue(item){
+  const camera=journeyCameraPoint(item.x,item.z);
+  if(camera.depth<-6||camera.depth>SPAWN_FAR)return;
+  const far=camera.depth>CFG.Z_FAR,raw=(CFG.FOCAL+CFG.Z_FAR)/(CFG.FOCAL+Math.max(camera.depth,CFG.Z_FAR));
+  const grow=far?.10+raw*.90:1;
+  const p=journeyProjectCamera(camera.side,far?CFG.Z_FAR-6*(1-raw):camera.depth);
+  const scale=linS(p.t)*1.6*grow;
+  g.save();g.globalAlpha=clamp((SPAWN_FAR-camera.depth)/18,0,1)*(item.reveal??1);
+  g.translate(p.x,p.y);g.scale(scale,scale);
+  // A full-width forest nightclub mouth, not a small stage floating on the road.
+  // Same soft-horizon growth as the lair; the open passage surrounds the rider.
+  g.fillStyle='#0c0d19';g.fillRect(-208,-255,416,256);
+  g.fillRect(-175,-287,350,32);g.fillRect(-135,-308,270,22);
+  g.fillStyle='#20172e';g.fillRect(-142,-246,284,246);
+  g.fillStyle='#100f20';g.fillRect(-110,-208,220,208);
+  g.fillStyle='#282135';g.fillRect(-208,-253,49,255);g.fillRect(159,-253,49,255);
+  // Curtains funnel toward a dark inner room; warm/cool rims read as an entry.
+  for(const side of [-1,1]){
+    g.save();g.scale(side,1);
+    g.fillStyle='#52304f';g.beginPath();g.moveTo(143,-244);g.lineTo(102,-225);
+    g.lineTo(116,-141);g.lineTo(146,-105);g.closePath();g.fill();
+    g.fillStyle='#78466c';g.fillRect(131,-236,7,97);
+    g.fillStyle='#d3a66a';g.fillRect(137,-123,11,6);
+    // Tall speaker towers with steel case corners and inset square woofers.
+    for(let row=0;row<3;row++){
+      const y=-69-row*69;
+      g.fillStyle='#111520';g.fillRect(153,y,56,66);
+      g.fillStyle='#4b455a';g.fillRect(157,y+4,48,56);
+      g.fillStyle='#202331';g.fillRect(160,y+7,42,50);
+      g.fillStyle='#6c627a';g.fillRect(168,y+14,26,3);g.fillRect(165,y+19,4,24);
+      g.fillStyle='#333245';g.fillRect(169,y+19,25,28);
+      g.fillStyle='#101524';g.fillRect(176,y+26,12,13);
+      g.fillStyle='#92909d';g.fillRect(154,y+1,6,4);g.fillRect(202,y+59,6,4);
+    }
+    g.fillStyle='#79625a';g.fillRect(212,-251,9,252);
+    g.fillStyle='#392d3b';g.fillRect(218,-251,6,252);
+    g.fillStyle=side<0?'#ba679e':'#67b9bb';g.fillRect(146,-242,3,220);
+    g.restore();
+  }
+  g.fillStyle='#4b3445';g.fillRect(-221,-261,442,17);
+  g.fillStyle='#8d6576';g.fillRect(-218,-260,436,3);
+  g.fillStyle='#392f46';g.fillRect(-129,-303,258,46);
+  g.fillStyle='#b68a64';g.fillRect(-126,-300,252,3);g.fillRect(-126,-260,252,3);
+  g.font='bold 26px monospace';g.textAlign='center';
+  g.fillStyle='#eac184';g.fillText('DISCO KING',0,-271);
+  g.fillStyle='#63536f';g.fillRect(-1,-244,2,32);
+  for(let row=0;row<7;row++)for(let col=0;col<7;col++){
+    if((row===0||row===6)&&(col<2||col>4))continue;
+    g.fillStyle=['#9286b1','#d5d7e8','#74b9bf','#d19ebc'][(row*3+col)%4];
+    g.fillRect(-20+col*6,-213+row*6,5,5);
+  }
+  const colors=['#b8689f','#68bcb9','#d4af65'];
+  for(let i=0;i<13;i++){
+    g.fillStyle=colors[i%3];g.fillRect(-204+i*34,-253,5,7);
+  }
+  // Low-cost painted beams, never shadow-casting lights or rapid strobes.
+  for(const side of [-1,1]){
+    g.save();g.globalAlpha*=.10;g.fillStyle=side<0?'#e083c4':'#82ded4';
+    g.beginPath();g.moveTo(side*137,-236);g.lineTo(side*80,-15);
+    g.lineTo(-side*55,-15);g.closePath();g.fill();g.restore();
+  }
+  for(let row=0;row<4;row++)for(let col=0;col<8;col++){
+    g.fillStyle=['#503150','#284d5a','#5a4b37'][(col+row)%3];
+    g.fillRect(-133+col*34,-36+row*9,31,7);
+  }
+  drawDiscoKing(120,-7,.75,'up',0);
+  g.restore();
+}
+function queueJourneyDiscoVenues(){
+  for(const view of journeyDiscoRoadViews()){
+    if(view.spill){
+      // Just behind the far lip (mouth center is node + 7, half-width ~2.25).
+      // Keep the pole close to the floor, not several metres into the forest.
+      const point=view.point(view.begin+42.5,view.onlySide*7),cam=journeyCameraPoint(point.x,point.z);
+      if(cam.depth>-6&&cam.depth<CFG.Z_FAR)
+        queueWorldDraw(cam.depth,drawJourneyDiscoEntryBall,{...point,direction:view.onlySide});
+      continue;
+    }
+    const reveal=journeyDiscoViewReveal(view.edge);if(reveal<=0)continue;
+    queueJourneyDiscoParty(view);
+    const slot=view.edge.events.find(e=>e.definition==='disco_finale');if(!slot)continue;
+    const point=view.point(slot.at+2,0),camera=journeyCameraPoint(point.x,point.z);
+    if(camera.depth>-6&&camera.depth<SPAWN_FAR)queueWorldDraw(camera.depth,drawJourneyDiscoVenue,{...point,reveal});
+  }
+}
+function drawJourneyDiscoEntryBall(item){
+  const p=journeyProjectWorld(item.x,item.z),scale=linS(p.t)*1.8;
+  g.save();g.globalAlpha=clamp((CFG.Z_FAR-p.z)/10,0,1);
+  g.translate(p.x,p.y);g.scale(scale,scale);
+  g.fillStyle='#342b25';g.fillRect(-28,-174,7,176);g.fillRect(-28,-176,52,7);
+  g.fillStyle='#80705b';g.fillRect(-27,-174,2,176);
+  g.fillStyle='#514a42';g.fillRect(-1,-186,2,41);
+  for(let row=0;row<7;row++)for(let col=0;col<7;col++){
+    if((row===0||row===6)&&(col<2||col>4))continue;
+    g.fillStyle=['#d4dce0','#697e88','#a8b8be','#f0e8c5'][(col+row*2)%4];
+    g.fillRect(-21+col*6,-146+row*6,5,5);
+  }
+  g.fillStyle='#f7f1d5';g.fillRect(-14,-137,2,10);g.fillRect(-18,-133,10,2);
+  // Recognizable party props, not a UI-like sign pasted at the crossroads.
+  g.fillStyle='#171c27';g.fillRect(-19,-32,34,34);
+  g.fillStyle='#686075';g.fillRect(-16,-29,28,28);
+  g.fillStyle='#252938';g.fillRect(-13,-26,22,22);g.fillStyle='#121925';g.fillRect(-7,-20,10,10);
+  for(let i=0;i<5;i++){g.fillStyle=['#e58cc6','#8cdad4','#ead789'][i%3];g.fillRect(-20+i*10,-168,4,5);}
+  g.restore();
+}
+function queueJourneyDiscoParty(view){
+  const begin=view.begin??view.edge.pieces[0].start,end=view.end??view.edge.pieces.at(-1).end;
+  const venue=view.edge.events.find(e=>e.definition==='disco_finale');
+  for(let at=begin+6,index=0;at<end;at+=24,index++){
+    if(!view.spill&&venue&&Math.abs(at-venue.at)<22)continue;
+    const depth=at-begin;
+    // Sparse full-opacity props introduce the biome while the trees stay green.
+    if(depth<55&&index%2!==0)continue;
+    const strength=depth<55?.65:Math.max(.65,journeyDiscoStrength(view.edge,at));
+    if(at>end-40)continue;
+    for(const side of [-1,1]){
+      if(view.onlySide&&side!==view.onlySide)continue;
+      const point=view.point(at,side*(8.4+sRnd(index*17+side)*1.2));
+      const camera=journeyCameraPoint(point.x,point.z);
+      if(camera.depth<-5||camera.depth>CFG.Z_FAR+15)continue;
+      queueWorldDraw(camera.depth,drawJourneyDiscoParty,{...point,strength,index:index*2+(side>0?1:0),side});
+      // Dancers have their own world anchor on the verge, not a screen-space
+      // offset from a far-out lighting stand. Never fade them with lamp strength.
+      const dancer=view.point(at+2,side*7.1),dancerCamera=journeyCameraPoint(dancer.x,dancer.z);
+      if(dancerCamera.depth>-5&&dancerCamera.depth<CFG.Z_FAR+15)
+        queueWorldDraw(dancerCamera.depth,drawJourneyDiscoDancer,{...dancer,index:index*2+(side>0?1:0)});
+    }
+  }
+  if(!view.spill)for(let at=begin+18,index=0;at<end;at+=24,index++){
+    if(venue&&Math.abs(at-venue.at)<22)continue;
+    for(const side of [-1,1]){
+      const point=view.point(at,side*6.6),camera=journeyCameraPoint(point.x,point.z);
+      if(camera.depth<-5||camera.depth>CFG.Z_FAR+10)continue;
+      queueWorldDraw(camera.depth,drawJourneyDiscoLight,{...point,index:index+(side>0?1:0),
+        strength:journeyDiscoStrength(view.edge,at)*journeyDiscoViewReveal(view.edge)});
+    }
+  }
+}
+function drawJourneyDiscoLight(item){
+  const p=journeyProjectWorld(item.x,item.z),scale=linS(p.t)*1.8;
+  const alpha=item.strength*clamp((CFG.Z_FAR+10-p.z)/22,0,1);if(alpha<=0)return;
+  const color=['#ed80d1','#75dfed','#e8bf76'][item.index%3];
+  g.save();g.translate(p.x,p.y);g.scale(scale,scale);
+  g.globalAlpha=alpha*.08;g.fillStyle=color;g.beginPath();g.moveTo(-5,-13);
+  g.lineTo(-23+Math.sin(perfNow*.7+item.index)*7,-92);g.lineTo(21,-92);g.lineTo(5,-13);g.fill();
+  g.globalAlpha=alpha;g.fillStyle='#171b29';g.fillRect(-9,-15,18,17);
+  g.fillStyle='#525265';g.fillRect(-7,-15,14,4);g.fillStyle=color;g.fillRect(-5,-17,10,4);
+  g.globalAlpha=alpha*.13;g.fillRect(-12,-24,24,16);g.restore();
+}
+function drawJourneyDiscoDancer(item){
+  const p=journeyProjectWorld(item.x,item.z);
+  if(p.z<-5||p.z>CFG.Z_FAR+15)return;
+  g.save();g.globalAlpha=1;
+  drawDiscoCrowdMember(p.x+Math.sin(perfNow*3+item.index)*linS(p.t)*2,p.y,linS(p.t)*2.3,item.index,true);
+  g.restore();
+}
+function drawJourneyDiscoParty(item){
+  const p=journeyProjectWorld(item.x,item.z);
+  if(p.z<-5||p.z>CFG.Z_FAR+15)return;
+  const scale=linS(p.t)*2.1,alpha=item.strength*clamp((CFG.Z_FAR+15-p.z)/24,0,1);
+  if(p.x+100*scale<0||p.x-100*scale>VW||alpha<=0)return;
+  const colors=['#f28bc9','#77e0d4','#ecd381'],color=colors[item.index%3];
+  g.save();g.translate(p.x,p.y);g.scale(scale,scale);g.globalAlpha=alpha;
+  // Rough timber lighting stands: party equipment in the unchanged woods.
+  g.fillStyle='#201b15';g.fillRect(-4,-111,8,115);
+  g.fillStyle='#715039';g.fillRect(-3,-111,3,110);g.fillRect(-3,-112,48,5);
+  g.strokeStyle='#17161c';g.lineWidth=1.5;g.beginPath();g.moveTo(0,-108);
+  g.lineTo(22,-94);g.lineTo(45,-108);g.stroke();
+  for(let i=0;i<5;i++){
+    g.fillStyle=colors[(item.index+i)%3];g.fillRect(i*9+3,-107+Math.sin(i/4*Math.PI)*11,4,6);
+  }
+  // Slow, soft light cones. No strobe, full-screen tint, or shadow maps.
+  g.fillStyle=color;g.globalAlpha=alpha*.075;g.beginPath();
+  g.moveTo(38,-92);g.lineTo(8+Math.sin(perfNow*.8+item.index)*8,0);g.lineTo(64,0);g.closePath();g.fill();
+  g.globalAlpha=alpha;g.fillStyle='#171924';g.fillRect(32,-102,17,13);
+  g.fillStyle=color;g.fillRect(34,-92,13,4);
+  if(item.index%3===0){
+    g.fillStyle='#847f90';g.fillRect(18,-96,1,20);
+    for(let row=0;row<6;row++)for(let col=0;col<6;col++){
+      if((row===0||row===5)&&(col<1||col>4))continue;
+      const k=(col+row*2+Math.floor(perfNow*.8))%5;
+      g.fillStyle=['#cad6db','#627582','#e4dcba','#9a7d9c','#87b8b9'][k];
+      g.fillRect(7+col*4,-76+row*4,3,3);
+    }
+  }else{
+    g.fillStyle='#141722';g.fillRect(10,-33,24,35);g.fillStyle='#44434e';g.fillRect(12,-31,20,30);
+    g.fillStyle='#11121a';g.fillRect(16,-27,12,10);g.fillRect(15,-13,14,11);
+    g.fillStyle=color;g.fillRect(20,-9,4,4);
+  }
+  g.restore();
+}
+function registerJourneyRoadEvent(id,handler){
+  if(!JOURNEY_ROAD_EVENTS[id]||!handler||typeof handler.start!=='function')throw Error('Invalid road event '+id);
+  if(journeyRoadEventHandlers.has(id))throw Error('Road event already registered: '+id);
+  journeyRoadEventHandlers.set(id,handler);
+  return ()=>{if(journeyRoadEventSession?.definition.id===id)cancelJourneyRoadEvent('disabled');
+    journeyRoadEventHandlers.delete(id);};
+}
+function completeJourneyRoadEvent(token,result={status:'completed'}){
+  const s=journeyRoadEventSession;
+  if(!s||s.token!==token||s.route!==journeyRoute)return false;
+  const record=s.route.eventRecords[s.slot.id];
+  record.status=typeof result.status==='string'?result.status:'completed';record.result={...result};
+  record.finishedAt=dist;
+  journeyRoadEventSession=null;
+  s.route.eventHistory.push({id:s.slot.id,...record});
+  if(s.definition.blocking&&(mode==='journeyevent'||mode===s.ownedMode))setMode('run');
+  if(s.handler.dispose)try{s.handler.dispose(s.context,record.status);}catch(error){console.error(error);}
+  return true;
+}
+function cancelJourneyRoadEvent(reason='cancelled'){
+  const s=journeyRoadEventSession;
+  if(s)completeJourneyRoadEvent(s.token,{status:reason});
+}
+function startJourneyRoadEvent(slot){
+  const route=journeyRoute,definition=JOURNEY_ROAD_EVENTS[slot.definition];
+  if(!route||route.eventRecords[slot.id]||!definition)return false;
+  const handler=journeyRoadEventHandlers.get(slot.definition);
+  // Reserved content is visible on the debug map, never a fake interruption.
+  route.eventRecords[slot.id]={status:handler?'active':'reserved',startedAt:dist};
+  if(!handler)return false;
+  const token=++journeyRoadSessionSerial;
+  const context={token,slot,definition,seed:journeyKeySeed(route.seed,slot.id),
+    finish:result=>completeJourneyRoadEvent(token,result),getDistance:()=>dist,
+    openMode:launch=>{
+      const active=journeyRoadEventSession;
+      if(!definition.blocking||!active||active.token!==token||typeof launch!=='function')return false;
+      launch('journeyroadresume');
+      if(journeyRoadEventSession===active)active.ownedMode=mode;
+      return true;
+    }};
+  journeyRoadEventSession={token,route,slot,definition,handler,context};
+  if(definition.blocking)setMode('journeyevent');
+  try{handler.start(context);}catch(error){completeJourneyRoadEvent(token,{status:'error'});console.error(error);}
+  return true;
+}
+function updateJourneyRoadEvents(dt){
+  const route=journeyRoute;if(!route)return;
+  let session=journeyRoadEventSession;
+  if(session){
+    if(session.route!==route){cancelJourneyRoadEvent('abandoned');return;}
+    if(!session.definition.blocking&&(session.slot.expiresAt<=dist||mode!=='run'))
+      completeJourneyRoadEvent(session.token,{status:'expired'});
+    else if(session.handler.update){
+      try{session.handler.update(session.context,dt);}catch(error){
+        completeJourneyRoadEvent(session.token,{status:'error'});console.error(error);
+      }
+    }
+  }
+  if(mode!=='run'||journeyRoadEventSession||journey?.phase==='turning'||journey?.phase==='settling')return;
+  const edge=journeyActiveEdge();if(!edge)return;
+  for(const slot of edge.events){
+    if(slot.at>dist||route.eventRecords[slot.id])continue;
+    if(slot.expiresAt<dist){route.eventRecords[slot.id]={status:'missed'};continue;}
+    startJourneyRoadEvent(slot);
+    if(journeyRoadEventSession)break;
+  }
+}
+function handleJourneyRoadEventAction(action,point){
+  const s=journeyRoadEventSession;if(!s)return mode==='journeyevent';
+  let consumed=false;
+  try{consumed=s.handler.action?s.handler.action(s.context,action,point):false;}
+  catch(error){completeJourneyRoadEvent(s.token,{status:'error'});console.error(error);}
+  return (s.definition.blocking&&mode!==s.ownedMode)||!!consumed;
+}
+function drawJourneyRoadEvent(){
+  const s=journeyRoadEventSession;if(!s||!s.handler.draw)return;
+  g.save();try{s.handler.draw(s.context,g);}catch(error){
+    completeJourneyRoadEvent(s.token,{status:'error'});console.error(error);
+  }finally{g.restore();}
 }
 function createJourneyRoute(seed=null){
   const requested=new URLSearchParams(location.search).get('routeSeed');
@@ -9391,6 +10106,12 @@ function journeyNodeLabel(node){
 function journeyDirectionLabel(direction){return direction<0?'LEFT':direction>0?'RIGHT':'STRAIGHT';}
 function armJourneyNode(){
   const r=journeyRoute,node=journeyNode(r.next);
+  r.total=journeyPlannedBossDistance(r);
+  const venue=journeyActiveEdge()?.events.find(e=>e.definition==='disco_finale');
+  if(venue){
+    obstacles=obstacles.filter(o=>Math.abs(dist+o.z-venue.at)>=24);
+    pickups=pickups.filter(c=>Math.abs(dist+c.z-venue.at)>=24);
+  }
   r.armedId=node.id;r.pendingArm=false;r.selection=null;
   if(node.type==='boss'){journey=createJourneyState();journey.phase='main';return;}
   const directions=node.out.map(e=>e.direction),side=directions.find(d=>d!==0)||1;
@@ -9401,7 +10122,9 @@ function armJourneyNode(){
     journey.endZ=node.at+22;journey.endTrees=[];
     for(let row=0;row<2;row++)for(let i=-3;i<=3;i++)
       journey.endTrees.push({old:true,endCap:true,x:i*5+(row?2.5:0),
-        z:journey.endZ+row*7,v:sRnd(r.seed*.001+node.row*71+row*31+i*13)});
+        z:journey.endZ+row*7,v:sRnd(r.seed*.001+node.row*71+row*31+i*13),
+        discoAmount:journeyDiscoStrength(journeyActiveEdge(),node.at),
+        discoEntryId:journeyActiveEdge()?.direction?journeyActiveEdge().id:null});
   }
   const junction=journey;
   for(const direction of directions.filter(d=>d!==0)){
@@ -9412,7 +10135,7 @@ function armJourneyNode(){
     for(const t of branch.sideTrees)junction.previewWorldTrees.push({
       old:true,branchDirection:direction,x:direction*(JOURNEY_LANE_WORLD+t.d),
       z:junction.cornerDistance-5-direction*t.off*JOURNEY_LANE_WORLD*1.2*journeyTreeWidth(t.d),
-      v:t.v,gnd:t.gnd});
+      v:t.v,gnd:t.gnd,discoAmount:t.discoAmount,discoEntryId:t.discoEntryId});
   }
   // Old obstacles may already have been scheduled before this node was armed.
   obstacles=obstacles.filter(o=>Math.abs(dist+o.z-node.at)>36);
@@ -9427,7 +10150,9 @@ function chooseJourneyDirection(direction){
   if(!r||!journey.networkNode||journey.phase!=='approach'||r.pendingArm||
     !['travel','junction'].includes(r.status))return false;
   const node=journeyNode(r.next),edge=node.out.find(e=>e.direction===direction);
-  if(!edge||dist<node.at-34||dist>node.at+10)return false;
+  // The road mouth becomes visible at node.at + 7 - Z_FAR. Remember an
+  // explicit extra outer-lane press from that point, not only the last 34 m.
+  if(!edge||dist<node.at+7-CFG.Z_FAR||dist>node.at+10)return false;
   // Retain the runner's established outer-lane + another swipe gesture.
   if(direction!==0&&player.lane!==direction+1)return false;
   r.selection=edge.id;SFX.swipe();return true;
@@ -9437,11 +10162,16 @@ function commitJourneyEdge(edge){
   if(!edge||r.status!=='junction')return false;
   if(edge.direction!==0){
     const branch=journey.previewBranches.find(b=>b.direction===edge.direction);
+    journey.oldRoadEdge=journeyActiveEdge();
     journey.direction=edge.direction;journey.sideTrees=branch.sideTrees;
     journey.nextSideTree=branch.nextSideTree;journey.networkCommit=true;
     if(!tryJourneyCornerTurn(true)){journey.networkCommit=false;return false;}
+  }else{
+    journey.oldRoadEdge=journeyActiveEdge();journey.passedNodeId=node.id;
   }
-  r.chosen.push(edge.id);r.from=node.id;r.next=edge.to;r.status='travel';
+  cancelJourneyRoadEvent('left-road');
+  r.chosen.push(edge.id);r.from=node.id;r.next=edge.to;r.activeEdge=edge.id;r.status='travel';
+  r.total=journeyPlannedBossDistance(r);
   r.pendingArm=true;r.selection=null;
   return true;
 }
@@ -9507,8 +10237,9 @@ function updateJourneyRoute(){
 }
 function interruptJourneyAtBoss(){
   if(!journeyRoute||journeyRoute.stage!==loop||mode!=='run')return;
+  cancelJourneyRoadEvent('boss');
   const r=journeyRoute;r.bossAt=dist;r.status='boss';
-  const bossNode=journeyNode('boss');bossNode.visited=true;r.from='boss';r.next='boss';
+  const bossNode=journeyNode(r.next);bossNode.visited=true;r.from=bossNode.id;
   journey.phase='main';journey.oldTrees=[];journey.sideTrees=[];journey.endTrees=[];
   journey.oldObstacles=[];journey.oldPickups=[];
 }
@@ -9527,22 +10258,35 @@ function drawJourneyMap(){
   g.font='12px monospace';g.fillStyle='#55dcff';g.fillText('SEED '+r.seed+' / STAGE '+r.stage,240,96);
   g.font='11px monospace';g.fillStyle='#aebdd2';
   g.fillText(Math.floor(dist)+' / '+Math.round(r.total)+' m  ·  '+r.status.toUpperCase(),240,118);
+  g.font='9px monospace';g.fillText('GREEN FOREST · PURPLE DISCO · RED ELITE',240,138);
+  g.fillText('? MOVING EVENT · ! STOP EVENT · DISCO LIVE',240,152);
   for(const node of r.nodes)for(const edge of node.out){
     const to=journeyNode(edge.to),taken=r.chosen.includes(edge.id)||(node.id==='start');
-    g.strokeStyle=taken?'#55dcff':node.id===r.next?'#d6c273':'#3b455a';
-    g.lineWidth=taken?3:1.5;g.beginPath();g.moveTo(node.x,node.y-12);
-    g.lineTo(to.x,to.y+12);g.stroke();
+    const startY=node.y,endY=to.y;
+    // The map describes the whole connection's identity. Forest entry/exit
+    // buffers remain in gameplay, but must not hide a special road on the map.
+    const theme=JOURNEY_ROAD_THEMES[edge.preview.theme],special=edge.preview.special;
+    g.strokeStyle=theme.color;g.lineWidth=special?(taken?6:4):(taken?4:2);
+    g.globalAlpha=special||taken||node.id===r.next?1:.65;
+    g.beginPath();g.moveTo(node.x,startY);g.lineTo(to.x,endY);g.stroke();
+    g.globalAlpha=1;
+    for(const event of edge.events){
+      const t=(event.at-node.at)/(to.at-node.at),x=lerp(node.x,to.x,t),y=lerp(startY,endY,t);
+      g.fillStyle=JOURNEY_ROAD_THEMES[event.theme].color;g.fillRect(x-4,y-4,8,8);
+      g.fillStyle='#fff';g.font='9px monospace';
+      g.fillText(JOURNEY_ROAD_EVENTS[event.definition].blocking?'!':'?',x+9,y);
+    }
   }
   const colors={road:'#8c9baa',start:'#8c9baa',punch_bag:'#f1c65d',log_balance:'#b991f2',fight:'#ec796e',boss:'#dd944e'};
   for(const node of r.nodes){
-    g.fillStyle=colors[node.type];g.beginPath();g.arc(node.x,node.y,node.type==='boss'?15:11,0,TAU);g.fill();
+    g.fillStyle=colors[node.type];g.beginPath();g.arc(node.x,node.y,node.type==='boss'?8:4,0,TAU);g.fill();
     g.strokeStyle=node.visited?'#fff':'#070b13';g.lineWidth=2;g.stroke();
-    g.font='bold 9px monospace';g.fillStyle=colors[node.type];g.fillText(journeyNodeLabel(node),node.x,node.y+25);
+    g.font='bold 9px monospace';g.fillStyle=colors[node.type];
+    if(node.type!=='road')g.fillText(journeyNodeLabel(node),node.x,node.y+19);
     if(node.result){g.font='8px monospace';g.fillText(node.result.status.toUpperCase(),node.x,node.y+36);}
   }
   const p=journeyMapPosition();g.fillStyle='#55dcff';g.beginPath();g.arc(p.x,p.y,5,0,TAU);g.fill();
   g.strokeStyle='#fff';g.lineWidth=2;g.stroke();
-  g.font='10px monospace';g.fillStyle='#aebdd2';g.fillText('SCHEMATIC · ALL ROUTES LEAD TO THE BOSS',240,685);
   for(const [x,label] of [[36,'REPLAY SEED'],[254,'NEW SEED']]){
     g.strokeStyle='#55dcff';g.strokeRect(x,700,190,32);g.fillStyle='#55dcff';g.font='bold 11px monospace';
     g.fillText(label,x+95,721);
@@ -9563,8 +10307,18 @@ function drawJourneyEventControls(){
 function journeySpeedScale(){return 1;}
 function journeyStepDistance(movement){
   const r=journeyRoute;
-  if(!r||r.pendingArm||r.selection||!['travel','junction'].includes(r.status))return movement;
+  if(!r)return movement;
+  // Stop precisely at an implemented blocking slot; never overshoot it into a
+  // boss/corner transition at a low frame rate. Reserved slots do not stop play.
+  for(const slot of journeyActiveEdge()?.events||[])
+    if(!r.eventRecords[slot.id]&&JOURNEY_ROAD_EVENTS[slot.definition].blocking&&
+      journeyRoadEventHandlers.has(slot.definition)&&slot.at>=dist)
+      movement=Math.min(movement,slot.at-dist);
+  if(r.pendingArm||!['travel','junction'].includes(r.status))return movement;
   const node=journeyNode(r.next);
+  // A latched turn must commit before movement can carry it beyond the corner
+  // window. This also handles a last-frame input / long frame at high speed.
+  if(r.selection)return Math.min(movement,Math.max(0,node.at+10-dist));
   if(node.type==='boss'||node.out.some(e=>e.direction===0))return movement;
   return Math.min(movement,Math.max(0,node.at+4-dist));
 }
@@ -9581,7 +10335,8 @@ function tryJourneyCornerTurn(automatic=false){
   journey.turnForward=speed()*JOURNEY_TURN_SECONDS;
   journey.turnExitTravel=Math.max(2,journey.turnForward*.7-JOURNEY_LANE_WORLD);
   journey.oldTrees=roadsideScenery.filter(t=>!t.gnd).map(t=>({
-    x:t.off*JOURNEY_LANE_WORLD*1.2,z:dist+t.z,v:t.v,old:true}))
+    x:t.off*JOURNEY_LANE_WORLD*1.2,z:dist+t.z,v:t.v,old:true,
+    discoAmount:t.discoAmount??journeyForestDiscoAt(dist+t.z),discoEntryId:t.discoEntryId}))
     .filter(t=>!journeyRoadContainsWorldPoint(t.x,t.z));
   if(journey.previewWorldTrees)journey.oldTrees.push(...journey.previewWorldTrees.filter(t=>t.branchDirection!==journey.direction));
   populateJourneyTrees();
@@ -9602,11 +10357,15 @@ function captureJourneyRoadActors(){
 }
 function finishJourneyCornerTurn(){
   journey.phase='settling';journey.branchTravel=journey.turnExitTravel;
+  const edge=journeyRoute&&journeyActiveEdge();
+  if(edge?.direction&&edge.preview.theme==='disco'){
+    journeyRoute.discoEnteredAt??={};journeyRoute.discoEnteredAt[edge.id]=dist;
+  }
   player.lane=1;player.laneFrom=1;player.x=1;
   /* Hand off the SAME trees to the ordinary route, retaining every variant
      and depth. From here onward its normal spawner owns the new road. */
-  roadsideScenery=journey.sideTrees.map(t=>new RoadsideSceneryEntity(
-    t.d-journey.branchTravel,t.off,t.v,t.gnd));
+  roadsideScenery=journey.sideTrees.map(t=>Object.assign(new RoadsideSceneryEntity(
+    t.d-journey.branchTravel,t.off,t.v,t.gnd),{discoAmount:t.discoAmount,discoEntryId:t.discoEntryId}));
   nextTreeAt=dist+journey.nextSideTree-journey.branchTravel;
   nextSpawnAt=dist+Math.max(18,JOURNEY_WIDEN_DISTANCE-journey.branchTravel+12);
   journey.sideTrees=[];
@@ -9675,7 +10434,13 @@ function populateJourneyTrees(){
       (depth,off,v=Math.random(),gnd=false)=>{
         const x=journeyTurnDirection()*(JOURNEY_LANE_WORLD+depth),
           z=journeyForkDistance()-5-journeyTurnDirection()*off*JOURNEY_LANE_WORLD*1.2*journeyTreeWidth(depth);
-        if(gnd||!journeyRoadContainsWorldPoint(x,z))journey.sideTrees.push({d:depth,off,v,gnd});
+        if(gnd||!journeyRoadContainsWorldPoint(x,z)){
+          const node=journeyRoute&&journey.networkNode?journeyNode(journey.networkNode):null;
+          const edge=node?.out.find(e=>e.direction===journeyTurnDirection());
+          journey.sideTrees.push({d:depth,off,v,gnd,
+            discoAmount:node?journeyDiscoStrength(edge,node.at+depth):0,
+            discoEntryId:edge?.direction&&edge.preview.theme==='disco'?edge.id:null});
+        }
       });
   }
 }
@@ -9685,6 +10450,8 @@ function populateJourneyTrees(){
 class RoadsideSceneryEntity{
   constructor(z,off,variant=Math.random(),ground=false){
     this.z=z; this.off=off; this.v=variant; this.gnd=ground;
+    this.discoAmount=journeyForestDiscoAt(dist+z);
+    this.discoEntryId=journeyForestDiscoEntryAt(dist+z);
   }
 }
 function sceneryProfile(){ return ROADSIDE_SCENERY_PROFILES.get(BIO().sceneryProfileId); }
@@ -9823,7 +10590,7 @@ function spawnRoadsideSceneryRow(tz,worldPos,emit=spawnRoadsideScenery){
     let side=randomScenerySide(), off=rnd(...profile.primaryOffset);
     /* a root's mother tree claims its own ground — plant BESIDE it (flip sides, or
        step deeper into the treeline), but never leave a gap in the woods */
-    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
+    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&o.roadTheme!=='disco'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
     if(rootAt(side)){ if(!rootAt(-side)) side=-side; else off=rnd(...profile.fallbackOffset); }
     emit(tz,side*off);
     /* a SECOND, sparser line of trees far out on each flank — background texture
@@ -9842,12 +10609,19 @@ function spawnLoopEntities(){
   }
   const stageEnd=stageDistance(), hasMiniboss=!journeyRoute&&RUN_POLICY().hasMinibossAt(loop);
   const minibossAtDist=stageEnd*CFG.MINIBOSS_AT;
+  const discoVenue=journeyRoute?journeyActiveEdge()?.events.find(e=>e.definition==='disco_finale'):null;
+  // Only the current road's endpoints own its junction clearance. Nodes on
+  // unchosen branches share odometer values, not this physical road.
+  const roadFrom=journeyRoute?journeyNode(journeyRoute.from):null;
+  const roadTo=journeyRoute?journeyNode(journeyRoute.next):null;
   while(dist+SPAWN_FAR > nextSpawnAt && nextSpawnAt < stageEnd-30){
     const worldPos=nextSpawnAt; nextSpawnAt+=CFG.SPAWN_GAP;   // the runway before the cave stays clean
     if(worldPos>stageEnd-40) continue;                    // clear runway before the boss
     if(hasMiniboss&&Math.abs(worldPos-minibossAtDist)<26) continue; // clear its encounter runway
+    if(discoVenue&&Math.abs(worldPos-discoVenue.at)<24)continue;
     if(runJourneyPrototype&&journey&&journey.phase==='approach'&&Math.abs(worldPos-journeyForkDistance())<34)continue;
-    if(journeyRoute&&journeyRoute.nodes.some(n=>Math.abs(worldPos-n.at)<36))continue;
+    if((roadFrom&&Math.abs(worldPos-roadFrom.at)<36)||
+      (roadTo&&Math.abs(worldPos-roadTo.at)<36))continue;
     spawnPattern(worldPos-dist);
   }
   /* the active stage miniboss (spawned once per loop) */
@@ -9898,7 +10672,8 @@ function spawnObstacle(z){
   if(!req[0]&&!req[1]&&!req[2]) return [];    // everything conflicted — skip this one
   lastObsFull=!!(req[0]&&req[1]&&req[2]);
   const ob=new ObstacleEntity(kind,z,req,variant);
-  if(ob.type.motherTree){
+  ob.roadTheme=journeyObstacleThemeAt(dist+z);
+  if(ob.type.motherTree&&ob.roadTheme!=='disco'){
     ob.treeV=Math.random();                   // the mother tree: a random sprite of this biome
     const ss=side==='L'?-1:1;                 // clear its standing room — never two trees in one
     clearRoadsideSceneryNear(z,ss);
@@ -10600,7 +11375,7 @@ function updateRunCollisions(){
           else if(hasRelic('oak')&&!oakUsed){                      // OAKEN CHARM: one crash forgiven per loop
             oakUsed=true; floater(laneX(player.x,1),PLAYER_Y-70,'OAKEN CHARM SHATTERS THE BLOW!','#ffe37a',16);
             burst(laneX(player.x,1),PLAYER_Y-30,14,['#c9a86a','#ffe37a'],180,100,3,.6); SFX.thud(); shake(3,.15); }
-          else damagePlayer(REASON[o.kind]); }
+          else damagePlayer(o.roadTheme==='disco'?DISCO_OBSTACLE_REASONS[o.kind]:REASON[o.kind]); }
         else if(!hit){ o.resolved=true; }
       } else if(o.z<0.2||crossed(o,.2)) o.resolved=true;
     }
@@ -50168,6 +50943,7 @@ function shopTap(pt){
   if(pt.x>VW/2-95&&pt.x<VW/2+95&&pt.y>688&&pt.y<740){ nextLoop(); }   // RIDE ON
 }
 function nextLoop(){
+  cancelJourneyRoadEvent('stage-ended');
   if(journeyRoute){journeyRoute=null;journeyMapOpen=false;journey.phase='main';}
   const policy=RUN_POLICY();
   loop=policy.nextStageAt(loop); dist=0; roadScroll=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
@@ -50194,6 +50970,16 @@ let scoreShown=0;               // the HUD's racing counter chases the continuou
 let env='forest';               // 'forest' during the run · 'cave' for the bear's lair
 const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skilllab','healthlab']);
 function setMode(m){
+  if(m==='journeyroadresume'){
+    const session=journeyRoadEventSession;
+    if(session){
+      let result={status:'skipped'};
+      try{if(session.handler.returnResult)result=session.handler.returnResult(session.context);}
+      catch(error){result={status:'error'};console.error(error);}
+      completeJourneyRoadEvent(session.token,result);
+    }
+    m='run';
+  }
   if(m==='journeyresume'){
     resumeJourneyEvent();
     m='run';
@@ -50253,6 +51039,7 @@ function commitFinalScore(){
   if(newBestThisRun) bestScore=total;
 }
 function resetRun(){
+  cancelJourneyRoadEvent('abandoned');
   cvs.style.imageRendering='';
   forestCorridor=null;
   stageRouteSeed=(Math.random()*0x7fffffff)|0;
@@ -59607,6 +60394,10 @@ function update(dt){
   updateAmbient(dt);
   updateArenaFx(dt);
   updateScoreShown(dt);
+  if(journeyRoadEventSession&&!['run','journeyevent',journeyRoadEventSession.ownedMode].includes(mode))
+    cancelJourneyRoadEvent('interrupted');
+  if(journeyRoadEventSession?.ownedMode===mode)updateJourneyRoadEvents(dt);
+  if(mode==='journeyevent'){updateJourneyRoadEvents(dt);return;}
   if(mode==='minigames'){updateMinigamesMenuScroll(dt);dist+=dt*6;roadScroll+=dt*6;return;}
   const minigameMode=MINIGAME_MODES.get(mode);
   if(minigameMode){minigameMode.update(dt);return;}
@@ -59655,6 +60446,7 @@ function update(dt){
       else policy.afterRoute(loop);
     }
     // Boss distance always wins over a roadside event on the same frame.
+    if(mode==='run')updateJourneyRoadEvents(dt);
     if(mode==='run')updateJourneyRoute();
     /* Cull only after swept collision checks; at extreme speeds an entity may
        already be behind the camera on the same frame it crosses the rider. */
@@ -59726,6 +60518,8 @@ function drawRoadsideSceneryEntity(t,stage){
   if(xx+110*sc<0||xx-110*sc>VW){ worldA=1; return; }
   g.globalAlpha=worldA;
   if(t.gnd){ if(stage.ground) stage.ground(xx,p.y+6,sc*.55,t.v); }
+  else if(stage.id==='forest'&&journeyRoute)drawTree(xx,p.y+6,sc,t.v,
+    (t.discoAmount??0)*journeyDiscoReveal(t.discoEntryId));
   else stage.scenery(xx,p.y+6,sc,t.v);
   worldA=1; g.globalAlpha=1;
 }
@@ -59756,12 +60550,14 @@ function drawJourneyObstacle(item,stage){
 /* 2.5D obstacle art: the existing pixels are painted onto a world-fixed face
    (or the ground for water), not a camera-facing billboard. No new art style. */
 function journeyObstacleSurface(item){
-  const o=item.entity,key=biome+':'+(o.kind==='boulder'?0:perfNow);
+  const o=item.entity,key=biome+':'+(o.roadTheme||'normal')+':'+(o.kind==='boulder'?0:perfNow);
   if(item.surfaceKey===key&&item.surface)return item.surface;
   const p=proj(0),xl=laneX(Math.min(...o.lanes)-.44,p.t),xr=laneX(Math.max(...o.lanes)+.44,p.t);
   let left=xl-24,right=xr+24,top=p.y-64,bottom=p.y+20;
   if(o.kind==='pond'){left-=64;right+=64;top=p.y-80;bottom=p.y+64;}
-  if(o.type.motherTree){
+  if(o.type.motherTree&&o.roadTheme==='disco'){
+    left=xl-24;right=xr+24;top=p.y-150;bottom=p.y+20;
+  }else if(o.type.motherTree){
     left=o.side==='L'?laneX(-.55,1)-480:xl-36;
     right=o.side==='R'?laneX(2.55,1)+480:xr+36;
     top=p.y-1100;bottom=p.y+36;
@@ -59807,6 +60603,16 @@ function drawJourneyStoneVolume(item,alpha){
     };
   /* Facing angle changes geometry and shading, never the stone's opacity. */
   g.globalAlpha=alpha;
+  if(o.roadTheme==='disco'){
+    // Separate cabinets must not bridge a lane left open by pickup clearance.
+    for(const lane of o.lanes){
+      const l=(lane-1-.44)*JOURNEY_LANE_WORLD,r=(lane-1+.44)*JOURNEY_LANE_WORLD,h=26*1.6;
+      face([vertex(l,front,h),vertex(r,front,h),vertex(r,back,h),vertex(l,back,h)],'#49485e');
+      const x=journeyCameraPose().x<item.x?l:r;
+      face([vertex(x,front,0),vertex(x,back,0),vertex(x,back,h),vertex(x,front,h)],'#252839');
+    }
+    return;
+  }
   face([vertex(left,front,height),vertex(right,front,height),vertex(right,back,height),vertex(left,back,height)],
     biome==='swamp'?'#3a2c1a':pal.rockL);
   const side=journeyCameraPose().x<item.x?left:right;
@@ -59868,7 +60674,7 @@ function drawJourneyTree(tree,stage){
   const p=journeyTreeCameraPoint(tree);
   if(p.depth<-6||p.depth>SPAWN_FAR)return;
   drawRoadsideSceneryEntity({z:p.depth,off:p.side/(JOURNEY_LANE_WORLD*1.2),
-    v:tree.v,gnd:tree.gnd,journeyWorld:true,endCap:tree.endCap},stage);
+    v:tree.v,gnd:tree.gnd,journeyWorld:true,endCap:tree.endCap,discoAmount:tree.discoAmount,discoEntryId:tree.discoEntryId},stage);
   g.globalAlpha=1;worldA=1;
 }
 function journeyTreeCameraPoint(tree){
@@ -61840,6 +62646,7 @@ function buildWorldDrawQueue(stage,newForest){
     queueWorldDraw(mz,drawStageMouth,mz);
   }
   queueRoadsideWorld(newForest);
+  if(!newForest)queueJourneyDiscoVenues();
   const frontObs=FRONT_OBSTACLES; frontObs.length=0; // arches the knight rides UNDER
   /* GRIFFIN GREAVES exception: while the jump carries him over a duck-arch, the
      knight renders ON TOP of the root instead of slipping beneath it */
@@ -61870,10 +62677,10 @@ function drawModeScreen(){
   // Photo mode has no HUD, menus, labels or lab controls.
   if(pausePhotoMode)return;
   const drawScreen=FULLSCREEN_RENDERERS.get(mode);
-  if(drawScreen){drawScreen();drawJourneyEventControls();return;}
+  if(drawScreen){drawScreen();drawJourneyEventControls();drawJourneyRoadEvent();return;}
   // HUD coordinates never inherit world shake or sprite rounding.
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();
+  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyRoadEvent();
   if(forestCorridor)drawForestTestStatus();
   if(mode==='bossintro')drawBossIntro();
   if(mode==='evolution')drawSkillEvolutionScreen();

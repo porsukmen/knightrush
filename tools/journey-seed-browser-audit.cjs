@@ -13,7 +13,16 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   const tap=async expression=>{const p=await point(expression);await page.touchscreen.tap(p.x,p.y);};
   const out=path.resolve('output/journey-seed-browser');fs.mkdirSync(out,{recursive:true});
   const shot=async name=>{await run('render()');await page.screenshot({path:path.join(out,name+'.png')});};
-  await run('SFX.toggle();startJourneyWithSeed(123);godMode=true;');
+  const fixtures=await run(`(()=>{
+    const found={};for(let seed=0;seed<300;seed++){
+      const graph=generateJourneyGraph(seed,CFG.LOOP_DIST),first=graph.nodes.find(n=>n.id===graph.next);
+      const exits=first.out.map(e=>e.direction).join(',');
+      if(exits==='0,1'&&found.right===undefined)found.right=seed;
+      if(exits==='-1,1'&&found.split===undefined)found.split=seed;
+      if(found.right!==undefined&&found.split!==undefined)return found;
+    }throw Error('Missing junction fixtures');
+  })()`);
+  await run(`SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');startJourneyWithSeed(${fixtures.right});godMode=true;`);
   const signature=await run('JSON.stringify(journeyRoute.nodes)');
   // Read the actual graph: first fork has straight + right in this fixed seed.
   await run(`while(dist<journeyNode(journeyRoute.next).at-15)update(1/60);render();`);
@@ -31,10 +40,10 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await page.keyboard.press('Escape');assert.equal(await run('paused'),true);
   assert.equal(await run('journeyMapOpen'),false);
   await tap('({x:240,y:VH/2+214})');await tap('({x:100,y:715})');
-  assert.equal(await run('journeyRoute.seed'),123);assert.equal(await run('dist'),0);
+  assert.equal(await run('journeyRoute.seed'),fixtures.right);assert.equal(await run('dist'),0);
   assert.equal(await run('JSON.stringify(journeyRoute.nodes)'),signature);
   // No minigame or miniboss can interrupt the alternative route either.
-  await run(`godMode=true;for(let i=0;i<5000&&mode==='run';i++){
+  await run(`godMode=true;for(let i=0;i<20000&&mode==='run';i++){
     const n=journeyNode(journeyRoute.next);
     if(!journeyRoute.pendingArm&&dist>n.at-12&&n.out.length&&!n.out.some(e=>e.direction===0)){
       player.lane=n.out[0].direction+1;chooseJourneyDirection(n.out[0].direction);
@@ -43,7 +52,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   }render();`);
   assert.equal(await run('mode'),'bossintro');assert.equal(await run('journeyRoute.status'),'boss');
   // A closed forward road waits for an explicit turn, never choosing a side.
-  await run('startJourneyWithSeed(0);godMode=true;while(dist<journeyNode(journeyRoute.next).at-10)update(1/60);render();');
+  await run(`startJourneyWithSeed(${fixtures.split});godMode=true;while(dist<journeyNode(journeyRoute.next).at-10)update(1/60);render();`);
   assert.deepEqual(await run('journey.networkDirections'),[-1,1]);
   await shot('left-right-dead-end');
   await run('for(let i=0;i<160;i++)update(1/60);render();');
@@ -56,7 +65,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await run('update(1/60);render();');
   assert.equal(await run('journey.phase'),'turning');
   await page.keyboard.press('Escape');await run('render()');await tap('({x:240,y:VH/2+214})');
-  await tap('({x:350,y:715})');assert.notEqual(await run('journeyRoute.seed'),0);
+  await tap('({x:350,y:715})');assert.notEqual(await run('journeyRoute.seed'),fixtures.split);
   assert.equal(await run('mode'),'run');assert.equal(await run('paused'),true);
   assert.equal(await run('journeyMapOpen'),true);
   const newSeed=await run('journeyRoute.seed');

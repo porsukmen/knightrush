@@ -3,6 +3,9 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 process.env.KNIGHT_AUDIT_SEED='417';
 const {run,canvas}=require('./journey-render-audit.cjs');
+// Compare rendering against the old checkpoint independently of the deliberate
+// 1.5x distance change (which changes the progress HUD at the same distance).
+if(process.argv.includes('--baseline-distance'))run('CFG.LOOP_DIST=1323;');
 const file=path.resolve('output/render-refactor-baseline.json');
 const scenarios={
   menu:"mode='menu'",

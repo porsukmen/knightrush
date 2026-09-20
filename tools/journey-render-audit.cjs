@@ -26,7 +26,7 @@ vm.runInContext(source,sandbox,{timeout:30000});
 const out=path.resolve('output/journey-ground-qa');fs.mkdirSync(out,{recursive:true});
 function shot(name,setup){vm.runInContext(setup+';render();',sandbox,{timeout:10000});
   fs.writeFileSync(path.join(out,name+'.png'),canvas.toBuffer('image/png'));}
-module.exports={sandbox,canvas,shot,out,run:code=>vm.runInContext(code,sandbox,{timeout:10000})};
+module.exports={sandbox,canvas,shot,out,run:(code,timeout=10000)=>vm.runInContext(code,sandbox,{timeout})};
 if(require.main===module){
 vm.runInContext("debugRun=false;godMode=false;startRun(0);runJourneyPrototype=true;journey=createJourneyState();",sandbox);
 vm.runInContext(`
