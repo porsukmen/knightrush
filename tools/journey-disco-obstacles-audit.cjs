@@ -16,7 +16,7 @@ const report=JSON.parse(run(`JSON.stringify((()=>{
   for(const node of route.nodes)for(const edge of node.out){
    for(const piece of edge.pieces){
     const at=(piece.start+piece.end)/2;fixture(node,edge,at-1);
-    const expected=piece.theme==='disco'?'disco':null;
+    const expected=['disco','bloodwood'].includes(piece.theme)?piece.theme:null;
     if(journeyObstacleThemeAt(at)!==expected)throw Error('Wrong piece skin '+piece.id);
     for(const [kind,req,side] of shapes){
      obstacles=[];pickups=[];
@@ -34,7 +34,8 @@ const report=JSON.parse(run(`JSON.stringify((()=>{
    const next=journeyNode(edge.to),straight=next.out.find(e=>e.direction===0);
    fixture(node,edge,next.at-20);
    const at=next.at+100;
-   const expected=straight?.pieces.find(p=>at>=p.start&&at<p.end)?.theme==='disco'?'disco':null;
+   const theme=straight?.pieces.find(p=>at>=p.start&&at<p.end)?.theme;
+   const expected=['disco','bloodwood'].includes(theme)?theme:null;
    if(journeyObstacleThemeAt(at)!==expected)throw Error('Branch theme leaked into straight preview');
   }
  }finally{Math.random=random;pickObstacleSpawnPattern=pickPattern;}

@@ -1,12 +1,12 @@
 const assert=require('node:assert/strict');
 const {run}=require('./journey-render-audit.cjs');
 const report=JSON.parse(run(`JSON.stringify((()=>{
- SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');
+ SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');journeyRoadEventHandlers.delete('elite_finale');
  let checks=0;const failures=[];
  for(let seed=0;seed<4;seed++){
   startJourneyWithSeed(seed);godMode=true;
   for(const direction of [-1,1])for(const n of journeyRoute.nodes.filter(n=>n.out.some(e=>e.direction===direction))){
-   for(const offset of [-50,-30,-2,3.9,9.9]){
+   for(const offset of [-50,-30,-2,3.9,9.9,14,17.9,18]){
     journeyRoute.next=n.id;const parent=journeyRoute.nodes.find(p=>p.out.some(e=>e.to===n.id));
     journeyRoute.from=parent.id;journeyRoute.activeEdge=parent.out.find(e=>e.to===n.id).id;
     journeyRoute.status='travel';journeyRoute.pendingArm=false;mode='run';

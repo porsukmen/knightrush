@@ -18,7 +18,7 @@ const report=JSON.parse(run(`JSON.stringify((()=>{
    const to=journeyNode(edge.to);
    for(let p=from.at+50;p<to.at-50;p+=CFG.SPAWN_GAP){
     route.activeEdge=edge.id;
-    if(edge.events.some(e=>e.definition==='disco_finale'&&Math.abs(p-e.at)<24))continue;
+    if(edge.events.some(e=>JOURNEY_ROAD_EVENTS[e.definition].blocking&&Math.abs(p-e.at)<24))continue;
     checked++;if(!probe(from,to,p))throw Error('Empty road '+edge.id+' at '+p);
     if(route.nodes.some(n=>n!==from&&n!==to&&Math.abs(p-n.at)<36))restored++;
    }

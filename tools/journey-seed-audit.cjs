@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const {run,canvas,out}=require('./journey-render-audit.cjs');
 // Route-only regression: content behavior has its own Disco integration audit.
-run("SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');");
+run("SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');journeyRoadEventHandlers.delete('elite_finale');");
 // Pure graph checks: determinism, reachability, no cycles or dead branches,
 // unique visible exits and enough space to finish a corner before the next.
 const stats=JSON.parse(run(`JSON.stringify((()=>{

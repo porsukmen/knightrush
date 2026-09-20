@@ -13,7 +13,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    const p=await run(`({x:(${x}*viewScale+viewX)/renderDpr(),y:(${y}*viewScale+viewY)/renderDpr()})`);
    await page.touchscreen.tap(p.x,p.y);
   };
-  await run(`SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');
+  await run(`SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');journeyRoadEventHandlers.delete('elite_finale');
    function findRoadFixture(definition){
     for(let seed=0;seed<100;seed++){
      startJourneyWithSeed(seed);godMode=true;

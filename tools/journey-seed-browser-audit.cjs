@@ -22,7 +22,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
       if(found.right!==undefined&&found.split!==undefined)return found;
     }throw Error('Missing junction fixtures');
   })()`);
-  await run(`SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');startJourneyWithSeed(${fixtures.right});godMode=true;`);
+  await run(`SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');journeyRoadEventHandlers.delete('elite_finale');startJourneyWithSeed(${fixtures.right});godMode=true;`);
   const signature=await run('JSON.stringify(journeyRoute.nodes)');
   // Read the actual graph: first fork has straight + right in this fixed seed.
   await run(`while(dist<journeyNode(journeyRoute.next).at-15)update(1/60);render();`);

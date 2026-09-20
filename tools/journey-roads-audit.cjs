@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const {run}=require('./journey-render-audit.cjs');
-run("SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');");
+run("SFX.toggle();journeyRoadEventHandlers.delete('disco_finale');journeyRoadEventHandlers.delete('elite_finale');");
 const report=JSON.parse(run(`JSON.stringify((()=>{
  let eligible=0,special=0,slots=0;const lengths=new Set(),themes=new Set();
  for(let seed=0;seed<300;seed++){
