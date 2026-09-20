@@ -4,7 +4,11 @@ const source=fs.readFileSync('KnightRushMinigame.html','utf8').replace(/\r\n/g,'
 const current=fs.readFileSync('KnightRush.html','utf8').replace(/\r\n/g,'\n');
 const marker='/* ============================== MINIGAMES';
 const donor=source.slice(source.indexOf(marker),source.indexOf('/* ---------- menus, cinematics, overlays ---------- */',source.indexOf(marker)));
-assert(current.includes(donor),'Donor minigame rules/art must remain unchanged');
+// Only these adapters gained seeded RNG, Journey result copy and single-attempt
+// return guards. Keep the original strict art/rules check for every other function.
+const journeyAdapters='makeLockpickPins|beginLockpickingRound|drawLockpickingGame|makeWishingWellSetup|beginWishingWellThrow|drawWishingWellGame|beginArmWrestlingMatch|drawArmWrestlingGame';
+const withoutJourneyAdapters=text=>text.replace(new RegExp('function ('+journeyAdapters+')\\([^]*?\\n\\}', 'g'),(_,name)=>'/* Journey adapter: '+name+' */');
+assert(withoutJourneyAdapters(current).includes(withoutJourneyAdapters(donor)),'Non-adapter minigame rules/art must remain unchanged');
 const cases=[
   ['disco_king','discoGame','beginDiscoRun()'],
   ['coin_slots','slotGame','beginSlotSpin()'],
@@ -48,4 +52,4 @@ run(`startPunchBag();handleMinigameKeyDown({key:' ',repeat:false,preventDefault(
   paused=false;leavePunchBag();closeMinigamesMenu();
   pendingJourneyPrototype=true;startRun(0);if(!runJourneyPrototype)throw Error('Journey entry lost');
   pendingJourneyPrototype=false;startRun(0);if(runJourneyPrototype)throw Error('PLAY isolation lost');`);
-console.log('MINIGAME_PORT_OK 19 source-verbatim games; intro/update/render/back; campaign isolation; pause; parry isolation');
+console.log('MINIGAME_PORT_OK 19 games; unchanged non-adapter source; intro/update/render/back; campaign isolation; pause; parry isolation');

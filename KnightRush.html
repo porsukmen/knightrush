@@ -725,7 +725,7 @@ const SKILL_LAB_SPEED_SLIDER=Object.freeze({x:118,y:446,w:244,h:36,min:.65,max:1
    even when safe-area translation moves the rest of the HUD. Keep its tap target
    in that final screen space so tall-phone padding cannot desynchronise input. */
 const KNIGHT_RUSH_BTN={x:VW/2-147,y:VH-43,w:294,h:25};
-const GAMEPLAY_MODES=['run','boss','miniboss','bossintro','journeyevent'];
+const GAMEPLAY_MODES=['run','boss','miniboss','bossintro','journeyevent','shop','merchant','town'];
 let settingsOpen=false;        // the settings sheet floats over the menu OR the pause screen
 let pausePhotoMode=false;      // hides pause chrome but deliberately keeps simulation frozen
 function activeBearTurntableLab(){
@@ -813,7 +813,7 @@ function armSkillLabTooltipHold(start,cx,cy){
   },SKILL_TOOLTIP_HOLD_MS);
   return true;
 }
-function handleAction(a,pt,parryIntent=null){
+function handleAction(a,pt,parryIntent=null,input=null){
   if(forestPreparing)return;
   SFX.init();
   if(skillTooltipIndex>=0){if(a==='tap')dismissSkillTooltip();return;}
@@ -838,8 +838,8 @@ function handleAction(a,pt,parryIntent=null){
   if(settingsOpen){ if(a==='tap'&&pt) settingsTap(pt); return; }
   if(paused){
     if(journeyMapOpen){
-      if(a==='tap'&&pt&&pointInRect(pt,{x:36,y:700,w:190,h:32}))startJourneyWithSeed(journeyRoute.seed);
-      else if(a==='tap'&&pt&&pointInRect(pt,{x:254,y:700,w:190,h:32}))startJourneyWithSeed(newJourneySeed(),true);
+      if(a==='tap'&&pt&&pointInRect(pt,{x:36,y:700,w:190,h:32}))startJourneyWithSeed(journeyRoute.seed,false,debugRun);
+      else if(a==='tap'&&pt&&pointInRect(pt,{x:254,y:700,w:190,h:32}))startJourneyWithSeed(newJourneySeed(),true,debugRun);
       else if(a==='tap')journeyMapOpen=false;
       return;
     }
@@ -897,13 +897,14 @@ function handleAction(a,pt,parryIntent=null){
     return;
   }
   if(mode==='evolution'&&a==='tap'&&pt){skillEvolutionTap(pt);return;}
-  if(mode==='relic' && a==='tap' && pt){ relicTap(pt); return; }
   if(mode==='shop'  && a==='tap' && pt){ shopTap(pt); return; }
+  if(mode==='merchant'&&a==='tap'&&pt){merchantTap(pt);return;}
+  if(mode==='town'&&a==='tap'&&pt){townTap(pt);return;}
   if(a==='tap' && pt && GAMEPLAY_MODES.includes(mode)
      && pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop){
     paused=true; pausePhotoMode=false;cancelMinigameGestures(); return;
   }
-  if(handleJourneyRoadEventAction(a,pt))return;
+  if(handleJourneyRoadEventAction(a,pt,input))return;
   if(handleMinigameAction(a,pt))return;
   if(a==='tap'&&pt&&activeBearTurntableLab()
      &&pt.x>BEAR_MOUTH_BTN.x&&pt.x<BEAR_MOUTH_BTN.x+BEAR_MOUTH_BTN.w
@@ -971,6 +972,9 @@ addEventListener('keydown',e=>{
   }
   const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',
              a:'left',d:'right',w:'up',s:'down',f:'rush',F:'rush',' ':'parry',Enter:'tap'};
+  if(mode==='journeyevent'&&!paused&&!settingsOpen&&!e.repeat&&['1','2','3','Enter'].includes(e.key)){
+    handleAction(e.key==='Enter'?'continue':'choice'+e.key);e.preventDefault();return;
+  }
   if(e.key==='m'||e.key==='M'){SFX.toggle();return;}
   if(e.key==='Escape'&&mode==='charsel'){ leaveCharSel(); return; }
   if(handleMinigameKeyDown(e))return;
@@ -988,7 +992,8 @@ addEventListener('keydown',e=>{
     return;
   }
   if(e.key==='Enter'&&GAMEPLAY_MODES.includes(mode)) return;
-  if(a==='tap') handleAction('tap',{x:VW/2,y:VH/2}); else handleAction(a);
+  if(a==='tap') handleAction('tap',{x:VW/2,y:VH/2});
+  else handleAction(a,null,null,{fresh:!e.repeat,roadToken:journeyRoadEventSession?.token,mode});
 });
 let keyboardParryHeld=false;
 addEventListener('keyup',e=>{
@@ -1040,8 +1045,9 @@ function trySwipe(cx,cy){
   cancelPlayerParryHold(tStart);
   clearProvisionalDebugParryMark(tStart);
   clearTapIntent(tStart);
-  if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left',null,tStart.parryIntent);
-  else handleAction(dy>0?'down':'up',null,tStart.parryIntent);
+  const input={fresh:true,roadToken:tStart.roadToken,mode:tStart.roadMode};
+  if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left',null,tStart.parryIntent,input);
+  else handleAction(dy>0?'down':'up',null,tStart.parryIntent,input);
   tStart.done=true;                           // this touch is spent — lift to act again
   return true;
 }
@@ -1278,7 +1284,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   }
   if(beginMinigamePointer(t.clientX,t.clientY))return;
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
-  tStart={x:t.clientX,y:t.clientY,done:levelHold};
+  tStart={x:t.clientX,y:t.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadMode:mode};
   if(beginRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   armTapIntent(tStart,t.clientX,t.clientY);
@@ -1327,7 +1333,7 @@ addEventListener('mousedown',e=>{
   }
   if(beginMinigamePointer(e.clientX,e.clientY)){mDown=true;return;}
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
-  tStart={x:e.clientX,y:e.clientY,done:levelHold};
+  tStart={x:e.clientX,y:e.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadMode:mode};
   if(beginRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   armTapIntent(tStart,e.clientX,e.clientY);
@@ -7961,8 +7967,9 @@ class RunPolicyDefinition{
       progressionTierAt:stage=>Math.floor((stage-1)/STAGE_POOL_SEQUENCE.length),
       hasBossAt:()=>true, hasMinibossAt:()=>true,
       bossScoreAt:stage=>CFG.BOSS_SCORE*stage,
+      bossHpPerTier:CFG.BOSS_HP_PER_TIER,bossHpCurve:CFG.BOSS_HP_CURVE,
       nextStageAt:stage=>stage+1,
-      afterBoss:()=>giveSkillEvolution(), afterRoute:()=>nextLoop(),
+      afterBoss:()=>openBlacksmithShop(), afterRoute:()=>nextLoop(),
     },data);
     for(const key of ['stagePoolAt','progressionTierAt','hasBossAt','hasMinibossAt','bossScoreAt','nextStageAt','afterBoss','afterRoute'])
       if(typeof this[key]!=='function') throw new Error('Run policy '+id+' needs '+key+'()');
@@ -7977,6 +7984,14 @@ class RunPolicyDefinition{
 }
 const RUN_POLICIES=new DefinitionRegistry('run policy');
 RUN_POLICIES.register(new RunPolicyDefinition('endless_build',{}));
+/* Temporary Journey loop: one forest/bear per tier, independent of the classic
+   three-map cycle. Gentler HP growth while road rewards/the new smith are built. */
+RUN_POLICIES.register(new RunPolicyDefinition('journey_forest',{
+  afterBoss:()=>openTown(),
+  cycleLength:1,stagePoolAt:()=> 'beginner',
+  progressionTierAt:stage=>Math.max(0,stage-1),
+  bossHpPerTier:24,bossHpCurve:.75,
+}));
 let activeRunPolicyId='endless_build';
 const RUN_POLICY=()=>RUN_POLICIES.get(activeRunPolicyId);
 function selectRunPolicy(id){ RUN_POLICIES.get(id); activeRunPolicyId=id; }
@@ -9828,7 +9843,8 @@ function generateJourneyGraph(seed,total,stage=1){
 /* Road geography and encounter content are independent of junction generation.
    Separate keyed random streams prevent event edits from rerolling the map. */
 const JOURNEY_ROAD_RULES=Object.freeze({specialChance:.20,continueChances:Object.freeze([.70,.45,.20]),
-  leadIn:64,normalExit:40,minPiece:36,normalEventChance:.35,specialLengthScale:3});
+  leadIn:64,normalExit:40,minPiece:36,normalEventChance:.35,specialLengthScale:3,
+  normalOfferLead:60,normalOfferTail:20});
 const JOURNEY_ROAD_THEMES=Object.freeze({
   forest:Object.freeze({id:'forest',kind:'normal',color:'#6ca477',label:'FOREST'}),
   disco:Object.freeze({id:'disco',kind:'special',color:'#d58aff',label:'DISCO',finale:'disco_finale'}),
@@ -9852,15 +9868,364 @@ journeyRoadEventHandlers.set('disco_finale',{
 });
 journeyRoadEventHandlers.set('elite_finale',{
   start:context=>{
-    context.openMode(()=>startMiniboss(1));
-    context.game=minibossFight;minibossFight.crimsonLair=true;
-    minibossFight.encounterId='wolf';minibossFight.z=10;
+    context.roadState={env,obstacles,pickups,roadsideScenery};
+    context.openMode(()=>startBoss('road_wolf',context));
+    context.game=boss;
   },
   dispose:context=>{
-    if(minibossFight===context.game){minibossFight=null;hazards=[];}
+    if(boss===context.game){
+      boss=null;hazards=[];projectiles=[];packLeap=null;
+      knightRush=0;knightRushQueued=false;knightRushSequence=null;chainStacks=0;
+      resetSquireCombat();
+      if(context.roadState)({env,obstacles,pickups,roadsideScenery}=context.roadState);
+    }
   }
 });
+function finishJourneyRoadFight(){
+  const s=journeyRoadEventSession;
+  if(!s||s.definition.id!=='elite_finale'||s.context.game!==boss||boss?.state!=='dying')return false;
+  if(!completeJourneyRoadEvent(s.token,{status:'completed',result:'won'}))return false;
+  // Preserve the existing encounter reward, not the old counter-only battle.
+  if(pack<CFG.PACK_MAX){pack++;packTypes.push('wolf');floater(VW/2,300,'THE WOLF JOINS YOUR PACK','#9ecbff',20);}
+  else{awardGold(CFG.PACK_FULL_GOLD);floater(VW/2,300,'PACK FULL — TRIBUTE +'+CFG.PACK_FULL_GOLD,'#ffd23a',17);}
+  SFX.relic();return true;
+}
 let journeyRoadEventSession=null,journeyRoadSessionSerial=0;
+// Quests belong to the current run, never to the browser profile. Ignore the
+// legacy roadQuest localStorage record, including previously saved 10/10 quests.
+let journeyMushroomQuest=null;
+let journeyChickenQuest=null,journeyTravelerFavor=null;
+const JOURNEY_NORMAL_TITLES=Object.freeze({mushrooms:'THE MUSHROOM GATHERER',chest:'A QUESTIONABLE CHEST',well:'THE WISHING WELL',
+  chickens:'THE GREAT CHICKEN ESCAPE',taxman:'THE VERY ROYAL TAX COLLECTOR',traveler:'A WOUNDED TRAVELER',
+  chicken_return:'THE GRATEFUL FARMER',traveler_return:'AN OLD FRIEND'});
+function journeyNormalContent(slot){
+  if(slot.content)return slot.content;
+  const pool=slot.definition==='roadside_quest'?['mushrooms','chickens','traveler']:['chest','well','taxman'];
+  return pool[journeyKeySeed(journeyRoute.seed,'content:'+slot.id)%pool.length];
+}
+function journeyFollowupPending(content){
+  return content==='mushrooms'?journeyMushroomQuest?.status==='ready':
+    content==='chicken_return'?journeyChickenQuest?.status==='ready':
+    content==='traveler_return'?journeyTravelerFavor?.status==='waiting':false;
+}
+function scheduleJourneyFollowups(){
+  if(!journeyRoute||mode!=='run')return;
+  const prepared=journeyRoute.followupPrepared??={};
+  for(const content of ['mushrooms','chicken_return','traveler_return']){
+    if(!journeyFollowupPending(content))continue;
+    const quest=content==='mushrooms'?journeyMushroomQuest:content==='chicken_return'?journeyChickenQuest:journeyTravelerFavor;
+    if(prepared[content]===quest)continue;
+    prepared[content]=quest;
+    for(const node of journeyRoute.nodes)for(const edge of node.out){
+      if(edge.preview.theme!=='forest'||edge.events.some(e=>e.followup===content))continue;
+      // A future branch must still be outside the visible junction horizon.
+      // Active-road clearings begin beyond the existing obstacle spawn horizon.
+      if(edge.id!==journeyRoute.activeEdge&&node.at<dist+SPAWN_FAR+8)continue;
+      const safeAt=dist+SPAWN_FAR+JOURNEY_ROAD_RULES.normalOfferLead+8;
+      // Reuse an unseen normal stop when a short road cannot fit two events.
+      // Already planned/visible content is immutable, including its clearing.
+      const reserved=edge.events.find(e=>e.at>=safeAt&&(!e.followup||!journeyFollowupPending(e.followup))&&
+        !Object.prototype.hasOwnProperty.call(journeyRoute.normalPlans||{},e.id)&&!journeyRoute.eventRecords[e.id]);
+      if(reserved){reserved.content=content;reserved.followup=content;continue;}
+      const end=journeyNode(edge.to),at=Math.max(node.at+96,dist+SPAWN_FAR+JOURNEY_ROAD_RULES.normalOfferLead+8);
+      if(at>end.at-48||edge.events.some(e=>Math.abs(e.at-at)<130))continue;
+      edge.events.push({id:edge.id+':return:'+content,definition:'roadside_quest',content,followup:content,
+        at,expiresAt:at+20,pieceId:edge.pieces[0].id,theme:'forest'});
+      edge.events.sort((a,b)=>a.at-b.at);
+    }
+  }
+}
+function journeyNormalReply(context,lines,result={status:'completed'}){
+  context.reply=lines;context.dialogue='response';context.dialogueTime=0;
+  context.dialogueResult={content:context.content,...result};
+}
+function journeyNormalChoices(context){
+  if(context.dialogue==='response')return [{id:'accept',label:'BACK TO THE ROAD',rect:ROAD_ACCEPT}];
+  const content=context.content,quest=journeyMushroomQuest;
+  const yes={mushrooms:quest?.status==='ready'?'Here you are. [Deliver mushrooms]':quest?'I will keep looking.':'Of course. I will help you.',
+    chest:'Try the lock.',well:'Make a wish.',chickens:journeyChickenQuest?'I am still rounding them up.':'I will catch your five chickens.',
+    traveler:'Buy bandages. [5 gold]',traveler_return:'Good to see you on your feet.',chicken_return:'All five. Feathers included.'};
+  if(content==='taxman')return [
+    {id:'accept',label:'Arm-wrestle. Win: +15 gold. Lose: no cost.',rect:{x:30,y:634,w:420,h:42}},
+    {id:'pay',label:'Pay the "royal" tax. [5 gold]',rect:{x:30,y:684,w:420,h:42}},
+    {id:'decline',label:'Nice paper crown. Goodbye.',rect:{x:30,y:734,w:420,h:42}}];
+  return [{id:'accept',label:yes[content]||'Talk.',rect:ROAD_ACCEPT},
+    {id:'decline',label:content==='mushrooms'?'Move along, peasant.':content==='traveler'?'Not my problem.':'Maybe another time.',rect:ROAD_PASS}];
+}
+function journeyNormalLines(context){
+  if(context.dialogue==='response')return context.reply;
+  if(context.notice)return context.notice;
+  const q=journeyMushroomQuest;
+  switch(context.content){
+    case 'mushrooms':return q?.status==='ready'?['"Those mushrooms! Did you find all ten?"','"Please, my child is getting worse."']:q?[`"You have ${q.count} of the 10 mushrooms."`,'"There should be more along the road."']:['"Good knight, my child is terribly ill."','"Could you bring me ten forest mushrooms?"','"I can offer you 25 gold for your trouble."'];
+    case 'chest':return ['An old chest rests between the roots.','Five pins. Three lockpicks. One attempt.','Open it to claim 20 gold.'];
+    case 'well':return ['A copper coin waits on the stone rim.','One free throw. A good wish earns 6-20 gold.','The wind may have other plans.'];
+    case 'chickens':return journeyChickenQuest?[`"You have caught ${journeyChickenQuest.count}/5 chickens."`,'"The little monsters are still out there!"']:['"My chickens escaped! All five of them!"','"Catch them along the road. I will pay 20 gold."','"Watch the last one. She knows things."'];
+    case 'taxman':return ['"Halt! Royal road tax. Five gold."','His crown is paper. His seal is a potato.','"Or beat me at arm-wrestling for 15 gold."'];
+    case 'traveler':return ['"Bandits took everything. Even my boots."','"Five gold would buy me some bandages."','"Help me and I will repay you down the road."'];
+    case 'traveler_return':return ['"Knight! You helped me when I was hurt."','"I found honest work. Well... mostly honest."','"Here. Fifteen gold, as promised."'];
+    case 'chicken_return':return ['"My flock! My beautiful little nightmares!"','"Twenty gold. And never speak of this."'];
+  }
+  return [];
+}
+function journeyNormalOfferClearance(slot,at){
+  return at>slot.at-JOURNEY_ROAD_RULES.normalOfferLead-6&&at<slot.at+JOURNEY_ROAD_RULES.normalOfferTail+6;
+}
+function journeyNormalSlotEnabled(slot){
+  // Freeze the content decision when this slot first enters the render/spawn
+  // horizon. A visible prop and its clearing must never disagree or disappear
+  // because another event updates normalSeen while we approach.
+  const route=journeyRoute;if(!route)return false;
+  const plans=route.normalPlans??={};
+  if(Object.prototype.hasOwnProperty.call(plans,slot.id))return plans[slot.id];
+  const content=journeyNormalContent(slot);
+  if(slot.followup)return plans[slot.id]=journeyFollowupPending(content);
+  return plans[slot.id]=!route.normalSeen?.[content]||
+    (content==='mushrooms'&&journeyMushroomQuest?.status==='ready');
+}
+const ROAD_ACCEPT={x:30,y:646,w:420,h:48},ROAD_PASS={x:30,y:706,w:420,h:48};
+function journeyNormalSide(slot){return journeyKeySeed(journeyRoute.seed,slot.id)%2?1:-1;}
+function journeyNormalCanEnter(context){
+  return mode==='run'&&!['turning','settling'].includes(journey?.phase)&&
+    dist>=context.slot.at-24&&dist<=context.slot.at+16&&journeyNode(journeyRoute.next).at-dist>36;
+}
+function journeyRoadReward(context){
+  const game=context.game;if(!game||game.phase!=='result')return 0;
+  if(context.content==='taxman')return game.result?.win?15:0;
+  return context.content==='chest'?(game.won?20:0):
+    ({MIRACULOUS:20,EXCELLENT:12,GOOD:6}[game.result?.tier]||0);
+}
+const journeyNormalHandler={
+  start(context){
+    context.content=journeyNormalContent(context.slot);
+    const route=journeyRoute;route.normalSeen??={};
+    if(!journeyNormalSlotEnabled(context.slot)){
+      context.finish({status:'repeat-suppressed'});return;
+    }
+    route.normalSeen[context.content]=true;
+  },
+  update(context,dt){
+    if(context.dialogue){context.dialogueTime+=dt;return;}
+    if(!context.game&&dist>Math.min(context.slot.expiresAt,context.slot.at+JOURNEY_ROAD_RULES.normalOfferTail))context.finish({status:'passed'});
+  },
+  action(context,action,point,input){
+    if(context.game)return false;
+    if(mode==='run'){
+      const direction=journeyNormalSide(context.slot)>0?'right':'left';
+      if(action!==direction||!journeyNormalCanEnter(context))return false;
+      // Only a new gesture that began for THIS encounter may enter it. A held
+      // direction key or pointer started during the previous event is not consent.
+      if(input&&(!input.fresh||input.roadToken!==context.token||input.mode!=='run'))return false;
+      journeyRoadEventSession.blocking=true;context.dialogue='choice';context.dialogueTime=0;
+      setMode('journeyevent');SFX.swipe();return true;
+    }
+    if(mode!=='journeyevent'||!context.dialogue)return false;
+    // A swipe's release must not also choose the response under that finger.
+    if(context.dialogueTime<.2)return true;
+    const choice=journeyNormalChoices(context).find((c,i)=>action==='choice'+(i+1)||(action==='tap'&&point&&pointInRect(point,c.rect)));
+    const accept=choice?.id==='accept',decline=choice?.id==='decline';
+    if(context.dialogue==='response'){
+      if(accept||action==='continue')context.finish(context.dialogueResult);
+      return true;
+    }
+    if(choice?.id==='pay'){
+      if(gold<5){context.notice=['Your purse contains fewer than five gold.','Try your arm, or just walk away.'];return true;}
+      gold-=5;journeyNormalReply(context,['"A pleasure doing royal business."','He stamps a leaf with his potato.'],{status:'completed',cost:5});return true;
+    }
+    if(!accept&&!decline)return true;
+    if(decline){
+      context.dialogue='response';context.dialogueTime=0;context.dialogueResult={status:'declined',content:context.content};
+      context.reply=context.content==='mushrooms'?['"A fine suit of armor..."','"Shame about the manners."']:['You leave it untouched.','The road is still waiting.'];return true;
+    }
+    if(context.content==='mushrooms'){
+      let reward=0;
+      if(journeyMushroomQuest?.status==='ready'){
+        journeyMushroomQuest=null;reward=25;awardGold(reward);
+        journeyRoute.followupPrepared={};
+        context.reply=['"You found them! My child has a chance."','"Take these 25 gold. You have my thanks."'];
+      }else if(!journeyMushroomQuest){
+        journeyMushroomQuest={status:'collecting',count:0};
+        context.reply=['"Ten mushrooms from the forest roadside."','"Find me again when your basket is full."'];
+      }else{
+        context.reply=[`"You have ${journeyMushroomQuest.count} of the 10 mushrooms."`,'"Keep looking. I will be waiting."'];
+      }
+      context.dialogue='response';context.dialogueTime=0;
+      context.dialogueResult={status:'completed',quest:'mushrooms',reward};return true;
+    }
+    if(context.content==='chickens'){
+      if(!journeyChickenQuest)journeyChickenQuest={status:'collecting',count:0};
+      journeyNormalReply(context,['"Look for the flapping, screaming ones."','"I will meet you farther down the road."']);return true;
+    }
+    if(context.content==='traveler'){
+      if(journeyTravelerFavor){journeyNormalReply(context,['"You have already paid for my bandages."','"I will meet you farther down the road."']);return true;}
+      if(gold<5){context.notice=['You cannot afford the bandages. [5 gold]','You can leave without paying.'];return true;}
+      gold-=5;journeyTravelerFavor={status:'waiting'};
+      journeyNormalReply(context,['"Thank you. I will not forget this."','"Look for me farther down the road."'],{cost:5});return true;
+    }
+    if(context.content==='traveler_return'||context.content==='chicken_return'){
+      const pending=journeyFollowupPending(context.content),reward=pending?(context.content==='chicken_return'?20:15):0;
+      if(pending){if(context.content==='chicken_return')journeyChickenQuest=null;else journeyTravelerFavor=null;awardGold(reward);}
+      journeyRoute.followupPrepared={};
+      journeyNormalReply(context,reward?[`"Here you are. ${reward} gold, and my thanks."`,'"Safe travels, knight."']:['"We have settled up already, friend."'],{reward});return true;
+    }
+    context.dialogue=null;
+    context.openMode(ret=>context.content==='chest'?startLockpicking('forest',ret):context.content==='taxman'?startArmWrestling('forest',ret):startWishingWell('forest',ret));
+    context.game=context.content==='chest'?lockpickGame:context.content==='taxman'?armWrestleGame:wellGame;
+    context.game.roadAttempt=true;context.game.roadRandom=journeyRandom(context.seed);
+    return true;
+  },
+  returnResult(context){
+    const reward=journeyRoadReward(context);
+    if(reward&&!context.paid){context.paid=true;awardGold(reward);}
+    return {status:context.game?.phase==='result'?'completed':'skipped',content:context.content,reward};
+  },
+  dispose(context){
+    if(context.game&&lockpickGame===context.game)lockpickGame=null;
+    if(context.game&&wellGame===context.game)wellGame=null;
+    if(context.game&&armWrestleGame===context.game)armWrestleGame=null;
+  },
+  draw(context){
+    if(mode==='journeyevent'&&context.dialogue){drawJourneyNormalConversation(context);return;}
+    if(mode!=='run'||context.game)return;
+    const title=JOURNEY_NORMAL_TITLES[context.content];
+    const ready=journeyNormalCanEnter(context),side=journeyNormalSide(context.slot)>0?'RIGHT >':'< LEFT';
+    g.fillStyle='#090c16';g.fillRect(50,169,380,55);g.textAlign='center';g.fillStyle='#fff0a2';g.font='bold 14px monospace';g.fillText('?  '+title,VW/2,190);
+    g.fillStyle=ready?'#c0f79a':'#aeb2c2';g.font='12px monospace';
+    g.fillText(ready?'SWIPE '+side+' TO STOP':dist<context.slot.at?'APPROACH THE '+(journeyNormalSide(context.slot)>0?'RIGHT':'LEFT')+' ROADSIDE':'CONTINUE RIDING TO PASS',VW/2,213);
+  }
+};
+function drawJourneyNormalConversation(context){
+  const person=!['chest','well'].includes(context.content);
+  g.fillStyle='#0b1518';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  g.fillStyle='#152a25';g.fillRect(0,150,VW,330);g.fillStyle='#d9dec8';g.fillRect(346,76,34,34);g.fillStyle='#0b1518';g.fillRect(360,70,28,29);
+  for(let i=0;i<10;i++)drawTree(i*56-13,380+(i%3)*14,.9+(i%3)*.13,(i%4)/4);
+  g.fillStyle='#26371d';g.fillRect(0,398,VW,VH-398);
+  g.fillStyle='#304224';g.beginPath();g.ellipse(240,464,211,65,0,0,TAU);g.fill();
+  for(let i=0;i<34;i++){g.fillStyle=i%3?'#41552c':'#1c2c19';g.fillRect(sRnd(i+81)*480,410+sRnd(i+104)*88,5,3);}
+  g.save();g.translate(person?226:240,477);g.scale(person?4.3:3.2,person?4.3:3.2);drawJourneyNormalPropArt(context.content,true);g.restore();
+  g.fillStyle='#090e16';g.fillRect(20,512,440,276);g.strokeStyle='#7b8964';g.lineWidth=2;g.strokeRect(20,512,440,276);
+  g.textAlign='center';g.fillStyle='#fff0a2';g.font='bold 18px monospace';
+  g.fillText(JOURNEY_NORMAL_TITLES[context.content],240,543);
+  const lines=journeyNormalLines(context);
+  g.fillStyle='#d2d8ca';g.font='13px monospace';lines.forEach((line,i)=>g.fillText(line,240,575+i*23));
+  for(const {rect,label,id} of journeyNormalChoices(context)){
+    const color=id==='decline'?'#beb7a5':id==='pay'?'#ffe37a':'#c0f79a';
+    g.fillStyle='#161f23';g.fillRect(rect.x,rect.y,rect.w,rect.h);g.strokeStyle=color;g.strokeRect(rect.x,rect.y,rect.w,rect.h);g.fillStyle=color;g.font='bold 14px monospace';g.fillText(label,240,rect.y+29);
+  }
+  g.fillStyle='#15211d';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#dddcb8';g.font='bold 20px monospace';g.fillText('II',PAUSE_BTN.x+PAUSE_BTN.w/2,PAUSE_BTN.y+uiTop+PAUSE_BTN.h/2+7);
+}
+journeyRoadEventHandlers.set('roadside_quest',journeyNormalHandler);
+journeyRoadEventHandlers.set('roadside_cache',journeyNormalHandler);
+function drawJourneyQuestHUD(){
+  if(mode!=='run'||!journeyRoute)return;
+  const labels=[];
+  if(journeyMushroomQuest)labels.push('MUSHROOMS '+journeyMushroomQuest.count+'/10'+(journeyMushroomQuest.status==='ready'?' [DELIVER]':''));
+  if(journeyChickenQuest)labels.push('CHICKENS '+journeyChickenQuest.count+'/5'+(journeyChickenQuest.status==='ready'?' [DELIVER]':''));
+  if(!labels.length&&!journeyTravelerFavor)return;
+  g.save();g.fillStyle='#101622';g.fillRect(20,126,440,36);g.textAlign='center';g.fillStyle='#c0f79a';g.font='11px monospace';
+  g.fillText(labels.join('  |  '),VW/2,140);
+  g.fillStyle='#b8c3a3';g.fillText(journeyTravelerFavor?'THE TRAVELER WILL MEET YOU DOWN THE ROAD':'QUESTS LAST FOR THIS RUN',VW/2,155);g.restore();
+}
+function spawnJourneyMushrooms(){
+  if(!journeyRoute||mode!=='run'||['turning','settling'].includes(journey?.phase))return;
+  const edge=journeyActiveEdge();if(!edge||edge.preview.theme!=='forest')return;
+  for(const [kind,quest,goal] of [['mushroom',journeyMushroomQuest,10],['chicken',journeyChickenQuest,5]]){
+    if(quest?.status!=='collecting')continue;
+    if(quest.edge!==edge.id){quest.edge=edge.id;quest.nextAt=dist+40+(kind==='chicken'?6:0);}
+    const end=journeyNode(journeyRoute.next).at;
+    while(quest.nextAt<Math.min(dist+90,end-40)){
+      const at=quest.nextAt;quest.nextAt+=kind==='chicken'?16:12;
+      if(at<dist+20||at<journeyNode(journeyRoute.from).at+40)continue;
+      if(pickups.filter(c=>c.kind===kind).length>=goal-quest.count)break;
+      const z=at-dist,start=journeyKeySeed(journeyRoute.seed,kind+':'+edge.id+':'+at)%3;
+      for(let i=0;i<3;i++){
+        const lane=(start+i)%3;
+        if(obstacles.some(o=>Math.abs(o.z-z)<8&&occupiesLane(o,lane))||pickups.some(c=>c.lane===lane&&Math.abs(c.z-z)<5))continue;
+        pickups.push({kind,lane,z});break;
+      }
+    }
+  }
+}
+function drawRoadChicken(x,y,scale){
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  const step=(perfNow*8|0)%2;
+  g.fillStyle='#e6a343';g.fillRect(-5,-2,3,5+step*2);g.fillRect(5,-2,3,7-step*2);
+  g.fillStyle='#e5e1c8';g.fillRect(-10,-16,21,15);g.fillRect(5,-23,10,15);g.fillRect(-15,-17,6,7);
+  g.fillStyle='#b4b599';g.fillRect(-7,-12+step*2,11,5);g.fillStyle='#be4846';g.fillRect(7,-27,7,4);g.fillRect(12,-12,3,6);
+  g.fillStyle='#e6a343';g.fillRect(15,-18,5,3);g.fillStyle='#182127';g.fillRect(11,-21,2,2);g.restore();
+}
+function drawQuestMushroom(x,y,scale){
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  g.fillStyle='#242535';g.fillRect(-5,-5,10,14);g.fillRect(-13,-12,26,10);
+  g.fillStyle='#e6d6a3';g.fillRect(-3,-5,6,12);g.fillStyle='#c76642';g.fillRect(-11,-13,22,9);g.fillRect(-7,-17,14,5);
+  g.fillStyle='#f7de9e';g.fillRect(-6,-13,4,3);g.fillRect(4,-10,4,3);g.restore();
+}
+function queueJourneyNormalProps(){
+  for(const view of journeyDiscoRoadViews('forest')){
+    if(view.spill)continue;
+    for(const slot of view.edge.events){
+      if(JOURNEY_ROAD_EVENTS[slot.definition].kind!=='normal')continue;
+      const record=journeyRoute.eventRecords[slot.id];if(record&&record.status!=='active')continue;
+      const content=journeyNormalContent(slot);
+      const side=journeyNormalSide(slot),point=view.point(slot.at,side*7.5),cam=journeyCameraPoint(point.x,point.z);
+      if(cam.depth>-6&&cam.depth<SPAWN_FAR&&journeyNormalSlotEnabled(slot))queueWorldDraw(cam.depth,drawJourneyNormalProp,{...point,content});
+    }
+  }
+}
+function drawJourneyNormalProp(item){
+  const p=journeyDecorProjection(item);if(!p)return;
+  g.save();g.globalAlpha=p.alpha;g.translate(p.x,p.y);g.scale(p.scale*1.5,p.scale*1.5);
+  drawJourneyNormalPropArt(item.content);
+  g.fillStyle='#fff0a2';g.font='bold 18px monospace';g.textAlign='center';g.fillText('?',0,-81);g.restore();
+}
+function drawJourneyNormalPropArt(content,portrait=false){
+  g.fillStyle='#0c1416';g.fillRect(-20,-3,40,6);
+  if(['chickens','chicken_return','taxman','traveler','traveler_return'].includes(content)){
+    const farmer=content.startsWith('chicken'),tax=content==='taxman',injured=content==='traveler';
+    g.fillStyle='#332b28';g.fillRect(-10,-16,8,16);g.fillRect(5,-16,8,16);
+    g.fillStyle=farmer?'#517087':tax?'#875238':'#465876';g.fillRect(-14,-39,31,27);
+    g.fillStyle=farmer?'#899e94':tax?'#b99850':'#6a819a';g.fillRect(-11,-38,6,21);
+    g.fillStyle='#c8a078';g.fillRect(-18,-34,5,17);g.fillRect(17,-34,5,17);g.fillRect(-9,-57,22,19);
+    g.fillStyle='#372b2a';g.fillRect(-4,-50,2,2);g.fillRect(6,-50,2,2);g.fillRect(-1,-42,7,2);
+    if(farmer){
+      g.fillStyle='#b69853';g.fillRect(-18,-59,39,6);g.fillRect(-10,-69,22,10);g.fillStyle='#66402c';g.fillRect(-7,-45,18,7);
+      g.fillStyle='#284357';g.fillRect(-7,-27,16,12);g.fillStyle='#bcaa79';g.fillRect(-7,-35,3,15);g.fillRect(6,-35,3,15);
+      drawRoadChicken(30,-1,.7);
+    }else if(tax){
+      g.fillStyle='#d4cd9c';g.fillRect(-12,-60,28,6);g.fillRect(-12,-68,6,9);g.fillRect(-1,-65,6,8);g.fillRect(10,-68,6,9);
+      g.fillStyle='#8a703e';g.fillRect(22,-31,18,27);g.fillStyle='#dfd4a6';g.fillRect(24,-29,14,16);
+      g.fillStyle='#493522';g.fillRect(25,-27,12,2);g.fillRect(30,-26,2,10);g.fillRect(26,-19,10,2);
+      g.fillStyle='#c1a571';g.fillRect(-25,-20,9,7);g.fillStyle='#744b32';g.fillRect(-23,-26,5,7);
+    }else{
+      g.fillStyle='#293b54';g.fillRect(-12,-61,29,6);g.fillRect(-14,-55,5,18);
+      g.fillStyle='#d4ccb2';g.fillRect(-9,-56,21,5);g.fillStyle='#994b4e';g.fillRect(4,-56,5,4);
+      if(injured){g.fillStyle='#d4ccb2';g.fillRect(5,-13,8,9);g.fillStyle='#9d7343';g.fillRect(25,-41,3,41);g.fillRect(19,-41,14,4);}
+      else{g.fillStyle='#d5b55c';g.fillRect(19,-22,10,12);g.fillStyle='#776437';g.fillRect(22,-25,5,4);}
+    }
+  }else if(content==='mushrooms'){
+    g.fillStyle='#3c3027';g.fillRect(-8,-13,7,13);g.fillRect(4,-13,7,13);
+    g.fillStyle='#687740';g.fillRect(-12,-35,26,25);g.fillStyle='#a4af61';g.fillRect(-9,-35,7,22);
+    g.fillStyle='#d6b588';g.fillRect(-7,-51,19,17);g.fillRect(-17,-31,5,13);
+    g.fillStyle='#77795d';g.fillRect(-10,-58,23,9);g.fillRect(-15,-51,32,4);
+    g.fillStyle='#272731';g.fillRect(3,-46,3,3);g.fillStyle='#d8d4b6';g.fillRect(-4,-39,16,7);
+    g.fillStyle='#704d2e';g.fillRect(12,-18,18,17);g.fillStyle='#b4914c';g.fillRect(12,-17,18,4);drawQuestMushroom(22,-23,.55);
+    if(portrait){
+      g.fillStyle='#d6b588';g.fillRect(-5,-47,16,7);g.fillStyle='#302829';g.fillRect(-3,-46,2,2);g.fillRect(6,-46,2,2);
+      g.fillStyle='#af9068';g.fillRect(-6,-44,3,2);g.fillRect(9,-44,2,2);g.fillStyle='#f0e3bc';g.fillRect(-3,-38,11,3);
+      g.fillStyle='#785644';g.fillRect(1,-37,3,1+((perfNow*3|0)%2));
+      g.fillStyle='#293326';g.fillRect(-3,-24,9,2);g.fillRect(5,-20,2,6);
+      g.fillStyle='#b99359';g.fillRect(17,-10,1,8);g.fillRect(22,-10,1,8);g.fillRect(27,-10,1,8);
+    }
+  }else if(content==='chest'){
+    g.fillStyle='#392b2e';g.fillRect(-24,-25,48,25);g.fillStyle='#946039';g.fillRect(-21,-31,42,15);g.fillRect(-21,-14,42,11);
+    g.fillStyle='#b4b0a0';g.fillRect(-17,-30,5,29);g.fillRect(12,-30,5,29);g.fillStyle='#e9c763';g.fillRect(-4,-20,9,11);g.fillStyle='#292532';g.fillRect(-1,-18,3,5);
+  }else{
+    g.fillStyle='#676f76';g.fillRect(-25,-18,50,18);g.fillStyle='#acb6ae';g.fillRect(-27,-22,54,8);
+    g.fillStyle='#192e37';g.fillRect(-18,-22,36,5);g.fillStyle='#49372e';g.fillRect(-26,-58,5,45);g.fillRect(21,-58,5,45);
+    g.fillStyle='#945144';g.fillRect(-32,-61,64,8);g.fillRect(-25,-67,50,6);g.fillStyle='#c37c5f';g.fillRect(-19,-71,38,5);
+    g.fillStyle='#ccb480';g.fillRect(-1,-54,2,27);g.fillRect(-7,-30,14,10);
+  }
+}
 function journeyKeySeed(seed,key){
   let h=seed>>>0;for(let i=0;i<key.length;i++)h=Math.imul(h^key.charCodeAt(i),16777619)>>>0;return h;
 }
@@ -9902,7 +10267,7 @@ function buildJourneyRoadPlan(route){
       const p=piece('forest',node.at,end.at,'normal');
       if(node.type!=='start'&&end.type!=='boss'&&length>110&&eventRandom()<rules.normalEventChance){
         const definition=eventRandom()<.5?'roadside_quest':'roadside_cache';
-        slot(definition,node.at+64+eventRandom()*(length-110),end.at-30,p);
+        slot(definition,node.at+90+eventRandom()*Math.max(0,length-136),end.at-26,p);
       }
     }
     edge.preview={theme:edge.pieces.find(p=>p.kind==='special')?.theme||'forest',special};
@@ -10330,7 +10695,7 @@ function drawJourneyBloodLair(item){
   for(let i=0;i<9;i++){const x=-158+i*39;drawBloodBone(x,-1,28,i%2?.25:-.28);if(i<3||i>5)drawBloodSkull(x,-5,.85+i%2*.2);}
   drawBloodSkull(0,-215,1.8);
   const status=journeyRoute?.eventRecords[item.slotId]?.status;
-  if(mode!=='miniboss'&&!['completed','escaped','cancelled'].includes(status))drawWolf(0,-57,1.35,'idle',0,false);
+  if(mode!=='miniboss'&&!boss?.crimsonLair&&!['completed','escaped','cancelled'].includes(status))drawWolf(0,-57,1.35,'idle',0,false);
   g.restore();
 }
 function queueJourneyBloodWorld(){
@@ -10543,7 +10908,7 @@ function completeJourneyRoadEvent(token,result={status:'completed'}){
   record.finishedAt=dist;
   journeyRoadEventSession=null;
   s.route.eventHistory.push({id:s.slot.id,...record});
-  if(s.definition.blocking&&(mode==='journeyevent'||mode===s.ownedMode))setMode('run');
+  if(s.blocking&&(mode==='journeyevent'||mode===s.ownedMode))setMode('run');
   if(s.handler.dispose)try{s.handler.dispose(s.context,record.status);}catch(error){console.error(error);}
   return true;
 }
@@ -10553,7 +10918,7 @@ function cancelJourneyRoadEvent(reason='cancelled'){
 }
 function startJourneyRoadEvent(slot){
   const route=journeyRoute,definition=JOURNEY_ROAD_EVENTS[slot.definition];
-  if(!route||route.eventRecords[slot.id]||!definition)return false;
+  if(!route||journeyRoadEventSession||route.eventRecords[slot.id]||!definition)return false;
   const handler=journeyRoadEventHandlers.get(slot.definition);
   // Reserved content is visible on the debug map, never a fake interruption.
   route.eventRecords[slot.id]={status:handler?'active':'reserved',startedAt:dist};
@@ -10563,12 +10928,12 @@ function startJourneyRoadEvent(slot){
     finish:result=>completeJourneyRoadEvent(token,result),getDistance:()=>dist,
     openMode:launch=>{
       const active=journeyRoadEventSession;
-      if(!definition.blocking||!active||active.token!==token||typeof launch!=='function')return false;
+      if(!active||!active.blocking||active.token!==token||typeof launch!=='function')return false;
       launch('journeyroadresume');
       if(journeyRoadEventSession===active)active.ownedMode=mode;
       return true;
     }};
-  journeyRoadEventSession={token,route,slot,definition,handler,context};
+  journeyRoadEventSession={token,route,slot,definition,handler,context,blocking:definition.blocking};
   if(definition.blocking)setMode('journeyevent');
   try{handler.start(context);}catch(error){completeJourneyRoadEvent(token,{status:'error'});console.error(error);}
   return true;
@@ -10578,7 +10943,7 @@ function updateJourneyRoadEvents(dt){
   let session=journeyRoadEventSession;
   if(session){
     if(session.route!==route){cancelJourneyRoadEvent('abandoned');return;}
-    if(!session.definition.blocking&&(session.slot.expiresAt<=dist||mode!=='run'))
+    if(!session.blocking&&(session.slot.expiresAt<=dist||mode!=='run'))
       completeJourneyRoadEvent(session.token,{status:'expired'});
     else if(session.handler.update){
       try{session.handler.update(session.context,dt);}catch(error){
@@ -10589,18 +10954,18 @@ function updateJourneyRoadEvents(dt){
   if(mode!=='run'||journeyRoadEventSession||journey?.phase==='turning'||journey?.phase==='settling')return;
   const edge=journeyActiveEdge();if(!edge)return;
   for(const slot of edge.events){
-    if(slot.at>dist||route.eventRecords[slot.id])continue;
+    if((JOURNEY_ROAD_EVENTS[slot.definition].kind==='normal'?slot.at-JOURNEY_ROAD_RULES.normalOfferLead:slot.at)>dist||route.eventRecords[slot.id])continue;
     if(slot.expiresAt<dist){route.eventRecords[slot.id]={status:'missed'};continue;}
     startJourneyRoadEvent(slot);
     if(journeyRoadEventSession)break;
   }
 }
-function handleJourneyRoadEventAction(action,point){
+function handleJourneyRoadEventAction(action,point,input=null){
   const s=journeyRoadEventSession;if(!s)return mode==='journeyevent';
   let consumed=false;
-  try{consumed=s.handler.action?s.handler.action(s.context,action,point):false;}
+  try{consumed=s.handler.action?s.handler.action(s.context,action,point,input):false;}
   catch(error){completeJourneyRoadEvent(s.token,{status:'error'});console.error(error);}
-  return (s.definition.blocking&&mode!==s.ownedMode)||!!consumed;
+  return (s.blocking&&mode!==s.ownedMode)||!!consumed;
 }
 function drawJourneyRoadEvent(){
   const s=journeyRoadEventSession;if(!s||!s.handler.draw)return;
@@ -10621,11 +10986,8 @@ function journeyDirectionLabel(direction){return direction<0?'LEFT':direction>0?
 function armJourneyNode(){
   const r=journeyRoute,node=journeyNode(r.next);
   r.total=journeyPlannedBossDistance(r);
-  const venue=journeyActiveEdge()?.events.find(e=>JOURNEY_ROAD_EVENTS[e.definition].blocking);
-  if(venue){
-    obstacles=obstacles.filter(o=>Math.abs(dist+o.z-venue.at)>=24);
-    pickups=pickups.filter(c=>Math.abs(dist+c.z-venue.at)>=24);
-  }
+  // Spawn-time lookahead owns event/junction clearance. Never erase live
+  // actors here: the incoming road can already be visible before it is armed.
   r.armedId=node.id;r.pendingArm=false;r.selection=null;
   if(node.type==='boss'){journey=createJourneyState();journey.phase='main';return;}
   const directions=node.out.map(e=>e.direction),side=directions.find(d=>d!==0)||1;
@@ -10646,13 +11008,11 @@ function armJourneyNode(){
       z:junction.cornerDistance-5-direction*t.off*JOURNEY_LANE_WORLD*1.2*journeyTreeWidth(t.d),
       v:t.v,gnd:t.gnd,discoAmount:t.discoAmount,discoEntryId:t.discoEntryId,bloodAmount:t.bloodAmount});
   }
-  // Old obstacles may already have been scheduled before this node was armed.
-  obstacles=obstacles.filter(o=>Math.abs(dist+o.z-node.at)>36);
-  pickups=pickups.filter(c=>Math.abs(dist+c.z-node.at)>18);
 }
-function startJourneyWithSeed(seed,keepMapOpen=false){
-  pendingJourneySeed=seed;pendingJourneyPrototype=true;debugRun=false;
-  startRun(charSel);paused=keepMapOpen;journeyMapOpen=keepMapOpen;
+function startJourneyWithSeed(seed,keepMapOpen=false,preserveDebug=false){
+  if(preserveDebug)debugLoop=loop;
+  pendingJourneySeed=seed;pendingJourneyPrototype=true;debugRun=preserveDebug;
+  startRun(charSel,true);paused=keepMapOpen;journeyMapOpen=keepMapOpen;
 }
 function chooseJourneyDirection(direction){
   const r=journeyRoute;
@@ -10770,7 +11130,7 @@ function drawJourneyMap(){
   g.font='11px monospace';g.fillStyle='#aebdd2';
   g.fillText(Math.floor(dist)+' / '+Math.round(r.total)+' m  ·  '+r.status.toUpperCase(),240,118);
   g.font='9px monospace';g.fillText('GREEN FOREST · PURPLE DISCO · RED ELITE',240,138);
-  g.fillText('? MOVING EVENT · ! STOP EVENT · DISCO LIVE',240,152);
+  g.fillText('? OPTIONAL STOP · ! SPECIAL EVENT · DISCO LIVE',240,152);
   for(const node of r.nodes)for(const edge of node.out){
     const to=journeyNode(edge.to),taken=r.chosen.includes(edge.id)||(node.id==='start');
     const startY=node.y,endY=to.y;
@@ -10782,6 +11142,7 @@ function drawJourneyMap(){
     g.beginPath();g.moveTo(node.x,startY);g.lineTo(to.x,endY);g.stroke();
     g.globalAlpha=1;
     for(const event of edge.events){
+      if(r.normalPlans?.[event.id]===false)continue;
       const t=(event.at-node.at)/(to.at-node.at),x=lerp(node.x,to.x,t),y=lerp(startY,endY,t);
       g.fillStyle=JOURNEY_ROAD_THEMES[event.theme].color;g.fillRect(x-4,y-4,8,8);
       g.fillStyle='#fff';g.font='9px monospace';
@@ -10953,7 +11314,11 @@ function journeyRoadContainsWorldPoint(x,z,clearance=2){
 function journeyTreeWidth(d){return lerp(.7,1,journeyBranchWidth(Math.max(0,d)));}
 function populateJourneyTrees(){
   if(journey.previewBranches&&journey.phase==='approach')return;
-  while(journey.nextSideTree<journey.branchTravel+SPAWN_FAR){
+  // branchTravel is only assigned at handoff. During yaw, prepare through the
+  // EXIT camera's horizon, not the junction origin: otherwise the straight
+  // spawner fills a visible 15–30 m gap with full-opacity trees on that frame.
+  const travel=journey.phase==='turning'?journey.turnExitTravel:journey.branchTravel;
+  while(journey.nextSideTree<travel+SPAWN_FAR){
     const d=journey.nextSideTree;
     journey.nextSideTree+=spawnRoadsideSceneryRow(d,dist+d,
       (depth,off,v=Math.random(),gnd=false)=>{
@@ -11127,6 +11492,23 @@ function spawnRoadsideSceneryRow(tz,worldPos,emit=spawnRoadsideScenery){
       emit(tz+rnd(...profile.outerDepth),randomScenerySide()*rnd(...profile.outerOffset));
     return rnd(...profile.normalGap);
 }
+function journeySpawnRoadAt(at){
+  if(!journeyRoute)return null;
+  let edge=journeyActiveEdge(),from=journeyNode(journeyRoute.from);
+  // Only the physically straight continuation lies ahead of this camera.
+  // Side-road actors are produced after their turn, never on the old road.
+  for(let i=0;edge&&i<journeyRoute.nodes.length;i++){
+    const to=journeyNode(edge.to);
+    if(at<=to.at)return {edge,from,to};
+    from=to;edge=to.out.find(e=>e.direction===0);
+  }
+  return null;
+}
+function journeySpawnClearance(road,at){
+  if(Math.abs(at-road.from.at)<36||Math.abs(at-road.to.at)<36)return true;
+  return road.edge.events.some(slot=>JOURNEY_ROAD_EVENTS[slot.definition].blocking?
+    Math.abs(at-slot.at)<24:journeyNormalSlotEnabled(slot)&&journeyNormalOfferClearance(slot,at));
+}
 function spawnLoopEntities(){
   /* The rotated snapshot is the sole owner while the camera is turning. */
   if(runJourneyPrototype&&journey&&journey.phase==='turning')return;
@@ -11136,19 +11518,15 @@ function spawnLoopEntities(){
   }
   const stageEnd=stageDistance(), hasMiniboss=!journeyRoute&&RUN_POLICY().hasMinibossAt(loop);
   const minibossAtDist=stageEnd*CFG.MINIBOSS_AT;
-  const blockingVenue=journeyRoute?journeyActiveEdge()?.events.find(e=>JOURNEY_ROAD_EVENTS[e.definition].blocking):null;
-  // Only the current road's endpoints own its junction clearance. Nodes on
-  // unchosen branches share odometer values, not this physical road.
-  const roadFrom=journeyRoute?journeyNode(journeyRoute.from):null;
-  const roadTo=journeyRoute?journeyNode(journeyRoute.next):null;
   while(dist+SPAWN_FAR > nextSpawnAt && nextSpawnAt < stageEnd-30){
     const worldPos=nextSpawnAt; nextSpawnAt+=CFG.SPAWN_GAP;   // the runway before the cave stays clean
     if(worldPos>stageEnd-40) continue;                    // clear runway before the boss
     if(hasMiniboss&&Math.abs(worldPos-minibossAtDist)<26) continue; // clear its encounter runway
-    if(blockingVenue&&Math.abs(worldPos-blockingVenue.at)<24)continue;
+    if(journeyRoute){
+      const road=journeySpawnRoadAt(worldPos);
+      if(!road||journeySpawnClearance(road,worldPos))continue;
+    }
     if(runJourneyPrototype&&journey&&journey.phase==='approach'&&Math.abs(worldPos-journeyForkDistance())<34)continue;
-    if((roadFrom&&Math.abs(worldPos-roadFrom.at)<36)||
-      (roadTo&&Math.abs(worldPos-roadTo.at)<36))continue;
     spawnPattern(worldPos-dist);
   }
   /* the active stage miniboss (spawned once per loop) */
@@ -11727,7 +12105,7 @@ function updatePlayerSwordCombo(dt){
 function updatePlayer(dt){
   if(!(runJourneyPrototype&&journey&&journey.phase==='turning'))
     player.x+=(player.lane-player.x)*Math.min(1,CFG.LANE_EASE*dt);
-  const resting=mode==='evolution'||mode==='relic'||mode==='shop';
+  const resting=mode==='evolution'||mode==='shop';
   const inFight=(mode==='boss'||mode==='miniboss'||mode==='bossintro');
   player.gallop=resting?0:(player.gallop+dt*(inFight?0.55:speed()/9))%1; // reward rooms are still
   if(player.jumpT>=0){ player.jumpT+=dt; if(player.jumpT>jumpDur()){ player.jumpT=-1;
@@ -11916,6 +12294,22 @@ function updateRunCollisions(){
 }
 function collect(c){
   const p=proj(Math.max(c.z,0)), x=laneX(c.lane,p.t);
+  if(c.kind==='chicken'){
+    if(journeyChickenQuest?.status==='collecting'){
+      journeyChickenQuest.count=Math.min(5,journeyChickenQuest.count+1);
+      if(journeyChickenQuest.count===5)journeyChickenQuest.status='ready';
+      SFX.coin();floater(x,p.y-36,`CHICKEN ${journeyChickenQuest.count}/5`,'#fff0b3',16);
+    }
+    return;
+  }
+  if(c.kind==='mushroom'){
+    if(journeyMushroomQuest?.status==='collecting'){
+      journeyMushroomQuest.count=Math.min(10,journeyMushroomQuest.count+1);
+      if(journeyMushroomQuest.count===10)journeyMushroomQuest.status='ready';
+      SFX.coin();floater(x,p.y-36,`MUSHROOM ${journeyMushroomQuest.count}/10`,'#c0f79a',16);
+    }
+    return;
+  }
   if(c.kind==='coin'){ const v=CFG.COIN_VALUE+(hasRelic('clover')?1:0); awardGold(v); SFX.coin();
     burst(x,p.y-20,7,['#ffd23a','#fff2b0'],120,60,3,.5); floater(x,p.y-34,'+'+v,'#ffd23a',15); }
   else if(c.kind==='arrow'){ arrows++; SFX.arrow();
@@ -43605,7 +43999,7 @@ function isTurnCombat(actor=boss){
   return !!(actor&&actor.turnCombat&&!actor._moveLab);
 }
 function isPlayerTurn(){
-  return isTurnCombat()&&boss.phase==='player';
+  return isTurnCombat()&&boss.phase==='player'&&boss.state!=='dying'&&boss.state!=='finisher';
 }
 function addTurnResolve(amount,show=true){
   if(!isTurnCombat()||amount<=0) return 0;
@@ -47852,9 +48246,9 @@ function dodgeAttackCount(stage=loop){
   return CFG.BOSS_DODGE_ATKS+early+Math.floor(Math.sqrt(late)*CFG.BOSS_ATKS_LATE_SCALE);
 }
 function bossMaxHp(){
-  const tier=progressionTier(), pool=stagePoolRank();
-  const base=Math.round(CFG.BOSS_HP_BASE+tier*CFG.BOSS_HP_PER_TIER+
-    tier*tier*CFG.BOSS_HP_CURVE+pool*CFG.BOSS_HP_POOL_ADD);
+  const tier=progressionTier(), pool=stagePoolRank(),policy=RUN_POLICY();
+  const base=Math.round(CFG.BOSS_HP_BASE+tier*policy.bossHpPerTier+
+    tier*tier*policy.bossHpCurve+pool*CFG.BOSS_HP_POOL_ADD);
   /* Final-pool bosses remain the cycle's build check; this modest bump replaces
      the old runaway per-stage inflation that eventually invalidated all builds. */
   return stableDamage(pool===2?base*1.07+8:base);
@@ -47892,8 +48286,8 @@ function packLeapDmg(){
   /* the follower's fangs ride the CHAIN like your weapons do, and the horn empowers them */
   return stableDamage(base*(hasRelic('horn')?1.5:1)*(1+chainBonus()*chainStacks));
 }
-function startBoss(definitionId=null){
-  interruptJourneyAtBoss();
+function startBoss(definitionId=null,roadContext=null){
+  if(!roadContext)interruptJourneyAtBoss();
   /* the bear stalks in from the treeline; pond bosses RISE from the water */
   resetSquireCombat();
   const def=definitionId?ENCOUNTERS.get(definitionId):activeBossDefinition();
@@ -47954,7 +48348,16 @@ function startBoss(definitionId=null){
   boss.chargeEnabled=chargeRouteEquipped();
   startDefenseChargePhase();
   chainStacks=0; knightRush=0; knightRushQueued=false; knightRushSequence=null; // fight resources belong to this boss only
-  obstacles=[]; pickups=[]; roadsideScenery=[]; // full focus on the fight
+  obstacles=[]; pickups=[];
+  if(roadContext){
+    // The ordinary HP/AP/Resolve fight runs in place without consuming the road
+    // or triggering a stage-boss transition. The event owns cleanup and reward.
+    boss.roadEventToken=roadContext.token;boss.crimsonLair=true;
+    boss.x=boss.xTarget=1;boss.z=10;boss.entering=false;
+    boss.state='idle';boss.stateT=0;
+    setMode('boss');playEncounterSound(ENCOUNTERS.get('wolf'));return;
+  }
+  roadsideScenery=[]; // full focus on the stage fight
   env='cave';                               // you rode in under the arch — now it has you
   flash('#020204',.8);
   floater(VW/2,300,def.arenaLine,'#e8e2d0',19);
@@ -48273,10 +48676,11 @@ function defeatBoss(){
     hazards=[];projectiles=[];packLeap=null;knightRushQueued=false;
     return true;
   }
-  const overkill=Math.max(0,-boss.hp),pts=RUN_POLICY().bossScoreAt(loop),
+  const roadFight=!!boss.roadEventToken;
+  const overkill=Math.max(0,-boss.hp),pts=roadFight?CFG.MINIBOSS_SCORE:RUN_POLICY().bossScoreAt(loop),
     okPts=Math.round(overkill*CFG.OVERKILL_MULT);
-  bossScoreRun+=pts;overkillRun+=okPts;bossKills++;
-  floater(VW/2,300,'BOSS SLAIN  +'+pts,'#ffe37a',26);
+  bossScoreRun+=pts;overkillRun+=okPts;if(!roadFight)bossKills++;
+  floater(VW/2,300,(roadFight?'WOLF DEFEATED  +':'BOSS SLAIN  +')+pts,'#ffe37a',26);
   if(okPts>0)floater(VW/2,336,'OVERKILL '+healthDamageText(overkill)+' DMG · SCORE +'+okPts,'#ff9a3a',20);
   SFX.win();flash('#ffe37a',.5);shake(12,.6);stopTime(.25);
   boss.pendingBreak=null;boss.parryReaction=null;boss.knightRushRecovery=null;
@@ -48374,6 +48778,7 @@ function updateBoss(dt){
         vx:rnd(-14,14),vy:rnd(-90,-40),life:1.4,maxLife:1.4,size:rnd(2,5),col:'#cfe0ff',grav:-16}); }
     if(T>2.5){
       if(boss.skillLabDummy){leaveSkillLabCombat('VICTORY');return;}
+      if(boss.roadEventToken){finishJourneyRoadFight();return;}
       /* A tamed miniboss is now a run-long party member. Future encounters may
          offer swap/evolution choices; a stage boss no longer dismisses it. */
       if(hasRelic('idol')){ awardGold(40); floater(VW/2,368,'GOLDEN IDOL +40','#ffd23a',17); }
@@ -49213,6 +49618,13 @@ ENCOUNTERS.register(new EncounterDefinition('wolf','miniboss',{
   yieldLine:'THE WOLF YIELDS',tameLine:'...AND FOLLOWS YOU',fleeLine:'the wolf slips away, unbeaten...',
   byeLine:'the wolf melts back into the wood — its debt is paid',introAnim:'howl',exitAnim:'run'
 }));
+// Bloodwood uses the standard fight engine and Wolf's authored attacks/model.
+// Classic midpoint counter encounters and their debug labs remain independent.
+ENCOUNTERS.register(new EncounterDefinition('road_wolf','boss',{
+  name:'THE GREY WOLF',hitText:"The wolf's fangs found you",finisherHit:'The wolf overwhelmed you',
+  arenaLine:'THE BLOODWOOD LAIR',draw:drawWolf,attacks:WOLF_DUEL_ATTACKS,
+  scale:2.35,finisherReach:8,element:'earth',rises:false,roadOnly:true
+}));
 ENCOUNTERS.register(new EncounterDefinition('toad','miniboss',{
   name:'THE MIRE TOAD',barName:'MIRE TOAD',hitText:"The mire toad's strike found you",draw:drawMireToad,
   attacks:TOAD_DUEL_ATTACKS,scale:2.95,ally:'toad',ranged:true,sound:'croak',
@@ -49350,12 +49762,15 @@ function validateEncounterHierarchy(){
   }
   for(const def of ENCOUNTERS.list) if(def.role==='boss'){
     if(def.labOnly) continue;
-    for(const group of ['single_lane','two_lane','jumpduck','swipe','pinch'])
+    // A road fight reuses its species' authored move set; the full five-group
+    // onboarding catalogue is a stage-boss contract, not an HP-combat requirement.
+    for(const group of (def.roadOnly?['single_lane','two_lane']:['single_lane','two_lane','jumpduck','swipe','pinch']))
       if(!def.attacks.some(a=>encounterAttackGroups(a).includes(group)))
         throw new Error(def.id+' needs an attack in shared group '+group);
     const singles=def.attacks.filter(a=>encounterAttackGroup(a)==='single_lane');
     for(const lane of ALL_LANES) if(!singles.some(a=>a.steps[0].lanes[0]===lane))
       throw new Error(def.id+' single_lane group needs a lane '+lane+' attack');
+    if(def.roadOnly)continue;
     const posture=def.attacks.filter(a=>encounterAttackGroup(a)==='jumpduck');
     if(!posture.some(a=>a.steps[0].height==='low')||!posture.some(a=>a.steps[0].height==='high'))
       throw new Error(def.id+' jumpduck group needs stationary low and high attacks');
@@ -51101,7 +51516,6 @@ for(const id of Object.keys(ARTIFACT_DATA)) ARTIFACTS.register(new ArtifactDefin
 const ARTIFACT_DEFS=ARTIFACTS.byId;
 const ARTIFACT_IDS=Object.freeze(ARTIFACTS.ids.slice());
 let relics=[null,null,null,null,null];        // FIVE equip slots
-let relicChoices=null, pendingRelic=null;
 let skillMutationChoices=null;
 const SKILL_EVOLUTION_CARD_Y=300,SKILL_EVOLUTION_CARD_W=140,SKILL_EVOLUTION_CARD_H=340;
 const SKILL_EVOLUTION_TREE_BTN=Object.freeze({x:88,y:174,w:140,h:34});
@@ -51118,7 +51532,7 @@ function skillLabDraftCardRect(index){
 }
 function giveSkillEvolution(){
   skillMutationChoices=rollSkillMutationChoices(activeSkillEvolutionRules().choiceCount);
-  if(!skillMutationChoices.length){giveRelic();return false;}
+  if(!skillMutationChoices.length){nextLoop();return false;}
   Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,
     attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9});
   setMode('evolution');SFX.relic();flash('#9ecbff',.32);
@@ -51135,7 +51549,7 @@ function skillEvolutionTap(pt){
       if(!applySkillMutation(mutation.id)){SFX.duck();return false;}
       skillMutationChoices=null;SFX.relic();flash(mutation.col,.35);
       floater(VW/2,250,mutation.name+(mutation.kind==='MASTERY'?' — MASTERY GAINED':' — TECHNIQUE TRANSFORMED'),mutation.col,20);
-      giveRelic();return true;
+      nextLoop();return true;
     }
   }
   return false;
@@ -51407,42 +51821,6 @@ function consumeLethalShieldRelic(wouldBeLethal=false){
   for(const r of relics) if(r&&r.type==='shield'&&r.charged){ r.charged=false; return true; }
   return false;
 }
-/* boss slain → offer 2 distinct relics → untimed choice → the smith's shop */
-function giveRelic(){
-  const ai=(Math.random()*ARTIFACT_IDS.length)|0;
-  let bi=(Math.random()*(ARTIFACT_IDS.length-1))|0; if(bi>=ai) bi++;
-  relicChoices=[ARTIFACTS.get(ARTIFACT_IDS[ai]).create(),ARTIFACTS.get(ARTIFACT_IDS[bi]).create()];
-  pendingRelic=null;
-  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,gallop:0,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9});
-  setMode('relic'); SFX.relic(); flash('#ffe37a',.35);
-}
-function relicTap(pt){
-  /* 1) tap one of the two offered relics to pick it up... */
-  if(relicChoices){
-    for(let i=0;i<relicChoices.length;i++){
-      const x=VW/2-150+i*160;
-      if(pt.x>x&&pt.x<x+140&&pt.y>318&&pt.y<422){
-        pendingRelic=relicChoices[i]; SFX.coin(); return;
-      }
-    }
-  }
-  /* 2) ...then tap a slot to equip it (replacing whatever was there) */
-  if(pendingRelic){
-    for(let i=0;i<5;i++){
-      const x=VW/2-220+i*90;
-      if(pt.x>x&&pt.x<x+80&&pt.y>440&&pt.y<540){ equipRelic(i); setMode('shop'); return; }
-    }
-  }
-  if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>586&&pt.y<634){   // SKIP button
-    pendingRelic=null; relicChoices=null; SFX.duck();
-    floater(VW/2,560,'relics left behind','#8b8fa0',15);
-    setMode('shop');
-  }
-}
-function equipRelic(i){
-  relics[i]=pendingRelic; pendingRelic=null; relicChoices=null; syncArtifactCache(); SFX.relic();
-  floater(VW/2,470,'RELIC EQUIPPED','#ffe37a',20);
-}
 /* --- the smith: spend gold on permanent (this-run) upgrades during the safe ride --- */
 let upg={arrow:0,lance:0,counter:0,fang:0,relic:0};
 const UPG_DEFS=[
@@ -51457,21 +51835,161 @@ function upgCost(key){
   return Math.max(1,Math.round(c*(hasRelic('seal')?0.7:1)));   // SMITH'S SEAL discount
 }
 function shopTap(pt){
-  for(let i=0;i<UPG_DEFS.length;i++){                    // upgrade rows
-    const y=326+i*64;
-    if(pt.x>50&&pt.x<VW-50&&pt.y>y&&pt.y<y+56){
-      const d=UPG_DEFS[i], cost=upgCost(d.key);
-      if(gold>=cost){ gold-=cost; upg[d.key]++; SFX.relic();
-        floater(VW/2,y+20,d.name+' UP!',d.col,18);
-        burst(VW/2,y+34,12,[d.col,'#fff'],160,60,3,.6);
-      } else { SFX.duck(); floater(VW/2,y+20,'not enough gold','#ff4d3a',14); }
-      return;
+  const shop=blacksmithShop;if(!shop||mode!=='shop'||paused)return false;
+  if(shop.phase==='result'){
+    if(pointInRect(pt,SMITH_UI.confirm)){shop.phase='browse';shop.order=null;refreshSmithCards();return true;}
+    return false;
+  }
+  if(shop.phase!=='browse')return false;
+  if(shop.lab&&smithLabTap(pt))return true;
+  for(let i=0;i<runSkills.length;i++)if(smithCardHit(pt,i)){
+    shop.selected=i;shop.message='';SFX.swipe();return true;
+  }
+  if(pointInRect(pt,SMITH_UI.confirm))return beginSmithUpgrade();
+  if(pointInRect(pt,SMITH_UI.ride)){
+    if(shop.lab){resetRun();debugRun=false;setMode('debugcfg');}
+    else if(shop.townId&&townVisit?.id===shop.townId){setMode('town');}
+    else{blacksmithShop=null;nextLoop();}return true;
+  }
+  return false;
+}
+const SMITH_RULES=Object.freeze({prices:Object.freeze([18,30,48,72]),
+  failure:Object.freeze([0,.10,.18,.28]),refundRate:.5,
+  impact:1.55,reveal:2.25,rarity:3.45,done:4.35});
+const SMITH_UI=Object.freeze({confirm:{x:30,y:665,w:420,h:47},ride:{x:140,y:733,w:200,h:40}});
+let blacksmithShop=null,smithRouteIndex=null;
+const SMITH_LAB_OUTCOMES=['RANDOM','SUCCESS','FAIL: DROP','FAIL: SLIP','FAIL: MISS'],
+  SMITH_LAB_QUALITIES=['RANDOM','COMMON','UNCOMMON','RARE','LEGENDARY'];
+function openBlacksmithLab(){
+  resetRun();debugRun=true;skillLabSession=null;playerChar=CHARS[0];charSel=0;
+  gold=1000;flashA=0;shakeMag=0;openBlacksmithShop();
+  blacksmithShop.lab={outcome:0,quality:0};
+}
+function smithLabRect(i){return {x:26+(i%2)*220,y:552+Math.floor(i/2)*47,w:208,h:39};}
+function smithLabTap(pt){
+  const shop=blacksmithShop;if(!shop?.lab||shop.phase!=='browse')return false;
+  const lab=shop.lab;
+  for(let i=0;i<4;i++)if(pointInRect(pt,smithLabRect(i))){
+    if(i===0)lab.outcome=(lab.outcome+1)%SMITH_LAB_OUTCOMES.length;
+    if(i===1)lab.quality=(lab.quality+1)%SMITH_LAB_QUALITIES.length;
+    if(i===2){
+      const id=runSkills[shop.selected].baseId,depth=runSkills[shop.selected].evolutionDepth||0;
+      resetRunSkill(id);
+      for(let d=0;d<(depth+1)%5;d++){
+        const skill=runSkill(id),route=smithChildren(skill)[0];
+        const next=route&&compileSmithUpgrade(skill,route,'COMMON');
+        if(!next)break;replaceRunSkill(id,next);
+      }
+      refreshSmithCards();
+    }
+    if(i===3)gold+=1000;
+    shop.message='';SFX.swipe();return true;
+  }
+  return false;
+}
+function smithCardRect(i){return {x:32+i*107,y:370+([12,0,0,12][i]||0),w:94,h:162};}
+function smithCardPose(i){
+  const r=smithCardRect(i),selected=blacksmithShop?.selected===i;
+  return {x:r.x+r.w/2,y:r.y+r.h/2-(selected?9:0),angle:[-.10,-.035,.035,.10][i]||0};
+}
+function smithCardHit(pt,i){
+  const r=smithCardRect(i),p=smithCardPose(i),dx=pt.x-p.x,dy=pt.y-p.y,
+    x=dx*Math.cos(p.angle)+dy*Math.sin(p.angle),y=-dx*Math.sin(p.angle)+dy*Math.cos(p.angle);
+  return Math.abs(x)<=r.w/2&&Math.abs(y)<=r.h/2;
+}
+function smithItemKind(skillId){return skillId==='shield_bash'?'shield':skillId==='call_squire'?'gauntlet':'bow';}
+function smithChildren(skill){
+  if(!smithRouteIndex){
+    smithRouteIndex=new Map();
+    for(const definition of BASE_TURN_SKILLS){
+      const catalog=WEAPON_SKILL_ROUTE_CATALOGS.byId[definition.id],
+        routes=catalog?catalog.routes.filter(r=>r.runtimeReadiness==='MATERIALIZED'):
+          CLASS_SKILL_ROUTES.filter(r=>r.skillId===definition.id&&r.usesQuality);
+      for(const route of routes){
+        const key=definition.id+':'+(route.parentId||'BASE');
+        if(!smithRouteIndex.has(key))smithRouteIndex.set(key,[]);
+        smithRouteIndex.get(key).push(route);
+      }
     }
   }
-  if(pt.x>VW/2-95&&pt.x<VW/2+95&&pt.y>688&&pt.y<740){ nextLoop(); }   // RIDE ON
+  if(!skill||skill.evolutionDepth>=4)return [];
+  const parent=skill.classRouteId||skill.activeAttributeRouteId||
+    skill.evolutionHistory.at(-1)?.routeId||'BASE';
+  return (smithRouteIndex.get(skill.baseId+':'+parent)||[]).filter(r=>r.depth===skill.evolutionDepth+1);
+}
+function smithQuote(skill){
+  const depth=skill.evolutionDepth||0,children=smithChildren(skill);
+  return {children,depth,price:Math.max(1,Math.round((SMITH_RULES.prices[depth]||72)*(hasRelic('seal')?.7:1))),
+    fail:SMITH_RULES.failure[depth]||0,maxed:!children.length};
+}
+function refreshSmithCards(){
+  if(blacksmithShop)blacksmithShop.cards=runSkills.map(smithQuote);
+}
+function openBlacksmithShop(){
+  resetSquireCombat();
+  blacksmithShop={phase:'browse',selected:0,clock:0,order:null,message:'',cards:[],
+    random:journeyRandom(journeyKeySeed(journeyRunSeed??stageRouteSeed,'smith:'+loop))};
+  refreshSmithCards();
+  Object.assign(player,{jumpT:-1,duckT:-1,attackAnim:0,counterAnim:0,parryAnim:0,swordCombo:null,parryShield:null});
+  setMode('shop');
+}
+function compileSmithUpgrade(skill,route,rarity){
+  // Compile the real current catalogue, never the retired random-mutation pool.
+  // Earlier quality rolls are ingredients, not overwritten by this new layer.
+  const rarities={1:'COMMON',2:'COMMON',3:'COMMON',4:'COMMON'};
+  for(const layer of skill.evolutionHistory)rarities[layer.depth]=layer.rarity;
+  rarities[route.depth]=rarity;
+  const command=route.classSkillRoute?compileClassSkillRoute(route.id,rarities):
+    compileWeaponSkillRoutePreview(route,rarities);
+  if(command&&!route.classSkillRoute)applyWeaponSkillRouteIdentity(command,route);
+  return command;
+}
+function beginSmithUpgrade(){
+  const shop=blacksmithShop;if(mode!=='shop'||!shop||shop.phase!=='browse'||paused)return false;
+  const skill=runSkills[shop.selected],quote=smithQuote(skill);
+  if(quote.maxed){shop.message='This skill has reached its Apex.';SFX.duck();return false;}
+  if(gold<quote.price){shop.message='Not enough gold. Your next ride can pay for this.';SFX.duck();return false;}
+  // Route first, outcome second, rarity independently. No render/input rerolls.
+  const random=shop.random,route=quote.children[Math.min(quote.children.length-1,Math.floor(random()*quote.children.length))],
+    success=shop.lab?.outcome>=2?false:shop.lab?.outcome===1?true:random()>=quote.fail,
+    rarity=success?(shop.lab?.quality?SMITH_LAB_QUALITIES[shop.lab.quality]:rollSynthesisRarity(random)):null,
+    command=success?compileSmithUpgrade(skill,route,rarity):null;
+  if(success&&!command){shop.message='This recipe is unavailable. No gold spent.';return false;}
+  gold-=quote.price;
+  // Cosmetic variation has its own deterministic stream, never consumes reward RNG.
+  const attempt=shop.attempts||0;shop.attempts=attempt+1;
+  const failStyle=shop.lab?.outcome>=2?shop.lab.outcome-2:
+    (journeyKeySeed(journeyRunSeed??stageRouteSeed,'smith-acting:'+loop)+attempt)%3;
+  shop.order={skillId:skill.baseId,route,rarity,success,command,previous:skill,failStyle,
+    price:quote.price,refund:success?0:Math.floor(quote.price*SMITH_RULES.refundRate),settled:false,hit:false};
+  shop.phase='forge';shop.clock=0;shop.message='';SFX.swipe();return true;
+}
+function settleSmithOrder(){
+  const order=blacksmithShop?.order;if(!order||order.settled)return;
+  order.settled=true;
+  if(order.success){
+    if(runSkill(order.skillId)!==order.previous||!replaceRunSkill(order.skillId,order.command)){
+      order.success=false;order.refund=order.price;order.error=true;
+    }
+  }
+  // A refund is not newly earned gold and must not inflate run score.
+  if(!order.success)gold+=order.refund;
+}
+function updateBlacksmithShop(dt){
+  const shop=blacksmithShop;if(!shop||paused)return;
+  if(shop.phase==='result'){shop.clock=Math.min(8,shop.clock+dt);return;}
+  if(shop.phase!=='forge')return;
+  shop.clock+=dt;const order=shop.order;
+  if(shop.clock>=SMITH_RULES.impact&&!order.hit){order.hit=true;SFX.thud();}
+  if(shop.clock>=SMITH_RULES.rarity&&!order.settled){settleSmithOrder();if(order.success)SFX.relic();else SFX.duck();}
+  if(shop.clock>=SMITH_RULES.done){shop.phase='result';refreshSmithCards();}
 }
 function nextLoop(){
   cancelJourneyRoadEvent('stage-ended');
+  resetSquireCombat();
+  skillMutationChoices=null;
+  Object.assign(player,{lane:1,x:1,jumpT:-1,duckT:-1,attackAnim:0,counterAnim:0,
+    parryAnim:0,swordCombo:null,parryShield:null,lastParry:-9});
   if(journeyRoute){journeyRoute=null;journeyMapOpen=false;journey.phase='main';}
   const policy=RUN_POLICY();
   loop=policy.nextStageAt(loop); dist=0; roadScroll=0;curvedGroundDistance=0; nextSpawnAt=30; nextTreeAt=6; nextPondAt=0;
@@ -51516,6 +52034,8 @@ function setMode(m){
      changes the player's own mute preference and is released on the normal menu. */
   SFX.setTestMuted(SILENT_TEST_MODES.has(m)||(skillLabSession&&skillLabSession.inCombat)||
     (debugRun&&m!=='menu'));
+  if(['boss','bossintro','miniboss'].includes(mode)&&
+     !['boss','bossintro','miniboss','bosslabmoves'].includes(m))resetSquireCombat();
   if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
   mode=m;modeT=0;
 }
@@ -51567,7 +52087,13 @@ function commitFinalScore(){
   if(newBestThisRun) bestScore=total;
 }
 function resetRun(){
+  townVisit=null;
+  merchantShop=null;merchantVisits.clear();
   cancelJourneyRoadEvent('abandoned');
+  blacksmithShop=null;
+  selectRunPolicy('endless_build');
+  journeyMushroomQuest=null;
+  journeyChickenQuest=null;journeyTravelerFavor=null;
   cvs.style.imageRendering='';
   forestCorridor=null;
   stageRouteSeed=(Math.random()*0x7fffffff)|0;
@@ -51576,7 +52102,7 @@ function resetRun(){
   bossKills=0; bossScoreRun=0; overkillRun=0; chainStacks=0;
   runWeapon=createRunWeapon('longbow');
   resetRunSkills();
-  relics=[null,null,null,null,null]; syncArtifactCache(); pendingRelic=null;skillMutationChoices=null; // all FIVE slots, empty
+  relics=[null,null,null,null,null]; syncArtifactCache();skillMutationChoices=null; // all FIVE slots, empty
   upg={arrow:0,lance:0,counter:0,fang:0,relic:0};    // smith upgrades last one run
   pack=0; packTypes=[]; packLeap=null; minibossSpawned=false; minibossFight=null; boss=null;
   resetSquireCombat();
@@ -51730,17 +52256,15 @@ function uiConfirm(){
   else if(mode==='charsel'){ startRun(charSel); }
   else if(mode==='score'&&modeT>0.6){ resetRun(); setMode('menu'); }  // fresh board behind the menu
 }
-function startRun(i){
-  const launchJourneyPrototype=pendingJourneyPrototype&&!debugRun;
+function startRun(i,roadOnly=false){
+  const launchJourneyPrototype=pendingJourneyPrototype||debugRun;
   charSel=i; playerChar=CHARS[i];
   resetRun();
   runJourneyPrototype=launchJourneyPrototype;journey=runJourneyPrototype?createJourneyState():null;
-  journeyRoute=runJourneyPrototype?createJourneyRoute():null;
-  journeyRunSeed=journeyRoute?journeyRoute.seed:null;
-  if(journeyRoute){stageRouteSeed=journeyRunSeed;biome=biomeOf(loop);}
-  pendingJourneySeed=null;
-  if(journeyRoute)armJourneyNode();
-  pendingJourneyPrototype=false;
+  if(runJourneyPrototype){
+    selectRunPolicy('journey_forest');
+  }
+  setCurvedWorldTrial(runJourneyPrototype||new URLSearchParams(location.search).get('curvedWorld')==='1');
   if(debugRun){                                   // apply the debug rig AFTER the fresh board
     loop=debugLoop; biome=biomeOf(loop); oakUsed=false;
     relics=[null,null,null,null,null];
@@ -51749,10 +52273,18 @@ function startRun(i){
     nextSpawnAt=40; nextTreeAt=6; nextPondAt=0;
     floater(VW/2,300,'⚙ DEBUG — STAGE '+loop+(godMode?' · GOD MODE':''),'#5c8fa0',18);
   }
+  // Stage, progression policy and equipped speed modifiers must be final before
+  // the seeded map is built; otherwise a stage-N debug ride has a stage-1 route.
+  journeyRoute=runJourneyPrototype?createJourneyRoute():null;
+  journeyRunSeed=journeyRoute?journeyRoute.seed:null;
+  if(journeyRoute){stageRouteSeed=journeyRunSeed;biome=biomeOf(loop);}
+  pendingJourneySeed=null;
+  if(journeyRoute)armJourneyNode();
+  pendingJourneyPrototype=false;
   setMode('run'); SFX.relic();
-  if(debugRun&&debugMiniMoves) startMiniMoveLab();
-  else if(debugRun&&debugBossStart) startBoss();
-  else if(debugRun&&debugMiniStart) startMiniboss(1,true);
+  if(!roadOnly&&debugRun&&debugMiniMoves) startMiniMoveLab();
+  else if(!roadOnly&&debugRun&&debugBossStart) startBoss();
+  else if(!roadOnly&&debugRun&&debugMiniStart) startMiniboss(1,true);
 }
 function leaveCharSel(){ pendingJourneyPrototype=false;setMode(debugRun?'debugcfg':'menu'); SFX.duck(); }
 function charselTap(pt){
@@ -52660,9 +53192,9 @@ function drawPlayerTurnUI(){
   }
   g.restore();
 }
-function drawRelicSlot(x,y,s,r){
+function drawRelicSlot(x,y,s,r,bare=false){
   g.fillStyle='#00000077'; g.strokeStyle='#e8e2d055'; g.lineWidth=2;
-  g.fillRect(x,y,s,s); g.strokeRect(x,y,s,s);
+  if(!bare){g.fillRect(x,y,s,s);g.strokeRect(x,y,s,s);}
   if(!r) return;
   g.save(); g.translate(x+s/2,y+s/2);
   const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(a,b,w,h); };
@@ -55343,15 +55875,15 @@ const LOCKPICK_PIN_RECTS=Object.freeze(Array.from({length:LOCKPICK_RULES.pins},(
 })));
 let lockpickGame=null;
 
-function makeLockpickPins(){
+function makeLockpickPins(random=Math.random){
   const behaviors=LOCKPICK_BEHAVIORS.slice();
-  for(let i=behaviors.length-1;i>0;i--){const j=(Math.random()*(i+1))|0,temp=behaviors[i];behaviors[i]=behaviors[j];behaviors[j]=temp;}
+  for(let i=behaviors.length-1;i>0;i--){const j=(random()*(i+1))|0,temp=behaviors[i];behaviors[i]=behaviors[j];behaviors[j]=temp;}
   return behaviors.map((behavior,index)=>({index,behavior:behavior.id,hint:behavior.hint,state:'idle',lift:0,
     cycleT:0,holdT:0,segment:'idle',tested:false,flash:0,
-    rise:behavior.rise*(.90+Math.random()*.20),apex:behavior.apex*(.86+Math.random()*.28),
-    drop:behavior.drop*(.90+Math.random()*.20),window:Math.round(behavior.window*(.90+Math.random()*.20)),
-    curve:behavior.curve,pauseAt:behavior.pauseAt?clamp(behavior.pauseAt+(Math.random()-.5)*.08,.25,.82):0,
-    pause:behavior.pause?behavior.pause*(.82+Math.random()*.36):0,jitter:behavior.jitter*(.80+Math.random()*.40)}));
+    rise:behavior.rise*(.90+random()*.20),apex:behavior.apex*(.86+random()*.28),
+    drop:behavior.drop*(.90+random()*.20),window:Math.round(behavior.window*(.90+random()*.20)),
+    curve:behavior.curve,pauseAt:behavior.pauseAt?clamp(behavior.pauseAt+(random()-.5)*.08,.25,.82):0,
+    pause:behavior.pause?behavior.pause*(.82+random()*.36):0,jitter:behavior.jitter*(.80+random()*.40)}));
 }
 function startLockpicking(stageId=biome,returnMode='minigames'){
   lockpickGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
@@ -55366,7 +55898,8 @@ function leaveLockpicking(){
 }
 function beginLockpickingRound(){
   const l=lockpickGame;if(!l)return;
-  Object.assign(l,{phase:'playing',phaseT:0,pins:makeLockpickPins(),cursor:0,holdingIndex:-1,
+  if(l.roadAttempt&&l.phase==='result'){leaveLockpicking();return;}
+  Object.assign(l,{phase:'playing',phaseT:0,pins:makeLockpickPins(l.roadRandom),cursor:0,holdingIndex:-1,
     attempts:0,misses:0,picks:LOCKPICK_RULES.picks,setCount:0,lastSet:[],won:false,
     message:'TAP TO SELECT. HOLD TO LIFT. RELEASE AT THE GOLD LINE.',nearText:'',nearT:0,openAmount:0});
   SFX.lockTest();
@@ -55565,9 +56098,9 @@ function drawLockpickingGame(){
     g.fillStyle='#080a0eed';g.fillRect(37,553,406,91);g.strokeStyle=resultCol;g.lineWidth=3;g.strokeRect(37,553,406,91);
     g.font='bold 16px monospace';g.fillStyle=resultCol;g.fillText(l.won?'CHEST OPEN!':'ALL PICKS BROKEN!',VW/2,580);
     g.font='10px monospace';g.fillStyle='#e4dcc9';g.fillText(l.won?'FIVE PINS SET IN '+l.attempts+' ATTEMPTS  |  '+l.misses+' MISSES':'SET '+l.setCount+'/5 BEFORE THE FINAL SNAP',VW/2,605);
-    g.fillStyle='#aeb2c2';g.fillText(l.won?'Treasure acquired. Used sock declined.':'The goblin quietly raises his repair fee.',VW/2,626);
+    g.fillStyle='#aeb2c2';g.fillText(l.roadAttempt?(l.won?'+20 GOLD WHEN YOU RETURN TO THE ROAD':'NO GOLD. THE ROAD IS STILL WAITING.'):l.won?'Treasure acquired. Used sock declined.':'The goblin quietly raises his repair fee.',VW/2,626);
     g.fillStyle='#342316';g.fillRect(LOCKPICK_REPLAY_BTN.x,LOCKPICK_REPLAY_BTN.y,LOCKPICK_REPLAY_BTN.w,LOCKPICK_REPLAY_BTN.h);g.strokeStyle=resultCol;g.lineWidth=3;g.strokeRect(LOCKPICK_REPLAY_BTN.x,LOCKPICK_REPLAY_BTN.y,LOCKPICK_REPLAY_BTN.w,LOCKPICK_REPLAY_BTN.h);
-    g.font='bold 17px monospace';g.fillStyle=resultCol;g.fillText('TRY A NEW LOCK',VW/2,693);
+    g.font='bold 17px monospace';g.fillStyle=resultCol;g.fillText(l.roadAttempt?'BACK TO ROAD':'TRY A NEW LOCK',VW/2,693);
   }
 }
 
@@ -55816,9 +56349,9 @@ const WELL_START_BTN=Object.freeze({x:123,y:658,w:234,h:54});
 const WELL_REPLAY_BTN=Object.freeze({x:123,y:658,w:234,h:54});
 let wellGame=null;
 
-function makeWishingWellSetup(){
-  const y=238+Math.random()*88,x=145+Math.random()*190,depth=clamp((y-238)/88,0,1),scale=lerp(.90,1.18,depth),
-    distance=Math.hypot(x-WELL_THROW_ORIGIN.x,y-WELL_THROW_ORIGIN.y),wind=(Math.random()<.5?-1:1)*(.38+Math.random()*.62);
+function makeWishingWellSetup(random=Math.random){
+  const y=238+random()*88,x=145+random()*190,depth=clamp((y-238)/88,0,1),scale=lerp(.90,1.18,depth),
+    distance=Math.hypot(x-WELL_THROW_ORIGIN.x,y-WELL_THROW_ORIGIN.y),wind=(random()<.5?-1:1)*(.38+random()*.62);
   return {x,y,scale,rx:72*scale,ry:32*scale,wind,distance,
     idealLength:clamp(distance*.34,112,168),idealSpeed:clamp(420+distance*.42,520,700)};
 }
@@ -55834,7 +56367,8 @@ function leaveWishingWell(){
 }
 function beginWishingWellThrow(){
   const w=wellGame;if(!w)return;
-  Object.assign(w,{phase:'ready',phaseT:0,setup:makeWishingWellSetup(),aiming:false,aimStart:null,
+  if(w.roadAttempt&&w.phase==='result'){leaveWishingWell();return;}
+  Object.assign(w,{phase:'ready',phaseT:0,setup:makeWishingWellSetup(w.roadRandom),aiming:false,aimStart:null,
     aimPoint:null,samples:[],flightT:0,ballisticLanding:null,landing:null,coinPos:{x:WELL_THROW_ORIGIN.x,y:WELL_THROW_ORIGIN.y},
     result:null,impactT:0,message:'TOUCH THE COIN. SWIPE TOWARD THE WELL. RELEASE WITH PURPOSE.'});
   SFX.coin();
@@ -55989,8 +56523,8 @@ function drawWishingWellGame(){
     g.font='bold 18px monospace';g.fillStyle=w.result.col;g.fillText(w.result.tier+' - '+w.result.accuracy+'%',VW/2,563);
     g.font='10px monospace';g.fillStyle='#e1d9ca';g.fillText(w.result.message,VW/2,586);
     g.fillStyle='#9fd8ff';g.fillText('FLICK LENGTH '+lengthPct+'%  |  SPEED '+speedPct+'%',VW/2,609);
-    g.fillStyle='#aeb2c2';g.fillText('Reward tier recorded; actual rewards arrive later.',VW/2,632);
-    g.fillStyle='#342316';g.fillRect(WELL_REPLAY_BTN.x,WELL_REPLAY_BTN.y,WELL_REPLAY_BTN.w,WELL_REPLAY_BTN.h);g.strokeStyle=w.result.col;g.lineWidth=3;g.strokeRect(WELL_REPLAY_BTN.x,WELL_REPLAY_BTN.y,WELL_REPLAY_BTN.w,WELL_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=w.result.col;g.fillText('THROW ANOTHER',VW/2,693);
+    g.fillStyle='#aeb2c2';g.fillText(w.roadAttempt?`+${journeyRoadReward({game:w,content:'well'})} GOLD WHEN YOU RETURN TO THE ROAD`:'Reward tier recorded; actual rewards arrive later.',VW/2,632);
+    g.fillStyle='#342316';g.fillRect(WELL_REPLAY_BTN.x,WELL_REPLAY_BTN.y,WELL_REPLAY_BTN.w,WELL_REPLAY_BTN.h);g.strokeStyle=w.result.col;g.lineWidth=3;g.strokeRect(WELL_REPLAY_BTN.x,WELL_REPLAY_BTN.y,WELL_REPLAY_BTN.w,WELL_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=w.result.col;g.fillText(w.roadAttempt?'BACK TO ROAD':'THROW ANOTHER',VW/2,693);
   }
 }
 
@@ -56267,6 +56801,7 @@ function leaveArmWrestling(){
 }
 function beginArmWrestlingMatch(){
   const a=armWrestleGame;if(!a)return;
+  if(a.roadAttempt&&a.phase==='result'){leaveArmWrestling();return;}
   Object.assign(a,{phase:'playing',phaseT:0,power:ARM_WRESTLE_RULES.start,combo:0,
     lastSwipe:perfNow,swipePulse:0,wrongT:0,gruntT:0,pinT:0,result:null,swipes:0});
   SFX.armStrain();
@@ -56395,7 +56930,8 @@ function drawArmWrestlingGame(){
     const win=a.result&&a.result.win;g.fillStyle='#080a0ef3';g.fillRect(42,550,396,99);g.strokeStyle=win?'#7df078':'#ff655c';g.lineWidth=3;g.strokeRect(42,550,396,99);
     g.font='bold 21px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText(win?'BARON: DE-WRISTED':'TABLE: UNDEFEATED',VW/2,581);
     g.font='10px monospace';g.fillStyle='#e1d9ca';g.fillText(win?'A clean pin. His crown has requested a transfer.':'Beefwrist offers you his beginner elbow cushion.',VW/2,607);g.fillStyle='#ffe36a';g.fillText('RIGHT SWIPES: '+(a.result?a.result.swipes:0),VW/2,631);
-    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.strokeStyle=win?'#7df078':'#ff655c';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText('REMATCH',VW/2,693);
+    if(a.roadAttempt){g.fillStyle='#ffe37a';g.font='12px monospace';g.fillText(win?'+15 GOLD WHEN YOU RETURN':'NO GOLD LOST. NO TAX PAID.',VW/2,650);}
+    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.strokeStyle=win?'#7df078':'#ff655c';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText(a.roadAttempt?'BACK TO ROAD':'REMATCH',VW/2,693);
   }
 }
 
@@ -58227,7 +58763,7 @@ function drawBossLabSelect(){
   g.textAlign='center'; g.font='bold 24px monospace'; g.fillStyle='#ff9a3a'; g.fillText('BOSS MOVE LAB',VW/2,82);
   g.font='11px monospace'; g.fillStyle='#aeb2c2';
   g.fillText('choose one boss · stage '+debugLoop+' · boss stays pinned',VW/2,106);
-  const defs=ENCOUNTERS.list.filter(def=>def.role==='boss');
+  const defs=ENCOUNTERS.list.filter(def=>def.role==='boss'&&!def.roadOnly);
   for(let i=0;i<defs.length;i++){
     const def=defs[i],y=142+i*116;
     g.fillStyle='rgba(255,154,58,.08)'; g.fillRect(48,y,384,92);
@@ -58242,7 +58778,7 @@ function drawBossLabSelect(){
 }
 function bossLabSelectTap(pt){
   if(pt.x>20&&pt.x<110&&pt.y>60&&pt.y<96){ setMode('debugcfg'); SFX.duck(); return; }
-  const defs=ENCOUNTERS.list.filter(def=>def.role==='boss');
+  const defs=ENCOUNTERS.list.filter(def=>def.role==='boss'&&!def.roadOnly);
   for(let i=0;i<defs.length;i++) if(pt.x>=48&&pt.x<=432&&pt.y>=142+i*116&&pt.y<=234+i*116){
     startBossLabFor(defs[i].id); return;
   }
@@ -60627,7 +61163,7 @@ function drawHealthLab(){
 function drawDebugCfg(){
   g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
-  g.font='bold 24px monospace'; g.fillStyle='#5c8fa0'; g.fillText('⚙ DEBUG RUN',VW/2,84);
+  g.font='bold 19px monospace'; g.fillStyle='#5c8fa0'; g.fillText('DEBUG JOURNEY',VW/2,84);
   g.font='11px monospace'; g.fillStyle='#8b8fa0'; g.fillText('score is counted · debug runs do not set best score',VW/2,104);
   g.strokeStyle='#e8e2d0'; g.lineWidth=2; g.strokeRect(20,60,90,36);
   g.font='bold 13px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',65,83);
@@ -60641,11 +61177,13 @@ function drawDebugCfg(){
   g.fillText('−',VW/2-70,180); g.fillText('+',VW/2+70,180);
   g.fillStyle='#ffe37a'; g.fillText(debugLoop+'',VW/2,181);
   g.font='10px monospace'; g.fillStyle='#8b8fa0';
-  g.fillText(biomeOf(debugLoop)+' · cycle '+(progressionTier(debugLoop)+1)+' · endless',VW/2,204);
+  g.fillText('FOREST · TIER '+debugLoop+' · SEEDED JOURNEY / NEW RENDER',VW/2,204);
   /* god mode toggle */
   g.strokeStyle=godMode?'#ffe37a':'#55565e'; g.lineWidth=2; g.strokeRect(VW/2-80,218,160,38);
   g.font='bold 14px monospace'; g.fillStyle=godMode?'#ffe37a':'#8b8fa0';
   g.fillText('GOD MODE: '+(godMode?'ON':'OFF'),VW/2,242);
+  g.strokeStyle='#e4c68e';g.strokeRect(330,218,138,38);g.font='bold 11px monospace';
+  g.fillStyle='#e4c68e';g.fillText('TOWN LAB ▶',399,242);
   const dl=VW/2-112,dr=VW/2+4,dw=108;
   g.lineWidth=2; g.font='bold 10px monospace';
   g.strokeStyle=debugBossStart?'#ff7a82':'#55565e'; g.strokeRect(dl,262,dw,34);
@@ -60659,8 +61197,12 @@ function drawDebugCfg(){
   g.fillStyle=debugMiniMoves?'#c9f74a':'#8b8fa0'; g.fillText((debugMiniMoves?'✓ ':'□ ')+'MINI MOVES',168+labW/2,324);
   g.strokeStyle='#9ecbff';g.strokeRect(324,302,labW,34);
   g.fillStyle='#9ecbff';g.fillText('SKILL LAB ▶',324+labW/2,324);
-  g.strokeStyle='#ff6b70';g.strokeRect(VW/2-labW/2,342,labW,34);
-  g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB ▶',VW/2,364);
+  g.strokeStyle='#ff6b70';g.strokeRect(12,342,labW,34);
+  g.fillStyle='#ff6b70';g.fillText('HEALTH UI LAB ▶',84,364);
+  g.strokeStyle='#f2d394';g.strokeRect(168,342,labW,34);
+  g.fillStyle='#f2d394';g.fillText('BLACKSMITH LAB ▶',240,364);
+  g.strokeStyle='#b9d39a';g.strokeRect(324,342,labW,34);
+  g.fillStyle='#b9d39a';g.fillText('MERCHANT LAB ▶',396,364);
   /* relic toggles */
   g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— tap relics to carry (first 5 ride along) —',VW/2,390);
   const keys=ARTIFACT_IDS;
@@ -60688,6 +61230,7 @@ function selectDebugFight(which){
   SFX.relic();
 }
 function debugCfgTap(pt){
+  if(pointInRect(pt,{x:330,y:218,w:138,h:38})){openTownLab();return;}
   if(pt.x>20&&pt.x<110&&pt.y>60&&pt.y<96){ setMode('menu'); SFX.duck(); return; }
   if(pt.x>VW-150&&pt.x<VW-20&&pt.y>60&&pt.y<96){ startDebugRun(); return; }
   if(pt.y>152&&pt.y<192){
@@ -60700,7 +61243,9 @@ function debugCfgTap(pt){
   if(pt.x>12&&pt.x<156&&pt.y>302&&pt.y<336){ setMode('bosslabselect'); SFX.relic(); return; }
   if(pt.x>168&&pt.x<312&&pt.y>302&&pt.y<336){ selectDebugFight('miniMoves'); return; }
   if(pt.x>324&&pt.x<468&&pt.y>302&&pt.y<336){ openSkillLab(); return; }
-  if(pt.x>VW/2-72&&pt.x<VW/2+72&&pt.y>342&&pt.y<376){ openHealthLab(); return; }
+  if(pt.x>12&&pt.x<156&&pt.y>342&&pt.y<376){ openHealthLab(); return; }
+  if(pt.x>168&&pt.x<312&&pt.y>342&&pt.y<376){ openBlacksmithLab(); return; }
+  if(pt.x>324&&pt.x<468&&pt.y>342&&pt.y<376){ openMerchantLab(); return; }
   const keys=ARTIFACT_IDS;
   for(let i=0;i<keys.length;i++){
     const col=i%2, row=(i/2)|0, x=14+col*230, y=402+row*40;
@@ -60806,73 +61351,1707 @@ function drawSkillEvolutionScreen(){
     drawSkillMutationCard(mutation,skillEvolutionCardRect(i),mutation.kind==='MASTERY'?'TAP TO MASTER':'TAP TO EVOLVE');
   }
 }
-function drawRelicScreen(){
-  g.fillStyle='rgba(5,7,12,0.72)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  g.textAlign='center';
-  g.font='bold 24px monospace'; g.fillStyle='#ffe37a';
-  g.fillText('THE FALLEN BEAST GUARDED TWO RELICS',VW/2,282);
-  g.font='13px monospace'; g.fillStyle='#aeb2c2';
-  g.fillText('take ONE — tap it, then tap a slot below',VW/2,304);
-  /* the two offered relic cards */
-  if(relicChoices) for(let i=0;i<relicChoices.length;i++){
-    const rc=relicChoices[i], d=ARTIFACT_DEFS[rc.type], x=VW/2-150+i*160;
-    const sel=pendingRelic===rc;
-    g.fillStyle='rgba(0,0,0,0.55)'; g.fillRect(x,318,140,104);
-    g.strokeStyle=sel?'#fff':d.col; g.lineWidth=sel?3:2; g.strokeRect(x,318,140,104);
-    drawRelicSlot(x+46,326+(sel?Math.sin(perfNow*6)*2:0),48,rc);
-    g.font='bold 12px monospace'; g.fillStyle=d.col; g.fillText(d.name,x+70,390);
-    g.font='10px monospace'; g.fillStyle='#e8e2d0';
-    const words=d.desc.split(' '); let l1='',l2='';
-    for(const w of words){ if((l1+w).length<22&&!l2) l1+=w+' '; else l2+=w+' '; }
-    g.fillText(l1.trim(),x+70,403); if(l2) g.fillText(l2.trim(),x+70,415);
+function smithPoly(points,fill,stroke='#151923'){
+  g.beginPath();points.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();
+  g.fillStyle=fill;g.fill();if(stroke){g.strokeStyle=stroke;g.lineWidth=2;g.stroke();}
+}
+function smithText(text,x,y,size=12,col='#efe7d0',maxWidth=420){
+  g.fillStyle=col;g.textAlign='center';g.font='bold '+size+'px monospace';
+  while(size>8&&g.measureText(text).width>maxWidth)g.font='bold '+(--size)+'px monospace';
+  g.fillText(text,x,y);
+}
+function drawSmithButton(rect,label,color,enabled=true){
+  g.fillStyle='#201a17';g.fillRect(rect.x+2,rect.y+4,rect.w,rect.h);
+  g.fillStyle=enabled?'#49372b':'#342b24';g.fillRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle=enabled?'#ae8a57':'#625140';g.lineWidth=2;
+  g.strokeRect(rect.x,rect.y,rect.w,rect.h);
+  g.strokeStyle='#71583d';g.lineWidth=1;g.strokeRect(rect.x+4,rect.y+4,rect.w-8,rect.h-8);
+  for(const x of [rect.x+9,rect.x+rect.w-9]){g.fillStyle='#c3a575';g.beginPath();g.arc(x,rect.y+rect.h/2,1.5,0,TAU);g.fill();}
+  smithText(label,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?color:'#828590',rect.w-16);
+}
+function drawSmithItem(kind,x,y,scale=1,neutral=false){
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  if(kind==='bow'){
+    // Exact production bow: limb bends, wraps, tips and string from combat.
+    const palette=neutral?{wrap:'#656565',limb:'#777777',wood:'#ababab',edge:'#d0d0d0',string:'#dedede'}:null;
+    drawSpatialBowProp({grip:[0,0,0],up:[1,0,0],back:[0,1,0],
+      string:[0,1.4,0],draw:0},0,p=>[p[0],p[1]-1.4],null,palette);
+  }else if(kind==='shield'){
+    drawSerJonathanShield(0,-1,0,-.12,1,.75,neutral?
+      {rim:'#cccccc',rimDark:'#757575',face:'#646464',emblem:'#999999',boss:'#aaaaaa'}:null);
+  }else{
+    // Same squared steel wrist/knuckles as the rider's articulated hand.
+    rigSegment(-2,2,-2,-3,4,'#4b5966');rigJoint(-2,-3,4.5,'#919da7');
+    rigJoint(-2,-3.4,3,'#c4ced5');px(-4,1,4.5,2,'#aebbc5');
+    for(let i=0;i<3;i++)px(-3.8+i*1.3,-6,1.05,2.4,'#aebbc5');
+    rigSegment(.3,-2,1.2,-3.8,1.3,'#919da7');
   }
-  /* the FIVE equip slots */
-  g.font='12px monospace'; g.fillStyle='#aeb2c2'; g.fillText('— your relic slots —',VW/2,434);
-  for(let i=0;i<5;i++){
-    const x=VW/2-220+i*90;
-    g.strokeStyle=pendingRelic?'#ffe37a':'#e8e2d055'; g.lineWidth=2+Math.sin(perfNow*6)*(pendingRelic?1:0);
-    g.strokeRect(x,440,80,100);
-    if(relics[i]){ drawRelicSlot(x+18,452,44,relics[i]);
-      g.font='8px monospace'; g.fillStyle=ARTIFACT_DEFS[relics[i].type].col;
-      const nm=ARTIFACT_DEFS[relics[i].type].name.split(' ');
-      g.fillText(nm[0],x+40,514); if(nm[1]) g.fillText(nm[1],x+40,524); }
-    else { g.font='11px monospace'; g.fillStyle='#aeb2c2'; g.fillText('empty',x+40,494); }
+  g.restore();
+}
+function drawSmithForgeBackdrop(){
+  // KR-KD: a frontal back wall aligned with the counter. Only the narrow room
+  // reveals recede; tools, masonry and shelf all share the same wall plane.
+  // Native canvas geometry, never enlarged raster. Fire mouth stays at 18..49.
+  const P=(v,c)=>smithPoly(v,c,null),R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  R(0,0,240,140,'#17282e');
+  R(8,9,223,117,'#293b40');
+  // Large fitted blocks: restrained seams instead of a high-contrast brick grid.
+  for(let row=0;row<5;row++)for(let col=0;col<7;col++){
+    const x=col*39-(row%2)*18,y=12+row*23;
+    P([[x+1,y+1],[x+36,y],[x+37,y+20],[x+2,y+21]],(col+row)%3?'#304247':'#35474b');
+    R(x+3,y+1,31,.65,'#425557');
   }
-  if(pendingRelic){ g.font='13px monospace'; g.fillStyle='#ffe37a';
-    g.fillText('now tap a slot to equip '+ARTIFACT_DEFS[pendingRelic.type].name,VW/2,566); }
-  /* SKIP button */
-  g.strokeStyle='#8b8fa0'; g.lineWidth=2; g.strokeRect(VW/2-80,586,160,48);
-  g.font='bold 17px monospace'; g.fillStyle='#aeb2c2'; g.fillText('SKIP RELICS',VW/2,616);
+  P([[0,0],[8,9],[8,126],[0,140]],'#1b2d32');
+  P([[231,9],[240,0],[240,140],[231,126]],'#15262d');
+  // Timber roof beam and its far-right supporting upright, not a false corner
+  // through the middle of the room. Back-wall edges remain parallel.
+  P([[0,0],[240,0],[233,9],[0,9]],'#846845');R(0,1,240,1,'#bc9b64');
+  R(8,9,223,3,'#14272b');
+  R(228,9,4,118,'#64503a');R(228,10,1,116,'#ab8958');
+  P([[205,12],[210,12],[231,37],[231,44]],'#8d6b43');
+  P([[8,126],[231,126],[240,140],[0,140]],'#443b30');
+  townStroke([[8,126],[231,126]],'#68513a',1);
+  // Hearth: warm stone front and darker right thickness, with a recessed mouth.
+  P([[7,12],[47,12],[53,19],[53,68],[7,68]],'#79684f');
+  P([[47,12],[55,17],[55,73],[47,68]],'#493d31');
+  R(9,14,37,1.4,'#ac9166');
+  for(let row=0;row<4;row++){
+    const y=18+row*10;
+    R(9,y+8,37,1,'#514b3c');R(20+(row%2)*12,y,1,8,'#514b3c');
+  }
+  P([[7,56],[45,56],[56,72],[53,118],[8,118],[8,73]],'#645442');
+  P([[7,56],[45,56],[49,62],[14,62],[8,72],[3,72]],'#b39365');
+  P([[49,62],[56,72],[56,119],[50,115],[50,75],[44,65]],'#44372e');
+  P([[18,72],[43,72],[49,78],[49,113],[17,113],[17,80]],'#171e22');
+  P([[11,76],[17,71],[17,114],[10,118]],'#967448');
+  R(18,75,31,39,'#10181c');
+  P([[9,114],[50,114],[57,121],[4,121]],'#b7996b');R(4,121,53,3,'#62503a');
+  P([[7,115],[16,115],[20,119],[9,119]],'#d3ac6e');
+  // Hearth poker rests against the side; handle, shaft and foot are connected.
+  townStroke([[59,88],[58,90],[53,119],[57,120]],'#879396',1.2);
+  // A level rail on the back wall. Every prop hangs on an actual hook.
+  R(179,31,48,5,'#927447');R(179,31,48,1,'#c8a16b');
+  for(const x of [184,200,216]){
+    const y=34;
+    townStroke([[x,y],[x,y+3],[x+1.5,y+4]],'#b0bdbb',.8);
+  }
+  townStroke([[185,38],[181,47],[184,54]],'#7c9399',1.3);
+  townStroke([[185,38],[189,47],[186,54]],'#bec9c6',1.3);
+  R(198,36,2,15,'#aa7845');R(197,47,4,8,'#718b96');R(197,47,1,8,'#c0cdcd');
+  R(215,35,1.5,17,'#c29b61');
+  P([[211,37],[220,36],[222,39],[220,42],[211,43]],'#607985');
+  P([[211,37],[220,36],[221,37],[212,39]],'#c8d6d3');
+  // Production shield and bow: same identities as the player's equipment.
+  R(195,60,1,4,'#b5a47f');drawSerJonathanShield(65,24,0,.18,.7,.9);
+  g.save();g.translate(221,76);g.rotate(-1.35);drawSmithItem('bow',0,0,.62);g.restore();
+  // Bench in three-quarter view, with billets stored under its top.
+  P([[193,104],[229,99],[240,106],[206,111]],'#b48a56');
+  P([[206,111],[240,106],[240,111],[206,116]],'#6d4e33');
+  P([[193,104],[206,111],[206,116],[193,109]],'#8c6742');
+  for(const x of [198,229]){R(x,111,4,21,'#463628');R(x,112,1,20,'#95714a');}
+  for(let i=0;i<3;i++){
+    const x=208+i*7;P([[x,119],[x+5,118],[x+5,125],[x,126]],'#647b80');
+    R(x,119,1,6,'#b5c1b7');
+  }
+  // A handful of real rivets, not random surface noise.
+  for(const [x,y] of [[229,18],[229,110],[181,33],[224,33]])R(x,y,1.2,1.2,'#d0b87f');
+}
+function smithKnightPose(time,lift,bounce,working,failed,forgeTime){
+  const idle=working?0:1,breath=Math.sin(time*1.85),weight=Math.sin(time*.72),
+    bodyX=idle*weight*.55+bounce*.65,bodyY=idle*breath*.28+bounce*.55,
+    chest=1+idle*breath*.018;
+  return {bodyX,bodyY,chest,
+    headTilt:idle*Math.sin(time*.61)*.025+lift*.07,
+    headDrop:failed?Math.min(2,Math.max(0,forgeTime-1.55)*4):0,
+    left:{sx:-16,sy:3,ex:-22+idle*Math.sin(time*.72+.3)*.4,ey:17+idle*breath*.3,
+      hx:-10+idle*weight*.5,hy:29+idle*Math.sin(time*1.85+.8)*.55},
+    right:{sx:16,sy:3,ex:23+lift*3+idle*Math.sin(time*.72+1)*.5,
+      ey:12-lift*13+idle*breath*.35,
+      hx:20+lift*8+idle*Math.sin(time*1.1)*.35,
+      hy:27-lift*42+idle*Math.sin(time*1.1+.8)*.65},
+    plume:Math.sin(time*2.2)*.55+lift*.8};
+}
+function smithActingPose(p,t,order){
+  // Authored continuous poses: delicately present the tiny tool, hold overhead,
+  // then accelerate through the strike. Reactions cannot disclose rarity early.
+  const keys=[
+    [0,20,27,23,12,2.55,0,0,0],
+    [.42,25,16,24,10,4.05,0,-.2,-.025],
+    [1.13,20,-10,28,-1,4.55,-1,-.6,-.045],
+    [1.32,20,-10,28,-1,4.55,-1,-.6,-.045],
+    [1.55,20,27,23,12,2.55,0,0,0],
+    [1.66,20,26,23,13,2.55,1,1.2,.025],
+    [2.15,22,21,25,13,3.4,0,0,0],
+    [2.8,22,21,25,13,3.4,0,0,0]];
+  let a=keys[0],b=a;
+  for(let i=1;i<keys.length;i++){b=keys[i];if(t<=b[0])break;a=b;}
+  let u=clamp((t-a[0])/Math.max(.001,b[0]-a[0]),0,1);
+  u=a[0]===1.32?u*u*u:smoothStep(u);
+  const v=i=>lerp(a[i],b[i],u);
+  Object.assign(p.right,{hx:v(1),hy:v(2),ex:v(3),ey:v(4)});
+  p.hammerAngle=v(5);p.bodyX=v(6);p.bodyY=v(7);p.lean=v(8);
+  p.hop=0;p.slip=0;p.openGrip=1-smoothStep(clamp((t-.8)/.33,0,1));
+  p.headTilt=-.07*Math.sin(Math.min(t,1.55)/1.55*Math.PI);
+  p.headDrop=0;p.glyph='';p.drop=false;
+  const pulse=(start,end)=>{const q=clamp((t-start)/(end-start),0,1);return Math.sin(q*Math.PI);};
+  if(!order.success&&order.failStyle===2){
+    const miss=smoothStep(clamp((t-1.32)/.23,0,1))*(1-smoothStep(clamp((t-1.85)/.7,0,1)));
+    p.right.hx+=miss*20;p.right.hy+=miss*3;p.right.ex+=miss*7;
+  }
+  if(!order.success&&t>=1.55){
+    const f=order.failStyle||0,panic=pulse(1.55,3.3);
+    if(f===0){
+      p.drop=true;p.openGrip=1;p.right.hx+=panic*6;p.right.hy-=panic*12;
+      p.left.hx-=panic*5;p.left.hy-=panic*13;p.headTilt=panic*.19;
+      p.headDrop=panic*1.6;p.glyph=t<2.7?'?':'';
+    }else if(f===1){
+      const slip=pulse(1.55,3.25);p.slip=slip*13;p.bodyX=-slip*4;
+      p.bodyY=slip*3;p.lean=-slip*.15;p.headTilt=slip*.20;
+      p.left.hx-=slip*15;p.left.hy-=slip*28;
+      p.right.hx+=slip*5;p.right.hy-=slip*24;p.glyph=t<2.8?'!':'';
+    }else{
+      p.headTilt=-panic*.22;p.left.hx+=panic*6;p.left.hy-=panic*13;
+      p.glyph=t>1.75&&t<3?'...':'';
+    }
+  }
+  if(order.success&&t>=SMITH_RULES.rarity){
+    const rank=['COMMON','UNCOMMON','RARE','LEGENDARY'].indexOf(order.rarity),
+      age=t-SMITH_RULES.rarity,ease=pulse(SMITH_RULES.rarity,7.2);
+    if(rank===0){p.headDrop=Math.sin(clamp(age/1.3,0,1)*Math.PI*2)*.65;p.chest+=ease*.012;}
+    if(rank===1){p.left.hy-=ease*25;p.left.hx-=ease*4;p.headTilt=-ease*.08;p.chest+=ease*.03;}
+    if(rank===2){
+      p.left.hy-=ease*35;p.left.hx-=ease*8;p.left.ey-=ease*12;
+      p.right.hy-=ease*25;p.right.hx+=ease*3;p.chest+=ease*.035;
+      p.hop=-Math.pow(Math.sin(clamp(age/1.2,0,1)*Math.PI),2)*1.6;p.glyph=age<1.5?'!':'';
+    }
+    if(rank===3){
+      const surprise=pulse(SMITH_RULES.rarity,4.45),cheer=pulse(4.15,7.2);
+      p.headTilt=surprise*.12;p.bodyX-=surprise*2;p.lean=-surprise*.06;
+      p.left.hx+=surprise*4-cheer*12;p.left.hy-=surprise*31+cheer*36;
+      p.left.ey-=cheer*14;p.right.hy-=surprise*23+cheer*29;p.right.ex+=cheer*3;
+      p.hop=-Math.abs(Math.sin(clamp((t-4.3)/1.65,0,1)*Math.PI*2))*3.2;
+      p.chest+=cheer*.04;p.glyph=age<.9?'?!':age<2.8?'!!!':'';
+    }
+  }
+  return p;
+}
+function drawSmithHammer(x,y,angle){
+  g.save();g.translate(x*U,y*U);g.rotate(angle);
+  rigSegment(-.6,0,7.2,0,.7,'#795436');
+  rigSegment(-.6,-.2,6.8,-.2,.2,'#c2965e');
+  rigPolygon([[6.45,-1.65],[8.15,-1.65],[8.65,-1.1],[8.65,2.1],[8.15,1.65],[6.45,1.65]],'#415762');
+  px(6.45,-1.65,1.7,3.3,'#aebbc5');px(6.45,-1.65,.5,3.3,'#edf4f7');g.restore();
+}
+function drawSmithGuardArm(arm,near=false,openGrip=0,layer='all'){
+  const {sx,sy,ex,ey,hx,hy}=arm;
+  // Work sleeves beneath Bastion steel: broad material planes, not silver tubes.
+  if(layer!=='forearm'){
+  rigSegment(sx,sy,ex,ey,6.76,'#50303b');
+  rigSegment(sx-.8,sy,ex-.8,ey,4.5,'#8c3b47');
+  rigSegment(sx-1.9,sy+.4,ex-1.9,ey,.8,'#b86260');
+  rigJoint(ex,ey,4.7,'#344d5a');rigJoint(ex-.6,ey-.7,3.8,'#8199a4');
+  }
+  if(layer==='upper')return;
+  rigSegment(ex,ey,hx,hy,5.4,near?'#4f6b7a':'#3c5765');
+  rigSegment(ex-.7,ey-.6,hx-.7,hy-.6,3.3,'#96acb5');
+  rigSegment(ex-1.6,ey-.7,hx-1.6,hy-.7,.6,'#d6e0dc');
+  const dx=hx-ex,dy=hy-ey,length=Math.hypot(dx,dy)||1,nx=-dy/length,ny=dx/length;
+  for(const k of [.26]){
+    const x=lerp(ex,hx,k),y=lerp(ey,hy,k);
+    rigSegment(x+nx*2.6,y+ny*2.6,x-nx*2.6,y-ny*2.6,.8,'#775338');
+  }
+  rigJoint(hx,hy,5.4,'#536371');rigJoint(hx-.3,hy-.6,4.6,'#b4c1c8');
+  px(hx-2.5,hy-2.9,4.5,.75,'#e0e5e4');
+  for(let i=0;i<3;i++)px(hx-1.8+i*1.35,hy-1.2,.7,2.6,'#718391');
+  if(openGrip>0){
+    // Thumb and forefinger pinch the handle; the other fingers curl clear of it.
+    rigSegment(hx-1,hy+.2,hx-.5,hy+2,1,'#e0e5e4');
+    rigSegment(hx+.4,hy+.2,hx+1.4,hy+1.4,1,'#b4c1c8');
+    for(let i=0;i<2;i++)rigSegment(hx+1+i,hy-.5,hx+2.5+i,hy-1.8-openGrip,.7,'#c4ced5');
+  }
+}
+function drawSmithPauldron(side,sy){
+  g.save();g.translate(side*16*U,sy*U);g.scale(side*.78,.90);
+  rigPolygon([[-6,-1],[-3,-5],[5,-4],[10,0],[11,6],[7,9],[-3,7]],'#304a59');
+  rigPolygon([[-6,-2],[-3,-6],[5,-5],[10,-1],[8,4],[-3,4]],side<0?'#afc0c4':'#8ea6b2');
+  rigPolygon([[-6,-2],[-3,-6],[5,-5],[6,-3],[-3,-3]],'#e0e5d9');
+  rigPolygon([[6,-3],[10,-1],[8,4],[5,3]],'#577684');
+  rigPolygon([[-3,4],[8,4],[10,7],[7,10],[-2,8]],'#5f7b88');
+  rigSegment(-3,4,8,4,.75,'#becdcd');
+  rigPolygon([[8,4],[10,7],[7,10],[5.5,9],[8,6]],'#354e5b');
+  rigJoint(5,1,1.15,'#bc965c');rigJoint(4.8,.8,.45,'#efd09a');g.restore();
+}
+function drawSmithKnight(x,y,lift,bounce,failed,t,working,order=null){
+  const pose=smithKnightPose(perfNow,lift,bounce,working,failed,t),
+    dark='#354d5c',armor='#91a7b2',light='#cedbdc',trim='#c8a064';
+  if(order&&working)smithActingPose(pose,t,order);
+  g.save();g.translate(x,y);g.scale(.62,.62);g.translate(0,(pose.hop||0)*U);
+  // Feet remain planted while knees absorb the slow shift of the giant body.
+  for(const side of [-1,1]){
+    g.save();g.translate((side===1?pose.slip||0:0)*U,0);
+    const hip=side*5+pose.bodyX*.4,knee=side*6+pose.bodyX*.2;
+    rigSegment(hip,31,knee,38,2.8,dark);rigJoint(knee,38,3,armor);
+    rigSegment(knee,38,side*6,43,2.2,armor);rigSegment(knee-.5,38,side*6-.5,42,.55,light);
+    rigPolygon([[side*6-1.3,41],[side*6+1.3,41],[side*6+2.5,45],[side*6-2,45]],dark);
+    px(side*6-1.3,41.5,2.6,.85,light);
+    g.restore();
+  }
+  g.save();g.translate(pose.bodyX*U,pose.bodyY*U);
+  g.translate(0,28*U);g.rotate(pose.lean||0);g.translate(0,-28*U);
+  // Living Bastion's long rigid cuirass, tapering to a small smith's waist.
+  g.save();g.scale(pose.chest,1);
+  rigPolygon([[-15,-1],[-8,-4],[8,-4],[15,-1],[11.5,15],[6.5,30],[-6.5,30],[-11.5,15]],dark);
+  rigPolygon([[-13.5,1],[-6,-1],[0,.5],[0,25],[-6.2,27],[-10.3,14]],armor);
+  rigPolygon([[0,.5],[6,-1],[13.5,1],[10.3,14],[6.2,27],[0,25]],'#627f90');
+  rigPolygon([[-13.5,1],[-6,-1],[0,.5],[0,2.4],[-6,1.2],[-13.2,3.2]],light);
+  rigPolygon([[0,.5],[6,-1],[13.5,1],[13.2,3.2],[6,1.2],[0,2.4]],'#b1c5cc');
+  rigPolygon([[-13.5,3],[-10.3,14],[-6.2,27],[-7.5,27],[-11.5,15],[-15,1]],'#6b7e8b');
+  rigPolygon([[13.5,3],[15,1],[11.5,15],[7.5,27],[6.2,27],[10.3,14]],'#5d7282');
+  rigSegment(-.3,2,-.3,24,1.05,'#c4ced5');
+  // A small rank chevron remains visible above the working apron.
+  rigSegment(-4,3,0,6,.6,trim);rigSegment(0,6,4,3,.6,trim);
+  for(let row=0;row<2;row++){
+    const top=23+row*3,w=8-row*.8;
+    rigQuad(-w,top,w,top,w-.8,top+3,-w+.8,top+3,row%2?'#778b99':'#889ba8');
+    rigSegment(-w,top,w,top,.6,'#b3c3cc');
+  }
+  // Thick leather apron: straps connect its bib to the shoulders. The steel
+  // chest still reads broad and triangular; no costume-wide color filter.
+  rigSegment(-7,-1,-4,11,1.3,'#493427');
+  rigSegment(7,-1,4,11,1.3,'#493427');
+  rigSegment(-7.3,-1,-4.3,11,.3,'#d1a16b');
+  rigPolygon([[-4.8,9],[4.8,9],[6,22],[7.2,34],[1,35],[0,31],[-1,35],[-7.2,34],[-6,22]],'#815135');
+  rigPolygon([[-4.8,9],[-3.5,9],[-4.5,22],[-5.5,33],[-7.2,34],[-6,22]],'#be8854');
+  rigPolygon([[2,10],[4.8,9],[6,22],[7.2,34],[3,34],[2.2,22]],'#573729');
+  rigSegment(-4.3,9,4.3,9,.5,'#c79a62');
+  rigSegment(-6.7,26,6.7,26,1.8,'#392b24');
+  px(-1.3,25.1,2.6,1.8,trim);px(-.65,25.5,1.3,.9,'#624735');
+  rigPolygon([[-3,17],[2,17],[2,21],[-2.5,22]],'#593c2b');
+  rigSegment(-3,17,2,17,.5,'#c08e56');
+  for(const side of [-1,1])rigJoint(side*3.6,10.5,.65,'#e0ba7a');
+  // Raised gorget cradles the helmet; no thin floating neck.
+  rigPolygon([[-9,-4],[-5,-7],[5,-7],[9,-4],[6,1],[-6,1]],'#536575');
+  rigSegment(-8,-3,-4,-5,1.2,light);rigSegment(-4,-5,4,-5,1.2,light);rigSegment(4,-5,8,-3,1.2,trim);
+  g.restore();
+  // Both arms are on the viewer-facing side of this frontal pose. Drawing the
+  // left arm before the cuirass hid its forearm whenever the idle rig crossed it.
+  drawSmithGuardArm(pose.left,false,0,'upper');
+  drawSmithGuardArm(pose.right,true,0,'upper');
+  drawSmithPauldron(-1,pose.left.sy-2);drawSmithPauldron(1,pose.right.sy-2-lift*1.2);
+  g.save();g.translate(0,(-4+pose.headDrop)*U);g.rotate(pose.headTilt);
+  const h=drawSquireHelmet25D(0,-.7,.17+lift*.18,1.38,armor,dark,light,'#edf4f7',trim);
+  // Front-facing visor and shadowed eye slits on the same projected Squire cap.
+  rigPolygon([[-3.6,h.planeY+1.8],[3.6,h.planeY+1.8],[3.1,h.bottomY-.8],[0,h.bottomY+.3],[-3.1,h.bottomY-.8]],'#627f90');
+  rigPolygon([[-3.6,h.planeY+1.8],[0,h.planeY+1.8],[0,h.bottomY+.3],[-3.1,h.bottomY-.8]],'#9eb2b9');
+  px(-3.35,h.planeY+2,2.65,.85,'#17222b');px(.7,h.planeY+2,2.65,.85,'#17222b');
+  rigSegment(0,h.planeY+1.5,0,h.bottomY-.7,.75,'#d5dfe3');
+  for(const side of [-1,1])for(let i=0;i<2;i++)px(side*(1.2+i*.85)-.25,h.bottomY-1.6,.48,.8,'#354958');
+  rigSegment(0,h.crownY,0,h.crownY-2.4,.85,'#738c9f');
+  rigPolygon([[0,h.crownY-2.4],[2,h.crownY-4.2],[5.3+pose.plume,h.crownY-3.5],
+    [3.2+pose.plume,h.crownY-1.6],[1,h.crownY-1.5]],'#547cbe');
+  g.restore();
+  // Raised wrists belong in front of the pauldrons and face, not behind them.
+  drawSmithGuardArm(pose.left,false,0,'forearm');
+  drawSmithGuardArm(pose.right,true,pose.openGrip??1,'forearm');
+  const hand=pose.right;
+  if(!pose.drop)drawSmithHammer(hand.hx,hand.hy,pose.hammerAngle??2.55);
+  if(pose.glyph){g.fillStyle='#ffe7ac';g.font='bold 11px monospace';g.textAlign='center';g.fillText(pose.glyph,14*U,-13*U);}
+  g.restore();g.restore();
+}
+function drawSmithScene(shop,pov=false){
+  const t=shop.clock,order=shop.order,working=shop.phase!=='browse',
+    hit=working&&t>=SMITH_RULES.impact,failed=hit&&!order.success,
+    wind=working?smoothStep(clamp((t-.55)/.6,0,1)):0,
+    slam=working?easeIn(clamp((t-1.32)/.23,0,1)):0,
+    lift=wind*(1-slam),bounce=hit?Math.max(0,1-(t-SMITH_RULES.impact)*4):0;
+  g.save();g.translate(pov?-24:0,pov?5:82);g.scale(pov?2.4:2,pov?2.4:2);
+  g.beginPath();g.rect(0,0,240,140);g.clip();
+  try{
+    drawSmithForgeBackdrop();
+    // Local furnace fire; no full-screen lighting/shadow pass on mobile.
+    const fire=Math.floor(perfNow*10)%3;
+    g.fillStyle='#963d2e';g.fillRect(20,87,27,23);
+    g.fillStyle='#e87b39';g.fillRect(23,80+fire*2,6,30-fire*2);g.fillRect(32,83,8,27);g.fillRect(42,89-fire*2,4,21+fire*2);
+    g.fillStyle='#ffe09a';g.fillRect(26,94,6,16);g.fillRect(35,90+fire,6,20-fire);
+    g.fillStyle='#111610';g.beginPath();g.ellipse(111,125,31,6,0,0,TAU);g.fill();
+    drawSmithKnight(110,43,lift,bounce,failed,t,working,order);
+    // A heavy anvil on an iron-bound timber stump. Its striking surface retains
+    // the original (134,100) contact for every existing hammer/failure track.
+    smithPoly([[122,113],[142,111],[148,116],[148,134],[123,136]],'#543b29',null);
+    smithPoly([[122,113],[142,111],[148,116],[127,119]],'#b48b54',null);
+    smithPoly([[127,119],[148,116],[148,134],[127,136]],'#795235',null);
+    g.fillStyle='#a17849';g.fillRect(129,121,2,12);g.fillRect(140,120,1,13);
+    smithPoly([[123,127],[148,125],[148,128],[123,130]],'#3c4d51',null);
+    g.fillStyle='#c3b88e';g.fillRect(128,127,1,1);g.fillRect(144,126,1,1);
+    g.save();g.translate(134,102);g.scale(.6,.6);
+    rigPolygon([[-18,-1],[15,-1],[22,-4],[18,3],[8,6],[6,10],[9,11],[9,13],[-10,13],[-10,11],[-7,10],[-7,6],[-15,4]],'#455f6d');
+    rigPolygon([[-18,-3],[13,-3],[22,-4],[15,-1],[-18,-1],[-20,-2]],'#cbd9d8');
+    rigPolygon([[-18,-1],[15,-1],[18,-2],[14,1],[-17,1]],'#91a9b3');
+    rigPolygon([[7,5],[12,4],[8,6],[6,10],[9,11],[9,13],[5,12],[3,10]],'#253f4c');
+    rigPolygon([[-7,7],[-4,7],[-4,10],[-8,11],[-9,11]],'#93aab0');
+    rigQuad(-10,11,5,11,9,13,-10,13,'#8da2a9');
+    px(-15,-2.5,2,.65,'#3e5965');g.restore();
+    if(working){const move=smoothStep(clamp(t/.5,0,1));
+      drawSmithItem(smithItemKind(order.skillId),134+(1-move)*28,100-Math.sin(move*Math.PI)*18,.65);}
+    if(hit&&t<2.2&&(!failed||order.failStyle===2)){const k=(t-SMITH_RULES.impact)/.65,impactX=failed?172:134;
+      for(let i=0;i<9;i++){g.fillStyle=i%2?'#eab963':'#ffe7ac';
+        g.fillRect(Math.round(impactX+Math.cos(i*1.8)*k*26),Math.round(99-Math.abs(Math.sin(i*1.8))*k*23+k*k*15),1+i%2,1+i%2);}}
+    if(failed&&order.failStyle===0){
+      const age=t-SMITH_RULES.impact,k=clamp(age/.65,0,1),settle=clamp((age-.65)/.5,0,1);
+      g.save();g.translate(147+k*12,93+37*k*k-Math.sin(settle*Math.PI)*5);
+      g.scale(.62,.62);drawSmithHammer(0,0,2.55+k*5+settle*.6);g.restore();
+    }
+    // A few small embers, kept inside the scene and away from the card UI.
+    for(let i=0;i<4;i++){const phase=(perfNow*.3+i*.23)%1;g.globalAlpha=(1-phase)*.5;g.fillStyle='#e6ae5a';
+      g.fillRect(24+i*6+Math.sin(perfNow+i)*2,98-phase*30,1,1);}g.globalAlpha=1;
+  }finally{g.restore();}
+  if(shop.phase==='result'){
+    const praise={COMMON:'"SOLID WORK."',UNCOMMON:'"STILL GOT IT."',RARE:'"DID YOU SEE THAT?!"',LEGENDARY:'"I... MEANT TO DO THAT!"'},
+      excuses=['"GRAVITY. NOT MY FAULT."','"WHO POLISHED THIS FLOOR?!"','"THE ANVIL NEEDED AN UPGRADE."'];
+    if(!pov)smithText(order.success?praise[order.rarity]:excuses[order.failStyle||0],240,354,10,'#d7b48b');
+  }
+}
+function drawSmithCounter(showGold=true){
+  // One continuous first-person worktop: narrow back edge, wide near edge.
+  smithPoly([[42,278],[438,278],[508,712],[-28,712]],'#62442e','#251b16');
+  for(let i=0;i<6;i++){
+    const a=42+i*66,b=42+(i+1)*66,c=-28+i*536/6,d=-28+(i+1)*536/6;
+    smithPoly([[a+1,281],[b-1,281],[d-2,711],[c+2,711]],i%2?'#715038':'#79563b',null);
+    // Perspective grain and scratches, deterministic and cheap to draw.
+    for(let j=0;j<4;j++){
+      const y=308+j*104+(i%2)*13,t=(y-278)/434,
+        x=lerp(a+(b-a)*(.22+j*.14),c+(d-c)*(.22+j*.14),t);
+      g.strokeStyle=j%2?'#876348':'#593c2b';g.lineWidth=1.3;
+      g.beginPath();g.moveTo(x,y);g.lineTo(x+(i-2.5)*2,y+36);g.stroke();
+    }
+  }
+  smithPoly([[42,278],[438,278],[441,293],[39,293]],'#392b22',null);
+  g.fillStyle='#ac8153';g.fillRect(44,278,392,3);
+  smithPoly([[-28,712],[508,712],[508,820],[-28,820]],'#3e2b20',null);
+  g.fillStyle='#b18557';g.fillRect(0,711,480,5);g.fillStyle='#231a17';g.fillRect(0,718,480,8);
+  for(const x of [18,459]){g.fillStyle='#8e714b';g.beginPath();g.arc(x,741,3,0,TAU);g.fill();}
+  // Coin tray belongs to the far end of the counter, not a floating HUD bar.
+  smithPoly([[332,328],[426,328],[432,350],[326,350]],'#382e28','#a07e4e');
+  for(let i=0;i<3;i++){g.fillStyle=i%2?'#f4cc6d':'#bb8939';g.beginPath();g.ellipse(340+i*5,339-i*2,5,2.5,0,0,TAU);g.fill();}
+  if(showGold)merchantGoldLabel(gold,388,344,12,'#ffe2a0','',68);
+}
+function drawSmithTableCard(i){
+  const shop=blacksmithShop,skill=runSkills[i],q=shop.cards[i],p=smithCardPose(i),
+    selected=shop.selected===i,color=SKILL_MUTATION_RARITY_COL[skill.evolutionRarity]||'#d5b979';
+  g.save();g.translate(p.x,p.y);g.rotate(p.angle);
+  const outline=[[-47,-77],[-43,-81],[43,-81],[47,-77],[47,77],[43,81],[-43,81],[-47,77]];
+  g.save();g.translate(3,selected?8:4);smithPoly(outline,'#392b22',null);g.restore();
+  smithPoly(outline,selected?'#ebd5a4':'#c5ae83',selected?'#ffe3a2':'#685039');
+  g.strokeStyle='#8c724c';g.lineWidth=1;g.strokeRect(-41,-75,82,150);
+  smithText(['I','II','III','IV'][i],0,-60,11,'#5a4633');
+  // Printed skill illustration on a dark inset, using the production props.
+  smithPoly([[-32,-49],[32,-49],[32,10],[-32,10]],'#35404a',null);
+  g.strokeStyle=color;g.lineWidth=1;g.strokeRect(-32,-49,64,59);
+  g.save();g.translate(0,-18);
+  if(smithItemKind(skill.baseId)==='bow')g.rotate(-.7);
+  drawSmithItem(smithItemKind(skill.baseId),0,0,1.28);g.restore();
+  const names=[['SHARPSHOOT'],['MARK','BURST'],['SHIELD','BASH'],['CALL','SQUIRE']][i];
+  names.forEach((name,j)=>smithText(name,0,26+j*12,11,'#30271f',82));
+  smithText('LV '+q.depth+' / 4',0,53,10,'#604831');
+  smithText(q.maxed?'APEX':q.price+' GOLD',0,69,11,q.maxed?'#465d36':'#30271f');
+  if(selected){g.fillStyle='#ffe8af';g.beginPath();g.arc(36,-69,3,0,TAU);g.fill();}
+  g.restore();
 }
 function drawShop(){
-  g.fillStyle='rgba(5,7,12,0.72)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  g.textAlign='center';
-  g.font='bold 24px monospace'; g.fillStyle='#ffe37a'; g.fillText('THE WANDERING SMITH',VW/2,272);
-  g.font='13px monospace'; g.fillStyle='#aeb2c2';
-  g.fillText('spend your gold — upgrades last the whole run',VW/2,296);
-  /* gold on hand */
-  drawCoin(VW/2-44,322,0.8,perfNow);
-  g.font='bold 20px monospace'; g.fillStyle='#ffd23a'; g.textAlign='left';
-  g.fillText(gold+' gold',VW/2-26,329); g.textAlign='center';
-  /* upgrade rows */
-  for(let i=0;i<UPG_DEFS.length;i++){
-    const d=UPG_DEFS[i], y=326+i*64, cost=upgCost(d.key), can=gold>=cost;
-    const locked=d.key==='fang'&&pack===0;
-    g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(50,y,VW-100,56);
-    g.strokeStyle=(can&&!locked)?d.col:'#55565e'; g.lineWidth=2; g.strokeRect(50,y,VW-100,56);
-    g.textAlign='left'; g.font='bold 15px monospace'; g.fillStyle=locked?'#8b8fa0':d.col;
-    g.fillText(d.name+'  lv'+upg[d.key],64,y+22);
-    g.font='12px monospace'; g.fillStyle='#e8e2d0';
-    g.fillText(locked?'tame a beast first — your follower fights for you':
-      d.key==='relic'?('all relic damage +'+d.cur()+'%  →  +'+(d.cur()+10)+'%'):
-      (d.cur()+' dmg  →  '+(d.cur()+d.inc())+' dmg'),64,y+42);
-    g.textAlign='right'; g.font='bold 16px monospace'; g.fillStyle=can?'#ffd23a':'#77613a';
-    g.fillText(cost+' g',VW-64,y+36);
+  const shop=blacksmithShop;if(!shop)return;
+  g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  g.fillStyle='#0e111a';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  drawSmithScene(shop,true);
+  // Hanging shop sign leaves the smith's face and overhead swing unobstructed.
+  g.fillStyle='#967448';g.fillRect(17,-PAD_TOP,2,34+PAD_TOP);g.fillRect(135,-PAD_TOP,2,34+PAD_TOP);
+  smithPoly([[9,19],[145,19],[145,55],[9,55]],'#3e3028','#99764a');
+  smithText('THE LITTLE HAMMER',77,35,11,'#edd3a0',126);
+  smithText(shop.lab?'FORGE TEST':'BLACKSMITH',77,48,8,'#af9675',120);
+  drawSmithCounter();
+  const order=shop.order,working=shop.phase!=='browse';
+  if(!working){
+    smithText('"SHOW ME WHAT NEEDS WORK."',181,344,11,'#f1ddb5',270);
+    for(let i=0;i<runSkills.length;i++)if(i!==shop.selected)drawSmithTableCard(i);
+    drawSmithTableCard(shop.selected);
+    const skill=runSkills[shop.selected],q=shop.cards[shop.selected];
+    if(shop.lab){
+      const labels=['RESULT: '+SMITH_LAB_OUTCOMES[shop.lab.outcome],
+        'RARITY: '+SMITH_LAB_QUALITIES[shop.lab.quality],
+        'LEVEL: '+q.depth+' / 4  +','+1000 GOLD'];
+      for(let i=0;i<labels.length;i++)drawSmithButton(smithLabRect(i),labels[i],'#9ecbff');
+    }else{
+    smithPoly([[30,552],[449,555],[445,639],[33,636]],'#332b25','#98764d');
+    smithText(skill.evolutionName||skill.name,240,571,15,'#ead8b5');
+    smithText(q.maxed?'A finished technique. Choose another skill.':
+      q.children.length+' VALID NEXT '+(q.children.length===1?'PATH':'PATHS')+' / CURRENT BRANCH PRESERVED',240,590,10,'#a9b6c4');
+    smithText(q.maxed?'':q.fail?Math.round(q.fail*100)+'% FAIL / SKILL SAFE / '+Math.floor(q.price*.5)+' GOLD RETURNED':'FIRST UPGRADE GUARANTEED',240,611,10,'#d3ae8e');
+    smithText('RARITY: COMMON 65% / UNCOMMON 27% / RARE 7% / LEGENDARY 1%',240,633,9,'#9298ab');
+    }
+    smithText(shop.message||'Choose a card. Let the little hammer decide.',240,652,10,shop.message?'#ffd2bc':'#f0d9b1');
+    drawSmithButton(SMITH_UI.confirm,q.maxed?'APEX COMPLETE':'UPGRADE — '+q.price+' GOLD','#f2d394',!q.maxed&&gold>=q.price);
+    drawSmithButton(SMITH_UI.ride,shop.lab?'BACK TO DEBUG':shop.townId?'BACK TO TOWN':'RIDE ON →','#bbc8ba');
+  }else{
+    const revealed=shop.clock>=SMITH_RULES.reveal,quality=shop.clock>=SMITH_RULES.rarity,
+      color=quality&&order.success?SKILL_MUTATION_RARITY_COL[order.rarity]:quality?'#df947e':'#aeb4be';
+    smithText(!revealed?'FORGING YOUR '+smithItemKind(order.skillId).toUpperCase()+'...':
+      !quality?'A NEW TECHNIQUE TAKES SHAPE...':order.success?'FORGED!':'A SMALL TECHNICAL DIFFICULTY',240,387,15,color);
+    const r={x:100,y:398,w:280,h:237};
+    if(quality&&order.success){
+      const pulse=.5+.5*Math.sin(perfNow*6),age=shop.clock-SMITH_RULES.rarity;
+      for(let i=4;i>0;i--){g.globalAlpha=(.06+(.09*pulse))/i;g.strokeStyle=color;g.lineWidth=4;
+        g.strokeRect(r.x-i*4,r.y-i*4,r.w+i*8,r.h+i*8);}g.globalAlpha=1;
+      const n=order.rarity==='LEGENDARY'?24:order.rarity==='RARE'?16:8;
+      for(let i=0;i<n;i++){
+        const a=i/n*TAU+perfNow*.12,x=240+Math.cos(a)*(155+8*Math.sin(age*4+i)),y=518+Math.sin(a)*133;
+        g.fillStyle=i%3?color:'#fff4ce';g.fillRect(x,y,i%3?3:5,i%3?3:5);
+      }
+    }
+    g.fillStyle='#392b22';g.fillRect(r.x+5,r.y+7,r.w,r.h);
+    g.fillStyle=quality?'#dfc79a':'#b7b4af';g.fillRect(r.x,r.y,r.w,r.h);
+    g.fillStyle='#252b30';g.fillRect(r.x+7,r.y+7,r.w-14,r.h-14);
+    g.strokeStyle=color;g.lineWidth=quality?3:1;g.strokeRect(r.x+7,r.y+7,r.w-14,r.h-14);
+    drawSmithItem(smithItemKind(order.skillId),240,440,1.6,!quality);
+    if(revealed&&(order.success||!quality)){
+      smithText(order.route.name,240,477,18,quality?color:'#d2d2d2',248);
+      smithText(quality?order.rarity:'QUALITY UNKNOWN',240,501,12,color);
+      // No payload numbers or colored frames may leak rarity during the grey reveal.
+      g.fillStyle=quality?'#c4cbd3':'#b0b0b0';g.font='11px monospace';g.textAlign='left';
+      const text=order.route.promise||order.route.summary||'Refine this technique along its current branch.';
+      g.save();g.beginPath();g.rect(119,519,242,77);g.clip();drawWrappedTooltipText(text,119,532,242,15);g.restore();
+      smithText('LEVEL '+order.route.depth+' / 4'+(quality?'  ·  AP '+order.command.apCost+' / RESOLVE '+order.command.cost:''),240,615,10,color,244);
+    }else if(quality){
+      smithText(['BUTTERFINGERS.','NO TRACTION.','WRONG TARGET.'][order.failStyle||0],240,493,20,color);
+      smithText('Your skill is safe. His pride is not.',240,530,12,'#c5c8cf',242);
+      smithText(order.refund+' GOLD REFUNDED / '+(order.price-order.refund)+' GOLD USED',240,563,12,'#edc778',242);
+      smithText(order.error?'Recipe changed. Full refund.':'No downgrade. No lost upgrades.',240,602,11,'#9cabb9',242);
+    }else{
+      smithText('?',240,512,42,'#5e687b');
+      smithText('ONE TINY HAMMER. MANY POSSIBILITIES.',240,576,11,'#919aaa',242);
+    }
+    if(quality&&order.success&&shop.clock-SMITH_RULES.rarity<.65){
+      const sweep=(shop.clock-SMITH_RULES.rarity)/.65,x=r.x-90+sweep*(r.w+180);
+      g.save();g.beginPath();g.rect(r.x,r.y,r.w,r.h);g.clip();g.globalAlpha=.23*(1-sweep);
+      smithPoly([[x,r.y],[x+34,r.y],[x+118,r.y+r.h],[x+84,r.y+r.h]],'#fff8dc',null);g.restore();
+    }
+    if(shop.phase==='result')drawSmithButton(SMITH_UI.confirm,'BACK TO THE FORGE',color);
+    else smithText(quality?'LET IT SHINE.':'PLEASE DO NOT DISTRACT THE PROFESSIONAL.',240,691,10,'#929bab');
   }
-  /* RIDE ON button */
-  g.textAlign='center';
-  g.strokeStyle='#c0f79a'; g.lineWidth=2+Math.sin(perfNow*5); g.strokeRect(VW/2-95,688,190,52);
-  g.font='bold 19px monospace'; g.fillStyle='#c0f79a'; g.fillText('RIDE ON →',VW/2,721);
+  g.restore();
+}
+/* Story hub: visit state is independent of the authored town presentation. */
+const TOWN_CHAPTERS=Object.freeze([
+  {id:'bramblewick',name:'BRAMBLEWICK',line:'The forest falls quiet. A light still burns beyond the gate.',
+    sky:'#718e93',far:'#405d58',roof:'#6a5443',wall:'#b3a078',stone:'#777c75',banner:'#617c5b'},
+  {id:'stoneford',name:'STONEFORD',line:'Past the old bridge, slate roofs shelter the next stretch of your journey.',
+    sky:'#81969e',far:'#50636f',roof:'#465d70',wall:'#a9ada1',stone:'#727e87',banner:'#657e9b'},
+  {id:'emberwatch',name:'EMBERWATCH',line:'Red banners mark a watchtown on the edge of the wild.',
+    sky:'#ad8e81',far:'#65565e',roof:'#784c47',wall:'#bca486',stone:'#84766f',banner:'#975855'}
+]);
+const TOWN_PLACES=Object.freeze({
+  smith:{x:0,y:307,w:187,h:285,label:'BLACKSMITH'},
+  store:{x:314,y:300,w:166,h:270,label:'GENERAL STORE'}
+});
+const TOWN_DEPART={x:142,y:687,w:196,h:40};
+// Approved art baseline: the original detailed, linear perspective city.
+let townVisit=null;
+function openTown(){
+  cancelJourneyRoadEvent('town');resetSquireCombat();
+  if(!townVisit||townVisit.stage!==loop){
+    const chapter=TOWN_CHAPTERS[(loop-1)%TOWN_CHAPTERS.length];
+    townVisit={id:'town:'+loop,stage:loop,chapter,forge:null,transition:null,dialog:null,lab:false};
+  }
+  paused=false;flashA=0;shakeMag=0;setMode('town');
+}
+function openTownLab(){
+  startJourneyWithSeed(647486904);debugRun=true;gold=150;openTown();townVisit.lab=true;
+}
+function townTap(pt){
+  const v=townVisit;if(mode!=='town'||!v||paused||v.transition)return false;
+  if(v.dialog){
+    if(pointInRect(pt,{x:48,y:687,w:384,h:45})){
+      if(v.dialog==='gate'){v.dialog=null;townVisit=null;blacksmithShop=null;nextLoop();}
+      else v.dialog=null;
+      return true;
+    }
+    if(pointInRect(pt,{x:140,y:747,w:200,h:32})){v.dialog=null;return true;}
+    return false;
+  }
+  if(v.lab&&pointInRect(pt,{x:325,y:744,w:140,h:34})){
+    loop++;townVisit=null;openTown();townVisit.lab=true;return true;
+  }
+  if(v.lab&&pointInRect(pt,{x:15,y:744,w:140,h:34})){resetRun();debugRun=false;setMode('debugcfg');return true;}
+  if(pointInRect(pt,TOWN_DEPART)){v.dialog='gate';return true;}
+  for(const [id,r] of Object.entries(TOWN_PLACES))if(pointInRect(pt,r)){
+    v.transition={id,time:0};SFX.swipe();return true;
+  }
+  return false;
+}
+function updateTown(dt){
+  const v=townVisit;if(mode!=='town'||!v||paused||!v.transition)return;
+  v.transition.time+=dt;if(v.transition.time<.35)return;
+  const id=v.transition.id;v.transition=null;
+  if(id==='smith'){
+    if(v.forge){blacksmithShop=v.forge;refreshSmithCards();setMode('shop');}
+    else{openBlacksmithShop();blacksmithShop.townId=v.id;v.forge=blacksmithShop;}
+  }else if(id==='store'){
+    openMerchantShop(v.id+':store');merchantShop.townId=v.id;
+  }
+}
+/* The town is an authored street, not a grid of building cards. Every roof,
+   facade, prop and paving stone uses this same eye-level perspective. */
+const TOWN_EYE=Object.freeze({x:250,y:272,focal:360,height:5.6});
+function townProject(x,y,z){
+  const p=TOWN_EYE;return [p.x+x*p.focal/z,p.y+(p.height-y)*p.focal/z];
+}
+function townInk(points,color,edge=null,width=.7){
+  g.beginPath();for(let i=0;i<points.length;i++)g[i?'lineTo':'moveTo'](...points[i]);g.closePath();
+  g.fillStyle=color;g.fill();if(edge){g.strokeStyle=edge;g.lineWidth=width;g.stroke();}
+}
+function townPlane(points,color,edge=null){townInk(points.map(p=>townProject(...p)),color,edge);}
+function townStroke(points,color,width=1){
+  g.beginPath();points.forEach((p,i)=>g[i?'lineTo':'moveTo'](...p));g.strokeStyle=color;g.lineWidth=width;g.stroke();
+}
+function townFacePatch(face,u,v,w,h,color){
+  townPlane([face(u,v),face(u+w,v),face(u+w,v+h),face(u,v+h)],color);
+}
+function townArch(face,u,y,w,h,color){
+  townPlane([[u,y],[u+w,y],[u+w,y+h*.72],[u+w*.85,y+h*.91],
+    [u+w*.5,y+h],[u+w*.15,y+h*.91],[u,y+h*.72]].map(([a,b])=>face(a,b)),color);
+}
+function townBox(x,y,z,w,h,d,front='#8d8068',side='#5e655d'){
+  townPlane([[x,y,z],[x+w,y,z],[x+w,y+h,z],[x,y+h,z]],front);
+  const xx=x<0?x+w:x;
+  townPlane([[xx,y,z],[xx,y,z+d],[xx,y+h,z+d],[xx,y+h,z]],side);
+  townPlane([[x,y+h,z],[x+w,y+h,z],[x+w,y+h,z+d],[x,y+h,z+d]],'#b5aa8d');
+}
+function townBarrel(x,z,size=1){
+  const p=townProject(x,0,z),s=360/z*size;g.save();g.translate(...p);
+  townInk([[-.28*s,-.03*s],[-.34*s,-.44*s],[-.27*s,-.86*s],[.24*s,-.86*s],[.32*s,-.45*s],[.27*s,0]],'#6f5036','#3c3830',.8);
+  for(let i=0;i<5;i++){
+    const xx=(-.23+i*.11)*s;townStroke([[xx,-.80*s],[xx*1.14,-.43*s],[xx,-.08*s]],i%2?'#987147':'#4d402f',Math.max(.55,s*.025));
+  }
+  for(const yy of [-.7,-.19])townInk([[-.3*s,yy*s],[.29*s,yy*s],[.30*s,(yy+.07)*s],[-.31*s,(yy+.07)*s]],'#596568');
+  townInk([[-.27*s,-.86*s],[0,-.93*s],[.24*s,-.86*s],[0,-.79*s]],'#b18b57','#514533',.7);g.restore();
+}
+// Authored market-square plan: disjoint footprints, front doors toward the
+// square, service alleys between blocks. Nothing here consumes generation RNG.
+const TOWN_MARKET_PLAN=Object.freeze([
+  {id:'bakery',x:-8.7,z:31,w:4.5,d:5,h:4.5,r:1.8,wall:'#dfc399',roof:'#a65f4b'},
+  {id:'clothier',x:-3.9,z:34,w:4.0,d:4.5,h:5.0,r:2.0,wall:'#b6c8ad',roof:'#456d7a'},
+  {id:'inn',x:.5,z:34,w:4.4,d:5,h:5.8,r:2.4,wall:'#e4ca9e',roof:'#995244'},
+  {id:'apothecary',x:5.3,z:31,w:4.5,d:5,h:4.7,r:2.1,wall:'#a4bdad',roof:'#4e7c80'},
+  {id:'left-home',x:-9.2,z:23,w:5.1,d:6,h:5.2,r:2.1,wall:'#d9ad80',roof:'#49717b'},
+  {id:'right-home',x:4.2,z:23,w:5.1,d:6,h:5.6,r:2.4,wall:'#ccba93',roof:'#a25d4b'},
+  {id:'left-workshop',x:-9.0,z:17.1,w:4.9,d:5.2,h:4.5,r:2.0,wall:'#b9c3a0',roof:'#7b574a'},
+  {id:'right-home2',x:4.1,z:18,w:5.0,d:4.2,h:5.2,r:2.2,wall:'#d4b58d',roof:'#4a7580'},
+  {id:'smith',x:-8.0,z:9.8,w:4.8,d:6.2,h:4.45,r:2.0,wall:'#cfaa7b',roof:'#4b697b',hero:true},
+  {id:'store',x:3.4,z:11,w:5.1,d:6,h:4.8,r:2.3,wall:'#e0c397',roof:'#a35449',hero:true}
+].map(Object.freeze));
+function townMarketWindow(face,u,y,w,h,shutters=false){
+  const P=(a,b,c,d,col)=>townFacePatch(face,a,b,c,d,col);
+  P(u-.015,y-.04,w+.03,h+.08,'#725438');
+  P(u,y,w,h,'#263f4a');P(u+.016,y+.06,w-.032,h-.12,'#d1a766');
+  P(u+.025,y+.1,(w-.05)*.43,h-.2,'#f3d899');
+  P(u+w*.48,y+.05,.012,h-.1,'#4a5551');P(u+.01,y+h*.51,w-.02,.055,'#4a5551');
+  P(u-.03,y-.085,w+.06,.075,'#d6b785');P(u-.03,y-.14,w+.06,.055,'#80603d');
+  if(shutters)for(const x of [u-w*.65,u+w+.016]){
+    P(x,y,w*.6,h,'#326771');P(x+.013,y+.06,.012,h-.12,'#74a5a4');
+    P(x,y+.16,w*.6,.055,'#20434f');P(x,y+h-.2,w*.6,.055,'#20434f');
+  }
+}
+function townMarketFacade(face,b,side=false){
+  const h=b.h,wood=side?'#493c32':'#63432e',base=side?shade(b.wall,-32):b.wall;
+  townFacePatch(face,0,0,1,h,base);
+  townFacePatch(face,0,0,1,.65,side?'#4e6b70':'#779295');
+  for(const u of [0,.48,.96]){
+    townFacePatch(face,u,.6,.04,h-.6,wood);
+    townFacePatch(face,u+.004,.65,.008,h-.7,side?'#91704d':'#be9661');
+  }
+  for(const y of [.65,2.55,h-.17]){
+    townFacePatch(face,0,y,1,.13,wood);
+    townFacePatch(face,0,y+.12,1,.025,'#c5a575');
+  }
+  for(const u of [.07,.55]){
+    townPlane([face(u,2.72),face(u+.04,2.72),face(u+.34,h-.2),face(u+.30,h-.2)],wood);
+  }
+  townMarketWindow(face,.19,2.88,.16,Math.min(1.15,h-3.1),!side&&b.hero);
+  townMarketWindow(face,.67,2.88,.16,Math.min(1.15,h-3.1),false);
+  if(side){
+    townMarketWindow(face,.18,1.05,.18,1.05);
+    townMarketWindow(face,.64,1.05,.18,1.05);
+    return;
+  }
+  const door=b.id==='smith'?.38:b.id==='store'?.22:.60;
+  if(b.id==='smith'){
+    townFacePatch(face,.18,.08,.7,2.34,'#263039');
+    townFacePatch(face,.22,.16,.18,1.4,'#704735');
+    townPlane([face(.23,.16),face(.24,.9),face(.29,.68),face(.31,1.3),face(.38,.74),face(.39,.16)],'#e7843e');
+    townFacePatch(face,.28,.17,.06,.47,'#ffe2a0');
+    townFacePatch(face,.58,0,.16,.7,'#815332');
+    townPlane([[.49,.96],[.79,.96],[.87,1.12],[.82,.77],[.68,.64],[.69,.42],[.58,.42],[.59,.66],[.51,.76]].map(([u,v])=>face(u,v)),'#829ea8');
+    townFacePatch(face,.49,.96,.30,.055,'#d3dfd9');
+  }else{
+    townFacePatch(face,door-.025,0,.25,2.4,'#714e33');
+    townFacePatch(face,door,0,.20,2.27,'#243b42');
+    townFacePatch(face,door+.014,.03,.174,2.15,b.id==='store'?'#366c73':'#93633e');
+    for(let i=0;i<4;i++)townFacePatch(face,door+.022+i*.039,.04,.007,2.1,'#314c4b');
+    townFacePatch(face,door+.14,1.01,.025,.08,'#e1bc70');
+    townMarketWindow(face,b.id==='store'?.63:.15,1.0,.26,1.12);
+  }
+  // A raised door sill lies on the ground, rather than hovering on the facade.
+  townFacePatch(face,door-.04,0,.30,.10,'#baa679');
+  for(const u of [.10,.90])townFacePatch(face,u,.05,.045,.49,'#a6b3a6');
+}
+function townMarketBuilding(b){
+  const {x,z,w,d,h,r}=b,m=x+w/2,inner=x<0?x+w:x;
+  const front=(u,y)=>[x+u*w,y,z],side=(u,y)=>[inner,y,z+u*d];
+  // One visible street-side plane and one front plane. No duplicated door bays.
+  townMarketFacade(side,b,true);townMarketFacade(front,b,false);
+  townPlane([[x,h,z],[m,h+r,z],[x+w,h,z]],b.wall);
+  townPlane([[x+.16,h+.03,z-.01],[m,h+r-.16,z-.01],[x+w-.16,h+.03,z-.01]],shade(b.wall,10));
+  townStroke([[x,h,z-.02],[m,h+r,z-.02],[x+w,h,z-.02]].map(p=>townProject(...p)),'#614b37',b.hero?3:1.5);
+  townStroke([[m,h,z-.03],[m,h+r-.1,z-.03]].map(p=>townProject(...p)),'#745138',b.hero?2:1);
+  // Load-bearing gable braces and a recessed attic hatch break up the plaster
+  // without inventing extra roofs or unconnected architectural fragments.
+  for(const sideSign of [-1,1]){
+    const foot=m+sideSign*w*.33,top=m+sideSign*w*.16;
+    townStroke([[foot,h+.08,z-.035],[top,h+r*.54,z-.035]].map(p=>townProject(...p)),'#755139',b.hero?2.2:1);
+  }
+  const attic=(u,y)=>[m-w*.12+u*w*.24,y,z-.04];
+  townFacePatch(attic,0,h+.18,1,r*.32,'#684c36');
+  townFacePatch(attic,.08,h+.21,.84,r*.25,'#304d56');
+  for(const u of [.26,.56])townFacePatch(attic,u,h+.22,.06,r*.23,'#c4a779');
+  townFacePatch(front,0,h-.18,1,.15,'#674a35');
+  townFacePatch(front,0,h-.035,1,.035,'#d9b98a');
+  // Only the camera-facing roof slope. The far slope is hidden by the ridge.
+  const e=inner+(x<0?.25:-.25),near=z-.25,far=z+d+.2;
+  const roof=(u,v)=>[m+(e-m)*u,h+r+(h-h-r)*u,near+(far-near)*v];
+  townPlane([roof(0,0),roof(1,0),roof(1,1),roof(0,1)],b.roof);
+  for(let row=0;row<6;row++){
+    const u=row/6,next=(row+1)/6;
+    townPlane([roof(u,0),roof(next,0),roof(next,1),roof(u,1)],shade(b.roof,row%2?0:-10));
+    townStroke([roof(next,0),roof(next,1)].map(p=>townProject(...p)),shade(b.roof,24),b.hero?.8:.45);
+    for(let tile=0;tile<5;tile++){
+      const v=(tile+(row%2)*.5)/5;if(v<1)townStroke([roof(u,v),roof(next,v)].map(p=>townProject(...p)),shade(b.roof,-24),b.hero?.7:.35);
+    }
+  }
+  townStroke([roof(0,0),roof(0,1)].map(p=>townProject(...p)),'#d7b789',b.hero?2:1);
+  townStroke([roof(1,0),roof(1,1)].map(p=>townProject(...p)),'#293f45',b.hero?3:1.5);
+  for(let i=0;i<4;i++){
+    const zz=z+.45+i*(d-.9)/3;
+    townPlane([[inner,h-.08,zz],[e,h-.08,zz],[e,h-.23,zz],[inner,h-.43,zz]],'#694b35');
+    townStroke([[inner,h-.09,zz],[e,h-.09,zz]].map(p=>townProject(...p)),'#bb9662',b.hero?1:.5);
+  }
+  // Exposed gable eaves have a thickness; the building is a single grounded volume.
+  townStroke([[x-.12,h,z-.25],[m,h+r,z-.25],[x+w+.12,h,z-.25]].map(p=>townProject(...p)),'#d7b789',b.hero?2:1);
+  if(b.hero){
+    townBox(x+w*.28,h+r*.55,z+d*.62,.46,1.8,.5,'#91a5a5','#536c74');
+    townBox(x+w*.28-.08,h+r*.55+1.7,z+d*.62-.06,.62,.17,.62,'#cfceb0','#71878a');
+  }
+  if(b.id==='store'){
+    // Shopfront canopy on the front wall, not a second building crossing it.
+    for(let i=0;i<7;i++){
+      const a=x+.12+(w-.24)*i/7,bb=x+.12+(w-.24)*(i+1)/7;
+      townPlane([[a,2.65,z-.03],[bb,2.65,z-.03],[bb,2.2,z-1.05],[a,2.2,z-1.05]],i%2?'#ebd8ab':'#397d83');
+      townPlane([[a,2.2,z-1.05],[bb,2.2,z-1.05],[bb,2.02,z-1.05],[a,2.02,z-1.05]],i%2?'#baa17a':'#24525f');
+    }
+    for(const xx of [x+.16,x+w-.16])townBox(xx,0,z-1.03,.065,2.25,.065,'#a77f4d','#67482f');
+  }
+}
+function townLordCastle(c){
+  // Distant hill, retaining wall, gatehouse and keep share the market camera.
+  townInk([[131,295],[162,270],[177,258],[193,254],[220,234],[276,240],[315,258],[349,291],[357,335],[124,335]],'#697d67');
+  townInk([[159,287],[188,267],[239,254],[279,264],[313,290],[337,323],[150,323]],'#91a17b');
+  const tower=(x,z,w,base,height)=>{
+    townBox(x,base,z,w,height,w,'#b5bdad','#77959a');
+    const f=(u,y)=>[x+u*w,y,z-.02];
+    for(const y of [base+3,base+7,base+11])if(y<base+height-1)townArch(f,.38,y,.22,1.5,'#3b5969');
+    townBox(x-.18,base+height-.2,z-.16,w+.36,.4,w+.32,'#ded2b0','#90a69e');
+    for(let i=0;i<4;i++)townBox(x-.1+i*w/4,base+height+.2,z-.12,w*.15,.85,.5,'#d6cfb0','#8da29c');
+  };
+  townBox(-13,5,74,27,7,3,'#9cac9c','#65888d');
+  for(let i=0;i<14;i++)townBox(-13+i*2,12,74,.9,1,1,'#d1ccb0','#7f9b98');
+  tower(-13.5,71,4,5,13);tower(10.2,73,4,5,15);
+  townBox(-6.5,8,77,14,15,8,'#c4c5ad','#829e9e');
+  const face=(u,y)=>[-6.5+u*14,y,76.97];
+  for(const u of [.12,.42,.72])townArch(face,u,16,.12,3,'#3f6170');
+  townPlane([[-7.5,23,76.5],[8.5,23,76.5],[.5,29,80]],'#476a81');
+  townPlane([[8.5,23,76.5],[8.5,23,85.5],[.5,29,80]],'#2d4e69');
+  tower(-7.8,69,3.8,8,16);tower(5.5,70,3.8,8,18);
+  for(const [x,z,h] of [[-5.9,70.9,24],[7.4,71.9,26]]){
+    townPlane([[x-2.4,h,z-2],[x+2.4,h,z-2],[x,h+5.5,z]],'#3b647b');
+    townPlane([[x+2.4,h,z-2],[x+2.4,h,z+2],[x,h+5.5,z]],'#254b66');
+  }
+  const gate=(u,y)=>[-2.7+u*5.4,y,73.95];
+  townArch(gate,0,5,1,5.5,'#647e80');townArch(gate,.13,5,.74,4.8,'#304c58');
+  for(let i=0;i<5;i++)townFacePatch(gate,.18+i*.13,5,.04,3.5,'#5b6760');
+  // Lord's unmistakable burgundy heraldry, distinct from the shops.
+  for(const x of [-4.5,4.2]){
+    townPlane([[x,20,76.9],[x+1.8,20,76.9],[x+1.8,15,76.9],[x+.9,14,76.9],[x,15,76.9]],'#913e50');
+    townPlane([[x+.35,18,76.85],[x+.9,18.8,76.85],[x+1.45,18,76.85],[x+.9,16.8,76.85]],'#ebc97e');
+  }
+}
+function townMarketStall(x,z,w,color,type){
+  const d=1.4;
+  // Ground contact, four legs, tabletop, upright poles, then canvas.
+  townPlane([[x-.1,.01,z-.2],[x+w+.2,.01,z-.2],[x+w+.4,.01,z+d+.3],[x,.01,z+d+.4]],'#867c61');
+  for(const xx of [x+.08,x+w-.16])for(const zz of [z+.1,z+d-.1])townBox(xx,0,zz,.09,1.03,.09,'#936737','#553c2c');
+  townBox(x,1,z,w,.14,d,'#bb8a4f','#765336');
+  townPlane([[x,1.15,z],[x+w,1.15,z],[x+w,.45,z],[x,.45,z]],shade(color,-12));
+  townPlane([[x,1.15,z],[x+w,1.15,z],[x+w,1.15,z+d],[x,1.15,z+d]],color);
+  for(const xx of [x-.04,x+w])townBox(xx,0,z+d-.06,.06,2.9,.06,'#af8852','#644932');
+  for(let i=0;i<6;i++){
+    const a=x+w*i/6,b=x+w*(i+1)/6;
+    townPlane([[a,2.95,z+d],[b,2.95,z+d],[b,2.5,z-.2],[a,2.5,z-.2]],i%2?'#e4d0a1':color);
+    townPlane([[a,2.5,z-.2],[b,2.5,z-.2],[b,2.33,z-.2],[a,2.33,z-.2]],i%2?'#b6a07a':shade(color,-30));
+  }
+  for(let i=0;i<6;i++){
+    const px=x+.17+i*(w-.34)/6,zz=z+.22+(i%2)*.34;
+    if(type==='produce'){
+      townBox(px,1.15,zz,.19,.19,.22,i%2?'#c57945':'#709453','#536747');
+    }else{
+      townBox(px,1.15,zz,.19,.16,.28,i%2?'#568991':'#bc805b','#344d54');
+    }
+  }
+}
+function townStaticScene(c){
+  // New authored square, not the former corridor restyled. Static architecture
+  // is cached; lively townsfolk remain a separate depth-sorted foreground pass.
+  g.fillStyle=c.id==='emberwatch'?'#b9aaa0':c.id==='stoneford'?'#9bb8bc':'#a2c1bd';
+  g.fillRect(0,-PAD_TOP,480,800+PAD_TOT);
+  townInk([[18,104],[58,104],[72,91],[110,94],[123,106],[169,109],[156,119],[34,118]],'#e6e4cd');
+  townInk([[308,130],[334,116],[379,116],[391,126],[455,132],[442,142],[306,140]],'#d5dfcc');
+  townInk([[-20,252],[36,203],[98,224],[162,198],[247,223],[309,199],[382,219],[454,194],[500,247],[500,341],[-20,341]],'#759996');
+  townLordCastle(c);
+  // A paved square, not a single lane: broad quiet flags, gutters at buildings.
+  g.fillStyle='#baaa84';g.fillRect(0,315,480,485+PAD_BOT);
+  townPlane([[-3,0,65],[3,0,65],[3.5,0,3],[-3.5,0,3]],'#c8b792');
+  for(let row=0;row<33;row++){
+    const z=3+row*1.1;
+    for(let col=-7;col<=7;col++){
+      const x=col*1.03+(row%2)*.5;
+      townPlane([[x+.03,0,z+.04],[x+.98,0,z+.04],[x+.98,0,z+1.04],[x+.03,0,z+1.04]],
+        ['#bba985','#c5b58f','#b4a785','#cbbc98'][(row*3+col*col)%4]);
+    }
+  }
+  // Far access lane to the lord's hill remains visible between the rear houses.
+  townPlane([[-.4,.01,36],[.8,.01,36],[1.4,.01,70],[-.8,.01,70]],'#d1bc94');
+  for(const b of TOWN_MARKET_PLAN){
+    townPlane([[b.x,0,b.z],[b.x+b.w,0,b.z],[b.x+b.w+.6,0,b.z-1.4],[b.x+.2,0,b.z-1.4]],'#968c70');
+  }
+  for(const b of [...TOWN_MARKET_PLAN].sort((a,b)=>b.z-a.z))townMarketBuilding(b);
+  // Grounded crates/barrels by the actual shopfronts, clear of the doorways.
+  townBarrel(-3.0,10.5,.8);townBarrel(3.05,12.2,.75);
+  townBox(-3.9,0,10.1,.6,.48,.6,'#9b7345','#624633');
+  // Stall roofs occupy separate side pockets, never the central pedestrian lane.
+  townMarketStall(-3.5,20,1.9,'#b66355','produce');
+  townMarketStall(1.5,25,2.0,'#3f7d85','cloth');
+  // Two planted tubs at the rear of the square anchor the market to the forest.
+  for(const [x,z] of [[-2.5,29],[3.1,29]]){
+    townBox(x,0,z,.5,.45,.5,'#92724b','#5a513a');
+    townPlane([[x-.25,.5,z],[x,.95,z],[x+.2,.76,z],[x+.45,1.1,z],[x+.75,.5,z]],'#507f5e');
+    townPlane([[x-.2,.5,z],[x,.88,z],[x+.17,.71,z],[x+.25,.5,z]],'#8aad66');
+  }
+}
+let townSceneCache=null;
+function townBackdrop(c){
+  // Native-resolution cache: no low-res sprites, no per-frame roof/cobble rebuild.
+  const scale=Math.max(1,viewScale)*1.18,key=[c.id,scale,PAD_TOP,PAD_BOT].join(':');
+  if(!townSceneCache||townSceneCache.key!==key){
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;try{
+      g=canvas.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);
+      townStaticScene(c);
+    }finally{g=live;}
+    townSceneCache={key,canvas};
+  }
+  g.save();g.imageSmoothingEnabled=true;
+  g.drawImage(townSceneCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+}
+function townHangingSign(x,y,kind){
+  // Forged wall bracket, diagonal brace and two chains support an actual thick
+  // timber sign. The sign face is painted wood, never a floating UI nameplate.
+  const sway=Math.sin(perfNow*.95+x)*.014;
+  townInk([[x-35,y-60],[x-29,y-60],[x-29,y-33],[x-35,y-33]],'#344b50');
+  townStroke([[x-31,y-55],[x+28,y-55],[x+28,y-51]],'#293e44',3.2);
+  townStroke([[x-31,y-36],[x-12,y-55]],'#415a5d',2.4);
+  townStroke([[x-31,y-56],[x+27,y-56]],'#91a09a',.7);
+  for(const yy of [-57,-36]){g.fillStyle='#b7b99e';g.fillRect(x-33,y+yy,1.8,1.8);}
+  g.save();g.translate(x,y-52);g.rotate(sway);
+  for(const xx of [-19,19]){
+    townStroke([[xx,0],[xx,14]],'#23373d',2.1);
+    for(let i=0;i<3;i++){
+      const yy=1+i*4;
+      townInk([[xx-1,yy],[xx+1.2,yy],[xx+1.2,yy+3],[xx-1,yy+3]],'#a8aca0');
+      townStroke([[xx+.1,yy+.6],[xx+.1,yy+2.4]],'#41585b',.6);
+    }
+  }
+  // Top edge, dark right thickness and front: consistent three-quarter joinery.
+  townInk([[-31,14],[-27,10],[29,10],[34,15],[29,18],[-28,18]],'#bc9057');
+  townInk([[30,15],[35,12],[35,55],[29,62],[26,58]],'#483527');
+  townInk([[-31,16],[-27,12],[29,12],[31,16],[29,56],[24,60],[-27,60],[-32,55]],'#845b38');
+  townInk([[-28,17],[26,15],[25,55],[-27,56]],'#986d43');
+  // Three long boards with restrained grain and dark seams, rather than outlines.
+  for(const yy of [29,44]){
+    townStroke([[-29,yy],[27,yy-1]],'#5d402c',.85);
+    townStroke([[-27,yy+1],[25,yy]],'#b78a51',.45);
+  }
+  townStroke([[-25,20],[-15,19],[-8,20]],'#c2975b',.7);
+  townStroke([[12,52],[20,51],[24,52]],'#63492f',.7);
+  for(const xx of [-26,24]){
+    townInk([[xx-1,16],[xx+2,16],[xx+1,56],[xx-2,56]],'#435656');
+    for(const yy of [19,51]){
+      townInk([[xx-.8,yy],[xx+1,yy-.3],[xx+1.3,yy+1.5],[xx-.5,yy+2]],'#b3b59a');
+    }
+  }
+  if(kind==='smith'){
+    // The smith's own tiny hammer above a recognizable anvil, painted on wood.
+    townInk([[-20,35],[12,35],[21,29],[18,41],[6,45],[5,51],[-10,51],[-8,45],[-16,42]],'#334b57');
+    townInk([[-20,33],[12,33],[21,29],[16,36],[-18,36]],'#d0ddd6');
+    townInk([[-17,36],[15,36],[12,40],[-15,40]],'#8faab0');
+    townStroke([[-4,30],[4,22]],'#e0bc7b',2.2);
+    townInk([[0,20],[4,16],[11,21],[7,25]],'#d6dfd4');
+    townInk([[7,25],[11,21],[12,23],[8,27]],'#526f7b');
+  }else{
+    // A gold purse and a small stoppered bottle communicate supplies without text.
+    townInk([[-16,31],[-12,28],[-13,23],[-1,23],[-2,28],[4,33],[6,45],[1,50],[-14,50],[-19,45]],'#59412c');
+    townInk([[-15,33],[-10,29],[-2,29],[2,35],[3,45],[-1,48],[-13,48],[-16,44]],'#d5ad63');
+    townInk([[-15,33],[-10,29],[-8,30],[-11,40],[-10,47],[-13,48],[-16,44]],'#f0d28e');
+    townStroke([[-13,28],[-1,28]],'#744b32',1.5);
+    townInk([[10,26],[16,26],[16,33],[21,37],[21,49],[7,49],[7,37],[10,33]],'#315d6a');
+    townInk([[9,39],[19,39],[19,47],[9,47]],'#93b6a4');
+    townStroke([[10,38],[10,45]],'#e5e1b9',1.2);
+    townInk([[9,23],[17,23],[17,27],[9,27]],'#d6b375');
+    townInk([[-5,37],[-1,38],[-1,43],[-5,44],[-8,41]],'#f0d694');
+  }
+  g.restore();
+}
+function townMarketCitizen(x,z,type,t,clipAt=null){
+  const p=townProject(x,0,z),scale=360/z/40,step=Math.sin(t)*.85,
+    guard=type==='guard',cloth=type==='seller'?'#b56c4a':type==='woman'?'#913f56':type==='porter'?'#4e8072':'#3d7086';
+  g.save();
+  if(clipAt!==null){g.beginPath();g.rect(0,-PAD_TOP,480,clipAt+PAD_TOP);g.clip();}
+  g.translate(...p);g.scale(scale,scale);
+  townInk([[-14,0],[-8,-3],[9,-3],[16,0],[10,3],[-10,3]],'#8c8064');
+  g.scale(U,U);
+  for(const side of [-1,1]){
+    const foot=side*2.1+side*step;
+    townInk([[side*2-1.2,-8],[side*2+1,-8],[foot+.7,-1],[foot+1.8,0],[foot-1.1,0]],guard?'#566f7b':'#574634');
+    g.fillStyle='#2b3432';g.fillRect(foot-1.1,-1.3,2.9,1.3);
+  }
+  const bob=Math.abs(Math.sin(t))*.2;
+  g.translate(0,bob);
+  townInk([[-4.1,-18],[-1.3,-19],[3.2,-18],[4.4,-13],[3.4,-7],[-3.5,-7],[-4.8,-12]],guard?'#91a7b2':cloth);
+  townInk([[-4.1,-18],[-1.3,-19],[-.5,-8],[-3.5,-7],[-4.8,-12]],guard?'#cedbdc':shade(cloth,30));
+  townInk([[2.6,-18],[4.4,-13],[3.4,-7],[1.8,-7],[2.6,-13]],guard?'#354d5c':shade(cloth,-30));
+  g.fillStyle='#49382c';g.fillRect(-3.9,-9,7.6,1.1);g.fillStyle='#d6b36d';g.fillRect(-.2,-9.1,1.1,1.2);
+  if(type==='woman')townInk([[-3.5,-10],[3.2,-10],[5.1,-3],[-4.8,-3]],'#73384c');
+  if(type==='seller'){
+    townInk([[-2.5,-16],[1.9,-16],[3,-6],[-3.1,-6]],'#d9b783');
+    g.fillStyle='#b88d5a';g.fillRect(-1.6,-11,2.9,2.5);
+  }
+  // Arms and angular hands: small enough to read as people, not signposts.
+  townStroke([[-3.8,-17],[-5.4,-12],[-4.5,-9]],guard?'#6b8592':cloth,1.8);
+  townStroke([[3.7,-17],[5.3,-13],[4.7,-10]],guard?'#6b8592':cloth,1.8);
+  g.fillStyle='#e0bb8a';g.fillRect(-5.2,-10,1.8,2);g.fillRect(4,-10.5,1.8,2);
+  if(guard){
+    g.save();g.scale(1/U,1/U);drawSquireHelmet25D(0,-19.5,.10,.65,'#91a7b2','#354d5c','#cedbdc','#edf4f7','#c8a064');g.restore();
+    townStroke([[6.7,-22],[6.7,-1]],'#815f3b',.6);
+    townInk([[6.7,-25],[5.6,-22],[7.8,-22]],'#d6e0db');
+  }else{
+    townInk([[-2.6,-24],[1.8,-24],[3,-22],[2.7,-19],[.8,-17.7],[-2.4,-19]],'#d0a375');
+    townInk([[-2.6,-24],[-.4,-24],[-.4,-18.2],[-2.4,-19]],'#edc693');
+    g.fillStyle='#4b352a';g.fillRect(-2.7,-24.4,5,1.7);g.fillRect(-2.8,-23,1,3);
+    g.fillStyle='#283d37';g.fillRect(.7,-21.8,.8,.8);
+    townInk([[2.2,-21],[3.6,-20.2],[2.3,-19.7]],'#c4956c');
+    if(type==='woman'){
+      townInk([[-3,-24],[-1,-25.5],[2.5,-24.5],[3.2,-23],[-2.2,-23]],'#d6cba2');
+      townInk([[-3,-24],[-2.2,-23],[-2.7,-18],[-4,-17.3]],'#afa67f');
+    }else{
+      townInk([[-3,-24],[-2.8,-26],[1,-26.5],[3,-24.5],[3.9,-23.7]],type==='porter'?'#94733d':'#8e434c');
+    }
+  }
+  if(type==='porter'){
+    townInk([[2,-13],[7,-13],[7.7,-8],[2,-8]],'#bb8d4f');
+    townStroke([[2.8,-13],[3.2,-15],[6,-15],[6.6,-13]],'#654b31',.6);
+    g.fillStyle='#e5c78b';g.fillRect(4.2,-13,.7,5);
+  }
+  g.restore();
+}
+function townAmbient(){
+  // Individually authored places/paths remain in the pedestrian area. Nobody
+  // strolls through a facade, stall or another person's collision footprint.
+  const people=[
+    {x:-.9,z:30,type:'guard',t:0},
+    {x:1.0,z:28,type:'woman',t:perfNow*.9},
+    {x:-2.4,z:21.7,type:'seller',t:0,clip:townProject(-2.4,1.16,20)[1]},
+    {x:2.45,z:26.7,type:'seller',t:0,clip:townProject(2.45,1.16,25)[1]},
+    {x:-.9+Math.sin(perfNow*.14)*.36,z:22,type:'porter',t:perfNow*1.6},
+    {x:.8,z:18.3+Math.sin(perfNow*.11)*.25,type:'woman',t:perfNow*1.1},
+    {x:-1.35,z:14.4,type:'guard',t:0},
+    {x:.35+Math.sin(perfNow*.12)*.42,z:11.7,type:'porter',t:perfNow*1.4}
+  ];
+  for(const p of people.sort((a,b)=>b.z-a.z))townMarketCitizen(p.x,p.z,p.type,p.t,p.clip??null);
+  townHangingSign(98,378,'smith');
+  townHangingSign(405,353,'store');
+  // Chimney smoke starts exactly at the new smith roof's chimney.
+  const b=TOWN_MARKET_PLAN.find(b=>b.id==='smith'),p=townProject(b.x+b.w*.28,b.h+b.r*.55+1.87,b.z+b.d*.62);
+  for(let i=0;i<4;i++){
+    const q=(perfNow*.1+i*.25)%1,x=p[0]+q*13,y=p[1]-q*45;
+    g.globalAlpha=(1-q)*.22;
+    townInk([[x-4,y],[x-7,y-7],[x-3,y-13],[x+6,y-12],[x+9,y-4],[x+4,y+2]],'#e1dec8');
+  }g.globalAlpha=1;
+  // Lord's pennant is attached to the keep ridge, animated independently.
+  const flag=townProject(.5,29,80),wave=Math.sin(perfNow*1.6)*1.5;
+  townStroke([[flag[0],flag[1]],[flag[0],flag[1]-18]],'#6b674f',1);
+  townInk([[flag[0],flag[1]-18],[flag[0]+12,flag[1]-16+wave],[flag[0]+9,flag[1]-11+wave],[flag[0],flag[1]-12]],'#984354');
+}
+function drawTown(){
+  const v=townVisit;if(!v)return;const c=v.chapter,tr=v.transition,r=tr&&TOWN_PLACES[tr.id];
+  g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  if(tr){const z=1+smoothStep(clamp(tr.time/.35,0,1))*.16;
+    g.translate(r.x+r.w/2,r.y+r.h/2);g.scale(z,z);g.translate(-r.x-r.w/2,-r.y-r.h/2);}
+  townBackdrop(c);townAmbient();g.restore();
+  g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  // Restrained title treatment leaves the whole city visible.
+  g.fillStyle='#273d40';g.textAlign='center';g.font='bold 27px monospace';g.fillText(c.name,240,40);
+  townStroke([[138,53],[342,53]],'#d4c9a5',1);
+  smithText('CHAPTER '+v.stage+'  /  SAFE HAVEN',240,69,10,'#344b4c');
+  merchantGoldLabel(gold,424,100,13,'#f3dfaa','',88);
+  smithText('THE MARKET SQUARE',240,649,11,'#323f39');
+  smithText('Tap their buildings to step inside.',240,667,10,'#455047');
+  drawSmithButton(TOWN_DEPART,'CONTINUE JOURNEY','#ead6a5');
+  if(v.lab){
+    drawSmithButton({x:15,y:744,w:140,h:34},'BACK TO DEBUG','#d2dcb7');
+    drawSmithButton({x:325,y:744,w:140,h:34},'NEXT TOWN','#d2dcb7');
+  }
+  if(v.dialog){
+    g.fillStyle='#131e1bf2';g.fillRect(28,576,424,216);g.strokeStyle='#c4aa77';g.lineWidth=1;g.strokeRect(28,576,424,216);
+    smithText('THE ROAD AHEAD',240,609,20,'#f1dca9');
+    smithText('Leave town and begin stage '+(loop+1)+'?',240,642,12,'#d7dbc6',382);
+    smithText('Finish your shopping before you set off.',240,663,11,'#b8c5ad',382);
+    drawSmithButton({x:48,y:687,w:384,h:45},'CONTINUE JOURNEY','#e5d2a2');
+    drawSmithButton({x:140,y:747,w:200,h:32},'STAY IN TOWN','#bbceb2');
+  }
+  g.restore();
+}
+function drawTownShopkeeper(s,hands=false){
+  // Resident outfitter: the travelling merchant's shape grammar, his own face
+  // and work clothes. Square rig joints articulate both foreground hands.
+  const breath=Math.sin(perfNow*1.6)*.16,reach=s.phase==='handoff'?Math.sin(clamp(s.clock/1.8,0,1)*Math.PI):0;
+  g.save();g.translate(240,211);g.scale(1.25,1.25);
+  const arm=side=>{
+    const sx=side*11,sy=1+breath,ex=side*18,ey=11,
+      hx=side*21-(side===1?reach*6:0),hy=20-(side===1?reach*7:0);
+    if(!hands){
+      rigSegment(sx,sy,ex,ey,5.8,'#1e404e');rigSegment(sx-.7,sy,ex-.7,ey,3.4,'#43818a');
+      rigJoint(ex,ey,5,'#295561');return;
+    }
+    rigSegment(ex,ey,hx,hy,4.7,'#27525f');rigSegment(ex-.7,ey-.4,hx-.7,hy-.4,2.8,'#579399');
+    rigJoint(hx,hy-1.1,5.1,'#c5b084');px(hx-2.5,hy-3.3,4.7,.6,'#f0ddb2');
+    rigPolygon([[hx-2.2,hy-.5],[hx+2,hy-.5],[hx+2.8,hy+1.4],[hx+1.6,hy+3],[hx-2.5,hy+2.3]],'#c79f73');
+    px(hx-2,hy-.3,3.8,.6,'#e9c696');
+    for(let i=0;i<3;i++)px(hx-1.5+i*1.1,hy+.7,.23,1.4,'#966e54');
+  };
+  if(hands){arm(-1);arm(1);g.restore();return;}
+  rigPolygon([[-10,-2],[-4,-4],[6,-4],[12,0],[14,13],[10,25],[-11,25],[-14,12]],'#2d616d');
+  rigPolygon([[-10,-2],[-4,-4],[-1,-2],[-2,23],[-11,25],[-14,12]],'#579399');
+  rigPolygon([[7,-3],[12,0],[14,13],[10,25],[6,25],[9,12]],'#1e404e');
+  arm(-1);arm(1);
+  // Linen collar and ochre canvas apron with stitched pocket and attached straps.
+  rigPolygon([[-5,-5],[0,-2],[-2,4],[-6,0]],'#efe0b8');
+  rigPolygon([[0,-2],[5,-5],[7,0],[3,4]],'#bba67e');
+  for(const side of [-1,1])rigSegment(side*7,-1,side*5,8,1,'#694935');
+  rigPolygon([[-5,6],[5,6],[7,16],[9,26],[-10,26],[-7,16]],'#ba8e50');
+  rigPolygon([[-5,6],[-3.6,6],[-5,17],[-7,25],[-10,26],[-7,16]],'#e0bb78');
+  rigPolygon([[3.8,6],[5,6],[7,16],[9,26],[5,26],[4,17]],'#805733');
+  rigSegment(-5,6,5,6,.55,'#edca87');rigPolygon([[-4,15],[3.5,15],[3.5,21],[-3.5,22]],'#8e683d');
+  rigSegment(-4,15,3.5,15,.45,'#e6ba73');px(-2,16,1,3,'#405e68');px(0,16,1.3,4,'#ccbb8b');
+  for(const side of [-1,1])rigJoint(side*4,7.5,.7,'#eed29a');
+  g.save();g.translate(0,breath*U);g.rotate(Math.sin(perfNow*.65)*.018);
+  rigPolygon([[-5.8,-17],[4.2,-18],[6,-14],[6,-7],[2.5,-3],[-3.5,-4],[-6,-8]],'#c79f73');
+  rigPolygon([[-5.8,-17],[-.3,-18],[.5,-5],[-3.5,-4],[-6,-8]],'#e0bb8a');
+  rigPolygon([[4,-17],[6,-14],[6,-7],[2.5,-3],[1,-5],[3.8,-8]],'#966e54');
+  px(-7,-12,1.5,3,'#c79f73');px(5.8,-12,1.4,3,'#ab7d59');
+  px(-5.8,-18,10,2,'#573a2c');px(-5.8,-16,1.6,7,'#704833');px(4.5,-16,1.3,6,'#463329');
+  const blink=Math.sin(perfNow*.73)>.997;
+  px(-3.7,-11.8,1.5,blink?.2:1,'#283c36');px(2.3,-11.8,1.5,blink?.2:1,'#283c36');
+  px(-4.2,-13.1,2.5,.55,'#644632');px(2,-13,2.4,.55,'#644632');
+  rigPolygon([[.1,-12.6],[1.1,-12.6],[2.4,-8.9],[-.3,-8.9]],'#b38257');px(.1,-12,.55,2.5,'#f1cea0');
+  // Broad square moustache and clipped beard distinguish him from the rich trader.
+  rigPolygon([[-4.1,-8],[-1,-8.6],[.5,-7.7],[2,-8.5],[4.6,-7.8],[4,-6.3],[1.1,-6.7],[-1,-6.7],[-4.1,-6.5]],'#67442f');
+  rigPolygon([[-3.8,-5.6],[-1.5,-4.9],[2.1,-5],[4,-6],[3,-3.7],[0,-2.8],[-3.3,-4]],'#704b32');
+  px(-1.5,-5.6,3,.45,'#f0c99b');
+  // Burgundy shop cap, crisp band and a single brass pin.
+  rigPolygon([[-7,-18],[-6,-23],[-2,-25],[5,-23],[7,-19],[5,-17]],'#8c3b47');
+  rigPolygon([[-6,-23],[-2,-25],[5,-23],[3,-21],[-4,-21]],'#c15d60');
+  rigPolygon([[3,-21],[5,-23],[7,-19],[5,-17],[2,-18]],'#632b37');
+  px(-6.8,-19,13.6,2,'#a14b51');px(-6.8,-17.5,13,.55,'#d1ad6b');
+  rigJoint(3.8,-18,1.3,'#e3c37e');g.restore();g.restore();
+}
+function townShelfItem(item,x,surfaceY,scale){
+  // Art origins are centres, not feet. Seat the actual lowest vertex on the
+  // shelf, including the sealed parcel's authored -0.07-radian rotation.
+  const bottom=item.kind==='mystery'?22*Math.cos(.07)+20*Math.sin(.07):
+    item.kind==='heal'?22:({flask:22,venom:22,quiver:25,horn:20,bead:26}[item.id]);
+  if(!Number.isFinite(bottom))throw Error('Missing shelf contact: '+item.id);
+  drawMerchantProp(item,x,surfaceY-bottom*scale,scale,false,true);
+}
+function drawTownStoreBackdrop(c){
+  const P=(v,col)=>townInk(v,col),R=(x,y,w,h,col)=>{g.fillStyle=col;g.fillRect(x,y,w,h);};
+  R(0,-PAD_TOP,480,800+PAD_TOT,'#283d3d');
+  // Same shallow frontal room as the forge: no competing vanishing points.
+  P([[0,0],[22,30],[22,308],[0,330]],'#38575b');
+  P([[458,30],[480,0],[480,330],[458,308]],'#213d46');
+  R(22,30,436,278,'#8ca5a0');
+  for(let i=0;i<7;i++){R(24+i*62,32,60,274,i%2?'#91aaa1':'#9eb4a9');R(26+i*62,33,1,270,'#bfccaf');}
+  R(17,23,446,10,'#765136');R(17,23,446,2,'#bf9761');
+  for(const x of [20,148,324,453]){R(x,32,7,279,'#4e3b2c');R(x,32,1.6,275,'#b08855');}
+  // Shelves are built from one cabinet volume; stock sits on its horizontal ledges.
+  for(const x of [31,337]){
+    P([[x,146],[x+111,146],[x+111,274],[x,274]],'#4b3529');
+    R(x+6,151,99,116,'#223c42');
+    P([[x+6,151],[x+12,157],[x+12,262],[x+6,267]],'#162b32');
+    R(x+12,157,89,104,'#2d4850');
+    for(const y of [209,264]){
+      P([[x+5,y-5],[x+104,y-5],[x+113,y],[x-3,y]],'#bf9863');
+      R(x-3,y,116,5,'#80583a');R(x-3,y,116,1,'#dbb776');
+    }
+    for(const xx of [x+7,x+97])P([[xx,269],[xx+8,269],[xx+3,283],[xx,283]],'#795337');
+    const stock=x===31?[{kind:'artifact',id:'flask'},{kind:'heal'},{kind:'artifact',id:'venom'}]:
+      [{kind:'artifact',id:'quiver'},{kind:'artifact',id:'horn'},{kind:'mystery'}];
+    for(let j=0;j<3;j++)townShelfItem(stock[j],x+23+j*33,263,.53);
+    // Folded cloth, a tied parcel and a lamp: different usable goods, not filler blocks.
+    if(x===31){
+      for(let i=0;i<3;i++){
+        const xx=x+15+i*26;
+        P([[xx,196],[xx+22,196],[xx+20,203],[xx-1,203]],['#903c49','#397682','#c2a272'][i]);
+        R(xx,197,20,1,['#d57b73','#79abb0','#e9d3a1'][i]);
+        R(xx+3,187,17,9,['#a95559','#548e96','#bca06f'][i]);
+      }
+    }else{
+      townShelfItem({kind:'mystery'},x+33,208,.58);
+      townShelfItem({kind:'artifact',id:'bead'},x+79,208,.5);
+    }
+  }
+  // Daylight transom centred above the proprietor, attached to the wall frame.
+  R(170,43,139,70,'#3b534f');R(175,48,129,60,'#75a7aa');
+  P([[177,50],[234,50],[201,106],[177,106]],'#a9cbbe');
+  for(const x of [217,262]){R(x,48,3,60,'#486d72');R(x,48,1,60,'#d2ceaa');}
+  R(175,78,129,3,'#486d72');R(166,110,147,5,'#d8bb82');
+  // The sign hangs by two straps in front of, rather than painted on, the wall.
+  for(const x of [124,354]){R(x,31,2,43,'#b89b68');R(x-1,70,4,7,'#d2b783');}
+  P([[108,73],[372,73],[377,78],[377,111],[372,116],[108,116],[103,111],[103,78]],'#1e404e');
+  R(110,76,260,2,'#b7965c');R(111,111,259,1,'#577d7b');
+  smithText('THE CORNER STORE',240,100,21,'#efd5a2');
+  smithText(c.name,240,112,8,'#b8c6af');
+}
+let townStoreSceneCache=null;
+function drawTownShopInterior(s){
+  const c=townVisit?.chapter||TOWN_CHAPTERS[0],scale=Math.max(1,viewScale)*1.18,
+    key=[c.id,scale,PAD_TOP,PAD_BOT].join(':');
+  if(!townStoreSceneCache||townStoreSceneCache.key!==key){
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;try{g=canvas.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);drawTownStoreBackdrop(c);}
+    finally{g=live;}townStoreSceneCache={key,canvas};
+  }
+  g.save();g.imageSmoothingEnabled=true;g.drawImage(townStoreSceneCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+  drawTownShopkeeper(s);drawSmithCounter(false);drawTownShopkeeper(s,true);
+}
+/* Travelling merchant prototype. Independent from the skill forge. */
+let merchantShop=null;
+const merchantVisits=new Map();
+const MERCHANT_BUY={x:35,y:643,w:245,h:48},MERCHANT_REROLL={x:292,y:643,w:153,h:48},
+  MERCHANT_EXIT={x:140,y:744,w:200,h:36};
+function merchantProductRect(i){return {x:24+i*110,y:380,w:102,h:122};}
+function merchantGoldLabel(amount,x,y,size=12,color='#ffe09b',prefix='',maxWidth=180){
+  g.save();
+  const label=prefix+amount;
+  let icon=size*1.1,gap=5;
+  g.font='bold '+size+'px monospace';
+  while(size>8&&g.measureText(label).width+gap+icon>maxWidth){
+    size--;icon=size*1.1;g.font='bold '+size+'px monospace';
+  }
+  const textWidth=g.measureText(label).width,left=x-(textWidth+gap+icon)/2;
+  g.fillStyle=color;g.textAlign='left';g.fillText(label,left,y);
+  // Same still frame as the gameplay HUD; never substitute an emoji or new icon.
+  drawCoin(left+textWidth+gap+icon/2,y-1,icon/25,.25);g.restore();
+}
+function merchantPriceButton(rect,prefix,amount,color,enabled=true){
+  drawMerchantButton(rect,'',color,enabled);
+  merchantGoldLabel(amount,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?color:'#828590',prefix,rect.w-24);
+}
+function drawMerchantButton(rect,label,color,enabled=true){
+  if(merchantShop?.townId){drawSmithButton(rect,label,color,enabled);return;}
+  g.save();g.translate(rect.x,rect.y);
+  const {w,h}=rect;
+  // Crisp cut corners and straight edges, consistent with the game's UI.
+  g.beginPath();g.moveTo(4,0);g.lineTo(w-4,0);g.lineTo(w,4);g.lineTo(w,h-4);
+  g.lineTo(w-4,h);g.lineTo(4,h);g.lineTo(0,h-4);g.lineTo(0,4);g.closePath();
+  g.fillStyle=enabled?'#345c58':'#536860';g.fill();g.strokeStyle='#263f3b';g.lineWidth=1.5;g.stroke();
+  townStroke([[7,h-4],[w-7,h-3]],enabled?'#638674':'#788b78',.8);
+  smithText(label,w/2,h/2+5,13,enabled?color:'#b0b89f',w-14);g.restore();
+}
+function openMerchantShop(visitId='stage:'+loop,environment=biome){
+  const returnMode=mode==='merchant'?'run':mode;
+  let visit=merchantVisits.get(visitId);
+  if(!visit){
+    const random=journeyRandom(journeyKeySeed(journeyRunSeed??stageRouteSeed,'merchant:'+visitId)),
+      pool=ARTIFACT_IDS.filter(id=>!hasRelic(id));
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    visit={seed:journeyKeySeed(journeyRunSeed??stageRouteSeed,'merchant:'+visitId),rerolls:0,
+      stock:[{kind:'artifact',id:pool[0],price:30},{kind:'artifact',id:pool[1],price:42},
+      {kind:'heal',price:12},{kind:'mystery',id:pool[2],price:20}]};
+    for(const item of visit.stock)if(item.kind!=='heal'&&!item.id)item.sold=true;
+    merchantVisits.set(visitId,visit);
+  }
+  merchantShop={visitId,stock:visit.stock,environment:environment||'forest',selected:0,phase:'browse',clock:0,returnMode,lab:false,message:'',last:null};
+  setMode('merchant');
+}
+function openMerchantLab(){
+  resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;syncPlayerVitals(true);
+  player.currentHealthUnits=Math.max(1,player.maxHealthUnits-2*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+  gold=120;flashA=0;shakeMag=0;openMerchantShop('lab','forest');merchantShop.lab=true;
+}
+function merchantName(item,reveal=false){
+  return item.kind==='heal'?'TRAVELLER\'S TONIC':item.kind==='mystery'&&!reveal?'SEALED ODDITY':
+    ARTIFACT_DEFS[item.id]?.name||'SOLD OUT';
+}
+function merchantRerollCost(){return 10+5*(merchantVisits.get(merchantShop?.visitId)?.rerolls||0);}
+function rerollMerchantStock(){
+  const s=merchantShop;if(mode!=='merchant'||!s||s.phase!=='browse'||paused)return false;
+  const visit=merchantVisits.get(s.visitId),price=merchantRerollCost(),
+    targets=s.stock.filter(item=>!item.sold&&item.kind!=='heal');
+  if(!targets.length){s.message='No unsold artifacts left to reroll.';return false;}
+  if(gold<price){s.message='Not enough gold to reroll.';SFX.duck();return false;}
+  const reserved=new Set(s.stock.filter(item=>!targets.includes(item)).map(item=>item.id)),
+    previous=new Set(targets.map(item=>item.id)),
+    pool=ARTIFACT_IDS.filter(id=>!hasRelic(id)&&!reserved.has(id)),
+    fresh=pool.filter(id=>!previous.has(id)),
+    candidates=fresh.length>=targets.length?fresh:pool,
+    random=journeyRandom(journeyKeySeed(visit.seed,'reroll:'+visit.rerolls));
+  for(let i=candidates.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[candidates[i],candidates[j]]=[candidates[j],candidates[i]];}
+  const ids=[];
+  for(const item of targets){
+    let i=candidates.findIndex(id=>id!==item.id);if(i<0)i=0;
+    if(!candidates.length){s.message='No different stock available. No gold spent.';return false;}
+    ids.push(candidates.splice(i,1)[0]);
+  }
+  if(ids.every((id,i)=>id===targets[i].id)){s.message='No different stock available. No gold spent.';return false;}
+  gold-=price;visit.rerolls++;
+  targets.forEach((item,i)=>item.id=ids[i]);
+  s.last=null;s.message='Fresh finds. Sold items and tonic stay as they were.';
+  s.phase='reroll';s.clock=0;SFX.swipe();return true;
+}
+function merchantBlock(item){
+  if(!item||item.sold)return 'Already sold. The empty spot is yours.';
+  if(item.kind==='heal'&&player.currentHealthUnits>=player.maxHealthUnits)return 'You are already at full health.';
+  if(item.kind!=='heal'&&hasRelic(item.id))return 'You already carry this artifact.';
+  if(item.kind!=='heal'&&!relics.some(r=>!r))return 'All five artifact slots are full. Nothing will be replaced.';
+  if(gold<item.price)return 'Not enough gold. Looking is still free.';
+  return '';
+}
+function buyMerchantItem(){
+  const s=merchantShop;if(mode!=='merchant'||!s||s.phase!=='browse'||paused)return false;
+  const item=s.stock[s.selected],blocked=merchantBlock(item);
+  if(blocked){s.message=blocked;SFX.duck();return false;}
+  // Commit synchronously exactly once; the following hand-off is cosmetic only.
+  if(item.kind==='heal'){
+    const before=player.currentHealthUnits;
+    player.currentHealthUnits=Math.min(player.maxHealthUnits,before+2*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+    beginPlayerHeartFlash(before,player.currentHealthUnits);
+  }else{relics[relics.findIndex(r=>!r)]=ARTIFACT_DEFS[item.id].create();syncArtifactCache();}
+  gold-=item.price;item.sold=true;s.last=item;s.phase='handoff';s.clock=0;s.message='';SFX.coin();return true;
+}
+function updateMerchantShop(dt){
+  const s=merchantShop;if(!s||paused)return;
+  if(s.phase==='reroll'){s.clock+=dt;if(s.clock>=.45)s.phase='browse';return;}
+  if(s.phase==='handoff'){s.clock+=dt;if(s.clock>=1.8){s.phase='browse';s.message=merchantName(s.last,true)+' — yours. No refunds, only fond memories.';}}
+}
+function merchantTap(pt){
+  const s=merchantShop;if(!s||mode!=='merchant'||paused||s.phase!=='browse')return false;
+  for(let i=0;i<4;i++)if(pointInRect(pt,merchantProductRect(i))){s.selected=i;s.message='';SFX.swipe();return true;}
+  if(pointInRect(pt,MERCHANT_BUY))return buyMerchantItem();
+  if(pointInRect(pt,MERCHANT_REROLL))return rerollMerchantStock();
+  if(s.lab&&pointInRect(pt,{x:30,y:702,w:200,h:32})){gold+=100;return true;}
+  if(s.lab&&pointInRect(pt,{x:250,y:702,w:200,h:32})){openMerchantLab();return true;}
+  if(pointInRect(pt,MERCHANT_EXIT)){
+    if(s.lab){resetRun();debugRun=false;setMode('debugcfg');}
+    else{merchantShop=null;setMode(s.returnMode);}return true;
+  }
+  return false;
+}
+function drawMerchantDisplayItem(item,reveal=false){
+  // Native Knight Rush art grammar: rigid silhouettes, square accents, broad
+  // light/shadow planes. These are vector shapes, never a pixelation filter.
+  const R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);},
+    P=(points,c)=>townInk(points,c),id=item.kind==='heal'?'heal':item.id;
+  g.save();
+  if(item.kind==='mystery'&&!reveal){
+    g.rotate(-.07);
+    P([[-20,-15],[11,-15],[11,22],[-20,22]],'#a47648');
+    P([[11,-15],[21,-22],[21,15],[11,22]],'#624630');
+    P([[-20,-15],[-10,-22],[21,-22],[11,-15]],'#d1aa70');
+    R(-17,-12,3,29,'#c3975c');R(-4,-15,5,37,'#ead19a');R(-20,1,31,5,'#e0bd7a');
+    P([[-4,-15],[6,-22],[11,-22],[1,-15]],'#f6dfaa');
+    P([[11,1],[21,-6],[21,-1],[11,6]],'#b49764');
+    P([[3,-5],[14,-1],[12,13],[1,10]],'#edddb1');
+    g.save();g.translate(8,5);g.rotate(.12);smithText('?',0,4,12,'#6b3b3f');g.restore();g.restore();return;
+  }
+  if(['heal','flask','storm','venom'].includes(id)){
+    const color=id==='heal'?'#c94e67':id==='venom'?'#65b962':id==='storm'?'#67bdd9':'#f08735',
+      dark=id==='heal'?'#723b51':id==='venom'?'#305d47':id==='storm'?'#305a7c':'#8b4933';
+    const w=id==='venom'?10:15;
+    P([[-6,-24],[7,-24],[7,-13],[w,-5],[w,22],[-w,22],[-w,-5],[-6,-13]],'#637f8c');
+    P([[7,-24],[11,-27],[11,-15],[w+5,-7],[w+5,18],[w,22],[w,-5],[7,-13]],'#2c485b');
+    P([[-6,-24],[-2,-27],[11,-27],[7,-24]],'#c1d5d3');
+    R(-w+3,2,w*2-5,16,color);R(w-5,2,3,16,dark);
+    R(-w+3,2,w*2-5,2,id==='venom'?'#ace88b':id==='heal'?'#f5a093':'#c0eaf0');
+    R(-w+2,-2,2,13,'#cbe3da');R(-3,-20,2,7,'#b2cfc8');
+    R(-7,-30,15,6,'#ae8955');R(-7,-30,15,2,'#d9b881');R(5,-28,3,4,'#775b3d');
+    if(id==='heal'){R(-8,5,17,10,'#ead9a8');R(-1,6,4,8,'#a63f50');R(-4,9,10,3,'#a63f50');}
+    if(id==='storm')P([[2,-4],[-5,8],[0,7],[-3,18],[10,3],[4,4],[7,-4]],'#e5f5ef');
+    if(id==='flask'){P([[-6,13],[-6,6],[-2,8],[0,-1],[7,8],[5,15],[0,18]],'#ffd476');R(-1,9,3,6,'#fff0b1');}
+    if(id==='venom'){R(-4,6,9,8,'#d6e9a9');R(-2,8,2,2,'#34534a');R(2,8,2,2,'#34534a');R(-2,14,5,2,'#d6e9a9');}
+    g.restore();return;
+  }
+  switch(id){
+    case 'shield':
+      drawSerJonathanShield(0,0,.12,-.1,1.7,1,{style:'squire',rim:'#d5e0e7',rimDark:'#7c8994',face:'#234f88',emblem:'#c8deee',boss:'#d6ad43',pattern:0});break;
+    case 'horn':
+      P([[-21,6],[-13,5],[-5,0],[2,-8],[6,-24],[15,-24],[14,-9],[8,5],[-3,15],[-17,19]],'#b28b50');
+      P([[-18,6],[-12,7],[-3,2],[6,-9],[10,-23],[6,-24],[2,-8],[-5,0]],'#edd3a0');
+      P([[10,-23],[15,-24],[14,-9],[8,5],[-3,15],[-17,19],[-16,13],[-4,9],[4,-1]],'#87643b');
+      R(5,-27,12,5,'#d9ded0');R(12,-27,5,5,'#8b9fa1');
+      P([[-23,5],[-16,4],[-12,16],[-18,20],[-23,16]],'#e1bd79');P([[-21,8],[-18,7],[-15,15],[-18,17],[-21,14]],'#343d37');
+      P([[-7,0],[-3,-3],[2,7],[-2,11]],'#d3ac65');break;
+    case 'quiver':
+      for(let i=0;i<3;i++){const x=-10+i*9,y=-31+i%2*5;R(x,y,2,37,'#c2a46e');P([[x,y+5],[x-4,y+1],[x-4,y-6],[x+1,y-3],[x+5,y-7],[x+5,y],[x+2,y+5]],'#8dcc8b');R(x,y-3,1,8,'#d5ebac');}
+      P([[-16,-6],[12,-6],[10,25],[-12,25]],'#895437');P([[12,-6],[18,-10],[16,20],[10,25]],'#513927');
+      P([[-16,-6],[-10,-10],[18,-10],[12,-6]],'#bd8b50');R(-12,-5,22,3,'#382c26');R(-13,-1,4,23,'#b17842');
+      P([[-16,9],[12,6],[12,12],[-15,15]],'#4d6775');R(0,8,6,6,'#d9b66c');R(2,9,2,3,'#60482f');
+      for(let i=0;i<4;i++)R(6,i*5,1,2,'#d1a56a');break;
+    case 'seal':
+      R(-4,-15,8,30,'#795338');R(-4,-15,2,30,'#b88b55');
+      P([[-17,-23],[13,-23],[13,-10],[-17,-10]],'#afbec8');P([[13,-23],[19,-28],[19,-15],[13,-10]],'#576d7e');P([[-17,-23],[-11,-28],[19,-28],[13,-23]],'#edf2e6');R(-16,-22,27,3,'#dae5e9');
+      R(-12,18,26,6,'#c45a3f');R(-9,16,20,3,'#f29856');R(-6,20,13,2,'#efc572');break;
+    case 'clover':
+      for(const [x,y] of [[-18,-19],[2,-19],[-18,1],[2,1]]){
+        P([[x,y+3],[x+3,y],[x+14,y],[x+17,y+4],[x+16,y+14],[x+10,y+18],[x,y+14]],'#579455');
+        R(x+2,y+1,9,3,'#98cb72');P([[x+12,y+1],[x+17,y+4],[x+16,y+14],[x+10,y+18],[x+8,y+13],[x+13,y+9]],'#346645');
+      }
+      R(-1,-2,3,26,'#71934c');R(-4,23,6,3,'#446338');R(0,-1,3,3,'#d3dc89');break;
+    case 'drum':
+      P([[-20,-9],[14,-9],[19,-4],[17,19],[-15,22],[-20,15]],'#984f43');
+      P([[9,-9],[14,-9],[19,-4],[17,19],[6,21]],'#603737');
+      P([[-20,-9],[-12,-14],[13,-14],[19,-9],[13,-5],[-13,-5]],'#e0cda3');
+      P([[-13,-12],[11,-12],[15,-9],[10,-7],[-12,-7],[-16,-9]],'#b8a87f');
+      P([[-18,14],[-14,18],[16,15],[17,19],[-15,22],[-20,17]],'#dbbe87');
+      for(let i=0;i<4;i++)P([[-16+i*9,-4],[-15+i*9,-4],[-11+i*9,15],[-13+i*9,15]],'#d0b078');
+      rigSegment(-4,-4,-6,-11,.7,'#c6a06b');rigJoint(-6,-11,1.8,'#d79164');rigSegment(3,-4,6,-10,.7,'#c6a06b');rigJoint(6,-10,1.8,'#d79164');break;
+    case 'eye':
+      P([[-24,-2],[-15,-13],[8,-16],[23,-4],[23,4],[9,14],[-13,13],[-24,3]],'#496849');
+      P([[-20,-2],[-12,-9],[7,-11],[19,-3],[18,3],[7,9],[-11,8]],'#ced69a');
+      R(-7,-10,15,19,'#8eb54d');R(-5,-9,4,16,'#b8d975');P([[1,-9],[-2,-2],[0,8],[3,3],[3,-5]],'#1b2c27');R(4,-8,3,3,'#eff3d4');break;
+    case 'moon':
+      P([[8,-25],[-7,-25],[-18,-16],[-22,-4],[-19,10],[-8,22],[9,25],[18,19],[6,20],[-5,11],[-10,-2],[-5,-15]],'#c4d2dd');
+      P([[-7,-25],[-18,-16],[-22,-4],[-19,10],[-8,22],[-3,20],[-14,8],[-17,-4],[-12,-17]],'#edf2df');
+      R(-14,-7,5,4,'#8da4b9');R(-8,12,4,3,'#8da4b9');P([[14,-8],[16,-2],[22,0],[17,3],[15,9],[12,3],[6,1],[12,-2]],'#e9c578');break;
+    case 'oak':
+      P([[-4,-3],[4,-3],[6,17],[14,25],[-14,25],[-6,17]],'#91613c');R(-3,0,3,19,'#c29a59');
+      P([[-22,-13],[-16,-13],[-16,-23],[5,-23],[5,-18],[17,-18],[17,-10],[23,-10],[23,1],[13,1],[13,6],[-5,6],[-5,2],[-22,2]],'#487349');
+      R(-15,-21,17,4,'#76a25a');R(-19,-9,8,7,'#598c50');R(6,-15,8,4,'#699553');R(9,0,4,4,'#2e553b');break;
+    case 'idol':
+      P([[-12,-24],[10,-24],[13,-18],[12,-6],[8,-3],[15,2],[12,15],[20,20],[20,26],[-19,26],[-19,20],[-12,15],[-14,1],[-8,-4],[-13,-10]],'#d6a748');
+      P([[4,-24],[10,-24],[13,-18],[12,-6],[8,-3],[15,2],[12,15],[20,20],[20,26],[7,26],[9,17],[4,10],[7,-2]],'#9d702e');
+      R(-11,-23,13,3,'#f3d98b');R(-9,-16,5,6,'#544438');R(4,-16,5,6,'#544438');R(-2,-14,3,10,'#f5d170');
+      P([[-10,2],[0,9],[10,2],[9,5],[0,12],[-10,5]],'#f2cc77');R(-15,22,28,2,'#edcc7a');break;
+    case 'alpha':
+      rigSegment(-5,-5,-6,-10,.45,'#7f6243');rigSegment(-6,-10,5,-10,.45,'#7f6243');rigSegment(5,-10,6,-5,.45,'#7f6243');
+      for(const x of [-13,7]){
+        P([[x-4,-14],[x+5,-14],[x+6,-4],[x+3,12],[x-4,26],[x-1,8]],'#d4dbce');
+        P([[x-4,-14],[x,-14],[x+2,-3],[x,12],[x-4,26],[x-1,8]],'#f3efd3');
+        R(x-5,-20,12,7,'#a9864c');R(x-5,-20,12,2,'#e3c27f');R(x+4,-18,3,5,'#705336');
+      }break;
+    case 'bead':
+      R(-17,-25,34,6,'#c6a160');R(-17,-25,34,2,'#eed696');R(-17,20,34,6,'#b58b4b');R(-17,20,34,2,'#efd497');
+      R(-16,-19,3,39,'#806744');R(13,-19,3,39,'#806744');
+      P([[-12,-18],[12,-18],[9,-8],[3,0],[9,9],[12,19],[-12,19],[-9,9],[-3,0],[-9,-8]],'#69878e');
+      P([[-10,-14],[10,-14],[6,-7],[0,-2],[-6,-7]],'#b48dd3');P([[0,7],[9,17],[-9,17]],'#b48dd3');R(-1,-2,2,13,'#ead5eb');
+      P([[-11,-17],[-8,-17],[-6,-9],[-8,-9]],'#bad7ce');break;
+    case 'banner':
+      R(-17,-28,3,56,'#a47b46');R(-17,-28,1,56,'#d1b375');
+      P([[-20,-29],[-16,-36],[-12,-29],[-16,-24]],'#e0c985');
+      P([[-14,-25],[-3,-28],[8,-23],[23,-25],[20,2],[7,4],[-3,-2],[-14,1]],'#467bb4');
+      P([[-3,-28],[8,-23],[7,4],[-3,-2]],'#285483');P([[-14,-25],[-3,-28],[-3,-24],[-14,-21]],'#8cb7d7');
+      P([[0,-17],[5,-14],[3,-8],[-1,-10]],'#e7c87c');break;
+    case 'boots':case 'greaves':{
+      const boot=(x,y,gold)=>{
+        g.save();g.translate(x,y);
+        P([[-10,-21],[8,-21],[6,4],[16,9],[16,20],[-12,20],[-12,9]],gold?'#c29b49':'#4a8965');
+        P([[4,-21],[8,-21],[6,4],[16,9],[16,20],[9,20],[9,11],[0,5]],gold?'#957036':'#2b5c4d');
+        R(-9,-19,4,24,gold?'#e4c570':'#73b183');R(-12,16,29,6,'#3e4944');R(-12,16,29,2,'#727c68');
+        R(-11,-23,20,6,gold?'#dbb963':'#83be8f');R(-11,-23,20,2,gold?'#f4dfa0':'#b6d3a5');
+        R(0,-9,9,7,'#d4b46a');R(2,-7,5,3,'#43594a');g.restore();
+      };
+      if(id==='boots'){g.save();g.translate(11,-5);g.scale(.8,.8);boot(0,0,false);g.restore();boot(-10,3,false);}
+      else{boot(-5,2,true);P([[4,-1],[10,-13],[27,-29],[25,-14],[20,-10],[23,-11],[21,-3],[14,0],[18,0],[15,7],[4,7]],'#d9e2dc');P([[7,1],[23,-23],[18,-10],[11,3]],'#9fb2b6');}break;}
+    case 'whet':
+      P([[-23,4],[15,4],[18,21],[-20,21]],'#85959e');P([[15,4],[23,-4],[25,12],[18,21]],'#506673');P([[-23,4],[-15,-4],[23,-4],[15,4]],'#bdc9c6');
+      P([[-17,-9],[-10,-16],[20,-26],[9,-13],[-7,-5]],'#cbdade');P([[-10,-16],[20,-26],[15,-20],[-8,-12]],'#eef1dc');
+      P([[-22,0],[-17,-9],[-11,-5],[-15,5]],'#8d6540');R(-12,10,13,2,'#b7c2ba');break;
+    case 'feather':
+      P([[-14,13],[-20,4],[-19,-9],[-8,-23],[16,-31],[18,-19],[13,-4],[3,10],[-8,16]],'#d5cca5');
+      P([[16,-31],[18,-19],[13,-4],[3,10],[-8,16],[-4,8],[8,-9]],'#a2a383');
+      P([[-14,13],[-17,4],[-15,-9],[-6,-19],[14,-28],[3,-9]],'#f0e6bd');
+      rigSegment(-6,10,5,-10,.45,'#b4a164');
+      for(let i=0;i<4;i++)P([[-14+i*4,0-i*5],[-14+i*4,-2-i*5],[-5+i*4,5-i*5],[-6+i*4,6-i*5]],'#a6ac8c');break;
+    case 'sigil':
+      P([[-20,-22],[13,-22],[18,-16],[18,20],[-15,24],[-21,17]],'#72658e');P([[13,-22],[23,-26],[27,-20],[26,15],[18,20],[18,-16]],'#3d3f62');
+      P([[-19,-20],[11,-20],[14,-16],[-15,-14],[-16,19],[-19,16]],'#b09cc1');
+      P([[-11,-9],[-7,-4],[-4,-12],[0,-5],[5,-12],[9,-5],[13,-10],[10,7],[0,17],[-10,7]],'#bcacd7');
+      R(-8,-2,4,3,'#4a4168');R(5,-2,4,3,'#4a4168');P([[-3,7],[4,7],[0,11]],'#4a4168');break;
+    case 'brand':
+      P([[-5,-5],[4,-6],[7,26],[-1,28]],'#936137');P([[1,-5],[4,-6],[7,26],[4,27]],'#5d422e');
+      for(let i=0;i<4;i++)P([[-4,1+i*6],[5,-1+i*6],[5,2+i*6],[-3,4+i*6]],'#be8f4f');
+      R(-10,-11,20,10,'#4a565b');R(-10,-11,20,2,'#819894');
+      P([[-7,-8],[-13,-19],[-6,-17],[-7,-34],[2,-25],[6,-36],[13,-24],[10,-11],[3,-6]],'#d95337');
+      P([[-3,-8],[-7,-19],[0,-14],[3,-28],[8,-21],[5,-11]],'#f59b3e');P([[0,-9],[0,-16],[4,-21],[5,-13]],'#ffdd7b');break;
+    default:throw Error('Missing merchant item art: '+id);
+  }
+  g.restore();
+}
+function drawMerchantProp(item,x,y,scale=1,reveal=false,detailed=false){
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  if(detailed){drawMerchantDisplayItem(item,reveal);g.restore();return;}
+  if(item.kind==='heal'){
+    smithPoly([[-7,-22],[7,-22],[7,-9],[16,0],[16,22],[-16,22],[-16,0],[-7,-9]],'#729da1','#273e41');
+    smithPoly([[-12,3],[12,3],[12,18],[-12,18]],'#c36a62',null);
+    g.fillStyle='#c4decd';g.fillRect(-11,-1,3,15);g.fillStyle='#b89157';g.fillRect(-8,-27,16,7);
+    g.fillStyle='#eddfb5';g.fillRect(-8,5,16,9);smithText('+',0,14,13,'#964e48');
+  }else if(item.kind==='mystery'&&!reveal){
+    smithPoly([[-21,-16],[13,-22],[23,-12],[23,19],[-16,25],[-21,15]],'#917054','#362b29');
+    smithPoly([[-21,-16],[-11,-8],[23,-12],[13,-22]],'#b89a6b',null);
+    g.strokeStyle='#e1c392';g.lineWidth=3;g.beginPath();g.moveTo(-5,-19);g.lineTo(0,22);g.moveTo(-20,2);g.lineTo(22,-3);g.stroke();
+    smithText('?',9,15,17,'#f5dfa2');
+  }else drawRelicSlot(-24,-24,48,{type:item.id,charged:true},true);
+  g.restore();
+}
+// Art contract: ART_STYLE_KESKIN_DUZLEM.md. Environment, parked vehicle and
+// live actors are separate; a future encounter may choose another backdrop.
+function merchantEnvironmentKey(){
+  return MERCHANT_ENVIRONMENTS.has(merchantShop?.environment)?merchantShop.environment:'forest';
+}
+function drawMerchantEnvironment(){
+  const R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  R(0,-PAD_TOP,480,800+PAD_TOT,'#102018');
+  R(0,220,480,580+PAD_BOT,'#1e3020');
+  // A grassy roadside clearing, not a second road converging behind the shop.
+  townInk([[0,286],[71,303],[127,289],[191,309],[264,292],[328,311],[401,293],[480,303],[480,800],[0,800]],'#243722');
+  for(let i=0;i<19;i++){
+    const x=(i*137+23)%480,y=290+(i*41)%127;
+    townInk([[x-7,y+2],[x-3,y-5],[x,y],[x+4,y-7],[x+5,y+2]],i%2?'#30472a':'#1a2b1d');
+  }
+  for(let i=0;i<9;i++)drawTreeArt(-15+i*66,289+(i%3)*9,.86+(i%2)*.2,(i*.137)%1);
+  drawTreeArt(9,357,1.42,.12);drawTreeArt(471,360,1.38,.62);
+}
+// Only forest is authored for now. New locations register their own background
+// here without duplicating the shop actors, layout, stock or transactions.
+const MERCHANT_ENVIRONMENTS=new Map([['forest',drawMerchantEnvironment]]);
+function drawMerchantWagonWheel(x,y,r){
+  const ring=(radius,dx=0)=>Array.from({length:12},(_,i)=>[x+dx+Math.cos(i*TAU/12)*radius*.77,y+Math.sin(i*TAU/12)*radius]);
+  townInk(ring(r,5),'#242c27');townInk(ring(r),'#9c794a');
+  townInk(ring(r-3),'#4a3b29');townInk(ring(r-7),'#1d2920');
+  for(let i=0;i<8;i++){const a=i*TAU/8;townStroke([[x,y],[x+Math.cos(a)*(r-6)*.77,y+Math.sin(a)*(r-6)]],'#a47c48',2.6);}
+  townInk([[x-4,y-4],[x+3,y-4],[x+5,y],[x+2,y+5],[x-4,y+4]],'#b6aa78');
+  g.fillStyle='#4c5140';g.fillRect(x-1,y-1,3,3);
+}
+function drawMerchantWagon(){
+  const P=(v,c)=>townInk(v,c),R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  // Ground contacts, far wheels, axle, then cargo body; the wagon is parked.
+  P([[47,304],[59,292],[341,270],[367,291],[350,308],[78,324]],'#15231b');
+  drawMerchantWagonWheel(129,282,24);drawMerchantWagonWheel(316,266,26);
+  P([[54,272],[332,251],[339,262],[56,284]],'#32281d');
+  townStroke([[81,286],[133,280]],'#63685b',5);townStroke([[298,273],[337,267]],'#63685b',5);
+  // Long wooden side in perspective, short front face, top rail and foot board.
+  P([[57,208],[297,188],[303,264],[60,286]],'#734f30');
+  P([[297,188],[331,209],[333,258],[303,264]],'#453321');
+  P([[57,208],[82,192],[316,176],[297,188]],'#a98855');
+  for(let i=0;i<4;i++){
+    const y=215+i*16;P([[62,y],[295,y-21],[296,y-8],[63,y+13]],i%2?'#825b36':'#91663b');
+    townStroke([[64,y+1],[294,y-19]],'#b18851',.8);
+  }
+  P([[56,207],[298,186],[299,194],[57,215]],'#c09a61');
+  P([[62,273],[301,252],[301,262],[62,284]],'#b0874b');
+  for(const x of [72,119,273]){
+    const dy=(x-60)*-.086;
+    P([[x,209+dy],[x+6,208+dy],[x+7,273+dy],[x+1,274+dy]],'#46554e');
+    R(x+1,215+dy,3,3,'#a2ae8e');R(x+2,260+dy,3,3,'#a2ae8e');
+  }
+  // A tied canvas cover, with repeated ribs that share the wagon's direction.
+  P([[54,206],[54,170],[65,147],[83,135],[274,119],[301,130],[315,151],[322,190],[299,202]],'#9c906e');
+  P([[83,135],[274,119],[286,124],[94,141],[68,160],[58,185],[54,185],[54,170],[65,147]],'#d1c29a');
+  P([[274,119],[301,130],[315,151],[322,190],[299,202],[292,165],[285,140]],'#665f49');
+  P([[65,163],[88,146],[277,131],[285,141],[94,157],[70,176]],'#b6a781');
+  P([[57,192],[298,173],[299,202],[57,221]],'#6b7054');
+  for(let i=0;i<5;i++){
+    const x=69+i*46,off=i*-3.7;
+    townStroke([[x,210+off],[x-2,180+off],[x+4,156+off],[x+18,140+off]],'#776e52',1.5);
+    townStroke([[x+1,210+off],[x,181+off],[x+6,157+off]],'#c7b68a',.6);
+    townStroke([[x,206+off],[x+1,224+off]],'#c3aa75',1);
+  }
+  // Canvas entrance and loaded crates face the driver's bench, not the viewer.
+  P([[300,153],[312,162],[318,190],[304,197]],'#2b342b');
+  P([[303,170],[310,171],[315,188],[305,191]],'#997343');
+  // The bench is attached to the front frame. The driver will sit at (337,194).
+  P([[305,206],[344,201],[356,209],[316,214]],'#b28c56');
+  P([[316,214],[356,209],[356,215],[315,221]],'#6d4b2d');
+  townStroke([[316,216],[321,248],[354,241],[352,216]],'#52422c',4);
+  P([[328,245],[359,240],[367,247],[337,254]],'#a17b47');
+  // Near wheels are deliberately unobscured at both ends of the side panel.
+  drawMerchantWagonWheel(80,289,30);drawMerchantWagonWheel(299,272,29);
+  // One attached sign; no arbitrary floating title or duplicate lamp.
+  R(91,166,2,21,'#a7a079');R(156,161,2,20,'#a7a079');
+  P([[79,185],[169,179],[170,203],[80,210]],'#4b3a28');
+  townStroke([[82,187],[167,182]],'#bd985b',1);
+  g.save();g.translate(125,196);g.rotate(-.07);smithText('ODDS & ENDS',0,3,9,'#e7d099',83);g.restore();
+}
+function drawMerchantDraftHorse(){
+  // Jonathan's bay coat and broad haunch/shoulder planes, authored in side view.
+  // Keep a sturdy horse neck and blunt muzzle, not a slender deer silhouette.
+  const P=(v,c)=>townInk(v,c),R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  const horse='#714326',horseD=shade(horse,-28),horseL=shade(horse,18),mane=shade(horse,-48);
+  g.save();g.translate(401,270);
+  P([[-44,48],[-31,39],[26,38],[46,43],[35,51],[-26,53]],'#14231b');
+  // Far legs and tail first; hooves are planted on one ground plane.
+  P([[-26,6],[-20,8],[-19,29],[-13,42],[-19,46],[-25,31]],horseD);
+  P([[12,5],[18,5],[18,29],[24,42],[17,45],[11,30]],horseD);
+  R(-21,43,11,5,'#29261d');R(15,43,12,5,'#29261d');
+  P([[-34,-10],[-41,-7],[-43,15],[-41,33],[-35,35],[-35,22],[-37,8],[-35,1]],mane);
+  P([[-36,-9],[-28,-18],[12,-18],[26,-8],[26,11],[17,19],[-25,19],[-36,9]],horse);
+  P([[-36,-9],[-28,-18],[12,-18],[18,-12],[-25,-12],[-30,-7],[-30,10],[-36,9]],horseL);
+  P([[-25,13],[12,13],[26,5],[26,11],[17,19],[-25,19]],horseD);
+  // Outer haunch highlight and shoulder seam echo the gameplay rear-view rig.
+  R(-31,-7,3,18,horseL);R(12,-10,3,19,horseD);
+  // Near legs articulate from shoulder and hip, with dark square hoof tips.
+  P([[-31,6],[-24,9],[-24,30],[-29,46],[-36,46],[-31,29]],horse);
+  R(-37,44,11,6,mane);R(-30,16,2,15,horseL);
+  P([[16,6],[24,4],[26,30],[24,47],[17,47],[19,28]],horse);
+  R(16,45,12,5,mane);R(20,13,2,17,horseL);
+  // Neck carries the head; ears and mane are small angular separate masses.
+  P([[8,-12],[19,-35],[28,-45],[40,-39],[37,-13],[27,9],[16,11]],horse);
+  P([[19,-35],[28,-45],[34,-42],[26,-31],[21,-10],[12,-7]],horseL);
+  P([[17,-37],[26,-47],[33,-45],[27,-32],[23,-18],[15,-10],[15,-24]],mane);
+  P([[28,-44],[43,-44],[48,-35],[60,-31],[60,-20],[49,-18],[36,-27],[29,-29]],horse);
+  P([[29,-43],[42,-43],[44,-38],[32,-37],[32,-30],[29,-30]],horseL);
+  P([[48,-35],[60,-31],[60,-20],[49,-18],[46,-25],[54,-26],[54,-30]],horseD);
+  P([[29,-42],[27,-51],[32,-51],[35,-43]],horseL);
+  P([[38,-43],[38,-52],[43,-50],[43,-41]],horse);
+  R(41,-36,3,3,'#242c22');R(41,-36,1,1,'#d2c9a0');R(54,-24,3,2,'#292820');
+  // Collar, girth, breeching and bridle are functional harness, not decorations.
+  P([[20,-29],[25,-27],[19,-3],[14,-5]],'#343c34');
+  P([[22,-29],[24,-28],[18,-3],[16,-4]],'#b9a46d');
+  P([[-8,-15],[-3,-15],[-2,15],[-7,16]],'#3a3026');
+  P([[-33,5],[-26,8],[-5,7],[-5,11],[-26,12],[-34,9]],'#4a3826');
+  P([[39,-38],[43,-39],[47,-25],[44,-24]],'#382e24');
+  P([[46,-26],[58,-28],[59,-24],[48,-22]],'#c3ad71');
+  R(46,-24,3,3,'#d0bd7e');g.restore();
+}
+function drawMerchantDriver(){
+  // A gaunt, plainly dressed driver on the fixed front bench, scaled behind
+  // the merchant. Both hands hold reins; both feet rest on the wagon board.
+  const b=Math.sin(perfNow*1.1)*.12;
+  g.save();g.translate(335,184);g.scale(.63,.63);
+  rigSegment(-1,8,5,15,2.3,'#4e493b');rigSegment(5,15,6,26,1.7,'#74684f');
+  rigSegment(3,8,10,14,2.1,'#4e493b');rigSegment(10,14,13,24,1.6,'#74684f');
+  px(4,25,5,2,'#3c362b');px(11,23,5,2,'#3c362b');
+  rigPolygon([[-3,-9+b],[1,-10+b],[4,1],[5,10],[-2,10],[-4,0]],'#8c7d60');
+  rigPolygon([[1,-10],[3,-5],[4,1],[5,10],[2,10],[0,0]],'#5e5846');
+  rigSegment(-2,-8,0,-13,1.25,'#ab9771');
+  rigPolygon([[-2,-22],[3,-22],[5,-18],[4,-12],[0,-11],[-3,-14]],'#baaa81');
+  px(-2,-22,5,2,'#61563f');px(3,-18,1,1,'#344035');px(0,-14,3,.5,'#73684f');
+  rigSegment(0,-6,7,1,1.65,'#ad9b76');rigSegment(7,1,13,2,1.5,'#ad9b76');
+  rigSegment(-2,-5,3,3,1.5,'#8e8568');rigSegment(3,3,12,3,1.3,'#8e8568');
+  rigJoint(13,2,1.8,'#c4ae7e');g.restore();
+  // These end at the driver's hands and the horse's bit in screen coordinates.
+  townStroke([[360,188],[386,213],[414,238],[448,246]],'#b8a071',.85);
+  townStroke([[358,190],[381,219],[411,245],[447,248]],'#6f7350',.85);
+}
+function drawMerchantCampStatic(){
+  MERCHANT_ENVIRONMENTS.get(merchantEnvironmentKey())();drawMerchantWagon();
+  // Shafts attach to the frame and run either side of the horse's harness.
+  townStroke([[333,256],[382,287],[408,283]],'#553f28',4);
+  townStroke([[334,255],[381,285],[408,281]],'#a27f49',1.3);
+  drawMerchantDraftHorse();
+  townStroke([[338,273],[378,286],[421,282]],'#826038',3.5);
+  townStroke([[341,272],[379,284],[421,280]],'#bd9859',1);
+  townStroke([[411,282],[414,274],[420,265]],'#4a3927',1.7);
+}
+let merchantSceneCache=null;
+function merchantBackdrop(){
+  const scale=Math.max(1,viewScale)*1.18,key=[merchantEnvironmentKey(),scale,PAD_TOP,PAD_BOT].join(':');
+  if(!merchantSceneCache||merchantSceneCache.key!==key){
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;try{g=canvas.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);drawMerchantCampStatic();}finally{g=live;}
+    merchantSceneCache={key,canvas};
+  }
+  g.save();g.imageSmoothingEnabled=true;g.drawImage(merchantSceneCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+}
+function drawWanderingMerchant(s,foreground=false){
+  const reach=s.phase==='handoff'?Math.sin(clamp(s.clock/1.8,0,1)*Math.PI):0;
+  const breath=Math.sin(perfNow*1.7)*.16,headTilt=Math.sin(perfNow*.7)*.018;
+  g.save();g.translate(225,237);g.scale(1.6,1.6);
+  const arm=side=>{
+    const sx=side*11.5,sy=3.5+breath,ex=side*21,ey=13.5+breath,
+      hx=side===1?19-reach*6:-18,hy=22.2-(side===1?reach*5:0);
+    if(!foreground){
+      rigSegment(sx,sy,ex,ey,7.1,side===1?'#653441':'#8c3b47');
+      rigSegment(sx-.7,sy,ex-.7,ey,3.7,side===1?'#8b4a54':'#b15e60');
+      rigJoint(ex,ey,6.3,'#5b3039');return;
+    }
+    rigSegment(ex,ey,hx,hy,5.7,'#753744');
+    rigSegment(ex-.6,ey-.3,hx-.6,hy-.3,3.7,'#a55158');
+    rigSegment(ex-1.9,ey-.1,hx-1.9,hy-.1,.65,'#c88174');
+    rigJoint(hx,hy-1.2,6.2,'#d1b588');px(hx-3,hy-3.5,5.6,.8,'#eee0b4');
+    px(hx+1.6,hy-2.5,1,2,'#a89672');
+    rigPolygon([[hx-2.5,hy-.5],[hx+2,hy-.5],[hx+3,hy+1],[hx+1.7,hy+2.9],[hx-2.4,hy+2.4]],'#cba173');
+    px(hx-2.1,hy-.5,3.7,.75,'#ecd0a0');px(hx+1.7,hy+.3,1,2,'#986c51');
+    for(let i=0;i<3;i++)px(hx-1.5+i*1.1,hy+.7,.22,1.5,'#8c654d');
+    px(hx+.2,hy+.4,1.2,1,'#dfba61');px(hx+.5,hy+.45,.6,.45,'#94beb0');
+  };
+  if(foreground){arm(-1);arm(1);g.restore();return;}
+  // A prosperous merchant, not another warrior: a full belly under a tailored
+  // doublet, long wine-red overcoat, cream fur collar and restrained gold trim.
+  rigPolygon([[-11,0],[-4,-2],[6,-2],[13,1],[17,10],[17,21],[11,25],[-13,25],[-17,20],[-16,9]],'#265760');
+  rigPolygon([[-11,0],[-4,-2],[0,0],[0,24],[-13,25],[-17,20],[-16,9]],'#467f80');
+  rigPolygon([[5,-1],[13,1],[17,10],[17,21],[11,25],[7,25],[10,18],[9,8]],'#193f4b');
+  rigPolygon([[-13,0],[-17,3],[-19,15],[-16,25],[-11,25],[-12,16],[-9,5]],'#883b49');
+  rigPolygon([[-17,3],[-19,15],[-16,25],[-14,24],[-16,14],[-13,5]],'#b96263');
+  rigPolygon([[10,0],[14,1],[19,13],[18,23],[13,25],[12,17],[8,4]],'#6a3343');
+  rigSegment(-10,4,-12,22,.55,'#d2ad69');rigSegment(9,4,13,22,.55,'#b48e50');
+  arm(-1);arm(1);
+  // Fur is made of offset rectangular locks, not a fuzzy texture/noise field.
+  rigPolygon([[-8,-4],[-3,-3],[-4,5],[-9,12],[-13,8],[-12,2]],'#bcaa86');
+  rigPolygon([[-8,-4],[-3,-3],[-4,1],[-8,5],[-10,10],[-12,8],[-10,2]],'#e6d6ad');
+  rigPolygon([[4,-4],[9,-3],[13,3],[12,8],[8,11],[4,4]],'#b7a080');
+  rigPolygon([[4,-4],[9,-3],[11,1],[9,4],[8,9],[6,6]],'#dfcaa4');
+  for(const [x,y] of [[-10,3],[-11,7],[-6,-1],[8,2],[10,6]])px(x,y,1.4,1.5,'#f0e0b7');
+  // Chain and medallion lie over the chest, buttons follow the belly center.
+  rigSegment(-5,0,-2,5,.43,'#d9b25f');rigSegment(-2,5,3,6,.43,'#d9b25f');rigSegment(3,6,7,1,.43,'#b6924f');
+  rigPolygon([[-.5,5.8],[2,5.5],[3.3,7.2],[2,9.2],[-.6,8.7],[-1.2,7]],'#d3ad59');
+  px(0,6.6,1.7,1.5,'#efd18b');
+  for(const y of [11,14,17]){rigJoint(1.2,y,1.15,'#cfa960');px(.85,y-.35,.4,.4,'#f4d68c');}
+  rigPolygon([[-16,20],[0,21],[16,19],[16,22],[0,24],[-16,23]],'#5e402d');
+  rigPolygon([[-1,20],[4,19.7],[4,23.5],[-1,24]],'#cfa64f');px(.1,20.8,2.8,1.6,'#5b482b');
+  // Purse sits beside the belt instead of crossing the belly like a soldier strap.
+  rigPolygon([[8,19],[13,18],[16,22],[15,27],[8,28],[6.5,24]],'#9c7440');
+  px(8,19,6,1.5,'#d7b566');px(11,20.5,1,2,'#5b452c');
+  g.save();g.translate(0,breath*U);g.rotate(headTilt);
+  // Broader jaw and neck suggest weight while retaining the approved face grammar.
+  rigPolygon([[-6.3,-15],[5.4,-15],[7,-11],[6.9,-4],[3.8,-.8],[-3.7,-.8],[-6.7,-4.5]],'#c99e72');
+  rigPolygon([[-6.3,-15],[.3,-15],[.3,-2],[-3.7,-.8],[-6.7,-4.5]],'#e1bc8d');
+  rigPolygon([[4.6,-14],[7,-11],[6.9,-4],[3.8,-.8],[.3,-2],[4.5,-4.5]],'#986c53');
+  px(-7.5,-10,1.5,3.7,'#b48b65');px(-7.2,-9.7,.55,2,'#e7bf8d');
+  px(-6.5,-15,11.5,2,'#615244');px(-6.6,-13,1.7,6,'#76614a');px(5,-13,1.7,3,'#483e34');
+  px(-5.8,-14,4.2,.8,'#a08b68');
+  const blink=Math.sin(perfNow*.73)>.997;
+  px(-3.7,-9.5,2.1,blink?.22:.85,'#293930');px(2.3,-9.3,1.7,blink?.22:.8,'#293930');
+  px(-4,-10.8,2.9,.5,'#756046');px(2,-10.6,2.4,.5,'#66503c');
+  rigPolygon([[.2,-10],[1.6,-10],[2.7,-6.2],[-.1,-6.2]],'#b7895e');
+  px(.35,-9.7,.7,2.7,'#edcda0');
+  // Trim square moustache and short smile, without making the face a mask.
+  rigPolygon([[-3.8,-5.8],[-.7,-6.1],[.5,-5.3],[1.7,-6],[4.2,-5.4],[3.5,-4.3],[1,-4.6],[-1,-4.6],[-3.8,-4.6]],'#8c8067');
+  px(-2.7,-5.7,2,.45,'#c4b797');px(1.3,-5.6,1.7,.4,'#c4b797');
+  px(-1.7,-3.5,3.8,.55,'#79543f');px(-.8,-2.7,2.3,.4,'#e3b688');
+  // Merchant's velvet cap and folded chaperon tail replace the travel pauldron/hat.
+  rigPolygon([[-7.5,-15.5],[-8.5,-20],[-5,-23],[5,-22],[8,-18],[6,-15]],'#753946');
+  rigPolygon([[-8.5,-20],[-5,-23],[5,-22],[3,-20],[-5,-19]],'#b76a67');
+  rigPolygon([[3,-20],[5,-22],[8,-18],[6,-15],[2,-16]],'#492c39');
+  rigPolygon([[-8,-17],[7,-17],[8,-14],[5,-12.8],[-7,-13],[-9,-14]],'#a35256');
+  rigSegment(-7,-16,6.6,-16,.65,'#cca463');
+  rigPolygon([[-8,-19],[-10,-18],[-10,-9],[-8,-6],[-7,-9],[-8,-14]],'#663140');
+  rigJoint(4.5,-15.1,2.1,'#d5b365');px(3.85,-15.75,1.2,1.2,'#85b9b4');
+  g.restore();g.restore();
+}
+function drawMerchantCart(s){
+  merchantBackdrop();drawMerchantDriver();drawWanderingMerchant(s);
+  const P=(v,c)=>townInk(v,c),R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  // The tabletop is separate from the wagon. Its wooden edges and two near
+  // legs remain visible outside a red cloth that folds over the front edge.
+  P([[25,342],[448,342],[488,684],[-9,684]],'#795436');
+  P([[25,342],[448,342],[450,350],[24,350]],'#c2965e');
+  for(let i=1;i<7;i++){townStroke([[24+i*62,351],[-9+i*71,682]],'#4e3928',1.2);townStroke([[26+i*62,351],[-7+i*71,682]],'#a37646',.8);}
+  R(0,689,480,120+PAD_BOT,'#172a20');
+  P([[12,684],[30,684],[27,744],[13,744]],'#62432b');R(14,686,4,55,'#a07843');
+  P([[446,684],[465,684],[465,744],[451,744]],'#503823');R(452,686,4,55,'#8b663c');
+  P([[40,353],[431,353],[466,638],[13,638]],'#8c3343');
+  P([[40,353],[62,353],[41,625],[13,638]],'#a34b51');
+  P([[404,353],[431,353],[466,638],[437,631]],'#632638');
+  P([[13,632],[466,632],[468,673],[451,669],[436,677],[59,677],[39,671],[12,674]],'#692937');
+  P([[41,634],[70,635],[60,675],[45,672]],'#973e49');
+  P([[405,634],[431,634],[442,675],[425,677]],'#4e2330');
+  townStroke([[43,357],[427,357],[459,628],[20,628],[43,357]],'#c09258',.9);
+  townStroke([[18,668],[40,665],[58,671],[434,671],[451,663],[462,665]],'#bb8f54',1);
+  for(let i=0;i<12;i++)R(26+i*37,672,2,7,'#c5a063');
+  R(0,683,480,5,'#a57d4b');
+  // Money tray beside the merchant's near hand, not hanging unsupported.
+  P([[323,334],[353,332],[361,345],[325,349]],'#997348');
+  P([[326,335],[351,334],[355,343],[328,346]],'#453b27');
+  for(const x of [332,340,347]){R(x,338,6,4,'#dcb760');R(x,338,6,1,'#f4d982');}
+  drawWanderingMerchant(s,true);
+}
+function drawMerchantShop(){
+  const s=merchantShop;if(!s)return;
+  g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  if(s.townId)drawTownShopInterior(s);else drawMerchantCart(s);
+  merchantGoldLabel(gold,s.townId?388:400,s.townId?344:366,13,'#ffe09b','',s.townId?68:120);
+  smithText(s.townId?'"Supplies for the next stretch?"':'"Everything has a story. And a price."',200,367,10,'#ebd7b3',300);
+  for(let i=0;i<4;i++){
+    const item=s.stock[i],r=merchantProductRect(i),cx=r.x+r.w/2;
+    if(!item.sold){
+      const selected=i===s.selected;
+      if(!s.townId){
+        g.save();g.translate(cx,447);
+        townInk([[-38,-8],[0,-12],[35,-7],[40,9],[-40,8]],selected?'#d9c891':'#a4b19b','#364d43',.8);
+        townInk([[-39,5],[0,9],[39,5],[40,9],[-40,8]],selected?'#bda772':'#7c9788');
+        g.restore();
+      }
+      g.fillStyle=s.townId?'#463e31':'#6a7766';g.beginPath();g.ellipse(cx,451,28,5,0,0,TAU);g.fill();
+      drawMerchantProp(item,cx,425-(selected?8:0),selected?1.45:1.15,false,true);
+      smithPoly([[r.x+8,468],[r.x+95,466],[r.x+94,494],[r.x+7,497]],selected?'#efdab0':'#bda67d','#65523c');
+      merchantGoldLabel(item.price,cx,486,12,'#3b3025','',83);
+    }else{smithText('SOLD',cx,485,10,'#c7ad80');}
+  }
+  const item=s.stock[s.selected],blocked=merchantBlock(item),active=s.phase==='handoff',rerolling=s.phase==='reroll';
+  if(s.townId)smithPoly([[31,514],[450,516],[447,627],[33,624]],'#293534','#8c805f');
+  else{
+    townInk([[32,521],[450,519],[450,630],[29,633]],'#4d6c60');
+    townInk([[29,515],[447,514],[445,623],[29,627],[32,577]],'#ece1bb','#344c40',.8);
+    townStroke([[39,549],[435,549]],'#b9b48f',.8);
+    townInk([[432,514],[447,514],[447,531]],'#d1c59e');
+  }
+  const reveal=item.sold&&s.last===item&&(!active||s.clock>=.864);
+  smithText(merchantName(item,reveal),240,540,17,s.townId?'#f0d5a4':'#385b50',390);
+  const desc=item.kind==='heal'?'Restore up to two hearts. Not consumed at full health.':
+    item.kind==='mystery'&&!reveal?'One unknown artifact. Sealed in advance; a paid reroll replaces the package.':ARTIFACT_DEFS[item.id]?.desc||'No stock left.';
+  g.fillStyle=s.townId?'#d1d4bc':'#535f50';g.font='12px monospace';g.textAlign='left';drawWrappedTooltipText(desc,49,563,382,17);
+  smithText(s.message||blocked||'Inspect freely. Confirm below to buy.',240,614,10,s.townId?(s.message?'#f3d898':'#bbc8b7'):(s.message?'#855c49':'#6c7b61'),380);
+  if(active){
+    const t=clamp(s.clock/1.8,0,1),arc=Math.sin(t*Math.PI);
+    // Coin goes to the purse; merchant hands the purchased object toward us.
+    g.fillStyle='#f9d371';g.beginPath();g.ellipse(350-t*72,470-t*136-arc*65,5,4,0,0,TAU);g.fill();
+    drawMerchantProp(s.last,240,342+t*184-arc*35,.8+t*.9,t>.48,true);
+    smithText(t<.48?'"A fine choice."':'"Pleasure doing business."',240,666,13,'#ffe1a3');
+  }else{
+    if(!rerolling&&!item.sold&&!blocked)merchantPriceButton(MERCHANT_BUY,'BUY — ',item.price,'#f3d59e');
+    else drawMerchantButton(MERCHANT_BUY,rerolling?'NEW STOCK...':item.sold?'SOLD':'CANNOT BUY','#f3d59e',false);
+    const available=s.stock.some(p=>!p.sold&&p.kind!=='heal');
+    merchantPriceButton(MERCHANT_REROLL,'REROLL ',merchantRerollCost(),'#d6c2e1',!rerolling&&available&&gold>=merchantRerollCost());
+  }
+  if(s.lab){merchantPriceButton({x:30,y:702,w:200,h:32},'TEST +',100,'#afc998');drawMerchantButton({x:250,y:702,w:200,h:32},'RESET TEST','#afc998');}
+  drawMerchantButton(MERCHANT_EXIT,s.lab?'BACK TO DEBUG':s.townId?'BACK TO TOWN':'BACK TO THE ROAD','#baccb0',!active&&!rerolling);
+  g.restore();
 }
 function drawScore(){
   g.fillStyle='rgba(5,7,12,0.82)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -60931,13 +63110,15 @@ function drawMinibossIntro(){
 function update(dt){
   perfNow+=dt; modeT+=dt;
   updateJuice(dt);
-  updateAmbient(dt);
-  updateArenaFx(dt);
+  if(!['shop','merchant','town'].includes(mode)){updateAmbient(dt);updateArenaFx(dt);}
   updateScoreShown(dt);
   if(journeyRoadEventSession&&!['run','journeyevent',journeyRoadEventSession.ownedMode].includes(mode))
     cancelJourneyRoadEvent('interrupted');
   if(journeyRoadEventSession?.ownedMode===mode)updateJourneyRoadEvents(dt);
   if(mode==='journeyevent'){updateJourneyRoadEvents(dt);return;}
+  if(mode==='shop'){updateBlacksmithShop(dt);return;}
+  if(mode==='merchant'){updateMerchantShop(dt);return;}
+  if(mode==='town'){updateTown(dt);return;}
   if(mode==='minigames'){updateMinigamesMenuScroll(dt);dist+=dt*6;roadScroll+=dt*6;return;}
   const minigameMode=MINIGAME_MODES.get(mode);
   if(minigameMode){minigameMode.update(dt);return;}
@@ -60969,7 +63150,9 @@ function update(dt){
        they slide off the bottom organically like everything else (the extended
        phone-bottom included: nothing may vanish while still visible) */
     cullBehind(roadsideScenery,sceneryNearLimit());
+    scheduleJourneyFollowups();
     spawnLoopEntities();
+    spawnJourneyMushrooms();
     updateRunCollisions();
       /* the waiting stage miniboss: meet its lane to accept the optional duel */
       for(const o of obstacles){
@@ -61014,7 +63197,7 @@ function update(dt){
   else if(mode==='miniboss'){ updateMiniboss(dt); updateHazards(); }
   /* during fights the run pauses, but the forest keeps drifting slowly so it feels alive */
   if(mode==='boss'||mode==='bossintro'||mode==='miniboss'){
-    const mv=minibossFight?.crimsonLair?0:dt*5;
+    const mv=(boss?.crimsonLair||minibossFight?.crimsonLair)?0:dt*5;
     if(mode==='miniboss'){roadScroll+=mv;curvedGroundDistance+=mv;} // stationary stage progress, moving visual ground
     for(const t of roadsideScenery) t.z-=mv;
     for(const c of pickups) c.z-=mv;
@@ -61187,6 +63370,8 @@ function drawJourneyPickup(item){
   const p=proj(cam.depth),x=VW/2+cam.side/JOURNEY_LANE_WORLD*lerp(24,150,p.t);
   g.globalAlpha=curvedWorldActive()?clamp((SPAWN_FAR-cam.depth)/26,0,1):clamp((effZFar-cam.depth)/10,0,1);
   if(c.kind==='coin')drawCoin(x,p.y-24*p.s,p.s*1.3,perfNow);
+  else if(c.kind==='mushroom')drawQuestMushroom(x,p.y-18*p.s,p.s*1.3);
+  else if(c.kind==='chicken')drawRoadChicken(x,p.y-12*p.s,p.s*1.3);
   else drawWeaponPickup(c.kind,x,p.y-30*p.s,p.s*1.3,perfNow);
   g.globalAlpha=1;
 }
@@ -61451,6 +63636,8 @@ function drawPickupEntity(c){
   if(c.z>(curvedWorldActive()?SPAWN_FAR:effZFar)) return;
   const p=proj(c.z); g.globalAlpha=curvedWorldActive()?clamp((SPAWN_FAR-c.z)/26,0,1):clamp((effZFar-c.z)/10,0,1);
   if(c.kind==='coin') drawCoin(laneX(c.lane,p.t),p.y-24*p.s,p.s*1.3,perfNow);
+  else if(c.kind==='mushroom')drawQuestMushroom(laneX(c.lane,p.t),p.y-18*p.s,p.s*1.3);
+  else if(c.kind==='chicken')drawRoadChicken(laneX(c.lane,p.t),p.y-12*p.s,p.s*1.3);
   else drawWeaponPickup(c.kind,laneX(c.lane,p.t),p.y-30*p.s,p.s*1.3,perfNow);
   g.globalAlpha=1;
 }
@@ -63201,7 +65388,7 @@ const FULLSCREEN_RENDERERS=new Map([
   ['menu',drawMenu],['relicdex',drawRelicDex],['changelog',drawChangelog],
   ['debugcfg',drawDebugCfg],['skilllab',drawSkillLab],['healthlab',drawHealthLab],
   ['bosslabselect',drawBossLabSelect],['bosslabmoves',drawBossLabMoves],
-  ['charsel',drawCharSel],['score',drawScore]
+  ['charsel',drawCharSel],['score',drawScore],['shop',drawShop],['merchant',drawMerchantShop],['town',drawTown]
 ]);
 function obstacleDrawsOverRider(obstacle,depth,overArch){
   return obstacle.type.frontLayer&&depth<1.3&&depth>obstacle.type.cullZ-.2&&
@@ -63235,6 +65422,7 @@ function buildWorldDrawQueue(stage,newForest){
   queueRoadsideWorld(newForest);
   if(!newForest)queueJourneyDiscoVenues();
   if(!newForest)queueJourneyBloodWorld();
+  if(!newForest)queueJourneyNormalProps();
   const frontObs=FRONT_OBSTACLES; frontObs.length=0; // arches the knight rides UNDER
   /* GRIFFIN GREAVES exception: while the jump carries him over a duck-arch, the
      knight renders ON TOP of the root instead of slipping beneath it */
@@ -63268,12 +65456,10 @@ function drawModeScreen(){
   if(drawScreen){drawScreen();drawJourneyEventControls();drawJourneyRoadEvent();return;}
   // HUD coordinates never inherit world shake or sprite rounding.
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyRoadEvent();
+  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyQuestHUD();drawJourneyRoadEvent();
   if(forestCorridor)drawForestTestStatus();
   if(mode==='bossintro')drawBossIntro();
   if(mode==='evolution')drawSkillEvolutionScreen();
-  if(mode==='relic')drawRelicScreen();
-  if(mode==='shop')drawShop();
   if(mode==='miniboss')drawMinibossIntro();
   g.restore();
 }
@@ -63312,10 +65498,16 @@ function drawGroundMaskedWorldItem(draw,ref,depth,stage){
   const tree=draw===drawJourneyTree||draw===drawRoadsideSceneryEntity;
   const root=draw===drawObstacleEntity?ref.type.motherTree:
     draw===drawJourneyObstacle?ref.entity.type.motherTree:false;
+  const venue=draw===drawStageMouth||draw===drawJourneyDiscoVenue||draw===drawJourneyBloodLair||draw===drawJourneyNormalProp;
+  // Venue art includes a foreground skirt (bones, steps, cave haze) below its
+  // ground anchor. Reveal that skirt over 12 m instead of dropping the horizon
+  // clip at once. The 24 px margin clears the authored feet before retiring
+  // the mask, leaving the cave's later full-screen entry fade unrestricted.
+  const venueReveal=venue?smoothStep(clamp((CFG.Z_FAR-depth)/12,0,1)):0;
   // A root and its mother tree are one silhouette. Keep their ground mask on
   // both sides of the crest AND when the arch moves in front of the rider.
-  if(curvedWorldActive()&&depth<9999&&(depth>CFG.Z_FAR||tree||root)){
-    const bottom=curvedSpriteClipY(depth);
+  if(curvedWorldActive()&&depth<9999&&(depth>CFG.Z_FAR||tree||root||(venue&&venueReveal<1))){
+    const bottom=curvedSpriteClipY(depth)+24*venueReveal;
     g.save();g.beginPath();g.rect(-VW*4,-PAD_TOP-4096,VW*9,bottom+PAD_TOP+4096);g.clip();
     draw(ref,stage);g.restore();
   }else draw(ref,stage);
@@ -63325,7 +65517,7 @@ function render(){
   if(journeyPerf.enabled)journeyPerf.triangles=0;
   journeyRenderSerial++;journeyTreeSpriteBuilds=0;
   const previous=journeyRenderFrame;
-  if(runJourneyPrototype&&journey){
+  if(!['shop','merchant','town'].includes(mode)&&runJourneyPrototype&&journey){
     const camera=calculateJourneyCameraPose();
     journeyRenderFrame={camera,cos:Math.cos(camera.yaw),sin:Math.sin(camera.yaw),views:new Map()};
   }
@@ -63348,6 +65540,7 @@ function renderFrame(){
     worldFxShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(worldFxShakeX,worldFxShakeY);
   }
+  if(!['shop','merchant','town'].includes(mode)){
   if(newForest)drawForestWorld();
   else if(env==='cave'){stage.arena();}
   else{stage.bg();}
@@ -63378,6 +65571,7 @@ function renderFrame(){
   drawParticles();
   drawAmbient();
   drawVignette();
+  } // The opaque forge does not render the hidden road/arena behind it.
 
   drawModeScreen();
   if(moveHistoryOpen)drawMoveHistory();
@@ -63448,6 +65642,9 @@ function frame(now){
   if(journeyPerf.enabled)journeyPerf.updateMs=performance.now()-updateBegan;
   render();
 }
+if(BOOT_QUERY.get('smithlab')==='1')openBlacksmithLab();
+if(BOOT_QUERY.get('merchantlab')==='1')openMerchantLab();
+if(BOOT_QUERY.get('townlab')==='1')openTownLab();
 cvs.dataset.bootReady='1';
 cvs.dataset.bootAudits=RUN_BOOT_AUDITS?'complete':'deferred';
 if(RUN_BOOT_AUDITS){

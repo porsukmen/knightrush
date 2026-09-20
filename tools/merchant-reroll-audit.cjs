@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict');
+const {run,shot}=require('./journey-render-audit.cjs');
+run('SFX.toggle();openMerchantLab();');
+assert.equal(run('merchantRerollCost()'),10);
+const first=JSON.parse(run('JSON.stringify(merchantShop.stock)'));
+assert.equal(run('rerollMerchantStock()'),true);assert.equal(run('gold'),110);
+const second=JSON.parse(run('JSON.stringify(merchantShop.stock)'));
+for(const i of [0,1,3])assert.notEqual(second[i].id,first[i].id);
+assert.deepEqual(first[2],second[2]);assert.equal(new Set(second.filter(x=>x.id).map(x=>x.id)).size,3);
+assert.equal(run('rerollMerchantStock()'),false);assert.equal(run('buyMerchantItem()'),false);
+assert.equal(run('gold'),110);run('paused=true;updateMerchantShop(1)');assert.equal(run('merchantShop.phase'),'reroll');
+run('paused=false;updateMerchantShop(.5)');assert.equal(run('merchantRerollCost()'),15);
+run('buyMerchantItem();updateMerchantShop(2)');const sold=run('JSON.stringify(merchantShop.stock[0])');
+run('rerollMerchantStock();updateMerchantShop(.5)');assert.equal(run('JSON.stringify(merchantShop.stock[0])'),sold);
+assert.equal(run('merchantRerollCost()'),20);
+run("setMode('run');openMerchantShop('lab')");assert.equal(run('merchantRerollCost()'),20);
+assert.equal(run('JSON.stringify(merchantShop.stock[0])'),sold);
+const before=run('JSON.stringify(merchantShop.stock)');run('gold=0');assert.equal(run('rerollMerchantStock()'),false);
+assert.equal(run('JSON.stringify(merchantShop.stock)'),before);
+run('gold=1000;for(const item of merchantShop.stock)if(item.kind!=="heal")item.sold=true');
+assert.equal(run('rerollMerchantStock()'),false);assert.equal(run('gold'),1000);
+// Identical visit seed + reroll count produces identical stock; presentation uses no RNG.
+run('openMerchantLab();stageRouteSeed=12345;merchantVisits.clear();openMerchantShop("replay");rerollMerchantStock();');
+const replay=run('JSON.stringify(merchantShop.stock)');
+run('merchantVisits.clear();openMerchantShop("replay");rerollMerchantStock();');
+assert.equal(run('JSON.stringify(merchantShop.stock)'),replay);
+run('updateMerchantShop(.5)');shot('merchant-reroll','');
+console.log('MERCHANT_REROLL_OK cost escalation, changed unique stock, sold/tonic preservation, atomic double tap, pause, revisit, insufficient funds, empty stock, seeded replay');

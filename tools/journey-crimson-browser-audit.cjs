@@ -51,10 +51,23 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    dist=redSlot.at-35;roadScroll=dist;obstacles=[];pickups=[];roadsideScenery=[];nextTreeAt=dist-4;spawnLoopEntities();`);
   await shot('lair');
   await run(`dist=redSlot.at-.01;roadScroll=dist;for(let i=0;i<10&&mode==='run';i++)update(1/60);`);
-  assert.equal(await run('mode'),'miniboss');
+  assert.equal(await run('mode'),'boss');assert.equal(await run('activeBossDefinition().id'),'road_wolf');
   const freeze=await run('[dist,roadScroll]');await run('for(let i=0;i<175;i++)update(1/60);');
   assert.deepEqual(await run('[dist,roadScroll]'),freeze);await shot('fight');
-  await run('for(let i=0,n=countersNeeded();i<n;i++)minibossCounterHit();for(let i=0;i<125;i++)update(1/60);');
+  await run('for(let i=0;i<1800&&!isPlayerTurn();i++)update(1/60);');
+  assert.equal(await run('isPlayerTurn()'),true);await shot('player-turn');
+  const tapRect=async name=>{
+    const p=await run(`(()=>{const r=${name};return {x:((r.x+r.w/2)*viewScale+viewX)/renderDpr(),y:((r.y+r.h/2)*viewScale+viewY)/renderDpr()};})()`);
+    await page.touchscreen.tap(p.x,p.y);
+  };
+  const hp=await run('boss.hp'),ap=await run('boss.ap');await tapRect('TURN_FIGHT_BTN');
+  assert.equal(await run('boss.ap'),ap-1);await run('for(let i=0;i<240;i++)update(1/60);');
+  assert(await run(`boss.hp<${hp}`),'fight button deals real HP damage');
+  await tapRect('TURN_FINISH_BTN');await run('for(let i=0;i<1800&&!isPlayerTurn();i++)update(1/60);');
+  await tapRect('TURN_SKILL_BTN');assert.equal(await run('boss.playerMenu'),'skills');
+  const beforeSkill=await run('boss.hp');await tapRect('TURN_SKILL_BTNS[0]');await run('for(let i=0;i<240;i++)update(1/60);');
+  assert(await run(`boss.hp<${beforeSkill}`),'skill button deals real HP damage');
+  await run('boss.hp=0;defeatBoss();for(let i=0;i<240&&mode!=="run";i++)update(1/60);');
   assert.equal(await run('mode'),'run');assert.equal(await run('journeyRoute.eventRecords[redSlot.id].status'),'completed');
   const reward=await run('[gold,pack]');await run('for(let i=0;i<180;i++)update(1/60);');
   assert.equal(await run('mode'),'run');assert.deepEqual(await run('[gold,pack]'),reward);

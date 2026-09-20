@@ -1,0 +1,27 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('node:fs');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>window.requestAnimationFrame=()=>0);
+ await page.goto(pathToFileURL(path.resolve('TownTest.html')).href);
+ await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
+ const run=c=>page.evaluate(c=>(0,eval)(c),c),out=path.resolve('output/town');fs.mkdirSync(out,{recursive:true});
+ const tap=async(x,y)=>{const p=await run(`({x:(${x}*viewScale+viewX)/renderDpr(),y:(${y}*viewScale+viewY)/renderDpr()})`);await page.touchscreen.tap(p.x,p.y);};
+ const shot=async name=>{await run('render()');await page.screenshot({path:path.join(out,name+'.png')});};
+ assert.equal(await run('mode'),'town');await shot('01-square-mobile');
+ assert.equal(await run('typeof townArtStyle'),'undefined');
+ await tap(240,760);assert.equal(await run('mode'),'town');assert.equal(await run('gold'),150);
+ await tap(90,450);await run('updateTown(.16)');await shot('02-approach');await run('updateTown(.3)');
+ assert.equal(await run('mode'),'shop');await shot('03-smith');await tap(240,750);assert.equal(await run('mode'),'town');
+ await tap(390,400);await run('updateTown(.4)');assert.equal(await run('mode'),'merchant');await shot('04-store');
+ await tap(240,666);await run('updateMerchantShop(2)');await tap(240,760);
+ await tap(390,400);await run('updateTown(.4)');assert.equal(await run('merchantShop.stock[0].sold'),true);await tap(240,760);
+ await tap(90,240);assert.equal(await run('townVisit.dialog'),null);assert.equal(await run('mode'),'town');
+ await tap(240,705);await shot('06-gate');await tap(240,760);assert.equal(await run('mode'),'town');
+ await page.keyboard.press('Escape');assert.equal(await run('paused'),true);await page.keyboard.press('Escape');
+ await page.setViewportSize({width:780,height:1300});await run('resize()');await shot('07-square-desktop');
+ await tap(390,760);assert.equal(await run('townVisit.chapter.id'),'stoneford');await shot('08-stoneford');
+ await tap(390,760);assert.equal(await run('townVisit.chapter.id'),'emberwatch');await shot('09-emberwatch');
+ await tap(240,705);await tap(240,705);assert.equal(await run('mode'),'run');assert.equal(await run('loop'),4);
+ assert.deepEqual(errors,[]);console.log('TOWN_BROWSER_OK launcher, mobile building taps, approach, interiors/back, persistent stock, noninteractive scenery, pause, desktop, three themes, departure');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

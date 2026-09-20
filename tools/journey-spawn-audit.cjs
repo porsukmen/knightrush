@@ -18,14 +18,15 @@ const report=JSON.parse(run(`JSON.stringify((()=>{
    const to=journeyNode(edge.to);
    for(let p=from.at+50;p<to.at-50;p+=CFG.SPAWN_GAP){
     route.activeEdge=edge.id;
-    if(edge.events.some(e=>JOURNEY_ROAD_EVENTS[e.definition].blocking&&Math.abs(p-e.at)<24))continue;
+    if(edge.events.some(e=>JOURNEY_ROAD_EVENTS[e.definition].blocking?Math.abs(p-e.at)<24:journeyNormalOfferClearance(e,p)))continue;
     checked++;if(!probe(from,to,p))throw Error('Empty road '+edge.id+' at '+p);
     if(route.nodes.some(n=>n!==from&&n!==to&&Math.abs(p-n.at)<36))restored++;
    }
    for(const p of [from.at+20,to.at-20,to.at+20])
     if(probe(from,to,p))throw Error('Junction clearance lost');
   }
-  const from=route.nodes.find(n=>n.type==='road'&&n.out.length),to=journeyNode(from.out[0].to);
+  // The real-producer fixture must not sit in an intentional event clearing.
+  const from=route.nodes.find(n=>n.type==='road'&&n.out.length&&!n.out[0].events.length),to=journeyNode(from.out[0].to);
   route.activeEdge=from.out[0].id;
   if(probe(from,to,from.at+60,'turning'))throw Error('Spawned during camera turn');
   // Exercise the real producer as well, forcing one obstacle and one coin roll.
