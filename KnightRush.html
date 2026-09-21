@@ -53854,10 +53854,9 @@ class MinigameDefinition{
   }
 }
 const MINIGAMES=new DefinitionRegistry('minigame');
-const DISCO_RULES=Object.freeze({rounds:3,moves:5,beat:.68,showLead:.58,readyTime:1.0,
-  inputLead:1.18,window:.34,resultTime:1.45});
+const DISCO_RULES=Object.freeze({rounds:3,moves:5,showLead:.45,
+  riseTime:1.25,demonstrate:1.05,readyTime:.65,responseTime:2.1,resultTime:1.45});
 const DISCO_DIRECTIONS=Object.freeze(['left','up','right','down']);
-const DISCO_LANES=Object.freeze(['left','down','up','right']);
 const DISCO_DIR_INFO=Object.freeze({
   left:Object.freeze({symbol:'←',angle:-Math.PI/2,col:'#55d9ff'}),
   down:Object.freeze({symbol:'↓',angle:Math.PI,col:'#ff5ac8'}),
@@ -53872,9 +53871,9 @@ const MINIGAME_ARENA_PALETTES=Object.freeze({
   volcano:Object.freeze({sky:'#1c1118',skyBand:'#352027',ground:'#2b1716',far:'#1d1114',
     tree:'#2d2225',treeLight:'#4b3030',stone:'#403036',stoneDark:'#24191e',accent:'#ff7b35'})
 });
-const DISCO_START_BTN=Object.freeze({x:140,y:604,w:200,h:54});
-const DISCO_REPLAY_BTN=Object.freeze({x:66,y:630,w:164,h:50});
-const DISCO_EXIT_BTN=Object.freeze({x:250,y:630,w:164,h:50});
+const DISCO_START_BTN=Object.freeze({x:140,y:738,w:200,h:48});
+const DISCO_REPLAY_BTN=Object.freeze({x:66,y:738,w:164,h:48});
+const DISCO_EXIT_BTN=Object.freeze({x:250,y:738,w:164,h:48});
 let discoGame=null;
 
 const MINIGAME_LIST_TOP=108,MINIGAME_LIST_BOTTOM=736;
@@ -53931,8 +53930,8 @@ function discoSequence(){
 function startDiscoDance(stageId=biome,returnMode='minigames'){
   discoGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
     phase:'intro',phaseT:0,round:0,wins:0,perfects:0,sequence:[],showCue:-1,
-    inputIndex:0,inputBeatCue:0,judgments:[],roundResults:[],message:'',judgeText:'',judgeT:0,
-    kingPose:'up',kingPoseT:0,playerPose:null,playerPoseT:0};
+    inputIndex:0,inputMoveT:0,judgments:[],roundResults:[],message:'',judgeText:'',judgeT:0,
+    kingPose:null,kingPoseT:0,playerPose:null,playerPoseT:0,playerQueue:[],pendingResult:null,crowdCheer:0,sceneT:0,rise:0};
   paused=false;pausePhotoMode=false;setMode('discodance');SFX.relic();
 }
 function leaveDiscoDance(){
@@ -53942,17 +53941,18 @@ function leaveDiscoDance(){
 function beginDiscoRound(){
   if(!discoGame)return;
   Object.assign(discoGame,{phase:'show',phaseT:0,sequence:discoSequence(),showCue:-1,
-    inputIndex:0,inputBeatCue:0,judgments:[],message:'WATCH THE KING!',judgeText:'',judgeT:0,
-    kingPose:'up',kingPoseT:0,
-    playerPose:null,playerPoseT:0});
+    inputIndex:0,inputMoveT:0,judgments:[],message:'WATCH THE KING!',judgeText:'',judgeT:0,
+    kingPose:null,kingPoseT:0,
+    playerPose:null,playerPoseT:0,playerQueue:[],pendingResult:null});
 }
 function beginDiscoRun(){
   if(!discoGame)return;
+  if(paused)return;
   discoGame.round=0;discoGame.wins=0;discoGame.perfects=0;discoGame.roundResults=[];
-  beginDiscoRound();SFX.danceBeat(true);
+  beginDiscoRound();discoGame.phase='rise';discoGame.rise=0;SFX.danceBeat(true);
 }
 function finishDiscoRound(success,message){
-  if(!discoGame||discoGame.phase!=='input')return;
+  if(!discoGame||!['input','reply'].includes(discoGame.phase))return;
   if(success)discoGame.wins++;
   discoGame.roundResults.push(success);
   discoGame.phase='roundResult';discoGame.phaseT=0;
@@ -53960,50 +53960,60 @@ function finishDiscoRound(success,message){
   if(success){SFX.win();flash('#ffe36a',.18);}
   else{SFX.danceBad();shake(4,.24);}
 }
+function finishDiscoAttempt(success,message){
+  const d=discoGame;if(!d||d.phase!=='input')return;
+  // Accept the whole sequence at the player's pace. Let their final queued
+  // gestures play out before judging; rapid swipes must not lose dance moves.
+  d.pendingResult={success,message};d.phase='reply';d.phaseT=0;
+}
 function handleDiscoSwipe(direction){
   const d=discoGame;
-  if(!d||d.phase!=='input'||!DISCO_DIR_INFO[direction])return false;
-  const target=DISCO_RULES.inputLead+d.inputIndex*DISCO_RULES.beat,
-    offset=d.phaseT-target,expected=d.sequence[d.inputIndex];
-  d.playerPose=direction;d.playerPoseT=.42;
-  if(offset<-DISCO_RULES.window){finishDiscoRound(false,'TOO EARLY! THE HORSE PANICKED.');return true;}
-  if(direction!==expected){finishDiscoRound(false,'WRONG MOVE! THE KING SAW THAT.');return true;}
-  if(offset>DISCO_RULES.window){finishDiscoRound(false,'TOO LATE! EVEN THE TURTLE BOOED.');return true;}
-  const perfect=Math.abs(offset)<=.12;
+  if(!d||paused||d.phase!=='input'||!DISCO_DIR_INFO[direction])return false;
+  const offset=d.inputMoveT,expected=d.sequence[d.inputIndex];
+  if(d.playerPoseT>0)d.playerQueue.push(direction);
+  else{d.playerPose=direction;d.playerPoseT=.7;}
+  if(direction!==expected){finishDiscoAttempt(false,'NOT QUITE MY SEQUENCE.');return true;}
+  const perfect=offset<=.8;
   d.judgments.push({direction,offset,perfect});
   if(perfect)d.perfects++;
-  d.inputIndex++;
+  d.inputIndex++;d.inputMoveT=0;
   SFX.danceGood();
-  d.judgeText=perfect?'ROYAL!':'GOOD!';d.judgeT=.42;
+  d.judgeText=perfect?'ROYAL!':'NICE!';d.judgeT=.6;
   if(d.inputIndex>=d.sequence.length)
-    finishDiscoRound(true,'ROUND CLEARED — HIS MAJESTY APPROVES!');
+    finishDiscoAttempt(true,'HIS MAJESTY APPROVES!');
   return true;
 }
 function updateDiscoDance(dt){
-  const d=discoGame;if(!d)return;
-  d.phaseT+=dt;d.kingPoseT=Math.max(0,d.kingPoseT-dt);d.playerPoseT=Math.max(0,d.playerPoseT-dt);
+  const d=discoGame;if(!d||paused)return;
+  d.sceneT+=dt;
+  d.phaseT+=dt;d.kingPoseT=Math.max(0,d.kingPoseT-dt);
+  if(d.playerPoseT>0){
+    d.playerPoseT-=dt;
+    while(d.playerPoseT<=0&&d.playerQueue.length){d.playerPose=d.playerQueue.shift();d.playerPoseT+=.7;}
+    d.playerPoseT=Math.max(0,d.playerPoseT);
+  }
   d.judgeT=Math.max(0,(d.judgeT||0)-dt);
-  if(d.phase==='show'){
-    const cue=Math.min(d.sequence.length-1,Math.floor((d.phaseT-DISCO_RULES.showLead)/DISCO_RULES.beat));
-    if(cue>=0&&cue!==d.showCue){
-      d.showCue=cue;d.kingPose=d.sequence[cue];d.kingPoseT=DISCO_RULES.beat*.82;
-      SFX.danceBeat(cue===0);
-    }
-    if(d.phaseT>=DISCO_RULES.showLead+d.sequence.length*DISCO_RULES.beat){
-      d.phase='ready';d.phaseT=0;d.message='YOUR TURN — SWIPE ON THE BEAT!';d.kingPose='up';
+  if(d.phase==='rise'){
+    d.rise=smoothStep(clamp(d.phaseT/DISCO_RULES.riseTime,0,1));
+    if(d.phaseT>=DISCO_RULES.riseTime){d.phase='show';d.phaseT=0;d.rise=1;}
+  }else if(d.phase==='show'){
+    const cue=Math.floor((d.phaseT-DISCO_RULES.showLead)/DISCO_RULES.demonstrate);
+    if(cue>=d.sequence.length){
+      d.phase='ready';d.phaseT=0;d.showCue=d.sequence.length;d.kingPose=null;
+    }else if(cue>=0){
+      if(cue!==d.showCue)SFX.danceBeat(true);
+      d.showCue=cue;d.kingPose=d.sequence[cue];
     }
   }else if(d.phase==='ready'){
-    if(d.phaseT>=DISCO_RULES.readyTime){
-      d.phase='input';d.phaseT=0;d.inputIndex=0;d.inputBeatCue=0;d.message='';
+    if(d.phaseT>=DISCO_RULES.readyTime){d.phase='input';d.phaseT=0;d.inputMoveT=0;SFX.danceBeat(true);}
+  }else if(d.phase==='reply'){
+    if(d.playerPoseT<=0&&d.pendingResult){
+      const result=d.pendingResult;d.pendingResult=null;finishDiscoRound(result.success,result.message);
     }
   }else if(d.phase==='input'){
-    while(d.inputBeatCue<d.sequence.length&&d.phaseT>=
-      DISCO_RULES.inputLead+d.inputBeatCue*DISCO_RULES.beat){
-      SFX.danceBeat(d.inputBeatCue===0);d.inputBeatCue++;
-    }
-    if(d.inputIndex<d.sequence.length&&d.phaseT>
-      DISCO_RULES.inputLead+d.inputIndex*DISCO_RULES.beat+DISCO_RULES.window)
-      finishDiscoRound(false,'MISSED BEAT! A PEASANT FAINTED.');
+    d.inputMoveT+=dt;
+    if(d.phaseT>DISCO_RULES.responseTime*d.sequence.length+1.5)
+      finishDiscoAttempt(false,'THE KING IS STILL WAITING.');
   }else if(d.phase==='roundResult'&&d.phaseT>=DISCO_RULES.resultTime){
     d.round++;
     if(d.round>=DISCO_RULES.rounds){
@@ -54013,6 +54023,12 @@ function updateDiscoDance(dt){
       if(d.wins===3)SFX.win();else SFX.relic();
     }else beginDiscoRound();
   }
+  // A swipe changes the desired excitement, never the crowd's pose or clock.
+  // Preserve this blend across rounds so dropping judgeT cannot snap the limbs.
+  const cheerTarget=(d.judgeT>0||((d.phase==='roundResult'||d.phase==='complete')&&
+    d.roundResults[d.roundResults.length-1]))?1:0,
+    cheerBlend=1-Math.exp(-dt/(cheerTarget>d.crowdCheer?.22:.38));
+  d.crowdCheer=lerp(d.crowdCheer,cheerTarget,cheerBlend);
 }
 function discoDanceTap(pt){
   if(!discoGame)return;
@@ -54022,16 +54038,6 @@ function discoDanceTap(pt){
     if(pointInRect(pt,DISCO_REPLAY_BTN)){beginDiscoRun();return;}
     if(pointInRect(pt,DISCO_EXIT_BTN)){leaveDiscoDance();return;}
   }
-}
-function drawDiscoArrow(x,y,size,direction,col=null,alpha=1){
-  const info=DISCO_DIR_INFO[direction]||DISCO_DIR_INFO.up;
-  g.save();g.translate(x,y);g.rotate(info.angle);g.globalAlpha=alpha;
-  g.fillStyle=col||info.col;g.beginPath();
-  g.moveTo(0,-size);g.lineTo(size*.82,-size*.12);g.lineTo(size*.36,-size*.12);
-  g.lineTo(size*.36,size);g.lineTo(-size*.36,size);g.lineTo(-size*.36,-size*.12);
-  g.lineTo(-size*.82,-size*.12);g.closePath();g.fill();
-  g.fillStyle='#ffffff66';g.fillRect(-size*.16,-size*.70,size*.32,size*.92);
-  g.restore();
 }
 function drawDiscoCrowdMember(x,y,scale,index,cheer){
   const wave=Math.sin(perfNow*6+index*1.7),arm=cheer?wave*5:0,
@@ -54047,185 +54053,350 @@ function drawDiscoCrowdMember(x,y,scale,index,cheer){
   g.fillStyle='#17151a';g.fillRect(-6,0,4,6);g.fillRect(2,0,4,6);
   g.restore();
 }
-function drawDiscoKing(x,y,scale,direction='up',energy=0){
-  const pose=DISCO_DIR_INFO[direction]?direction:(Math.sin(perfNow*4)>0?'left':'right'),
-    beat=Math.sin(perfNow/DISCO_RULES.beat*TAU),bounce=Math.abs(beat)*2.2+energy*3,
-    lean=pose==='left'?-5:pose==='right'?5:0,crouch=pose==='down'?7:0,jump=pose==='up'?energy*7:0;
-  g.save();g.translate(x+lean*scale,y-(bounce+jump)*scale);g.scale(scale,scale);
-  g.fillStyle='#00000066';g.beginPath();g.ellipse(-lean,5+bounce+jump,25,6,0,0,TAU);g.fill();
-  /* enormous cape, tiny dancing legs, and needlessly royal platform boots */
-  g.fillStyle='#4b236f';g.beginPath();g.moveTo(-22,-52);g.lineTo(-29,-8);g.lineTo(28,-8);g.lineTo(21,-52);g.closePath();g.fill();
-  g.fillStyle='#7a3fa1';g.fillRect(-25,-47,5,33);g.fillRect(20,-47,5,33);
-  const legKick=pose==='left'?-5:pose==='right'?5:0;
-  g.fillStyle='#f1c24f';g.fillRect(-14+legKick,-9,10,14-crouch*.3);g.fillRect(4+legKick,-9,10,14-crouch*.3);
-  g.fillStyle='#1c1722';g.fillRect(-18+legKick,3-crouch*.3,15,7);g.fillRect(3+legKick,3-crouch*.3,15,7);
-  g.fillStyle='#d89e32';g.fillRect(-24,-55+crouch,48,48-crouch);
-  g.fillStyle='#f2cf63';g.fillRect(-20,-50+crouch,40,10);g.fillRect(-18,-34+crouch,36,7);
-  /* sequins blink on stable positions instead of random crawling */
-  const sequin=['#55d9ff','#ff5ac8','#7df078','#ffffff'];
-  for(let i=0;i<12;i++){g.globalAlpha=.55+.4*((i+(perfNow*5|0))%3===0);
-    g.fillStyle=sequin[i%sequin.length];g.fillRect(-16+(i%4)*10,-47+((i/4)|0)*11+crouch,4,4);}
-  g.globalAlpha=1;
-  /* arms point with absurd confidence */
-  g.strokeStyle='#d89e32';g.lineWidth=8;g.lineCap='square';g.beginPath();
-  if(pose==='left'){g.moveTo(-19,-45+crouch);g.lineTo(-38,-47);g.lineTo(-51,-56);g.moveTo(19,-45+crouch);g.lineTo(31,-28);}
-  else if(pose==='right'){g.moveTo(19,-45+crouch);g.lineTo(38,-47);g.lineTo(51,-56);g.moveTo(-19,-45+crouch);g.lineTo(-31,-28);}
-  else if(pose==='down'){g.moveTo(-19,-43+crouch);g.lineTo(-30,-18);g.moveTo(19,-43+crouch);g.lineTo(30,-18);}
-  else{g.moveTo(-19,-45);g.lineTo(-31,-70);g.moveTo(19,-45);g.lineTo(31,-70);}
-  g.stroke();
-  g.fillStyle='#e4b785';g.fillRect(-10,-68+crouch,20,18);
-  g.fillStyle='#fff1c7';g.fillRect(-11,-57+crouch,22,8);             // heroic square beard
-  g.fillStyle='#6f431f';g.fillRect(-9,-59+crouch,18,3);             // unreasonable moustache
-  g.fillStyle='#11131b';g.fillRect(-10,-66+crouch,9,5);g.fillRect(1,-66+crouch,9,5);
-  g.fillStyle='#55d9ff';g.fillRect(-8,-65+crouch,5,2);g.fillRect(3,-65+crouch,5,2);
-  /* crown widened into a disco equalizer */
-  g.fillStyle='#ffe36a';g.fillRect(-14,-77+crouch,28,10);
-  g.beginPath();g.moveTo(-14,-77+crouch);g.lineTo(-12,-88+crouch);g.lineTo(-5,-79+crouch);
-  g.lineTo(0,-91+crouch);g.lineTo(6,-79+crouch);g.lineTo(13,-88+crouch);g.lineTo(14,-77+crouch);g.fill();
-  g.fillStyle='#ff5ac8';g.fillRect(-2,-80+crouch,4,4);
-  g.restore();
+function discoBodyPose(direction,amount=0){
+  const k=clamp(amount,0,1),side=direction==='left'?-1:direction==='right'?1:0;
+  return {x:side*7*k,y:direction==='down'?8*k:direction==='up'?-4*k:0,
+    lean:side*.12*k,
+    left:direction==='up'?[-13,-39]:direction==='down'?[-9,-9]:side<0?[-22,-24]:[-10,-13],
+    right:direction==='up'?[13,-39]:direction==='down'?[9,-9]:side>0?[22,-24]:[10,-13],k};
+}
+function drawDiscoKing(x,y,scale,direction=null,energy=0,seated=0,clock=perfNow){
+  // KR-KD: one continuous articulated body, not a swap between unrelated sprites.
+  const p=discoBodyPose(direction,energy),P=rigPolygon,
+    gold='#d7a442',light='#f5dc8d',dark='#86572e',skin='#c99e72';
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  townInk([[-33,2],[-22,-4],[25,-4],[35,2],[22,7],[-24,7]],'#171322');
+  g.scale(1.15,1.15);
+  const by=p.y+seated*5,hip=by-11;
+  for(const side of [-1,1]){
+    const hx=side*4+p.x*.45,kx=side*(5+seated*3)+p.x*.6,
+      ky=seated?-6:hip+6,fx=side*6+p.x*.85;
+    rigSegment(hx,hip,kx,ky,3.4,'#513347');
+    rigSegment(kx,ky,fx,-1,2.7,'#bd8f4a');
+    P([[fx-1.8,-3],[fx+1.4,-3],[fx+2.6,0],[fx+2.6,1.5],[fx-2,1.5]],'#34324a');
+    px(fx-1.8,-2.8,3,.6,light);
+  }
+  g.save();g.translate(p.x*U,by*U);g.rotate(p.lean);
+  // Original Disco King's gold robe, purple cape and fixed-position sequins.
+  const hem=-3-seated*3,sway=Math.sin(clock*1.4)*.55+p.lean*6;
+  // Keep the purple lining inside the gold robe silhouette: no extra skirt
+  // sticking out past its sides or below its hem while seated or dancing.
+  P([[-8,-27],[-9,-20],[-9+sway,hem-3],[9+sway,hem-3],[8,-20],[7,-27]],'#512766');
+  P([[-7,-27],[6,-27],[9,-22],[8,-16],[12+sway,hem-1],[-12+sway,hem-1],[-8,-16],[-9,-22]],gold);
+  P([[-7,-27],[-1,-25],[-2,-15],[-6+sway,hem-1],[-12+sway,hem-1],[-8,-16],[-9,-22]],'#edc567');
+  P([[6,-27],[9,-22],[8,-16],[12+sway,hem-1],[5+sway,hem-1],[4,-17]],dark);
+  P([[-2,-22],[1,-22],[2,-14],[6+sway,hem-2],[-4+sway,hem-2],[-1,-15]],'#703879');
+  P([[-3,-21],[-1.6,-21],[-.4,-15],[-4+sway,hem-1],[-5.5+sway,hem-1]],light);
+  P([[.8,-21],[2,-21],[2.4,-15],[8+sway,hem-1],[6.5+sway,hem-1]],gold);
+  P([[-12+sway,hem-2],[-5+sway,hem-2],[-5+sway,hem-1],[-12+sway,hem-1]],light);
+  P([[7+sway,hem-2],[12+sway,hem-2],[12+sway,hem-1],[7+sway,hem-1]],gold);
+  // White showman's collar and a faceted belt clasp, not armour plates.
+  P([[-6,-28],[-1,-24],[-5,-20],[-9,-25]],'#e4e4d9');
+  P([[5,-28],[-1,-24],[4,-20],[9,-25]],'#b6ccd0');
+  px(-7,-14.7,14,1.3,'#a77c45');rigJoint(0,-14.1,2.6,light);rigJoint(0,-14.1,1.4,'#c2599c');
+  for(let i=0;i<8;i++){
+    const mx=(i%2?-1:1)*(6+Math.floor(i/4)),my=-20+Math.floor(i/2)*4,
+      color=['#5ac5d7','#cb56a1','#c3df9a','#eee8d5'][i%4];
+    rigJoint(mx,my,1.25,color);
+    if((Math.floor(clock*2)+i)%5===0)px(mx-.2,my-.7,.45,1.4,'#fff4cf');
+  }
+  const arm=(side,target)=>{
+    const sx=side*8,sy=-24,hx=lerp(side*10,target[0],p.k),hy=lerp(-12,target[1],p.k),
+      ex=lerp(side*13,(sx+hx)*.52+side*2,p.k),ey=lerp(-18,(sy+hy)*.5+2,p.k);
+    rigSegment(sx,sy,ex,ey,4.7,dark);rigSegment(sx-.6,sy,ex-.6,ey,3.3,'#edc567');
+    rigJoint(ex,ey,3.8,gold);
+    const dx=hx-ex,dy=hy-ey,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len;
+    P([[ex+nx*1.8,ey+ny*1.8],[hx+nx*3.3,hy+ny*3.3],[hx-nx*3.3,hy-ny*3.3],[ex-nx*1.8,ey-ny*1.8]],gold);
+    rigSegment(ex-.6,ey,hx-.6,hy,.7,light);
+    rigSegment(hx+nx*3.3,hy+ny*3.3,hx-nx*3.3,hy-ny*3.3,1.1,light);
+    rigJoint(hx,hy,3.1,skin);
+    px(hx-1.6,hy-1.7,2.8,.7,'#efd0a0');
+    if(p.k>.7&&side===(direction==='left'?-1:direction==='right'?1:0))
+      rigSegment(hx,hy,hx+side*3,hy-.2,1,skin);
+  };
+  arm(-1,p.left);arm(1,p.right);
+  g.save();g.rotate(Math.sin(clock*.9)*.015);
+  P([[-5,-36],[4,-36],[6,-32],[5,-27],[1,-25],[-4,-27],[-6,-31]],skin);
+  P([[-5,-36],[0,-36],[0,-26],[-4,-27],[-6,-31]],'#e4bf8e');
+  P([[4,-36],[6,-32],[5,-27],[1,-25],[1,-28],[3,-30]],'#986c53');
+  // Friendly elderly showman: swept white hair, long beard and a permanent grin.
+  P([[-5,-36],[-7,-34],[-7,-28],[-5,-26],[-4,-32]],'#c0d3d7');
+  P([[4,-36],[6,-34],[7,-28],[5,-26],[4,-32]],'#8daab6');
+  P([[-5,-29],[-3,-27],[0,-26],[4,-28],[6,-29],[5,-22],[2,-20],[-2,-20],[-5,-23]],'#e6e1c6');
+  P([[2,-27],[6,-29],[5,-22],[2,-20],[0,-20],[.6,-24]],'#acae9e');
+  P([[-5,-29],[-3,-27],[-1,-25],[-1,-21],[-3,-23]],'#f0f0de');
+  px(-4.3,-33.8,3,1,'#e5e7df');px(1.4,-33.8,3,1,'#d5e1df');
+  // Opaque broad sunglasses: connected black frame, small glass highlights only.
+  P([[-5.8,-33.4],[-.4,-33.4],[-.6,-30.5],[-4.5,-30.1],[-5.5,-31]],'#10141d');
+  P([[.4,-33.4],[5.8,-33.4],[5.5,-31],[4.5,-30.1],[.6,-30.5]],'#10141d');
+  px(-.6,-32.8,1.2,.8,'#10141d');px(-6.2,-33.1,.7,1.1,'#10141d');px(5.5,-33.1,.7,1.1,'#10141d');
+  px(-4.7,-32.8,1.5,.4,'#7c9fba');px(1.2,-32.8,1.5,.4,'#7c9fba');
+  P([[0,-32.5],[1,-32.5],[2,-29],[-.6,-29]],'#b68b62');
+  P([[-4.5,-29.1],[-3.5,-28.8],[-1,-29.3],[.3,-28.6],[2,-29.2],[4,-28.7],[4.8,-29.3],[4.2,-27.7],[2,-27.4],[.2,-28],[-2.5,-27.4],[-4,-27.8]],'#438749');
+  P([[-3.5,-28.8],[-1,-29.3],[.3,-28.6],[-.8,-28.1],[-3.3,-28]],'#83bb5c');
+  P([[-3,-27.8],[0,-27.1],[3,-27.8],[2,-25.8],[0,-25.3],[-2,-25.8]],'#673947');
+  P([[-2.7,-27.6],[0,-27.1],[2.7,-27.6],[2,-26.7],[-1.8,-26.6]],'#fff0d4');
+  P([[-6,-36],[-6,-42],[-3,-39],[0,-44],[3,-39],[6,-42],[6,-35]],'#b98c42');
+  P([[-6,-36],[-6,-42],[-3,-39],[0,-44],[0,-36]],'#eed18a');
+  px(-6,-36.5,12,1.4,'#e5bf70');rigJoint(0,-38,1.9,'#a34d79');rigJoint(-.3,-38.3,.7,'#efb0c4');
+  g.restore();g.restore();g.restore();
+}
+function drawDiscoThrone(){
+  const P=townInk,R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  // Back of the floor: thick timber frame, raised cushion, arms and planted feet.
+  P([[168,380],[297,380],[314,404],[154,404]],'#544159');
+  P([[154,404],[314,404],[314,411],[154,411]],'#2d293d');
+  P([[186,234],[202,215],[271,215],[287,234],[287,381],[186,381]],'#72533d');
+  P([[193,237],[205,224],[267,224],[280,238],[280,355],[193,355]],'#c49a59');
+  P([[200,244],[211,233],[261,233],[273,245],[273,348],[200,348]],'#542c4a');
+  P([[205,247],[214,239],[233,239],[233,346],[205,346]],'#97506b');
+  P([[249,239],[261,233],[273,245],[273,348],[260,343]],'#39253e');
+  for(const x of [201,271])R(x,239,2,101,'#ebcd8c');
+  P([[189,350],[281,350],[293,365],[181,365]],'#d1a164');
+  P([[181,365],[293,365],[290,379],[185,379]],'#63354f');
+  for(const x of [181,280]){
+    R(x,343,9,58,'#73513a');R(x,343,2,56,'#c49b61');
+    P([[x-4,339],[x+13,339],[x+16,345],[x-6,345]],'#d2b079');
+  }
+  P([[218,221],[212,203],[227,212],[237,193],[247,212],[262,203],[256,221]],'#c79c52');
+  R(218,220,38,4,'#edd298');
+}
+let discoArenaCache=null;
+function drawDiscoForest(){
+  g.fillStyle='#19182d';g.fillRect(0,-PAD_TOP,480,800+PAD_TOT);
+  townInk([[0,220],[95,185],[183,215],[278,188],[375,203],[480,178],[480,430],[0,430]],'#302742');
+  g.fillStyle='#252132';g.fillRect(0,330,480,470+PAD_BOT);
+  // Actual special-road trees and palette, not the old minigame's pine triangles.
+  for(let i=0;i<9;i++)drawTreeArt(-24+i*66,354+(i%3)*12,.84+(i%2)*.14,(i*.137)%1,1);
+  drawTreeArt(8,474,1.46,.12,1);drawTreeArt(472,468,1.45,.62,1);
+  townInk([[156,379],[313,379],[481,730],[-1,730]],'#151a29');
+  // Grounded PA stacks frame the dance floor, leaving both arms readable.
+  for(const x of [42,375]){
+    townInk([[x,366],[x+42,366],[x+52,376],[x+52,460],[x,460]],'#161e2c');
+    townInk([[x+42,366],[x+52,376],[x+52,460],[x+42,454]],'#363449');
+    g.fillStyle='#60566f';g.fillRect(x+4,370,34,80);
+    for(const y of [378,414]){
+      townInk([[x+9,y],[x+31,y],[x+35,y+6],[x+35,y+25],[x+9,y+25],[x+6,y+20],[x+6,y+6]],'#25293d');
+      g.fillStyle='#111927';g.fillRect(x+15,y+8,12,12);
+    }
+  }
+  // String lights attached to tree-side poles; mirrored ball hangs from a beam.
+  for(const x of [65,411]){g.fillStyle='#4d3940';g.fillRect(x,160,6,267);g.fillStyle='#967153';g.fillRect(x,160,1.5,267);}
+  townStroke([[67,162],[239,153],[414,162]],'#a68b68',3);
+  townStroke([[68,180],[153,194],[241,198],[329,192],[414,180]],'#292533',1.5);
+  for(let i=0;i<13;i++){
+    const x=78+i*27,y=181+Math.sin(i/12*Math.PI)*16;
+    g.fillStyle=['#d482b1','#8ecac8','#dfbe74'][i%3];g.fillRect(x,y,4,7);
+  }
+  townStroke([[341,158],[341,181]],'#a3a5a3',1.5);
+  for(let row=0;row<7;row++)for(let col=0;col<7;col++){
+    if((row===0||row===6)&&(col<2||col>4))continue;
+    g.fillStyle=['#d4dce0','#697e88','#a8b8be','#f0e8c5'][(col+row*2)%4];
+    g.fillRect(319+col*6,182+row*6,5,5);
+  }
 }
 function drawDiscoArena(){
-  const d=discoGame,p=MINIGAME_ARENA_PALETTES[d&&d.stageId]||MINIGAME_ARENA_PALETTES.forest;
-  g.fillStyle=p.sky;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  g.fillStyle=p.skyBand;g.fillRect(0,132,VW,168);
-  /* Same moonlit roadside language as the route, now commandeered by a royal stage. */
-  g.fillStyle='#dbe3d2';g.beginPath();g.arc(390,112,43,0,TAU);g.fill();
-  g.fillStyle=p.sky;g.beginPath();g.arc(405,100,39,0,TAU);g.fill();
-  for(let i=0;i<34;i++){const sx=sRnd(i*19+4)*VW,sy=38+sRnd(i*31+9)*170;
-    g.globalAlpha=.25+sRnd(i*13)*.55;g.fillStyle='#d9e7ff';g.fillRect(sx,sy,2,2);}
-  g.globalAlpha=1;
-  g.fillStyle=p.far;g.fillRect(0,275,VW,VH-275);
-  for(let i=0;i<14;i++){
-    const x=i*39-22+(i%2)*9,h=70+(i%4)*17;
-    g.fillStyle=i%2?p.tree:p.treeLight;g.fillRect(x+15,252-h*.35,9,h);
-    g.beginPath();g.moveTo(x,275);g.lineTo(x+20,275-h);g.lineTo(x+43,275);g.fill();
+  const scale=Math.max(1,viewScale)*1.18,key=[scale,PAD_TOP,PAD_BOT].join(':');
+  if(!discoArenaCache||discoArenaCache.key!==key){
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;try{g=canvas.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);drawDiscoForest();}
+    finally{g=live;}discoArenaCache={key,canvas};
   }
-  /* A stolen tournament platform with enchanted stained-stone dance tiles. */
-  g.fillStyle=p.stoneDark;g.beginPath();g.moveTo(54,300);g.lineTo(426,300);g.lineTo(490,720);g.lineTo(-10,720);g.closePath();g.fill();
-  for(let row=0;row<7;row++){
-    const y1=340+row*54,y2=y1+50,spread1=112+row*26,spread2=spread1+24;
-    for(let col=0;col<4;col++){
-      const xa=VW/2-spread1+col*(spread1*2/4),xb=VW/2-spread1+(col+1)*(spread1*2/4),
-        xc=VW/2-spread2+(col+1)*(spread2*2/4),xd=VW/2-spread2+col*(spread2*2/4);
-      const pulse=((row+col+(perfNow*2|0))%5===0);
-      g.fillStyle=pulse?(col%2?'#a83688':'#238aa6'):((row+col)%2?p.stone:p.stoneDark);
-      g.beginPath();g.moveTo(xa,y1);g.lineTo(xb,y1);g.lineTo(xc,y2);g.lineTo(xd,y2);g.closePath();g.fill();
-    }
+  g.save();g.imageSmoothingEnabled=true;g.drawImage(discoArenaCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+  const time=discoGame?.sceneT||0;
+  // One coherent perspective floor. Opaque tiles, no overlay seams/fading road.
+  const floor=(u,v)=>[lerp(156,0,v)+u*lerp(157,480,v),379+v*351];
+  for(let row=0;row<7;row++)for(let col=0;col<5;col++){
+    const v=row/7,u=col/5;
+    const colors=['#6b4a86','#407079','#957645','#924a73'];
+    let color=colors[(col+row*2)%4];
+    if((Math.floor(time*1.5)+col+row)%7===0)color=shade(color,18);
+    townInk([floor(u+.007,v+.007),floor(u+.193,v+.007),floor(u+.193,v+.136),floor(u+.007,v+.136)],color);
   }
-  g.fillStyle='#161019';g.fillRect(74,278,332,38);
-  g.fillStyle='#5b3b24';g.fillRect(82,286,316,22);
-  g.fillStyle='#ffe36a';g.fillRect(90,290,300,4);
-  for(let i=0;i<11;i++)drawDiscoCrowdMember(62+i*36,294,.72,i,true);
-  /* The disco ball is a knight's shield on a rope. Nobody has questioned it. */
-  g.strokeStyle='#6b6675';g.lineWidth=2;g.beginPath();g.moveTo(VW/2,-PAD_TOP);g.lineTo(VW/2,88);g.stroke();
-  g.fillStyle='#cdd6e5';g.beginPath();g.arc(VW/2,105,18,0,TAU);g.fill();
-  g.strokeStyle='#6b7180';g.lineWidth=1;
-  for(let q=-12;q<=12;q+=8){g.beginPath();g.moveTo(VW/2+q,90);g.lineTo(VW/2+q,120);g.stroke();}
-  g.beginPath();g.moveTo(VW/2-17,105);g.lineTo(VW/2+17,105);g.stroke();
-  const ray=.35+.25*Math.sin(perfNow*5);g.globalAlpha=ray;
-  g.fillStyle=p.accent;g.beginPath();g.moveTo(228,116);g.lineTo(82,350);g.lineTo(126,350);g.closePath();g.fill();
-  g.fillStyle='#ff5ac8';g.beginPath();g.moveTo(252,116);g.lineTo(400,350);g.lineTo(438,350);g.closePath();g.fill();g.globalAlpha=1;
-}
-function drawDiscoSequenceStrip(){
-  const d=discoGame;if(!d||!d.sequence.length)return;
-  const y=138;
-  for(let i=0;i<d.sequence.length;i++){
-    const x=100+i*70,shown=d.phase!=='show'||i<=d.showCue,
-      active=d.phase==='show'&&i===d.showCue,done=d.phase==='input'&&i<d.inputIndex;
-    g.fillStyle=done?'#244b31':active?'#5b4320':'#111520cc';g.fillRect(x-25,y-25,50,50);
-    g.strokeStyle=shown?DISCO_DIR_INFO[d.sequence[i]].col:'#555866';g.lineWidth=active?4:2;g.strokeRect(x-25,y-25,50,50);
-    if(shown)drawDiscoArrow(x,y,14,d.sequence[i],null,done?.45:1);
-    else{g.fillStyle='#6d7180';g.font='bold 20px monospace';g.textAlign='center';g.fillText('?',x,y+7);}
+  drawDiscoThrone();
+  // A few restrained light reflections, attached to the disco ambience.
+  for(let i=0;i<7;i++){
+    const x=90+i*49+Math.sin(time*.5+i)*12,y=287+(i%3)*27;
+    g.fillStyle=i%2?'#c799c8':'#a3ced0';g.fillRect(x,y,2,4);
   }
 }
-function drawDiscoHighway(){
-  const d=discoGame;if(!d||d.phase!=='input')return;
-  const left=102,laneW=69,hitY=574,topY=210;
-  g.fillStyle='#070910aa';g.beginPath();g.moveTo(164,topY);g.lineTo(316,topY);g.lineTo(402,608);g.lineTo(78,608);g.closePath();g.fill();
-  for(let lane=0;lane<4;lane++){
-    const x=left+lane*laneW;
-    g.strokeStyle='#ffffff18';g.lineWidth=1;g.beginPath();g.moveTo(190+lane*34,topY);g.lineTo(x,608);g.stroke();
-    drawDiscoArrow(x,hitY,18,DISCO_LANES[lane],'#ffffff',.22);
-  }
-  g.strokeStyle='#ffe36a';g.lineWidth=3;g.beginPath();g.moveTo(76,598);g.lineTo(404,598);g.stroke();
-  for(let i=d.inputIndex;i<d.sequence.length;i++){
-    const target=DISCO_RULES.inputLead+i*DISCO_RULES.beat,
-      progress=1-(target-d.phaseT)/DISCO_RULES.inputLead;
-    if(progress<-.05||progress>1.18)continue;
-    const direction=d.sequence[i],lane=DISCO_LANES.indexOf(direction),x=left+lane*laneW,
-      y=lerp(topY,hitY,clamp(progress,0,1));
-    g.fillStyle='#00000099';g.beginPath();g.arc(x+3,y+4,25,0,TAU);g.fill();
-    drawDiscoArrow(x,y,20,direction);
-  }
+function discoCourtierMotion(index,clock,cheer){
+  const beat=clock*4.8+index*1.7,blend=clamp(cheer,0,1);
+  return {beat,sway:Math.sin(beat*.5)*lerp(2.1,2.9,blend),
+    bounce:-Math.abs(Math.sin(beat))*lerp(1.15,2.1,blend),
+    lean:Math.sin(beat*.5)*lerp(.07,.095,blend),
+    stepHeight:lerp(2.2,3.4,blend),handRaise:3*blend,
+    overhead:(Math.sin(clock*1.6+index)+1)*.5,
+    clap:(Math.sin(beat*1.5)+1)*.5};
 }
-function drawDiscoRoundPips(){
-  const d=discoGame;g.textAlign='center';g.font='bold 12px monospace';g.fillStyle='#d7d9e2';
-  g.fillText('ROYAL SET  '+Math.min(d.round+1,DISCO_RULES.rounds)+' / '+DISCO_RULES.rounds,VW/2,42);
-  for(let i=0;i<DISCO_RULES.rounds;i++){
-    g.fillStyle=i<d.roundResults.length?(d.roundResults[i]?'#ffe36a':'#6e2935'):(i===d.round?'#ffffff':'#4b4e59');
-    g.beginPath();g.arc(VW/2-28+i*28,60,7,0,TAU);g.fill();
+function drawDiscoCourtier(x,y,scale,index,clock,cheer){
+  // The King's own dance troupe, not market bystanders. Identical light/material
+  // language, different hair, waistcoats and poses; all motion freezes on pause.
+  const P=rigPolygon,{beat,sway,bounce,lean,overhead,clap,stepHeight,handRaise}=discoCourtierMotion(index,clock,cheer),
+    coat=['#905297','#436d85','#b58a43','#9c4e73'][index%4],
+    skin=['#d5aa7b','#ac7959','#c69973','#96694f'][index%4],
+    light=shade(coat,28),dark=shade(coat,-33),gold='#e1bf72',
+    clapper=index%2===0;
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  townInk([[-24,1],[-15,-3],[15,-3],[24,1],[15,5],[-15,5]],'#171923');
+  for(const side of [-1,1]){
+    const step=Math.sin(beat+(side<0?0:Math.PI)),lift=Math.max(0,step)*stepHeight,
+      fx=side*3.6+Math.sin(beat*.5)*1.7,kx=side*3.4+sway*.55,ky=-5-lift*.65;
+    rigSegment(side*2+sway,-10+bounce,kx,ky,2.6,'#383347');
+    rigSegment(kx,ky,fx,-1-lift,2.5,dark);
+    P([[fx-1.3,-2-lift],[fx+1.2,-2-lift],[fx+1.7,.4-lift],[fx-1.6,.4-lift]],'#252b3a');
+    px(fx-1.5,-.1-lift,3,.6,gold);
   }
+  g.save();g.translate(sway*U,bounce*U);g.rotate(lean);
+  P([[-5.5,-24],[4.7,-24],[6.5,-19],[4.4,-9],[.6,-11],[-4.5,-9],[-6.2,-19]],coat);
+  P([[-5.5,-24],[-1,-23],[-1,-11],[-4.5,-9],[-6.2,-19]],light);
+  P([[4.7,-24],[6.5,-19],[4.4,-9],[2,-10],[3,-19]],dark);
+  P([[-3.3,-24],[0,-21.5],[3.2,-24],[2.3,-15],[-2.2,-15]],'#eee0b5');
+  P([[-3.3,-24],[-.5,-21.5],[-2,-17],[-4.5,-22]],gold);
+  P([[3.2,-24],[0,-21.5],[1.8,-17],[4.2,-22]],gold);
+  px(-4.2,-12,8.4,1.2,'#373142');rigJoint(0,-11.4,1.8,gold);
+  P([[-3.6,-32],[2.8,-32],[4,-29],[3.1,-25],[.2,-23.8],[-3.2,-25.2],[-4,-29]],skin);
+  P([[2.8,-32],[4,-29],[3.1,-25],[.2,-23.8],[1.2,-27]],shade(skin,-30));
+  if(index===0){
+    P([[-4,-30],[-5,-32],[-4,-35],[-1,-36],[3,-35.6],[4.5,-33],[3.7,-30],[2,-32],[-2.5,-32]],'#393040');
+    P([[-4,-33],[-1,-35],[2,-34.8],[2.5,-33],[-2,-32.8]],'#665067');
+  }else if(index===1){
+    P([[-4,-31],[-4,-33.2],[3.8,-33.2],[4,-31]],'#e4c27b');
+    P([[-2.5,-33.2],[-2,-35],[.5,-34.1],[2.3,-35.2],[2.8,-33.2]],coat);
+  }else if(index===2){
+    P([[-4,-30],[-4,-33],[-1,-35],[4.2,-34.2],[4,-32],[0,-32],[-2.7,-30]],'#bdc4bb');
+  }else{
+    P([[-4,-31],[-4,-34],[2.8,-35],[4,-32],[1,-32],[-2.8,-30]],'#222a39');
+    P([[1,-35],[2,-38],[3.5,-39],[4.6,-37],[3,-35]],'#c57da9');
+  }
+  px(-3.7,-29.8,3.3,1.8,'#141c2a');px(.5,-29.8,3.3,1.8,'#141c2a');px(-.5,-29.4,1,.4,gold);
+  px(-3.1,-29.5,1.2,.35,'#99b6c6');px(1.1,-29.5,1.2,.35,'#99b6c6');
+  P([[-1.8,-26.3],[1.8,-26.3],[1,-25.2],[-1,-25.2]],'#eee0b5');
+  // The entire shoulder-to-hand chain is in front of the hair and face.
+  // Drawing only the hands here leaves the forearms cut off by the head.
+  for(const side of [-1,1]){
+    const sx=side*5,sy=-22,
+      hx=clapper?side*(.75+clap*5):side*(8+Math.sin(beat+side)*3.2),
+      hy=clapper?-22-overhead*13-handRaise:-26-(Math.sin(beat+side)+1)*6-handRaise,
+      ex=side*(7.5+overhead),ey=(sy+hy)*.5+3;
+    rigSegment(sx,sy,ex,ey,3.2,dark);rigSegment(sx-.45,sy,ex-.45,ey,1.8,light);
+    rigJoint(ex,ey,2.9,coat);rigSegment(ex,ey,hx,hy,2.6,coat);
+    rigSegment(hx,hy+.5,hx,hy-1,2.9,gold);rigJoint(hx,hy-1.3,2.7,skin);
+    px(hx-1.1,hy-2.5,2.1,.5,shade(skin,27));
+  }
+  g.restore();g.restore();
+}
+function discoPlayerMoveAmount(remaining){
+  if(remaining<=0)return 0;
+  const elapsed=.7-remaining;
+  return smoothStep(clamp(elapsed/.12,0,1))*smoothStep(clamp(remaining/.24,0,1));
+}
+function discoPlayerLegPose(direction,amount,side,clock){
+  const p=discoBodyPose(direction,amount),crouch=direction==='down'?p.k:0,
+    bob=Math.sin(clock*2)*.22,
+    // Solve the bend in the forward/vertical plane, not by spreading the knees.
+    // Positive depth points toward the King. Heels stay on the same floor spot.
+    hipHeight=lerp(10.5,5.3,crouch),hipDepth=-1.6*crouch,
+    legLength=5.4,reach=Math.hypot(hipHeight,hipDepth),
+    bend=Math.sqrt(Math.max(0,legLength*legLength-reach*reach*.25)),
+    kneeHeight=hipHeight*.5-hipDepth/reach*bend,
+    kneeDepth=hipDepth*.5+hipHeight/reach*bend,
+    projectY=(height,depth)=>-1.5-height-depth*.55,
+    otherMoveY=direction==='down'?0:p.y,
+    hipY=projectY(hipHeight,hipDepth)+bob+otherMoveY;
+  return {hipX:side*2.5+p.x*.7,hipY,
+    kneeX:side*3.6+p.x*.45,kneeY:projectY(kneeHeight,kneeDepth)+bob*.5+otherMoveY*.65,
+    footX:side*4.5+p.x*.3,footY:-1.5,
+    kneeScale:1/(1+kneeDepth*.035),bodyY:hipY+12,
+    hipHeight,hipDepth,kneeHeight,kneeDepth,legLength};
+}
+function drawDiscoPlayer(x,y,scale,direction,amount,clock){
+  // Rear-view Jonathan on foot. Reuse his real helmet and heraldic shield;
+  // feet, knees, shoulders and wrists form a continuous dance rig, not a horse.
+  const p=discoBodyPose(direction,amount),P=rigPolygon,
+    armor='#919da7',dark='#4b5966',light='#c4ced5',steel='#edf4f7',
+    bodyY=discoPlayerLegPose(direction,amount,1,clock).bodyY;
+  g.save();g.translate(x,y);g.scale(scale,scale);
+  townInk([[-30,2],[-20,-4],[21,-4],[31,2],[20,7],[-20,7]],'#171923');
+  for(const side of [-1,1]){
+    const leg=discoPlayerLegPose(direction,amount,side,clock),
+      {hipX:hx,hipY:hy,kneeX:kx,kneeY:ky,footX:fx,footY:fy,kneeScale:ks}=leg;
+    // Shins are behind the near thighs; the pelvis then occludes the tucked
+    // knees during the deep bend. No bright front-facing kneecaps on his back.
+    rigSegment(kx,ky,fx,fy,2.5*ks,armor);
+    rigSegment(kx-.55*ks,ky,fx-.55,fy,.65,light);
+    rigJoint(kx,ky,2.6*ks,dark);
+    rigSegment(hx,hy,kx,ky,3,dark);
+    rigSegment(hx-.4,hy,kx-.4*ks,ky,1.7,armor);
+    P([[fx-1.5,-2],[fx+1.3,-2],[fx+1.8,.8],[fx-1.8,.8]],dark);
+    px(fx-1.7,.2,3.4,.6,light);
+  }
+  g.save();g.translate(p.x*U,bodyY*U);g.rotate(p.lean);
+  P([[-5.8,-25],[5.8,-25],[4,-13],[-4,-13]],dark);
+  P([[-4.8,-24.5],[4.6,-24.5],[3.2,-13.5],[-3.2,-13.5]],armor);
+  px(-.6,-24,1.2,9,light);
+  // Two overlapping steel waist bands continue the backplate into the hips.
+  // No blue cloth flap, split skirt or shorts silhouette over the leg armour.
+  P([[-4,-15.3],[4,-15.3],[4.35,-13.3],[-4.35,-13.3]],dark);
+  P([[-3.85,-15.2],[3.8,-15.2],[4.1,-13.8],[-4.1,-13.8]],armor);
+  px(-3.8,-15.2,7.6,.45,light);
+  P([[-4.15,-13.5],[4.15,-13.5],[4.4,-11.8],[-4.4,-11.8]],dark);
+  P([[-4,-13.45],[3.9,-13.45],[4.1,-12.3],[-4.2,-12.3]],armor);
+  px(-3.95,-13.45,7.8,.4,light);
+  for(const side of [-1,1]){
+    const target=side<0?p.left:p.right,sx=side*6,sy=-23.5,
+      hx=lerp(side*8,target[0]*.8,p.k),hy=lerp(-13,target[1],p.k),
+      ex=lerp(side*8.5,(sx+hx)*.5+side,p.k),ey=lerp(-18,(sy+hy)*.5+1,p.k);
+    rigSegment(sx,sy,ex,ey,3.2,dark);rigSegment(sx-.45,sy,ex-.45,ey,1.8,armor);
+    rigJoint(ex,ey,2.8,light);rigSegment(ex,ey,hx,hy,2.5,armor);
+    rigSegment(ex-.5,ey,hx-.5,hy,.6,light);rigJoint(hx,hy,3,dark);
+    px(hx-1.2,hy-1.4,2.4,1.6,light);
+    P([[sx-2,-25.7],[sx+2,-25.7],[sx+2.3,-22],[sx-2.3,-22]],armor);
+    px(sx-1.8,-25.5,3.6,.8,steel);
+  }
+  drawSerJonathanShield(0,-20,0,0,1.18);
+  rigSegment(-2.5,-26,2.5,-26,1.5,dark);
+  const helmet=drawSerJonathanHelmet25D(0,-29.5,.2+(direction==='down'?amount*.24:0),1.05,
+    armor,dark,light,steel),feather=playerChar?.feather||'#5878eb',sway=Math.sin(clock*2)*.45;
+  rigSegment(0,helmet.crownY,.2,helmet.crownY-3,1.35,feather);
+  rigSegment(.2,helmet.crownY-3,2.8+sway,helmet.crownY-5.4,1.8,shade(feather,15));
+  rigSegment(2.8+sway,helmet.crownY-5.4,4.6+sway,helmet.crownY-4.2,1.3,feather);
+  g.restore();g.restore();
+}
+function discoKingMoveAmount(d){
+  if(d.phase==='show'&&d.showCue>=0){
+    const t=d.phaseT-DISCO_RULES.showLead-d.showCue*DISCO_RULES.demonstrate;
+    // Enter, clearly hold, return to neutral. The neutral gap makes repeated
+    // directions visibly separate moves instead of one long held pose.
+    return smoothStep(clamp(t/.22,0,1))*(1-smoothStep(clamp((t-.68)/.22,0,1)));
+  }
+  return d.phase==='roundResult'||d.phase==='complete'?.25:0;
 }
 function drawDiscoDance(){
-  const d=discoGame;if(!d)return;
-  drawDiscoArena();
-  const kingEnergy=d.kingPoseT>0?Math.sin(Math.PI*clamp(d.kingPoseT/.68,0,1)):0;
-  drawDiscoKing(VW/2,322,1.05,d.kingPose,kingEnergy);
-  if(d.phase!=='intro'&&d.phase!=='complete')drawDiscoRoundPips();
-  if(d.phase==='show')drawDiscoSequenceStrip();
-  if(d.phase==='input')drawDiscoHighway();
-  const pose=d.playerPoseT>0?d.playerPose:null,
-    lean=pose==='left'?-1:pose==='right'?1:0,duck=pose==='down'?.8:0,
-    air=pose==='up'?.5:0,hop=pose==='up'?20:0;
-  drawRider(VW/2,720-hop,.88,{gallop:(perfNow*1.6)%1,rigId:playerChar.rigId,
-    feather:playerChar.feather,horse:playerChar.horse,chubby:playerChar.chubby,
-    monkey:playerChar.monkey,caveman:playerChar.caveman,lean,duck,air});
-  g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('◄ BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 18px monospace';g.fillText('Ⅱ',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  const d=discoGame;if(!d)return;drawDiscoArena();
+  const rise=d.phase==='intro'?0:d.rise;
+  const amount=discoKingMoveAmount(d);
+  // Starts seated at the cushion; walks into the open floor as he rises.
+  drawDiscoKing(240,lerp(372,530,rise),lerp(.72,1.05,rise),d.kingPose,amount,1-rise,d.sceneT);
+  for(const [i,p] of [[59,536,1.13],[421,536,1.13],[34,651,1.4],[450,651,1.4]].entries()){
+    drawDiscoCourtier(...p,i,d.sceneT,d.crowdCheer);
+  }
+  drawDiscoPlayer(240,719,1.22,d.playerPose,discoPlayerMoveAmount(d.playerPoseT),d.sceneT);
+  drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
+  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
   if(d.phase==='intro'){
-    g.fillStyle='#05070ce8';g.fillRect(30,336,420,348);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(30,336,420,348);
-    g.font='bold 31px monospace';g.fillStyle='#ffe36a';g.fillText('DISCO KING',VW/2,380);
-    g.font='bold 14px monospace';g.fillStyle='#ff5ac8';g.fillText('THE ROYAL SWIPE-OFF',VW/2,407);
-    g.font='13px monospace';g.fillStyle='#e8e2d0';
-    g.fillText('His Majesty demonstrates 5 sacred moves.',VW/2,458);
-    g.fillText('Copy every direction on the glowing beat.',VW/2,482);
-    g.fillText('One royal mistake fails that round.',VW/2,506);
-    g.fillText('Survive all 3 rounds. Preserve your dignity.',VW/2,530);
-    g.fillStyle='#8b8fa0';g.fillText('Swipe or use arrow keys / WASD',VW/2,565);
-    g.fillStyle='#281d0d';g.fillRect(DISCO_START_BTN.x,DISCO_START_BTN.y,DISCO_START_BTN.w,DISCO_START_BTN.h);
-    g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(DISCO_START_BTN.x,DISCO_START_BTN.y,DISCO_START_BTN.w,DISCO_START_BTN.h);
-    g.font='bold 19px monospace';g.fillStyle='#ffe36a';g.fillText('BEGIN THE GROOVE',VW/2,638);
-  }else if(d.phase==='ready'){
-    g.fillStyle='#05070cdd';g.fillRect(60,390,360,82);g.strokeStyle='#55d9ff';g.lineWidth=3;g.strokeRect(60,390,360,82);
-    g.font='bold 23px monospace';g.fillStyle='#ffffff';g.fillText('YOUR TURN!',VW/2,425);
-    g.font='bold 13px monospace';g.fillStyle='#55d9ff';g.fillText('SWIPE WHEN THE NOTES HIT THE LINE',VW/2,452);
-  }else if(d.phase==='input'){
-    g.font='bold 13px monospace';g.fillStyle='#ffffff';g.fillText('MOVE '+Math.min(d.inputIndex+1,5)+' / 5',VW/2,190);
-    if(d.judgeT>0){
-      g.globalAlpha=clamp(d.judgeT/.18,0,1);g.font='bold 18px monospace';
-      g.fillStyle=d.judgeText==='ROYAL!'?'#ffe36a':'#c0f79a';g.fillText(d.judgeText,VW/2,628);g.globalAlpha=1;
-    }
-  }else if(d.phase==='roundResult'){
-    const ok=d.roundResults[d.roundResults.length-1];
-    g.fillStyle='#05070ce8';g.fillRect(38,410,404,90);g.strokeStyle=ok?'#ffe36a':'#ff5b68';g.lineWidth=3;g.strokeRect(38,410,404,90);
-    g.font='bold 18px monospace';g.fillStyle=ok?'#ffe36a':'#ff7c86';g.fillText(d.message,VW/2,453);
-    g.font='12px monospace';g.fillStyle='#d7d9e2';g.fillText(ok?'The crowd pretends this was rehearsed.':'A bard has already written a cruel song.',VW/2,480);
+    smithText('DISCO KING',240,102,27,'#eed29a');
+    smithText('Watch all five moves. Remember their order.',240,552,13,'#eee1c1',430);
+    smithText('Then repeat the sequence with swipes. Up = reach, down = crouch.',240,572,10,'#b8caca',450);
+    drawSmithButton(DISCO_START_BTN,'LET US DANCE','#edc58a');
   }else if(d.phase==='complete'){
-    g.fillStyle='#05070cee';g.fillRect(28,348,424,356);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(28,348,424,356);
-    g.font='bold 26px monospace';g.fillStyle='#ffe36a';g.fillText(d.message,VW/2,397);
-    g.font='bold 56px monospace';g.fillStyle=d.wins===3?'#ffe36a':'#e8e2d0';g.fillText(d.wins+' / 3',VW/2,474);
-    g.font='13px monospace';g.fillStyle='#aeb2c2';g.fillText('rounds cleared · '+d.perfects+' perfectly timed moves',VW/2,505);
-    g.fillStyle='#182818';g.fillRect(DISCO_REPLAY_BTN.x,DISCO_REPLAY_BTN.y,DISCO_REPLAY_BTN.w,DISCO_REPLAY_BTN.h);
-    g.strokeStyle='#7df078';g.strokeRect(DISCO_REPLAY_BTN.x,DISCO_REPLAY_BTN.y,DISCO_REPLAY_BTN.w,DISCO_REPLAY_BTN.h);
-    g.fillStyle='#7df078';g.font='bold 15px monospace';g.fillText('DANCE AGAIN',148,661);
-    g.fillStyle='#211820';g.fillRect(DISCO_EXIT_BTN.x,DISCO_EXIT_BTN.y,DISCO_EXIT_BTN.w,DISCO_EXIT_BTN.h);
-    g.strokeStyle='#ff5ac8';g.strokeRect(DISCO_EXIT_BTN.x,DISCO_EXIT_BTN.y,DISCO_EXIT_BTN.w,DISCO_EXIT_BTN.h);
-    g.fillStyle='#ff8bd4';g.fillText('LEAVE STAGE',332,661);
+    smithText(d.message,240,112,18,'#ead298',440);
+    smithText(d.wins+' / 3 rounds matched',240,137,14,'#e1d4bd');
+    drawSmithButton(DISCO_REPLAY_BTN,'DANCE AGAIN','#b5d8ac');
+    drawSmithButton(DISCO_EXIT_BTN,'LEAVE','#e5b6c8');
+  }else{
+    smithText(d.phase==='rise'?'"Watch closely."':d.phase==='show'?'Remember the moves.':d.phase==='ready'?'Your turn!':d.phase==='input'?'Repeat the whole sequence.':d.phase==='roundResult'?d.message:d.judgeText,
+      240,112,18,d.phase==='input'?'#f0d594':'#d7ccdc',435);
   }
 }
 
@@ -57410,172 +57581,362 @@ function drawGoldPanningGame(){
 /* ---------- Blacksmith: heat control, precision shaping, and a decisive quench ---------- */
 const FORGE_RULES=Object.freeze({heatStart:.18,heatGain:.43,coolRate:.085,strikeLoss:.052,
   workMin:.48,workMax:.76,softMin:.34,danger:.88,overheat:.98,overheatGrace:.55,
-  hits:9,hammerTime:.30,targetRadius:29,quenchMin:.38,quenchMax:.84,
-  perfectQuenchMin:.50,perfectQuenchMax:.68,quenchTime:1.05});
-const FORGE_START_BTN=Object.freeze({x:140,y:665,w:200,h:50});
-const FORGE_BELLOWS_RECT=Object.freeze({x:18,y:532,w:142,h:130});
-const FORGE_VAT_RECT=Object.freeze({x:329,y:526,w:136,h:138});
-const FORGE_BLADE_RECT=Object.freeze({x:137,y:392,w:238,h:94});
-const FORGE_TARGET_X=Object.freeze([174,211,248,285,322,351]);
-let forgeGame=null;
+  hits:9,hammerTime:.60,impactAt:.62,targetRadius:27,quenchMin:.38,quenchMax:.84,
+  perfectQuenchMin:.50,perfectQuenchMax:.68,quenchTime:1.75});
+const FORGE_START_BTN=Object.freeze({x:137,y:737,w:206,h:48});
+const FORGE_BELLOWS_RECT=Object.freeze({x:18,y:532,w:110,h:124});
+const FORGE_VAT_RECT=Object.freeze({x:344,y:526,w:122,h:132});
+const FORGE_BLADE_RECT=Object.freeze({x:139,y:405,w:238,h:66});
+const FORGE_TARGET_X=Object.freeze([174,207,240,273,306,339]);
+const FORGE_SCENE=Object.freeze({smithX:228,smithY:292,smithScale:2.4,bladeY:437});
+let forgeGame=null,forgeArenaCache=null;
 function nextForgeTarget(previous=-1){
-  let next=(rnd()*FORGE_TARGET_X.length)|0;if(next===previous)next=(next+1+((rnd()*(FORGE_TARGET_X.length-1))|0))%FORGE_TARGET_X.length;return next;
+  let next=(rnd()*FORGE_TARGET_X.length)|0;
+  if(next===previous)next=(next+1+((rnd()*(FORGE_TARGET_X.length-1))|0))%FORGE_TARGET_X.length;
+  return next;
 }
 function startBlacksmith(stageId=biome,returnMode='minigames'){
   forgeGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,phase:'intro',phaseT:0,
     stage:'heating',heat:FORGE_RULES.heatStart,hits:0,idealHits:0,flaws:0,target:2,hammerT:0,
-    impactX:FORGE_TARGET_X[2],impactGood:false,bellowsHeld:false,bellowsPhase:0,bellowsBeat:0,
+    impactX:FORGE_TARGET_X[2],impactGood:false,pendingStrike:null,impactAge:9,
+    bellowsHeld:false,bellowsPhase:0,bellowsBeat:0,hearthMix:0,sceneT:0,
     overheatT:0,quenchHeat:0,outcome:'',score:0,best:0,feedback:'',feedbackCol:'#e8e2d0'};
   paused=false;pausePhotoMode=false;setMode('blacksmithing');SFX.relic();
 }
 function leaveBlacksmith(){
-  const target=forgeGame&&forgeGame.returnMode||'minigames';endForgeBellowsHold();forgeGame=null;setMode(target);SFX.duck();
+  const target=forgeGame&&forgeGame.returnMode||'minigames';
+  endForgeBellowsHold();forgeGame=null;setMode(target);SFX.duck();
 }
 function beginBlacksmithRun(){
-  const f=forgeGame;if(!f)return;const best=f.best||0;
+  const f=forgeGame;if(!f||paused)return;
   Object.assign(f,{phase:'playing',phaseT:0,stage:'heating',heat:FORGE_RULES.heatStart,hits:0,
     idealHits:0,flaws:0,target:nextForgeTarget(),hammerT:0,impactX:248,impactGood:false,
-    bellowsHeld:false,bellowsPhase:0,bellowsBeat:0,overheatT:0,quenchHeat:0,outcome:'',score:0,best,
-    feedback:'HOLD THE BELLOWS - WAKE THE STEEL',feedbackCol:'#ffb45e'});SFX.swipe();
+    pendingStrike:null,impactAge:9,bellowsHeld:false,bellowsPhase:0,bellowsBeat:0,
+    overheatT:0,quenchHeat:0,outcome:'',score:0,
+    feedback:'HOLD THE BELLOWS TO HEAT THE STEEL',feedbackCol:'#edbe78'});
+  SFX.swipe();
 }
 function beginForgeBellowsHold(cx,cy,keyboard=false){
-  const f=forgeGame;if(mode!=='blacksmithing'||!f||paused||f.phase!=='playing')return false;
-  if(!keyboard){const pt=toGame(cx,cy);if(!pointInRect(pt,FORGE_BELLOWS_RECT))return false;}
-  f.bellowsHeld=true;f.feedback=f.stage==='quench'?'CAREFUL - THE BLADE IS SHAPED':'PUMPING THE BELLOWS';f.feedbackCol='#ffb45e';SFX.forgeBellows();return true;
+  const f=forgeGame;
+  if(mode!=='blacksmithing'||!f||paused||f.phase!=='playing'||f.hammerT>0)return false;
+  if(!keyboard&&!pointInRect(toGame(cx,cy),FORGE_BELLOWS_RECT))return false;
+  f.bellowsHeld=true;f.feedback='RELEASE IN THE GOLD WORKING BAND';f.feedbackCol='#edbe78';
+  SFX.forgeBellows();return true;
 }
 function endForgeBellowsHold(){if(forgeGame)forgeGame.bellowsHeld=false;}
 function forgeHeatQuality(heat){
   if(heat>=FORGE_RULES.workMin&&heat<=FORGE_RULES.workMax)return 'ideal';
-  if(heat>=FORGE_RULES.softMin&&heat<FORGE_RULES.danger)return 'workable';return heat<FORGE_RULES.softMin?'cold':'hot';
+  if(heat>=FORGE_RULES.softMin&&heat<FORGE_RULES.danger)return 'workable';
+  return heat<FORGE_RULES.softMin?'cold':'hot';
 }
 function strikeForgeAt(pt){
-  const f=forgeGame;if(!f||f.phase!=='playing'||f.stage!=='forging'||f.hammerT>0)return false;
-  const targetX=FORGE_TARGET_X[f.target],hit=pt&&Math.hypot(pt.x-targetX,pt.y-437)<=FORGE_RULES.targetRadius,
-    quality=forgeHeatQuality(f.heat);f.impactX=clamp(pt?pt.x:targetX,151,358);f.hammerT=FORGE_RULES.hammerTime;
-  if(!hit){f.flaws++;f.impactGood=false;f.feedback='MISSED THE MARK - THE ANVIL OBJECTS';f.feedbackCol='#ff655c';SFX.forgeMiss();shake(2,.10);return false;}
-  if(quality==='cold'||quality==='hot'){
-    f.flaws++;f.impactGood=false;f.feedback=quality==='cold'?'TOO COLD - THE STEEL REFUSES':'TOO HOT - LET IT BREATHE';f.feedbackCol='#ff655c';SFX.forgeMiss();shake(3,.12);return false;
-  }
-  const ideal=quality==='ideal';f.hits++;if(ideal)f.idealHits++;else f.flaws+=.35;f.impactGood=true;
-  f.heat=Math.max(0,f.heat-FORGE_RULES.strikeLoss);f.feedback=ideal?'CLEAN STRIKE':'WORKABLE - FIND THE GOLD BAND';f.feedbackCol=ideal?'#ffe36a':'#9fd8ff';
-  SFX.forgeHit(ideal);burst(f.impactX,430,ideal?'#ffe36a':'#ff9a52',ideal?15:9,ideal?190:130);shake(ideal?4:2,.12);
-  if(f.hits>=FORGE_RULES.hits){f.stage='quench';f.target=-1;f.feedback='BLADE SHAPED - QUENCH BEFORE IT BURNS';f.feedbackCol='#7dcfff';SFX.relic();}
-  else f.target=nextForgeTarget(f.target);return true;
+  const f=forgeGame;
+  if(!f||paused||f.phase!=='playing'||f.stage!=='forging'||f.hammerT>0||
+    f.bellowsHeld||f.hearthMix>.08)return false;
+  const targetX=FORGE_TARGET_X[f.target],quality=forgeHeatQuality(f.heat),
+    hit=!!pt&&Math.hypot(pt.x-targetX,pt.y-FORGE_SCENE.bladeY)<=FORGE_RULES.targetRadius;
+  f.impactX=clamp(pt?pt.x:targetX,155,354);f.hammerT=FORGE_RULES.hammerTime;
+  // Capture the player's timing at touch-down; settle once when metal meets metal.
+  f.pendingStrike={hit,quality};f.feedback='';return hit&&quality!=='cold'&&quality!=='hot';
 }
-function strikeForgeTarget(){const f=forgeGame;if(!f)return false;return strikeForgeAt({x:FORGE_TARGET_X[Math.max(0,f.target)],y:437});}
+function settleForgeStrike(){
+  const f=forgeGame,hit=f?.pendingStrike;if(!f||!hit)return;
+  f.pendingStrike=null;f.impactAge=0;
+  if(!hit.hit||hit.quality==='cold'||hit.quality==='hot'){
+    f.flaws++;f.impactGood=false;
+    f.feedback=!hit.hit?'MISSED THE MARK':hit.quality==='cold'?'TOO COLD. BACK TO THE FIRE.':'TOO HOT. LET IT COOL.';
+    f.feedbackCol='#da8c7b';SFX.forgeMiss();return;
+  }
+  const ideal=hit.quality==='ideal';f.hits++;if(ideal)f.idealHits++;else f.flaws+=.35;
+  f.impactGood=true;f.heat=Math.max(0,f.heat-FORGE_RULES.strikeLoss);
+  f.feedback=ideal?'CLEAN STRIKE.':'WORKABLE. AIM FOR THE GOLD BAND.';
+  f.feedbackCol=ideal?'#e8cc8a':'#a5ced8';SFX.forgeHit(ideal);
+  if(f.hits>=FORGE_RULES.hits){
+    f.stage='quench';f.target=-1;f.feedback='SHAPED. FIND THE BLUE BAND, THEN QUENCH.';
+    f.feedbackCol='#9acdd7';SFX.relic();
+  }else f.target=nextForgeTarget(f.target);
+}
+function strikeForgeTarget(){
+  const f=forgeGame;if(!f)return false;
+  return strikeForgeAt({x:FORGE_TARGET_X[Math.max(0,f.target)],y:FORGE_SCENE.bladeY});
+}
 function quenchForgeBlade(){
-  const f=forgeGame;if(!f||f.phase!=='playing'||f.stage!=='quench')return false;endForgeBellowsHold();f.quenchHeat=f.heat;
-  const perfect=f.heat>=FORGE_RULES.perfectQuenchMin&&f.heat<=FORGE_RULES.perfectQuenchMax,safe=f.heat>=FORGE_RULES.quenchMin&&f.heat<=FORGE_RULES.quenchMax;
+  const f=forgeGame;
+  if(!f||paused||f.phase!=='playing'||f.stage!=='quench'||f.hammerT>0||f.bellowsHeld||f.hearthMix>.08)return false;
+  endForgeBellowsHold();f.quenchHeat=f.heat;
+  const perfect=f.heat>=FORGE_RULES.perfectQuenchMin&&f.heat<=FORGE_RULES.perfectQuenchMax,
+    safe=f.heat>=FORGE_RULES.quenchMin&&f.heat<=FORGE_RULES.quenchMax;
   f.outcome=perfect?'MASTERWORK':safe?'SERVICEABLE':f.heat>FORGE_RULES.quenchMax?'BRITTLE':'WARPED';
-  const heatScore=perfect?25:safe?15:4,shapeScore=Math.round(f.idealHits/FORGE_RULES.hits*60),careScore=Math.max(0,15-Math.round(f.flaws*4));
-  f.score=clamp(shapeScore+heatScore+careScore,0,100);f.best=Math.max(f.best,f.score);f.phase='quenching';f.phaseT=0;
-  f.feedback=perfect?'THE WATER SINGS':'THE WATER MAKES A CONCERNING NOISE';f.feedbackCol=perfect?'#ffe36a':'#9fd8ff';SFX.forgeQuench();shake(5,.22);return true;
+  const heatScore=perfect?25:safe?15:4,shapeScore=Math.round(f.idealHits/FORGE_RULES.hits*60),
+    careScore=Math.max(0,15-Math.round(f.flaws*4));
+  f.score=clamp(shapeScore+heatScore+careScore,0,100);f.best=Math.max(f.best,f.score);
+  f.phase='quenching';f.phaseT=0;f.feedback='STEADY...';f.feedbackCol='#a5ced8';return true;
 }
 function burnForgeBlade(){
-  const f=forgeGame;if(!f)return;endForgeBellowsHold();f.outcome='BURNT SLAG';f.score=0;f.phase='result';f.phaseT=0;
-  f.feedback='THE STEEL IS AN EXPENSIVE CINDER';f.feedbackCol='#ff655c';SFX.forgeBurn();shake(8,.35);
+  const f=forgeGame;if(!f)return;
+  endForgeBellowsHold();f.pendingStrike=null;f.hammerT=0;f.outcome='BURNT SLAG';
+  f.score=0;f.phase='result';f.phaseT=0;f.feedback='WELL. THAT WAS ONCE A SWORD.';
+  f.feedbackCol='#da8c7b';SFX.forgeBurn();
 }
 function blacksmithTap(pt){
-  const f=forgeGame;if(!f)return;if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveBlacksmith();return;}
+  const f=forgeGame;if(!f||paused)return;
+  if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveBlacksmith();return;}
   if((f.phase==='intro'||f.phase==='result')&&pointInRect(pt,FORGE_START_BTN)){beginBlacksmithRun();return;}
-  if(f.phase!=='playing')return;if(f.stage==='quench'&&pointInRect(pt,FORGE_VAT_RECT)){quenchForgeBlade();return;}
+  if(f.phase!=='playing')return;
+  if(f.stage==='quench'&&pointInRect(pt,FORGE_VAT_RECT)){quenchForgeBlade();return;}
   if(f.stage==='forging'&&pointInRect(pt,FORGE_BLADE_RECT))strikeForgeAt(pt);
 }
 function updateBlacksmith(dt){
-  const f=forgeGame;if(!f)return;f.phaseT+=dt;f.hammerT=Math.max(0,f.hammerT-dt);
+  const f=forgeGame;if(!f||paused)return;
+  const beforePhase=f.phaseT;f.phaseT+=dt;f.sceneT+=dt;f.impactAge+=dt;
+  f.hammerT=Math.max(0,f.hammerT-dt);
+  if(f.pendingStrike&&f.hammerT<=FORGE_RULES.hammerTime*(1-FORGE_RULES.impactAt))settleForgeStrike();
   if(f.phase==='playing'){
-    if(f.bellowsHeld){f.heat=Math.min(1.08,f.heat+FORGE_RULES.heatGain*dt);const before=f.bellowsBeat;f.bellowsPhase+=dt*4.8;f.bellowsBeat=Math.floor(f.bellowsPhase);if(f.bellowsBeat!==before)SFX.forgeBellows();}
-    else f.heat=Math.max(0,f.heat-FORGE_RULES.coolRate*dt);
-    if(f.stage==='heating'&&f.heat>=FORGE_RULES.workMin){f.stage='forging';f.target=nextForgeTarget();f.feedback='STEEL READY - STRIKE THE GLOWING MARK';f.feedbackCol='#ffe36a';SFX.relic();}
-    if(f.heat>=FORGE_RULES.overheat)f.overheatT+=dt;else f.overheatT=Math.max(0,f.overheatT-dt*2.5);if(f.overheatT>=FORGE_RULES.overheatGrace)burnForgeBlade();
-  }else if(f.phase==='quenching'&&f.phaseT>=FORGE_RULES.quenchTime){f.phase='result';f.phaseT=0;}
+    if(f.bellowsHeld){
+      f.heat=Math.min(1.08,f.heat+FORGE_RULES.heatGain*dt);
+      const before=f.bellowsBeat;f.bellowsPhase+=dt*1.8;f.bellowsBeat=Math.floor(f.bellowsPhase);
+      if(f.bellowsBeat!==before)SFX.forgeBellows();
+    }else f.heat=Math.max(0,f.heat-FORGE_RULES.coolRate*dt);
+    if(f.stage==='heating'&&f.heat>=FORGE_RULES.workMin){
+      f.stage='forging';f.target=nextForgeTarget();f.feedback='RELEASE THE BELLOWS. STRIKE THE MARK.';
+      f.feedbackCol='#e8cc8a';SFX.relic();
+    }
+    if(f.heat>=FORGE_RULES.overheat)f.overheatT+=dt;else f.overheatT=Math.max(0,f.overheatT-dt*2.5);
+    if(f.overheatT>=FORGE_RULES.overheatGrace)burnForgeBlade();
+  }else if(f.phase==='quenching'){
+    if(beforePhase<.55&&f.phaseT>=.55)SFX.forgeQuench();
+    f.heat=lerp(f.quenchHeat,.12,smoothStep(clamp((f.phaseT-.55)/.7,0,1)));
+    if(f.phaseT>=FORGE_RULES.quenchTime){f.phase='result';f.phaseT=0;}
+  }
+  const toFire=f.phase==='playing'&&(f.stage==='heating'||f.bellowsHeld)?1:0;
+  f.hearthMix=lerp(f.hearthMix,toFire,1-Math.exp(-dt*9));
 }
 function forgeSteelColor(heat){
-  if(heat<.22)return mixCol('#59616a','#9ca4aa',heat/.22);if(heat<.50)return mixCol('#9ca4aa','#c94428',(heat-.22)/.28);
-  if(heat<.78)return mixCol('#c94428','#ff9b3d',(heat-.50)/.28);return mixCol('#ff9b3d','#fff4bd',clamp((heat-.78)/.24,0,1));
+  if(heat<.22)return mixCol('#596b75','#a4b8bf',heat/.22);
+  if(heat<.50)return mixCol('#a4b8bf','#c9633c',(heat-.22)/.28);
+  if(heat<.78)return mixCol('#c9633c','#f4ad55',(heat-.50)/.28);
+  return mixCol('#f4ad55','#fff0bb',clamp((heat-.78)/.24,0,1));
 }
-function drawForgeFurnace(){
-  g.fillStyle='#252126';g.fillRect(16,180,137,300);g.strokeStyle='#5d4a42';g.lineWidth=8;g.strokeRect(16,180,137,300);
-  g.fillStyle='#08080a';g.beginPath();g.moveTo(37,454);g.lineTo(37,277);g.quadraticCurveTo(84,215,132,277);g.lineTo(132,454);g.closePath();g.fill();
-  g.fillStyle='#ff4d1f';g.beginPath();g.moveTo(42,449);g.quadraticCurveTo(55,365,74,420);g.quadraticCurveTo(87,328,101,415);g.quadraticCurveTo(119,356,129,449);g.fill();
-  g.fillStyle='#ffd65a';g.beginPath();g.moveTo(55,450);g.quadraticCurveTo(72,382,84,434);g.quadraticCurveTo(97,367,115,450);g.fill();
-  g.globalAlpha=.6;g.fillStyle='#ff9a3d';for(let i=0;i<10;i++){const x=48+sRnd(i*31)*72,y=250+((perfNow*(55+i*3)+i*67)%185);g.fillRect(x,y,2+(i%2),5);}g.globalAlpha=1;
-  g.fillStyle='#453731';g.fillRect(8,459,153,24);g.strokeStyle='#776056';g.strokeRect(8,459,153,24);
+function forgeWorkpiecePose(f){
+  const q=f.phase==='quenching'?smoothStep(clamp(f.phaseT/.55,0,1))*
+    (1-smoothStep(clamp((f.phaseT-1.1)/.5,0,1))):0,
+    fire=f.hearthMix;
+  return {x:lerp(lerp(256,77,fire),334,q),y:lerp(lerp(FORGE_SCENE.bladeY,327,fire),478,q),
+    scale:lerp(lerp(1,.23,fire),.75,q),angle:q*1.05,fire,q};
 }
-function drawForgeMaster(){
-  const nod=Math.sin(perfNow*1.7)*2;g.save();g.translate(384,315+nod);g.fillStyle='#3a2420';g.beginPath();g.moveTo(-49,27);g.lineTo(47,27);g.lineTo(60,165);g.lineTo(-57,165);g.closePath();g.fill();
-  g.fillStyle='#bd7950';g.beginPath();g.arc(0,0,34,0,TAU);g.fill();g.fillStyle='#5b3022';g.beginPath();g.moveTo(-31,7);g.lineTo(0,50);g.lineTo(31,7);g.quadraticCurveTo(0,30,-31,7);g.fill();
-  g.strokeStyle='#251716';g.lineWidth=5;g.beginPath();g.moveTo(-18,-4);g.lineTo(-6,-8);g.moveTo(18,-4);g.lineTo(6,-8);g.stroke();g.fillStyle='#2a292e';g.fillRect(-39,-39,78,16);g.fillRect(-27,-62,54,24);
-  g.fillStyle='#d7c3a4';g.font='bold 9px monospace';g.textAlign='center';g.fillText('MASTER CINDERS',0,87);g.fillStyle='#ffb45e';g.fillText('JUDGING SILENTLY',0,103);g.restore();
+function forgeWorkpiecePoint(work,x,y){
+  const dx=(x-256)*work.scale,dy=(y-FORGE_SCENE.bladeY)*work.scale;
+  return {x:work.x+dx*Math.cos(work.angle)-dy*Math.sin(work.angle),
+    y:work.y+dx*Math.sin(work.angle)+dy*Math.cos(work.angle)};
+}
+function forgeArmPose(sx,sy,hx,hy,side){
+  const dx=hx-sx,dy=hy-sy,d=Math.max(.001,Math.hypot(dx,dy)),length=Math.max(18.8,d*.51),
+    bend=Math.sqrt(Math.max(0,length*length-d*d*.25));
+  return {sx,sy,hx,hy,ex:(sx+hx)*.5+side*dy/d*bend,ey:(sy+hy)*.5-side*dx/d*bend};
+}
+function forgeSmithPose(f){
+  const pose=smithKnightPose(f.sceneT,0,0,false,false,0),factor=.62*U*FORGE_SCENE.smithScale,
+    work=forgeWorkpiecePose(f),grip=forgeWorkpiecePoint(work,151,FORGE_SCENE.bladeY),
+    leftWorld={x:lerp(grip.x-26,111,work.fire),y:lerp(grip.y-19,364,work.fire)};
+  pose.bodyX=0;pose.bodyY=Math.sin(f.sceneT*1.6)*.16;pose.lean=0;pose.hop=0;
+  pose.left=forgeArmPose(-16,3,(leftWorld.x-FORGE_SCENE.smithX)/factor,
+    (leftWorld.y-FORGE_SCENE.smithY)/factor-pose.bodyY,-1);
+  const resting={hx:20+Math.sin(f.sceneT*.8)*.35,hy:24,angle:2.55},
+    raised={hx:23,hy:-13,angle:4.58},
+    contact={hx:(f.impactX-FORGE_SCENE.smithX)/factor-7.55*Math.cos(2.55),
+      hy:(FORGE_SCENE.bladeY-FORGE_SCENE.smithY)/factor-pose.bodyY-7.55*Math.sin(2.55),angle:2.55};
+  let hand=resting;
+  if(f.hammerT>0){
+    const t=1-f.hammerT/FORGE_RULES.hammerTime;
+    let a,b,k;
+    if(t<.38){a=resting;b=raised;k=smoothStep(t/.38);}
+    else if(t<FORGE_RULES.impactAt){a=raised;b=contact;k=Math.pow((t-.38)/(FORGE_RULES.impactAt-.38),3);}
+    else{a=contact;b=resting;k=smoothStep((t-FORGE_RULES.impactAt)/(1-FORGE_RULES.impactAt));}
+    hand={hx:lerp(a.hx,b.hx,k),hy:lerp(a.hy,b.hy,k),angle:lerp(a.angle,b.angle,k)};
+  }
+  pose.right=forgeArmPose(16,3,hand.hx,hand.hy,1);
+  pose.hammerAngle=hand.angle;pose.openGrip=f.hammerT>0?0:1;pose.drop=true;
+  if(f.phase==='result'){
+    const reaction=Math.sin(clamp(f.phaseT/1.5,0,1)*Math.PI);
+    pose.headTilt+=(f.outcome==='MASTERWORK'?-.06:.13)*reaction;
+    pose.headDrop=f.outcome==='BURNT SLAG'?reaction*1.6:0;
+    pose.chest+=f.outcome==='MASTERWORK'?reaction*.02:0;
+  }
+  return pose;
+}
+function forgeHandWorld(pose,arm){
+  const k=.62*U*FORGE_SCENE.smithScale;
+  return {x:FORGE_SCENE.smithX+(pose.bodyX+arm.hx)*k,y:FORGE_SCENE.smithY+(pose.bodyY+arm.hy)*k};
 }
 function drawForgeArena(){
-  const f=forgeGame,p=MINIGAME_ARENA_PALETTES[f&&f.stageId]||MINIGAME_ARENA_PALETTES.forest;g.fillStyle='#100f12';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  const glow=g.createRadialGradient(92,330,15,92,330,300);glow.addColorStop(0,'#ff7a2d55');glow.addColorStop(1,'#00000000');g.fillStyle=glow;g.fillRect(0,70,480,600);
-  g.fillStyle=shade(p.stoneDark,-8);g.fillRect(0,112,VW,430);g.strokeStyle='#3c3130';g.lineWidth=2;for(let y=120;y<540;y+=34)for(let x=-20+((y/34|0)%2)*28;x<VW;x+=58)g.strokeRect(x,y,58,34);
-  g.fillStyle='#211a19';g.fillRect(0,509,VW,245);g.fillStyle='#392821';for(let i=0;i<13;i++)g.fillRect((i*79)%480,535+(i*47)%210,45,5);drawForgeFurnace();drawForgeMaster();
+  const scale=Math.max(1,viewScale)*1.18,key=[scale,PAD_TOP,PAD_BOT].join(':');
+  if(!forgeArenaCache||forgeArenaCache.key!==key){
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;
+    try{
+      g=canvas.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);
+      g.fillStyle='#17282e';g.fillRect(0,-PAD_TOP,480,800+PAD_TOT);
+      g.save();g.translate(0,136);g.scale(2,2);drawSmithForgeBackdrop();g.restore();
+      townInk([[0,408],[480,408],[480,800+PAD_BOT],[0,800+PAD_BOT]],'#3c352d');
+      townInk([[0,408],[480,408],[480,431],[0,431]],'#544432');
+      for(let i=0;i<8;i++){
+        const x=i*69-40;
+        townStroke([[200+(x-200)*.35,410],[x,800+PAD_BOT]],'#302d29',1.5);
+      }
+      for(const y of [480,574,705])townStroke([[0,y],[480,y]],'#4e4132',1);
+      // Fixed, connected duct from the floor bellows into the hearth.
+      townStroke([[78,566],[39,523],[33,411],[40,372]],'#1d2a2d',14);
+      townStroke([[78,566],[39,523],[33,411],[40,372]],'#697776',8);
+      townStroke([[73,566],[35,523],[29,411],[36,372]],'#a0aba1',1.5);
+      townInk([[121,548],[319,548],[349,605],[90,605]],'#2b2c28');
+    }finally{g=live;}
+    forgeArenaCache={key,canvas};
+  }
+  g.save();g.imageSmoothingEnabled=true;g.drawImage(forgeArenaCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+  const f=forgeGame,t=f.sceneT,heat=f.heat,P=townInk;
+  // Low-poly flames remain inside the actual shop hearth, not a screen glow.
+  g.fillStyle='#71352b';g.fillRect(39,293,55,68);
+  for(let i=0;i<5;i++){
+    const x=42+i*10,top=324-heat*19-Math.sin(t*4+i*2)*7;
+    P([[x,359],[x,top+15],[x+4,top],[x+10,top+24],[x+10,359]],i%2?'#ef963f':'#c95c32');
+    P([[x+3,359],[x+5,top+25],[x+8,top+33],[x+8,359]],'#f4d48a');
+  }
 }
 function drawForgeAnvil(){
-  g.fillStyle='#16191d';g.beginPath();g.moveTo(110,455);g.lineTo(368,455);g.lineTo(391,476);g.lineTo(337,490);g.lineTo(143,490);g.lineTo(89,476);g.closePath();g.fill();
-  g.fillStyle='#4a5057';g.beginPath();g.moveTo(91,445);g.lineTo(386,445);g.lineTo(357,468);g.lineTo(126,468);g.closePath();g.fill();g.fillStyle='#24282d';g.fillRect(196,467,91,101);
-  g.beginPath();g.moveTo(180,568);g.lineTo(303,568);g.lineTo(337,626);g.lineTo(145,626);g.closePath();g.fill();g.fillStyle='#68717a';g.fillRect(122,449,232,5);
+  const P=townInk;
+  P([[199,494],[290,489],[316,515],[314,594],[204,602],[183,584],[184,516]],'#523b2b');
+  P([[199,494],[290,489],[316,515],[220,529],[184,516]],'#b68c54');
+  P([[220,529],[316,515],[314,594],[220,602]],'#795134');
+  for(const x of [225,249,280,306])townStroke([[x,532],[x-2,590]],'#986b3f',2);
+  P([[194,553],[316,543],[316,553],[196,565]],'#34464c');
+  for(const x of [215,253,300]){g.fillStyle='#b0b6a1';g.fillRect(x,553-(x-215)*.09,3,3);}
+  P([[112,439],[344,439],[392,420],[378,450],[318,468],[287,478],[277,505],[295,515],[294,528],[207,528],[207,513],[224,503],[218,478],[135,466],[104,451]],'#3b5663');
+  P([[112,433],[340,433],[392,420],[359,442],[115,444],[103,439]],'#c1d3d4');
+  P([[115,444],[359,442],[348,450],[119,452]],'#8ba7b1');
+  P([[318,468],[287,478],[277,505],[295,515],[294,528],[273,524],[259,508],[266,478]],'#233e4c');
+  P([[224,481],[240,484],[235,504],[218,512],[210,514]],'#8fa6ac');
+  P([[207,518],[275,517],[294,528],[207,528]],'#8ea3a6');
+  g.fillStyle='#3c525b';g.fillRect(122,437,12,3);
 }
 function drawForgeBellows(){
-  const f=forgeGame,pump=f.bellowsHeld?(Math.sin(f.bellowsPhase*TAU)*.5+.5):.72,top=554+pump*16;g.fillStyle='#121317dd';g.fillRect(11,523,155,147);g.strokeStyle=f.bellowsHeld?'#ff9a3d':'#6c6259';g.lineWidth=3;g.strokeRect(11,523,155,147);
-  g.fillStyle='#6b3d2b';g.beginPath();g.moveTo(39,610);g.lineTo(133,610);g.lineTo(122,top);g.lineTo(50,top);g.closePath();g.fill();g.strokeStyle='#b07245';g.lineWidth=5;g.stroke();
-  g.fillStyle='#9a6339';g.fillRect(32,top-9,107,12);g.fillRect(33,612,106,11);g.strokeStyle='#d7a56c';g.lineWidth=3;for(let x=53;x<129;x+=23){g.beginPath();g.moveTo(x,top+4);g.lineTo(x-6,606);g.stroke();}
-  g.fillStyle='#b9c0c5';g.beginPath();g.moveTo(133,580);g.lineTo(174,570);g.lineTo(174,589);g.lineTo(133,594);g.closePath();g.fill();g.font='bold 11px monospace';g.textAlign='center';g.fillStyle=f.bellowsHeld?'#ffe36a':'#d7d0c2';g.fillText(f.bellowsHeld?'PUMPING':'HOLD BELLOWS',88,649);
+  const f=forgeGame,pump=f.bellowsHeld?(Math.sin(f.bellowsPhase*TAU)+1)*.5:.8,top=555+pump*15,P=townInk;
+  P([[26,627],[112,627],[122,635],[18,635]],'#252b2c');
+  P([[30,top],[101,top-7],[113,622],[24,622]],'#643b32');
+  P([[30,top],[57,top-2],[52,621],[24,622]],'#986349');
+  for(let i=0;i<4;i++){const y=lerp(top+8,616,i/3);townStroke([[27,y],[65,y+3],[110,y-5]],'#c5915b',1.5);}
+  P([[25,top-8],[102,top-14],[115,top-6],[34,top+2]],'#c09a61');
+  P([[34,top+2],[115,top-6],[114,top],[34,top+8]],'#775435');
+  P([[23,621],[111,617],[117,627],[23,630]],'#b68c54');
+  townStroke([[51,top-11],[53,top-19],[82,top-21],[85,top-13]],'#d5ba84',4);
+  smithText(f.bellowsHeld?'PUMPING':'HOLD',72,651,11,f.bellowsHeld?'#f1d18a':'#c5b99b');
 }
-function drawForgeVat(){
-  const f=forgeGame,steam=f.phase==='quenching'?clamp(1-f.phaseT/FORGE_RULES.quenchTime,0,1):0;g.fillStyle='#11151add';g.fillRect(323,517,151,153);g.strokeStyle=f.stage==='quench'&&f.phase==='playing'?'#7dcfff':'#5e6870';g.lineWidth=3;g.strokeRect(323,517,151,153);
-  g.fillStyle='#313c44';g.beginPath();g.moveTo(341,562);g.lineTo(457,562);g.lineTo(446,639);g.lineTo(352,639);g.closePath();g.fill();g.strokeStyle='#788892';g.lineWidth=6;g.stroke();
-  g.fillStyle='#39758b';g.globalAlpha=.8;g.beginPath();g.ellipse(399,568,57,13,0,0,TAU);g.fill();g.globalAlpha=1;
-  if(steam>0){g.strokeStyle='#dffaff';g.lineWidth=7;g.globalAlpha=steam;for(let i=0;i<7;i++){const x=359+i*13,y=554-((perfNow*70+i*27)%90);g.beginPath();g.moveTo(x,560);g.bezierCurveTo(x-13,y+60,x+15,y+30,x-4,y);g.stroke();}g.globalAlpha=1;}
-  g.font='bold 11px monospace';g.textAlign='center';g.fillStyle=f.stage==='quench'&&f.phase==='playing'?'#9feaff':'#b9c4ca';g.fillText(f.stage==='quench'?'TAP TO QUENCH':'QUENCH VAT',399,657);
+function drawForgeVat(front=false){
+  const P=townInk;
+  if(!front){
+    P([[344,550],[355,535],[441,535],[459,550],[449,572],[354,572]],'#aebcbd');
+    P([[351,550],[362,542],[436,542],[451,551],[440,567],[363,567]],'#294956');
+    P([[355,552],[366,546],[435,546],[445,553],[436,563],[364,563]],'#51818a');
+    townStroke([[369,548],[410,548]],'#abd3cf',1.5);
+    return;
+  }
+  P([[344,555],[365,571],[440,569],[459,552],[447,626],[359,635]],'#44606a');
+  P([[344,555],[365,571],[374,632],[359,635]],'#789198');
+  P([[365,571],[440,569],[447,626],[374,632]],'#304a58');
+  townStroke([[365,574],[441,572],[449,564]],'#b0c5c4',3);
+  townStroke([[357,612],[374,620],[449,613]],'#a1afa6',4);
+  for(const x of [371,440]){g.fillStyle='#d1c5a2';g.fillRect(x,580,3,3);g.fillRect(x,615,3,3);}
+  smithText(forgeGame.stage==='quench'?'QUENCH':'WATER',400,651,11,forgeGame.stage==='quench'?'#a7d8df':'#aebcb8');
 }
-function drawForgeBladeAndTongs(){
-  const f=forgeGame,shape=clamp(f.hits/FORGE_RULES.hits,0,1),q=f.phase==='quenching'?easeOut(clamp(f.phaseT/.72,0,1)):0;g.save();g.translate(q*149,q*130);g.translate(250,440);g.rotate(q*.78);g.translate(-250,-440);
-  g.strokeStyle='#1b1d20';g.lineWidth=11;g.lineCap='round';g.beginPath();g.moveTo(23,430);g.lineTo(154,437);g.moveTo(24,466);g.lineTo(154,443);g.stroke();g.strokeStyle='#687078';g.lineWidth=3;g.beginPath();g.moveTo(27,430);g.lineTo(153,437);g.moveTo(27,466);g.lineTo(153,443);g.stroke();
-  g.fillStyle='#17191c';g.fillRect(139,426,23,31);g.strokeStyle='#8a9399';g.lineWidth=4;g.strokeRect(139,426,23,31);
-  const cy=439,top=lerp(421,429,shape),bottom=lerp(457,449,shape),tipX=lerp(345,374,shape),col=forgeSteelColor(f.heat);g.shadowColor=f.heat>.35?col:'#0000';g.shadowBlur=f.heat>.35?12+f.heat*18:0;
-  g.fillStyle=col;g.beginPath();g.moveTo(156,top);g.lineTo(323,top+shape*3);g.lineTo(tipX,cy);g.lineTo(323,bottom-shape*3);g.lineTo(156,bottom);g.closePath();g.fill();g.shadowBlur=0;g.strokeStyle=shade(col,-45);g.lineWidth=3;g.stroke();
-  g.strokeStyle='#fff6d0';g.globalAlpha=clamp((f.heat-.45)*1.8,0,.75);g.lineWidth=2;g.beginPath();g.moveTo(168,top+5);g.lineTo(321,top+7);g.stroke();g.globalAlpha=1;
-  if(f.phase==='playing'&&f.stage==='forging'&&f.target>=0){const tx=FORGE_TARGET_X[f.target],pulse=.5+.5*Math.sin(perfNow*8);g.strokeStyle='#fff3a1';g.lineWidth=3;g.beginPath();g.arc(tx,cy,18+pulse*7,0,TAU);g.stroke();g.strokeStyle='#ff7b35';g.lineWidth=2;g.beginPath();g.arc(tx,cy,8+pulse*3,0,TAU);g.stroke();g.fillStyle='#fff7c2';g.font='bold 9px monospace';g.textAlign='center';g.fillText('STRIKE',tx,cy-31);}g.restore();
+function drawForgeBladeAndTongs(pose){
+  const f=forgeGame,w=forgeWorkpiecePose(f),grip=forgeWorkpiecePoint(w,151,FORGE_SCENE.bladeY),
+    hand=forgeHandWorld(pose,pose.left),P=townInk,shape=clamp(f.hits/FORGE_RULES.hits,0,1);
+  // Both tong jaws really end at the held billet; the grip belongs to his left hand.
+  townStroke([[hand.x-4,hand.y-2],[grip.x-9,grip.y-6],[grip.x+4,grip.y-7]],'#293f49',5);
+  townStroke([[hand.x+4,hand.y+2],[grip.x-7,grip.y+7],[grip.x+5,grip.y+7]],'#92a8ae',3);
+  g.save();g.translate(w.x,w.y);g.rotate(w.angle);g.scale(w.scale,w.scale);g.translate(-256,-FORGE_SCENE.bladeY);
+  const top=lerp(421,429,shape),bottom=lerp(454,445,shape),tip=lerp(347,373,shape),
+    color=f.outcome==='BURNT SLAG'?'#48413b':forgeSteelColor(f.heat);
+  P([[154,top],[322,top+shape*2],[tip,437],[322,bottom-shape*2],[154,bottom]],color);
+  P([[154,top],[322,top+shape*2],[tip,437],[322,435],[154,435]],shade(color,22));
+  P([[154,442],[322,441],[tip,437],[322,bottom-shape*2],[154,bottom]],shade(color,-36));
+  townStroke([[164,top+3],[321,top+shape*2+3]],shade(color,44),1.2);
+  g.restore();
+  if(f.phase==='playing'&&f.stage==='forging'&&!f.bellowsHeld&&f.hearthMix<.08&&f.hammerT<=0){
+    const x=FORGE_TARGET_X[f.target],size=10+Math.sin(f.sceneT*5)*1.5;
+    townStroke([[x-size,430],[x-size,423],[x+size,423],[x+size,430]],'#fff0b6',2);
+    townStroke([[x-size,446],[x-size,453],[x+size,453],[x+size,446]],'#fff0b6',2);
+    P([[x,433],[x+4,437],[x,441],[x-4,437]],'#fff1bf');
+  }
 }
-function drawForgeHammer(){
-  const f=forgeGame;if(f.phase!=='playing'||f.stage==='heating')return;const active=f.hammerT>0,progress=active?1-f.hammerT/FORGE_RULES.hammerTime:0,swing=active?(progress<.62?easeOut(progress/.62):1-(progress-.62)/.38*.55):0,angle=lerp(-1.05,0,swing),x=active?f.impactX:FORGE_TARGET_X[Math.max(0,f.target)];
-  g.save();g.translate(x,325);g.rotate(angle);g.strokeStyle='#251713';g.lineWidth=14;g.lineCap='round';g.beginPath();g.moveTo(0,0);g.lineTo(0,112);g.stroke();g.strokeStyle='#8a5130';g.lineWidth=8;g.beginPath();g.moveTo(0,0);g.lineTo(0,112);g.stroke();g.fillStyle='#25292e';g.fillRect(-34,91,68,35);g.strokeStyle='#090a0c';g.lineWidth=4;g.strokeRect(-34,91,68,35);g.fillStyle='#879199';g.fillRect(-28,96,56,8);g.restore();
-  if(active&&progress>.48&&progress<.76){g.globalAlpha=1-Math.abs(progress-.62)/.14;g.fillStyle=f.impactGood?'#fff4bd':'#ff765e';g.beginPath();g.arc(f.impactX,434,24,0,TAU);g.fill();g.globalAlpha=1;}
+function drawForgeHammer(pose){
+  const k=.62*FORGE_SCENE.smithScale;
+  g.save();g.translate(FORGE_SCENE.smithX+pose.bodyX*U*k,FORGE_SCENE.smithY+pose.bodyY*U*k);
+  g.scale(k,k);drawSmithHammer(pose.right.hx,pose.right.hy,pose.hammerAngle);g.restore();
+  const f=forgeGame,age=f.impactAge;
+  if(age<.38){
+    for(let i=0;i<8;i++){
+      const dx=Math.cos(i*2.1)*age*90,dy=-Math.abs(Math.sin(i*2.1))*age*100+age*age*120;
+      g.fillStyle=f.impactGood?(i%2?'#e3aa58':'#ffebad'):'#a7b7ba';
+      g.fillRect(f.impactX+dx,FORGE_SCENE.bladeY+dy,2,2);
+    }
+  }
 }
 function drawForgeHeatMeter(){
-  const f=forgeGame,x=438,y=213,w=24,h=266,marker=y+h*(1-clamp(f.heat,0,1));g.fillStyle='#0a0b0edd';g.fillRect(x-12,y-36,w+24,h+69);g.strokeStyle='#5d6269';g.lineWidth=2;g.strokeRect(x-12,y-36,w+24,h+69);
-  const grad=g.createLinearGradient(0,y+h,0,y);grad.addColorStop(0,'#4c5861');grad.addColorStop(.34,'#a83b2c');grad.addColorStop(.58,'#ff7b35');grad.addColorStop(.76,'#ffd45c');grad.addColorStop(1,'#fffbe0');g.fillStyle=grad;g.fillRect(x,y,w,h);
-  g.strokeStyle='#7df078';g.lineWidth=3;g.strokeRect(x-3,y+h*(1-FORGE_RULES.workMax),w+6,h*(FORGE_RULES.workMax-FORGE_RULES.workMin));g.fillStyle=f.heat>=FORGE_RULES.overheat?'#ff394e':'#ffffff';
-  g.beginPath();g.moveTo(x-9,marker);g.lineTo(x-1,marker-6);g.lineTo(x-1,marker+6);g.fill();g.beginPath();g.moveTo(x+w+9,marker);g.lineTo(x+w+1,marker-6);g.lineTo(x+w+1,marker+6);g.fill();
-  g.font='bold 8px monospace';g.textAlign='center';g.fillStyle='#e8e2d0';g.fillText('HEAT',450,y-23);g.fillStyle='#7df078';g.fillText('WORK',450,y+h*(1-FORGE_RULES.workMax)-7);g.fillStyle='#ff655c';g.fillText('BURN',450,y-10);
+  const f=forgeGame,x=142,y=595,w=185,h=15,quench=f.stage==='quench',
+    lo=quench?FORGE_RULES.perfectQuenchMin:FORGE_RULES.workMin,
+    hi=quench?FORGE_RULES.perfectQuenchMax:FORGE_RULES.workMax;
+  townInk([[132,579],[334,579],[341,635],[126,635]],'#2b302e');
+  townStroke([[132,579],[334,579],[341,635],[126,635],[132,579]],'#90744c',1.5);
+  smithText(quench?'TEMPERING HEAT':'STEEL HEAT',234,590,9,'#d8bf8b');
+  for(let i=0;i<24;i++){g.fillStyle=forgeSteelColor(i/23);g.fillRect(x+i*w/24,y,w/24-1,h);}
+  g.strokeStyle=quench?'#9bd6df':'#f2d291';g.lineWidth=2;g.strokeRect(x+lo*w,y-2,(hi-lo)*w,h+4);
+  const marker=x+clamp(f.heat,0,1)*w;
+  townInk([[marker-4,y-8],[marker+4,y-8],[marker,y-3]],'#f3e8c9');
+  smithText(Math.round(f.heat*100)+'%  '+(f.heat>=FORGE_RULES.danger?'TOO HOT':forgeHeatQuality(f.heat).toUpperCase()),234,627,10,
+    f.heat>=FORGE_RULES.danger?'#e49a80':'#d8cfb8');
 }
 function drawBlacksmithPreview(r){
-  g.fillStyle='#241b18';g.fillRect(r.x+3,r.y+3,r.w-6,105);const glow=g.createRadialGradient(r.x+r.w*.3,r.y+62,4,r.x+r.w*.3,r.y+62,55);glow.addColorStop(0,'#ffcf5a');glow.addColorStop(1,'#ff4d1f00');g.fillStyle=glow;g.fillRect(r.x+3,r.y+3,r.w-6,105);
-  g.fillStyle='#42484e';g.beginPath();g.moveTo(r.x+18,r.y+73);g.lineTo(r.x+r.w-16,r.y+73);g.lineTo(r.x+r.w-38,r.y+91);g.lineTo(r.x+35,r.y+91);g.closePath();g.fill();
-  g.strokeStyle='#382319';g.lineWidth=6;g.beginPath();g.moveTo(r.x+r.w*.68,r.y+16);g.lineTo(r.x+r.w*.56,r.y+72);g.stroke();g.fillStyle='#70777c';g.fillRect(r.x+r.w*.48,r.y+17,r.w*.28,13);
-  g.fillStyle='#ff9a3d';g.shadowColor='#ff5a24';g.shadowBlur=10;g.beginPath();g.moveTo(r.x+27,r.y+66);g.lineTo(r.x+r.w-34,r.y+66);g.lineTo(r.x+r.w-18,r.y+72);g.lineTo(r.x+27,r.y+77);g.closePath();g.fill();g.shadowBlur=0;g.fillStyle='#ffe36a';g.font='bold 9px monospace';g.textAlign='center';g.fillText('CLANG!',r.x+r.w/2,r.y+101);
+  g.save();g.beginPath();g.rect(r.x+3,r.y+3,r.w-6,105);g.clip();
+  g.translate(r.x+3,r.y+3);g.scale((r.w-6)/240,105/140);
+  drawSmithForgeBackdrop();drawSmithKnight(111,43,0,0,false,0,false,null,null,0);
+  g.restore();
 }
 function drawBlacksmithGame(){
-  const f=forgeGame;if(!f)return;drawForgeArena();drawForgeAnvil();drawForgeBellows();drawForgeVat();drawForgeBladeAndTongs();drawForgeHammer();drawForgeHeatMeter();
-  g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
-  g.fillStyle='#090b0ee8';g.fillRect(136,85,208,84);g.strokeStyle='#ff9a3d';g.lineWidth=2;g.strokeRect(136,85,208,84);g.font='bold 11px monospace';g.fillStyle='#d7d0c2';g.fillText('BLADE SHAPE',240,108);
-  for(let i=0;i<FORGE_RULES.hits;i++){g.fillStyle=i<f.hits?(i<f.idealHits?'#ffe36a':'#ff9a52'):'#34383e';g.fillRect(166+i*17,122,12,13);}g.font='bold 9px monospace';g.fillStyle='#aeb5bd';g.fillText('FLAWS '+Math.ceil(f.flaws),240,156);
+  const f=forgeGame;if(!f)return;
+  drawForgeArena();const pose=forgeSmithPose(f);
+  townInk([[151,489],[204,478],[278,479],[301,490],[274,500],[163,500]],'#292e29');
+  g.save();g.translate(FORGE_SCENE.smithX,FORGE_SCENE.smithY);g.scale(FORGE_SCENE.smithScale,FORGE_SCENE.smithScale);
+  drawSmithKnight(0,0,0,0,false,0,false,null,pose,f.sceneT);g.restore();
+  drawForgeAnvil();drawForgeBellows();drawForgeVat(false);drawForgeBladeAndTongs(pose);drawForgeVat(true);drawForgeHammer(pose);
+  if(f.phase==='quenching'&&f.phaseT>.55&&f.phaseT<1.4){
+    const steam=1-Math.abs(f.phaseT-.9)/.5;
+    for(let i=0;i<5;i++){const y=550-((f.sceneT*43+i*17)%65),x=364+i*15;
+      g.globalAlpha=Math.max(0,steam)*.6;townInk([[x,y+18],[x-4,y+8],[x+1,y],[x+6,y-1],[x+3,y+10],[x+7,y+17]],'#c8dfda');}
+    g.globalAlpha=1;
+  }
+  drawForgeHeatMeter();
+  drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
+  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
+  smithText('THE LITTLE HAMMER',240,110,23,'#ecd29c',325);
+  smithText('SHAPED '+f.hits+' / '+FORGE_RULES.hits+'   ·   FLAWS '+Math.ceil(f.flaws),240,131,10,'#aec1c0');
+  townInk([[20,667],[460,667],[455,725],[25,725]],'#222e31');
+  townStroke([[25,668],[456,668]],'#846944',1);
   if(f.phase==='intro'){
-    g.fillStyle='#080a0ef2';g.fillRect(27,454,426,196);g.strokeStyle='#ff9a3d';g.lineWidth=3;g.strokeRect(27,454,426,196);g.font='bold 25px monospace';g.fillStyle='#ffe36a';g.fillText('MASTER CINDERS',240,489);g.font='10px monospace';g.fillStyle='#e8e2d0';g.fillText('1. Hold the bellows and heat steel into the green band.',240,522);g.fillText('2. Strike each glowing mark to shape the blade.',240,547);g.fillText('3. Keep the heat alive between hammer blows.',240,572);g.fillStyle='#9feaff';g.fillText('When finished, tap the water before the steel burns.',240,600);
-    g.fillStyle='#35251d';g.fillRect(FORGE_START_BTN.x,FORGE_START_BTN.y,FORGE_START_BTN.w,FORGE_START_BTN.h);g.strokeStyle='#ffe36a';g.strokeRect(FORGE_START_BTN.x,FORGE_START_BTN.y,FORGE_START_BTN.w,FORGE_START_BTN.h);g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('LIGHT THE FORGE',240,696);
-  }else if(f.phase==='playing'){
-    g.fillStyle='#080a0ee8';g.fillRect(163,675,274,55);g.strokeStyle=f.feedbackCol;g.lineWidth=2;g.strokeRect(163,675,274,55);g.font='bold 10px monospace';g.fillStyle=f.feedbackCol;g.fillText(f.feedback,300,698);g.font='8px monospace';g.fillStyle='#d7d0c2';g.fillText(f.stage==='heating'?'HOLD BELLOWS':f.stage==='quench'?'TAP THE WATER VAT':'TAP THE GLOWING STRIKE MARK',300,717);
-    if(f.heat>=FORGE_RULES.danger){g.fillStyle='#ff3b2f';g.globalAlpha=.12+.08*Math.sin(perfNow*12);g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);g.globalAlpha=1;}
-  }else if(f.phase==='quenching'){
-    g.fillStyle='#dffaff';g.globalAlpha=.10+Math.sin(perfNow*18)*.04;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);g.globalAlpha=1;g.font='bold 23px monospace';g.fillStyle='#dffaff';g.fillText('HISSSSSSS!',240,704);
+    smithText('Heat the steel. Strike the mark. Quench the blade.',240,690,12,'#e3c995',432);
+    smithText('Hold the bellows · tap the steel · tap the water',240,712,10,'#b2c6c6',430);
+    drawSmithButton(FORGE_START_BTN,'LIGHT THE FORGE','#e8bd7b');
   }else if(f.phase==='result'){
-    g.fillStyle='#080a0ef4';g.fillRect(37,482,406,166);g.strokeStyle=f.outcome==='MASTERWORK'?'#ffe36a':f.outcome==='BURNT SLAG'?'#ff655c':'#9fd8ff';g.lineWidth=3;g.strokeRect(37,482,406,166);g.font='bold 27px monospace';g.fillStyle=f.outcome==='MASTERWORK'?'#ffe36a':f.outcome==='BURNT SLAG'?'#ff655c':'#9fd8ff';g.fillText(f.outcome,240,522);g.font='bold 20px monospace';g.fillStyle='#f2eee5';g.fillText('FORGE SCORE  '+f.score,240,556);g.font='10px monospace';g.fillStyle='#d7d0c2';g.fillText('Clean strikes: '+f.idealHits+' / '+FORGE_RULES.hits+'   Quench heat: '+Math.round(f.quenchHeat*100)+'%',240,585);g.fillStyle='#ffb184';g.fillText(f.outcome==='MASTERWORK'?'Master Cinders almost smiles. Almost.':f.outcome==='BURNT SLAG'?'This is technically still metal.':'A sword has occurred. Congratulations.',240,614);
-    g.fillStyle='#35251d';g.fillRect(FORGE_START_BTN.x,FORGE_START_BTN.y,FORGE_START_BTN.w,FORGE_START_BTN.h);g.strokeStyle='#ffe36a';g.strokeRect(FORGE_START_BTN.x,FORGE_START_BTN.y,FORGE_START_BTN.w,FORGE_START_BTN.h);g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('FORGE AGAIN',240,696);
+    const col=f.outcome==='MASTERWORK'?'#ecd29c':f.outcome==='BURNT SLAG'?'#df9b82':'#a5cdd3';
+    smithText(f.outcome+'  ·  '+f.score+' / 100',240,689,19,col,430);
+    smithText('CLEAN '+f.idealHits+'/'+FORGE_RULES.hits+'   ·   BEST '+f.best+'   ·   '+(f.outcome==='MASTERWORK'?'"Fine steel."':'"We can try again."'),240,712,10,'#c6beaa',430);
+    drawSmithButton(FORGE_START_BTN,'FORGE AGAIN','#e8bd7b');
+  }else{
+    const hint=f.phase==='quenching'?'STEEL INTO WATER.':f.bellowsHeld?'RELEASE THE BELLOWS TO BRING IT BACK.':
+      f.hearthMix>.08&&f.stage!=='heating'?'BRINGING THE STEEL TO THE ANVIL...':
+      f.stage==='heating'?'HOLD THE BELLOWS':f.stage==='quench'?'TAP THE WATER WHEN THE HEAT IS RIGHT':'TAP THE GLOWING MARK';
+    smithText(f.feedback||'A LITTLE HAMMER. A CONSIDERABLE SWING.',240,690,11,f.feedbackCol,428);
+    smithText(hint,240,712,10,'#b2c6c6',430);
+    smithText('SPACE: BELLOWS   ENTER: STRIKE / QUENCH',240,757,9,'#8faaa8');
   }
 }
 /* ---------- Silken Fingers: first-person hold/release stealth against a suspicious noble ---------- */
@@ -57862,7 +58223,7 @@ function drawTavernSlideGame(){
   else if(t.phase==='result'){const r=t.result,col=r.winner==='player'?'#7df078':r.winner==='ai'?'#ff655c':'#ffe36a';g.fillStyle='#080a0ef3';g.fillRect(43,500,394,155);g.strokeStyle=col;g.lineWidth=3;g.strokeRect(43,500,394,155);g.font='bold 23px monospace';g.fillStyle=col;g.fillText(r.winner==='player'?'YOU OWN THE TABLE':r.winner==='ai'?'BARRY WINS THE ROUND':'THE MUGS DECLARE A DRAW',240,536);g.font='bold 24px monospace';g.fillStyle='#9fd8ff';g.fillText('YOU '+r.player,171,575);g.fillStyle='#ff9a62';g.fillText(r.ai+' BARRY',309,575);g.font='10px monospace';g.fillStyle='#e8e2d0';g.fillText(r.winner==='player'?'Barry demands a ruler and another ale.':r.winner==='ai'?'He bows. His mug hat does not.':'Nobody agrees which stain is the center.',240,614);g.fillStyle='#30251a';g.fillRect(TAVERN_SLIDE_START_BTN.x,TAVERN_SLIDE_START_BTN.y,TAVERN_SLIDE_START_BTN.w,TAVERN_SLIDE_START_BTN.h);g.strokeStyle=col;g.strokeRect(TAVERN_SLIDE_START_BTN.x,TAVERN_SLIDE_START_BTN.y,TAVERN_SLIDE_START_BTN.w,TAVERN_SLIDE_START_BTN.h);g.font='bold 16px monospace';g.fillStyle=col;g.fillText('REMATCH',240,701);}
 }
 MINIGAMES.register(new MinigameDefinition('disco_king',{
-  name:"DISCO KING'S ROYAL RIFF",tagline:'5 swipes · 3 rounds · zero mercy',col:'#ff5ac8',
+  name:"DISCO KING'S ROYAL RIFF",tagline:'Watch his moves. Swipe to copy.',col:'#ff5ac8',
   description:'Copy the crown, catch the beat, and try not to embarrass your horse.',
   cardTitle:Object.freeze(["DISCO KING'S",'ROYAL RIFF']),cardStat:'5 swipes · 3 rounds',
   drawPreview:r=>{
@@ -57979,9 +58340,9 @@ MINIGAMES.register(new MinigameDefinition('prospectors_gold_pan',{
   start:()=>startGoldPanning(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('master_cinders_forge',{
-  name:"MASTER CINDERS' FORGE",tagline:'bellows - precision strikes - quench timing',col:'#ff9a3d',
+  name:'THE LITTLE HAMMER',tagline:'bellows - precision strikes - quench timing',col:'#ff9a3d',
   description:'Heat a tong-held billet, maintain its working temperature, hammer glowing marks into a blade, and quench before the steel burns.',
-  cardTitle:Object.freeze(["MASTER CINDERS'",'BLACKSMITH FORGE']),cardStat:'9 strikes - heat control - quench',
+  cardTitle:Object.freeze(['THE LITTLE HAMMER','BLACKSMITH FORGE']),cardStat:'9 strikes - heat control - quench',
   drawPreview:drawBlacksmithPreview,
   start:()=>startBlacksmith(biome,'minigames')
 }));
@@ -61581,8 +61942,8 @@ function drawSmithPauldron(side,sy){
   rigPolygon([[8,4],[10,7],[7,10],[5.5,9],[8,6]],'#354e5b');
   rigJoint(5,1,1.15,'#bc965c');rigJoint(4.8,.8,.45,'#efd09a');g.restore();
 }
-function drawSmithKnight(x,y,lift,bounce,failed,t,working,order=null){
-  const pose=smithKnightPose(perfNow,lift,bounce,working,failed,t),
+function drawSmithKnight(x,y,lift,bounce,failed,t,working,order=null,poseOverride=null,clock=perfNow){
+  const pose=poseOverride||smithKnightPose(clock,lift,bounce,working,failed,t),
     dark='#354d5c',armor='#91a7b2',light='#cedbdc',trim='#c8a064';
   if(order&&working)smithActingPose(pose,t,order);
   g.save();g.translate(x,y);g.scale(.62,.62);g.translate(0,(pose.hop||0)*U);
@@ -65643,6 +66004,8 @@ function frame(now){
   render();
 }
 if(BOOT_QUERY.get('smithlab')==='1')openBlacksmithLab();
+if(BOOT_QUERY.get('forgelab')==='1')startBlacksmith('forest','minigames');
+if(BOOT_QUERY.get('discolab')==='1')startDiscoDance('forest','minigames');
 if(BOOT_QUERY.get('merchantlab')==='1')openMerchantLab();
 if(BOOT_QUERY.get('townlab')==='1')openTownLab();
 cvs.dataset.bootReady='1';

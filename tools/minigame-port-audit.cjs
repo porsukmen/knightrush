@@ -5,10 +5,22 @@ const current=fs.readFileSync('KnightRush.html','utf8').replace(/\r\n/g,'\n');
 const marker='/* ============================== MINIGAMES';
 const donor=source.slice(source.indexOf(marker),source.indexOf('/* ---------- menus, cinematics, overlays ---------- */',source.indexOf(marker)));
 // Only these adapters gained seeded RNG, Journey result copy and single-attempt
-// return guards. Keep the original strict art/rules check for every other function.
+// return guards. Disco and the forge are intentional revamps; keep the original
+// strict art/rules check for the other 17 and the shared crowd helper.
 const journeyAdapters='makeLockpickPins|beginLockpickingRound|drawLockpickingGame|makeWishingWellSetup|beginWishingWellThrow|drawWishingWellGame|beginArmWrestlingMatch|drawArmWrestlingGame';
 const withoutJourneyAdapters=text=>text.replace(new RegExp('function ('+journeyAdapters+')\\([^]*?\\n\\}', 'g'),(_,name)=>'/* Journey adapter: '+name+' */');
-assert(withoutJourneyAdapters(current).includes(withoutJourneyAdapters(donor)),'Non-adapter minigame rules/art must remain unchanged');
+const crowd=text=>text.match(/function drawDiscoCrowdMember\([^]*?\n\}/)[0];
+assert.equal(crowd(current),crowd(donor),'Shared roadside/other-minigame crowd must remain unchanged');
+const withoutRevamps=text=>withoutJourneyAdapters(text)
+  .replace(/\/\* ---------- Blacksmith: heat control[^]*?(?=\/\* ---------- Silken Fingers:)/,'/* Forge implementation revamped */\n')
+  .replaceAll('"MASTER CINDERS\' FORGE"',"'THE LITTLE HAMMER'")
+  .replaceAll('"MASTER CINDERS\'"',"'THE LITTLE HAMMER'")
+  .replace(/const DISCO_RULES=Object.freeze\([^]*?\);/,'/* Disco rules revamped */')
+  .replace(/const DISCO_LANES=[^\n]*\n/,'')
+  .replace(/const DISCO_(START|REPLAY|EXIT)_BTN=[^\n]*/g,(_,name)=>'/* Disco '+name+' control layout */')
+  .replace(/function discoSequence\(\)[^]*?(?=\/\* ---------- Sir Spins-a-Lot)/,'/* Disco implementation revamped */\n')
+  .replace("tagline:'5 swipes · 3 rounds · zero mercy'","tagline:'Watch his moves. Swipe to copy.'");
+assert(withoutRevamps(current).includes(withoutRevamps(donor)),'Non-revamped, non-adapter minigame rules/art must remain unchanged');
 const cases=[
   ['disco_king','discoGame','beginDiscoRun()'],
   ['coin_slots','slotGame','beginSlotSpin()'],
@@ -52,4 +64,4 @@ run(`startPunchBag();handleMinigameKeyDown({key:' ',repeat:false,preventDefault(
   paused=false;leavePunchBag();closeMinigamesMenu();
   pendingJourneyPrototype=true;startRun(0);if(!runJourneyPrototype)throw Error('Journey entry lost');
   pendingJourneyPrototype=false;startRun(0);if(runJourneyPrototype)throw Error('PLAY isolation lost');`);
-console.log('MINIGAME_PORT_OK 19 games; unchanged non-adapter source; intro/update/render/back; campaign isolation; pause; parry isolation');
+console.log('MINIGAME_PORT_OK 19 games; unchanged non-revamped/non-adapter source and shared crowd; intro/update/render/back; campaign isolation; pause; parry isolation');

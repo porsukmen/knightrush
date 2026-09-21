@@ -33,7 +33,8 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    update(1/60);render();`);
   assert.equal(await run('mode'),'discodance');
   const frozen=await run('JSON.stringify([dist,runDistance,roadScroll])');
-  await tap(240,627);assert.equal(await run('discoGame.phase'),'show');
+  const start=await run('({x:DISCO_START_BTN.x+DISCO_START_BTN.w/2,y:DISCO_START_BTN.y+DISCO_START_BTN.h/2})');
+  await tap(start.x,start.y);assert.equal(await run('discoGame.phase'),'rise');
   await run('for(let i=0;i<120;i++)update(1/60);render();');
   assert.equal(await run('JSON.stringify([dist,runDistance,roadScroll])'),frozen);
   await page.keyboard.press('Escape');assert.equal(await run('paused'),true);

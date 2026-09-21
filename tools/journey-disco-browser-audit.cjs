@@ -108,7 +108,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await page.keyboard.press('Escape');
   await run(`beginDiscoRun();for(let i=0;i<6000&&discoGame.phase!=='complete';i++){
     const d=discoGame;
-    if(d.phase==='input'&&d.phaseT>=DISCO_RULES.inputLead+d.inputIndex*DISCO_RULES.beat)
+    if(d.phase==='input'&&d.phaseT>=.45)
       handleDiscoSwipe(d.sequence[d.inputIndex]);
     update(1/60);
    }`);
