@@ -1,9 +1,10 @@
 # The Little Hammer — Blacksmith minigame
 
-Open `ForgeTest.html` or `KnightRush.html?forgelab=1`. The original minigame ID
-`master_cinders_forge` and its return-mode contract are retained. `smithlab=1`
-still opens the separate skill-upgrade shop; this minigame does not spend gold
-or change run skills.
+This heat/strike/quench experiment is now preserved at `ForgeClassicTest.html`
+or `KnightRush.html?forgeclassic=1`. It is no longer the active forge experiment.
+`ForgeTest.html` / `forgelab=1` and the minigame catalogue now open Crooked Steel;
+see `CROOKED-STEEL.md`. `smithlab=1` still opens the separate skill-upgrade shop.
+Neither minigame spends gold or changes run skills.
 
 ## First-play loop
 

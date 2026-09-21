@@ -20,6 +20,8 @@ stil yeniden yorumlanmaz.
   Detaylar birkaç net parçayla ifadeyi kurar; çizgi kalabalığı yaratmaz.
 - Gövde: mesleğe uygun oran, ayrı omuz–dirsek–el parçaları ve okunaklı eller.
   Merchant'ın dolgun gövdesi ile smith'in iri üçgen gövdesi aynı stilde farklı tiplerdir.
+  Blacksmith'in üst kolları da gövdesi ve ön kolları gibi çelik zırhtır;
+  eski referans görselindeki kırmızı üst kol kumaşını yeni çizimlerde kullanma.
 - Kıyafet: kumaş, deri, kürk, metal ve ten ayrı renk/değer gruplarıyla okunur.
   Yüzeyler hacimlidir; düz Paint şekilleri, yuvarlak pastel maskot veya küçük raster
   büyütülmüş sprite görünümü değildir.

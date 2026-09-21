@@ -12,9 +12,9 @@ const withoutJourneyAdapters=text=>text.replace(new RegExp('function ('+journeyA
 const crowd=text=>text.match(/function drawDiscoCrowdMember\([^]*?\n\}/)[0];
 assert.equal(crowd(current),crowd(donor),'Shared roadside/other-minigame crowd must remain unchanged');
 const withoutRevamps=text=>withoutJourneyAdapters(text)
+  .replace(/\/\* ---------- Crooked Steel:[^]*?(?=\/\* ---------- Blacksmith:)/,'')
   .replace(/\/\* ---------- Blacksmith: heat control[^]*?(?=\/\* ---------- Silken Fingers:)/,'/* Forge implementation revamped */\n')
-  .replaceAll('"MASTER CINDERS\' FORGE"',"'THE LITTLE HAMMER'")
-  .replaceAll('"MASTER CINDERS\'"',"'THE LITTLE HAMMER'")
+  .replace(/MINIGAMES.register\(new MinigameDefinition\('master_cinders_forge',\{[^]*?\n\}\)\);/,'/* Forge catalogue adapter revamped */')
   .replace(/const DISCO_RULES=Object.freeze\([^]*?\);/,'/* Disco rules revamped */')
   .replace(/const DISCO_LANES=[^\n]*\n/,'')
   .replace(/const DISCO_(START|REPLAY|EXIT)_BTN=[^\n]*/g,(_,name)=>'/* Disco '+name+' control layout */')
@@ -38,7 +38,7 @@ const cases=[
   ['duke_doubledown_dice','diceGame','beginDiceGuessRound()'],
   ['sir_flips_a_blade','knifeGame','beginKnifeFlipRun()'],
   ['prospectors_gold_pan','goldPanGame','beginGoldPanningRun()'],
-  ['master_cinders_forge','forgeGame','beginBlacksmithRun()'],
+  ['master_cinders_forge','mendGame','beginSwordMending()'],
   ['silken_fingers','pickpocketGame','beginPickpocketRun()'],
   ['tavern_table_slide','tavernSlideGame','beginTavernSlideMatch()']
 ];

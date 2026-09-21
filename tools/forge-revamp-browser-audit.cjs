@@ -6,7 +6,7 @@ const {pathToFileURL}=require('node:url');
   const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>window.requestAnimationFrame=()=>0);
-  await page.goto(pathToFileURL(path.resolve('ForgeTest.html')).href);
+  await page.goto(pathToFileURL(path.resolve('ForgeClassicTest.html')).href);
   await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
   const run=code=>page.evaluate(code=>(0,eval)(code),code);
   await run(`SFX.toggle();globalThis.forgeBrowserTick=seconds=>{

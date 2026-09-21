@@ -57578,6 +57578,352 @@ function drawGoldPanningGame(){
   }
 }
 
+/* ---------- Crooked Steel: a physical blade-straightening toy ---------- */
+const MEND_RULES=Object.freeze({nodes:9,x:145,step:30,y:475,bend:42,chargeTime:1.0,
+  swingTime:.42,contactAt:.16,flipTime:.42,inspectTime:1.45});
+const MEND_START_BTN=Object.freeze({x:132,y:731,w:216,h:49});
+const MEND_FLIP_BTN=Object.freeze({x:23,y:731,w:184,h:49});
+const MEND_DONE_BTN=Object.freeze({x:273,y:731,w:184,h:49});
+const MEND_JOBS=Object.freeze([
+  Object.freeze({title:'THE GATE INCIDENT',line:'"The gate closed. My sword did not."',
+    bends:Object.freeze([0,.26,.72,.52,.04,-.62,-.76,-.22,0])}),
+  Object.freeze({title:'NOT A CROWBAR',line:'"I only opened one very small chest."',
+    bends:Object.freeze([0,-.18,-.60,-.83,-.18,.62,.76,.28,0])}),
+  Object.freeze({title:'THE BEAR DISAGREED',line:'"It was much straighter before the bear."',
+    bends:Object.freeze([0,.57,.82,.20,-.78,-.48,.62,.37,0])})
+]);
+let mendGame=null,mendRoomCache=null;
+function startSwordMending(stageId=biome,returnMode='minigames'){
+  mendGame={returnMode,phase:'intro',phaseT:0,clock:0,job:0,best:0,
+    bends:MEND_JOBS[0].bends.slice(),shown:MEND_JOBS[0].bends.slice(),
+    face:1,flipFrom:1,flipT:0,charge:null,swing:null,strikes:0,turns:0,
+    impactAge:9,impactX:240,impactY:475,impactGood:true,wobble:0,
+    cursor:2,keyboardAim:0,feedback:'',reaction:0};
+  paused=false;pausePhotoMode=false;setMode('swordmending');SFX.relic();
+}
+function beginSwordMending(){
+  const m=mendGame;if(!m||paused)return;
+  if(m.phase==='result')m.job=(m.job+1)%MEND_JOBS.length;
+  const bends=MEND_JOBS[m.job].bends.slice();
+  Object.assign(m,{phase:'work',phaseT:0,bends,shown:bends.slice(),face:1,flipFrom:1,
+    flipT:0,charge:null,swing:null,strikes:0,turns:0,impactAge:9,wobble:0,
+    feedback:'HOLD A RAISED BEND. RELEASE TO STRIKE.',reaction:0,cursor:2,keyboardAim:0});
+  SFX.swipe();
+}
+function leaveSwordMending(){
+  const target=mendGame?.returnMode||'minigames';
+  cancelMendHold();mendGame=null;setMode(target);SFX.duck();
+}
+function mendShapeError(bends){
+  let sum=0;for(let i=1;i<bends.length-1;i++)sum+=Math.abs(bends[i]);
+  return sum/(bends.length-2);
+}
+function mendQuality(m=mendGame){
+  return Math.round(clamp(100-mendShapeError(m.bends)*125,0,100));
+}
+function mendCanWork(){
+  const m=mendGame;return mode==='swordmending'&&m&&!paused&&!settingsOpen&&m.phase==='work'&&!m.swing&&!m.flipT;
+}
+function mendFace(m=mendGame){
+  return m.flipT>0?m.flipFrom*Math.cos((1-m.flipT/MEND_RULES.flipTime)*Math.PI):m.face;
+}
+function mendForce(seconds){return lerp(.075,.98,smoothStep(clamp(seconds/MEND_RULES.chargeTime,0,1)));}
+function mendBladePose(m=mendGame){
+  const inspect=m.phase==='inspect'?smoothStep(clamp(m.phaseT/.9,0,1)):m.phase==='result'?1:0;
+  return {x:250,y:lerp(MEND_RULES.y,367,inspect),angle:-.22*inspect,face:mendFace(m)};
+}
+function mendPoint(x,y,m=mendGame){
+  const w=mendBladePose(m),dx=x-250,dy=y-MEND_RULES.y;
+  return {x:w.x+dx*Math.cos(w.angle)-dy*Math.sin(w.angle),
+    y:w.y+dx*Math.sin(w.angle)+dy*Math.cos(w.angle)};
+}
+function mendNodePoint(index,m=mendGame){
+  const wobble=Math.sin(m.impactAge*44)*Math.exp(-m.impactAge*14)*m.wobble;
+  return mendPoint(MEND_RULES.x+index*MEND_RULES.step,
+    MEND_RULES.y-m.shown[index]*mendFace(m)*MEND_RULES.bend+wobble,m);
+}
+function mendPickPoint(pt){
+  if(!pt)return -1;
+  const m=mendGame,index=clamp(Math.round((pt.x-MEND_RULES.x)/MEND_RULES.step),1,MEND_RULES.nodes-2),
+    p=mendNodePoint(index,m);
+  return pt.x>=130&&pt.x<=383&&Math.abs(pt.y-p.y)<42?index:-1;
+}
+function beginMendAt(pt,keyboard=false){
+  if(!mendCanWork()||mendGame.charge)return false;
+  const m=mendGame,index=keyboard?m.cursor:mendPickPoint(pt);if(index<1)return false;
+  m.cursor=index;m.charge={index,time:0};
+  m.feedback=m.bends[index]*m.face<-.05?'THIS BEND FACES DOWN. TURN THE BLADE OVER.':'A SMALL BEND NEEDS A SMALL BLOW.';
+  return true;
+}
+function beginMendPointer(cx,cy){
+  return mode==='swordmending'&&beginMendAt(toGame(cx,cy));
+}
+function releaseMendHold(){
+  const m=mendGame;if(!m?.charge)return false;
+  const charge=m.charge;m.charge=null;
+  if(!mendCanWork())return false;
+  const p=mendNodePoint(charge.index,m);
+  m.swing={index:charge.index,force:mendForce(charge.time),time:0,
+    lift:clamp(charge.time/MEND_RULES.chargeTime,0,1),x:p.x,y:p.y,settled:false};
+  m.feedback='';return true;
+}
+function cancelMendHold(){if(mendGame)mendGame.charge=null;}
+function flipMendBlade(){
+  if(!mendCanWork()||mendGame.charge)return false;
+  const m=mendGame;m.flipFrom=m.face;m.flipT=MEND_RULES.flipTime;m.turns++;
+  m.feedback='OTHER SIDE. SAME SWORD.';SFX.swipe();return true;
+}
+function applyMendImpact(){
+  const m=mendGame,s=m?.swing;if(!s||s.settled)return;
+  s.settled=true;
+  const old=mendShapeError(m.bends);
+  // A downward blow corrects a raised bend, but overshoots if too strong.
+  // Turning the blade changes the physical direction, never the scoring rule.
+  for(let i=1;i<MEND_RULES.nodes-1;i++){
+    const distance=Math.abs(i-s.index),weight=distance===0?1:distance===1?.13:0;
+    m.bends[i]=clamp(m.bends[i]-m.face*s.force*weight,-1.12,1.12);
+  }
+  m.strikes++;m.impactAge=0;m.impactX=s.x;m.impactY=s.y;
+  m.impactGood=mendShapeError(m.bends)<old-.006;m.wobble=2+s.force*4;
+  m.reaction=m.impactGood?.35:1;
+  m.feedback=m.impactGood?(mendQuality(m)>=92?'THAT LOOKS LIKE A SWORD AGAIN.':'BETTER. LOOK ALONG THE EDGE.'):
+    m.bends[s.index]*m.face<-.14?'A BIT MUCH. TURN IT OVER AND TAP IT BACK.':'GENTLE. IT IS A SWORD, NOT A NAIL.';
+  if(m.impactGood)SFX.forgeHit(s.force<.6);else SFX.forgeMiss();
+}
+function finishSwordMending(){
+  if(!mendCanWork()||mendGame.charge)return false;
+  const m=mendGame;m.phase='inspect';m.phaseT=0;m.quality=mendQuality(m);m.best=Math.max(m.best,m.quality);
+  m.outcome=m.quality>=94?'TRUE AS AN ARROW':m.quality>=82?'BACK IN SERVICE':m.quality>=62?'A LITTLE CHARACTER':'THE BANANA BLADE';
+  m.quote=m.quality>=94?'"Now try opening the gate first."':m.quality>=82?'"A sword again. Mostly."':
+    m.quality>=62?'"A subtle curve. Very fashionable."':'"For fighting around corners."';
+  SFX.relic();return true;
+}
+function swordMendingTap(pt){
+  const m=mendGame;if(!m||paused)return;
+  if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveSwordMending();return;}
+  if((m.phase==='intro'||m.phase==='result')&&pointInRect(pt,MEND_START_BTN)){beginSwordMending();return;}
+  if(m.phase!=='work')return;
+  if(pointInRect(pt,MEND_FLIP_BTN))flipMendBlade();
+  else if(pointInRect(pt,MEND_DONE_BTN))finishSwordMending();
+}
+function swordMendingKeyDown(e){
+  if(mode!=='swordmending')return false;
+  const m=mendGame;
+  if(![' ','Enter','ArrowLeft','ArrowRight','a','d','A','D','f','F'].includes(e.key))return false;
+  e.preventDefault();if(e.repeat||!m)return true;
+  if(m.phase==='intro'||m.phase==='result'){
+    if(e.key===' '||e.key==='Enter')beginSwordMending();return true;
+  }
+  if(e.key===' ')beginMendAt(null,true);
+  else if(e.key==='Enter')finishSwordMending();
+  else if(e.key.toLowerCase()==='f')flipMendBlade();
+  else if(mendCanWork()&&!m.charge){
+    m.cursor=clamp(m.cursor+(['ArrowLeft','a','A'].includes(e.key)?-1:1),1,MEND_RULES.nodes-2);
+    m.keyboardAim=2;
+  }
+  return true;
+}
+function updateSwordMending(dt){
+  const m=mendGame;if(!m||paused)return;
+  m.clock+=dt;m.phaseT+=dt;m.impactAge+=dt;m.reaction=Math.max(0,m.reaction-dt*1.2);
+  m.keyboardAim=Math.max(0,(m.keyboardAim||0)-dt);
+  if(m.charge)m.charge.time=Math.min(MEND_RULES.chargeTime,m.charge.time+dt);
+  if(m.flipT>0){
+    m.flipT=Math.max(0,m.flipT-dt);
+    if(!m.flipT)m.face=-m.flipFrom;
+  }
+  if(m.swing){
+    m.swing.time+=dt;
+    if(m.swing.time>=MEND_RULES.contactAt)applyMendImpact();
+    if(m.swing.time>=MEND_RULES.swingTime)m.swing=null;
+  }
+  for(let i=0;i<m.shown.length;i++)m.shown[i]=lerp(m.shown[i],m.bends[i],1-Math.exp(-dt*23));
+  if(m.phase==='inspect'&&m.phaseT>=MEND_RULES.inspectTime){m.phase='result';m.phaseT=0;}
+}
+function mendArm(sx,sy,hx,hy,side){
+  const dx=hx-sx,dy=hy-sy,d=Math.max(.01,Math.hypot(dx,dy)),length=Math.max(19.2,d*.51),
+    bend=Math.sqrt(Math.max(0,length*length-d*d*.25));
+  return {sx,sy,hx,hy,ex:(sx+hx)*.5+side*dy/d*bend,ey:(sy+hy)*.5-side*dx/d*bend};
+}
+const MEND_SMITH=Object.freeze({x:235,y:300,scale:2.42});
+function mendSmithPose(){
+  const m=mendGame,p=smithKnightPose(m.clock,0,0,false,false,0),k=.62*U*MEND_SMITH.scale,
+    grip=mendPoint(115,475),rest={hx:23,hy:22,angle:2.55};
+  p.bodyX=0;p.bodyY=Math.sin(m.clock*1.5)*.12;p.lean=0;p.hop=0;
+  p.left=mendArm(-16,3,(grip.x-24-MEND_SMITH.x)/k,(grip.y-23-MEND_SMITH.y)/k-p.bodyY,-1);
+  const lift=m.charge?clamp(m.charge.time/MEND_RULES.chargeTime,0,1):m.swing?.lift||0;
+  const raised={hx:lerp(rest.hx,27,smoothStep(lift)),hy:lerp(rest.hy,-16,smoothStep(lift)),angle:lerp(rest.angle,4.65,smoothStep(lift))};
+  let hand=m.charge?raised:rest;
+  if(m.swing){
+    const s=m.swing,contact={hx:(s.x-MEND_SMITH.x)/k-7.55*Math.cos(2.55),
+      hy:(s.y-MEND_SMITH.y)/k-p.bodyY-7.55*Math.sin(2.55),angle:2.55};
+    const fall=s.time<MEND_RULES.contactAt,blend=fall?Math.pow(s.time/MEND_RULES.contactAt,2):
+      smoothStep((s.time-MEND_RULES.contactAt)/(MEND_RULES.swingTime-MEND_RULES.contactAt));
+    const from=fall?raised:contact,to=fall?contact:rest;
+    hand={hx:lerp(from.hx,to.hx,blend),hy:lerp(from.hy,to.hy,blend),angle:lerp(from.angle,to.angle,blend)};
+  }
+  p.right=mendArm(16,3,hand.hx,hand.hy,1);
+  // Original wrist trajectory and swing timing; only stabilize the high-lift
+  // elbow outside the helmet. Do not add a sideways windup to the hand.
+  const height=clamp((rest.hy-hand.hy)/38,0,1),
+    overhead=smoothStep(clamp((height-.104)/.248,0,1)),restArm=mendArm(16,3,rest.hx,rest.hy,1);
+  p.right.ex=lerp(p.right.ex,lerp(restArm.ex,34,height),overhead);
+  p.right.ey=lerp(p.right.ey,lerp(restArm.ey,1,height),overhead);
+  p.hammerAngle=hand.angle;p.drop=true;p.openGrip=m.charge||m.swing?0:1;
+  p.headTilt+=(m.impactGood?-.04:.14)*m.reaction;
+  if(m.phase==='inspect'||m.phase==='result'){
+    p.headTilt+=m.quality>=82?-.08:.16;p.headDrop=m.quality>=82?-.3:.7;
+  }
+  return p;
+}
+function drawMendRoom(){
+  const scale=Math.max(1,viewScale)*1.18,key=[scale,PAD_TOP,PAD_BOT].join(':');
+  if(!mendRoomCache||mendRoomCache.key!==key){
+    const c=document.createElement('canvas');c.width=Math.ceil(480*scale);c.height=Math.ceil((800+PAD_TOT)*scale);
+    const live=g;
+    try{
+      g=c.getContext('2d');g.setTransform(scale,0,0,scale,0,PAD_TOP*scale);
+      g.fillStyle='#213239';g.fillRect(0,-PAD_TOP,480,800+PAD_TOT);
+      for(let row=-4;row<4;row++)for(let col=0;col<7;col++){
+        g.fillStyle=(row+col)%3===0?'#283a40':'#25363d';
+        g.fillRect(col*88+(row%2)*44-46,row*41-10,84,37);
+      }
+      g.save();g.translate(0,130);g.scale(2,2);drawSmithForgeBackdrop();g.restore();
+      townInk([[0,406],[480,406],[480,800+PAD_BOT],[0,800+PAD_BOT]],'#3e352c');
+      for(let i=-3;i<11;i++)townStroke([[240+(i*72-240)*.3,406],[i*72,800+PAD_BOT]],'#2d2c28',2);
+      for(const y of [480,583,725])townStroke([[0,y],[480,y]],'#514332',1);
+      // A work bench, not a new temperature-management console.
+      townInk([[0,544],[62,528],[81,557],[79,656],[0,671]],'#493326');
+      townInk([[0,531],[62,526],[84,541],[0,555]],'#a47b4a');
+      townStroke([[8,549],[76,539]],'#d1aa73',2);
+      townInk([[400,548],[480,561],[480,672],[406,648]],'#523a2a');
+      townInk([[401,535],[480,548],[480,566],[397,552]],'#ac8550');
+      // Two spare billets and a leather tool roll, resting on the bench.
+      townInk([[405,535],[454,542],[459,548],[408,542]],'#9dadb4');
+      townInk([[421,533],[470,540],[476,545],[425,539]],'#526f7c');
+      townInk([[10,531],[43,525],[59,532],[23,541]],'#815338');
+      townStroke([[28,527],[42,537]],'#cfaa6a',3);
+    }finally{g=live;}
+    mendRoomCache={key,canvas:c};
+  }
+  g.save();g.imageSmoothingEnabled=true;g.drawImage(mendRoomCache.canvas,0,-PAD_TOP,480,800+PAD_TOT);g.restore();
+  const t=mendGame.clock;
+  for(let i=0;i<4;i++){
+    const x=42+i*11,top=318-Math.sin(t*4+i*2)*6;
+    townInk([[x,354],[x,top+10],[x+4,top-8],[x+10,top+16],[x+10,354]],i%2?'#ed9a47':'#ce6135');
+    townInk([[x+3,354],[x+5,top+20],[x+8,top+28],[x+8,354]],'#f2d18a');
+  }
+}
+function drawMendAnvil(){
+  const P=townInk;
+  P([[131,577],[329,561],[388,647],[305,675],[110,658],[82,628]],'#2b2925');
+  P([[184,543],[283,535],[316,556],[312,636],[201,651],[168,626],[169,568]],'#5c3e2a');
+  P([[184,543],[283,535],[316,556],[210,579],[169,568]],'#ba925d');
+  P([[210,579],[316,556],[312,636],[211,650]],'#855b37');
+  for(const x of [221,252,283,306])townStroke([[x,584-(x-221)*.19],[x-3,637-(x-221)*.13]],'#ac7c47',2);
+  P([[175,605],[315,584],[314,596],[176,617]],'#34454a');
+  for(const x of [194,238,294]){g.fillStyle='#b3b9a9';g.fillRect(x,605-(x-194)*.16,3,3);}
+  P([[65,506],[403,486],[440,477],[426,519],[309,544],[277,568],[291,580],[291,594],[209,599],[208,584],[224,569],[204,548],[86,537]],'#405b68');
+  P([[309,544],[277,568],[291,580],[291,594],[273,594],[257,570],[276,541]],'#233d4b');
+  P([[209,589],[274,582],[291,594],[209,599]],'#98aab0');
+  // Deep enough to read the whole bent blade against one solid striking surface.
+  P([[65,441],[358,422],[443,416],[413,456],[434,504],[80,527],[55,509]],'#8ba3ab');
+  P([[65,441],[358,422],[443,416],[415,433],[75,454],[55,509]],'#cad6d5');
+  P([[75,454],[415,433],[434,504],[80,527],[64,509]],'#69848f');
+  P([[80,520],[434,497],[434,507],[80,531]],'#b5c5c8');
+  P([[86,449],[99,448],[102,455],[88,456]],'#354e5c');
+  // Chalk straightedge: a physical guide on the steel, no chasing target lights.
+  for(let x=146;x<394;x+=19)townStroke([[x,475],[x+10,475]],'#c2cbc0',1);
+  townStroke([[146,463],[335,466],[385,475],[335,484],[146,487]],'#a4b2ad',1);
+}
+function drawMendBlade(){
+  const m=mendGame,face=mendFace(m),widthScale=.20+.80*Math.abs(face),P=townInk,
+    points=m.shown.map((_,i)=>mendNodePoint(i,m));
+  const widths=points.map((_,i)=>(i===8?1:i===7?5:10-i*.55)*widthScale);
+  for(let i=0;i<points.length-1;i++){
+    const a=points[i],b=points[i+1],wa=widths[i],wb=widths[i+1];
+    P([[a.x,a.y+wa+3],[b.x,b.y+wb+3],[b.x,b.y+wb+6],[a.x,a.y+wa+6]],'#334953');
+    P([[a.x,a.y-wa],[b.x,b.y-wb],[b.x,b.y],[a.x,a.y]],face>=0?'#dae2df':'#b4c8cf');
+    P([[a.x,a.y],[b.x,b.y],[b.x,b.y+wb],[a.x,a.y+wa]],face>=0?'#849da9':'#658293');
+    townStroke([[a.x,a.y-wa],[b.x,b.y-wb]],'#f0eee2',1);
+    if(i>0&&i<7&&Math.abs(m.shown[i])>.36){
+      townStroke([[a.x-2,a.y-4],[a.x+3,a.y],[a.x,a.y+4]],'#627682',1.4);
+    }
+  }
+  g.save();const w=mendBladePose(m);g.translate(w.x,w.y);g.rotate(w.angle);g.translate(-250,-475);
+  P([[99,469],[134,467],[145,470],[145,481],[99,482]],'#523629');
+  P([[100,469],[132,467],[134,471],[100,474]],'#b38452');
+  for(let x=105;x<131;x+=7)townStroke([[x,471],[x+3,481]],'#342d29',2);
+  P([[91,465],[100,465],[105,471],[104,483],[94,487],[87,480]],'#b79458');
+  P([[91,465],[100,465],[103,470],[93,472]],'#ecd099');
+  const guard=13*widthScale;
+  P([[131,475-guard],[139,473-guard],[143,476+guard],[134,478+guard]],'#ad8b52');
+  P([[131,475-guard],[139,473-guard],[140,477-guard],[132,479-guard]],'#ecd69e');
+  g.restore();
+  if(m.phase==='work'&&(m.charge||m.keyboardAim>0)){
+    const p=mendNodePoint(m.charge?.index||m.cursor,m);
+    townStroke([[p.x-10,p.y-17],[p.x-10,p.y-23],[p.x+10,p.y-23],[p.x+10,p.y-17]],'#edd3a0',1.5);
+  }
+}
+function drawMendTongs(pose){
+  const k=.62*U*MEND_SMITH.scale,
+    hand={x:MEND_SMITH.x+(pose.bodyX+pose.left.hx)*k,y:MEND_SMITH.y+(pose.bodyY+pose.left.hy)*k},
+    grip=mendPoint(116,475);
+  townStroke([[hand.x-3,hand.y-2],[grip.x-9,grip.y-5],[grip.x+4,grip.y-5]],'#334a55',5);
+  townStroke([[hand.x+3,hand.y+2],[grip.x-7,grip.y+7],[grip.x+4,grip.y+6]],'#bbc9cb',3);
+}
+function drawMendHammer(pose){
+  const k=.62*MEND_SMITH.scale;
+  g.save();g.translate(MEND_SMITH.x+pose.bodyX*U*k,MEND_SMITH.y+pose.bodyY*U*k);
+  g.scale(k,k);drawSmithHammer(pose.right.hx,pose.right.hy,pose.hammerAngle);g.restore();
+  const m=mendGame,t=m.impactAge;
+  if(t<.32)for(let i=0;i<6;i++){
+    const x=m.impactX+Math.cos(i*2.1)*t*95,y=m.impactY-Math.abs(Math.sin(i*2.1))*t*80+t*t*120;
+    g.fillStyle=i%2?'#d4e3df':'#e7c992';g.fillRect(x,y,2,2);
+  }
+}
+function drawSwordMendingPreview(r){
+  g.save();g.beginPath();g.rect(r.x+3,r.y+3,r.w-6,105);g.clip();
+  g.translate(r.x+3,r.y+3);g.scale((r.w-6)/240,105/140);
+  drawSmithForgeBackdrop();drawSmithKnight(111,43,0,0,false,0,false,null,null,0);
+  townStroke([[41,123],[84,113],[119,122],[152,106],[189,116]],'#d5dedf',6);g.restore();
+}
+function drawSwordMending(){
+  const m=mendGame;if(!m)return;drawMendRoom();const pose=mendSmithPose();
+  g.save();g.translate(MEND_SMITH.x,MEND_SMITH.y);g.scale(MEND_SMITH.scale,MEND_SMITH.scale);
+  drawSmithKnight(0,0,0,0,false,0,false,null,pose,m.clock);g.restore();
+  drawMendAnvil();drawMendTongs(pose);drawMendBlade();drawMendHammer(pose);
+  drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8c8a7');
+  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8c8a7');
+  smithText('CROOKED STEEL',240,110,25,'#ecd19a',326);
+  smithText('THE LITTLE HAMMER  ·  REPAIRS, MOSTLY',240,130,9,'#aebfc0');
+  // A small paper work order rests below the anvil, not over the character.
+  townInk([[43,646],[438,646],[432,717],[49,721]],'#302f2b');
+  townStroke([[49,647],[432,647]],'#987b4e',1.5);
+  if(m.phase==='intro'){
+    smithText(MEND_JOBS[m.job].title,240,666,14,'#e7cb92');
+    smithText(MEND_JOBS[m.job].line,240,684,11,'#c9ccc1',390);
+    smithText('Hold a bend. Release to hammer. Turn it over to fix the other side.',240,706,9,'#afc5c6',382);
+    drawSmithButton(MEND_START_BTN,'TAKE THE JOB','#e8bc7c');
+  }else if(m.phase==='work'){
+    const quality=mendQuality(m);
+    smithText(m.feedback||'MAKE IT STRAIGHT. NOT FLAT.',240,668,11,'#e1c896',388);
+    smithText(m.charge?(m.charge.time<.3?'A GENTLE TAP':m.charge.time<.72?'A FIRM BLOW':'THE BIG LITTLE HAMMER'):
+      quality>=92?'LOOKING GOOD. HAND IT BACK WHEN YOU ARE READY.':'Raised bend: hammer down. Low bend: turn the sword over.',240,688,10,'#b6cbcc',388);
+    smithText('STRAIGHTNESS '+quality+'%   ·   '+m.strikes+' BLOWS',240,708,10,quality>=92?'#b4d5a2':'#d0c5a7');
+    drawSmithButton(MEND_FLIP_BTN,'TURN OVER','#a3c9d0');
+    drawSmithButton(MEND_DONE_BTN,'HAND IT BACK',quality>=92?'#d3df9f':'#e4c899');
+    smithText('← → AIM    HOLD SPACE: HAMMER    F: TURN    ENTER: FINISH',240,795,8,'#9aaea8',440);
+  }else if(m.phase==='inspect'){
+    smithText('LET US HAVE A LOOK...',240,679,15,'#e4c797');
+    smithText('A sword should point at just one thing.',240,704,11,'#b8c5c2');
+  }else{
+    smithText(m.outcome,240,668,18,m.quality>=82?'#e9d39a':'#dfa38b',388);
+    smithText(m.quote,240,689,11,'#c3d1cc',388);
+    smithText(m.quality+'% STRAIGHT  ·  '+m.strikes+' BLOWS  ·  BEST '+m.best+'%',240,708,10,'#bcbdad');
+    drawSmithButton(MEND_START_BTN,'NEXT REPAIR','#e8bc7c');
+  }
+}
 /* ---------- Blacksmith: heat control, precision shaping, and a decisive quench ---------- */
 const FORGE_RULES=Object.freeze({heatStart:.18,heatGain:.43,coolRate:.085,strikeLoss:.052,
   workMin:.48,workMax:.76,softMin:.34,danger:.88,overheat:.98,overheatGrace:.55,
@@ -58340,11 +58686,11 @@ MINIGAMES.register(new MinigameDefinition('prospectors_gold_pan',{
   start:()=>startGoldPanning(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('master_cinders_forge',{
-  name:'THE LITTLE HAMMER',tagline:'bellows - precision strikes - quench timing',col:'#ff9a3d',
-  description:'Heat a tong-held billet, maintain its working temperature, hammer glowing marks into a blade, and quench before the steel burns.',
-  cardTitle:Object.freeze(['THE LITTLE HAMMER','BLACKSMITH FORGE']),cardStat:'9 strikes - heat control - quench',
-  drawPreview:drawBlacksmithPreview,
-  start:()=>startBlacksmith(biome,'minigames')
+  name:'CROOKED STEEL',tagline:'a big knight, a little hammer, one very bent sword',col:'#dbbc80',
+  description:'Read the bends, hold for a heavier blow, and turn the sword over to straighten the other side. No timer, no heat bar. Hand back your actual handiwork.',
+  cardTitle:Object.freeze(['CROOKED STEEL','THE LITTLE HAMMER']),cardStat:'bend - hammer - turn - repair',
+  drawPreview:drawSwordMendingPreview,
+  start:()=>startSwordMending(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('silken_fingers',{
   name:'SILKEN FINGERS',tagline:'hold the purse - read the shoulder - release and hide',col:'#d9bd74',
@@ -58529,6 +58875,7 @@ const MINIGAME_MODES=new Map([
   ['knifeflip',{draw:drawKnifeFlipGame,update:updateKnifeFlip}],
   ['goldpanning',{draw:drawGoldPanningGame,update:updateGoldPanning}],
   ['blacksmithing',{draw:drawBlacksmithGame,update:updateBlacksmith}],
+  ['swordmending',{draw:drawSwordMending,update:updateSwordMending}],
   ['pickpocketing',{draw:drawPickpocketGame,update:updatePickpocket}],
   ['tavernslide',{draw:drawTavernSlideGame,update:updateTavernSlide}]
 ]);
@@ -58623,6 +58970,10 @@ function handleMinigameAction(a,pt){
     else if(a==='up'||a==='down')goldPanKeyboardStroke(a);
     return true;
   }
+  if(mode==='swordmending'){
+    if(a==='tap'&&pt)swordMendingTap(pt);
+    return true;
+  }
   if(mode==='blacksmithing'){
     if(a==='tap'&&pt)blacksmithTap(pt);
     return true;
@@ -58640,6 +58991,7 @@ function handleMinigameAction(a,pt){
 }
 function handleMinigameKeyDown(e){
   if(paused||settingsOpen)return false;
+  if(swordMendingKeyDown(e))return true;
   if(journeyEventState()?.done&&(e.key==='Enter'||e.key===' ')){
     e.preventDefault();finishJourneyEvent();return true;
   }
@@ -58775,6 +59127,7 @@ function handleMinigameKeyDown(e){
 const MINIGAME_POINTER_BINDINGS=[
   ['minigameScroll',beginMinigamesMenuScroll,moveMinigamesMenuScroll,endMinigamesMenuScroll],
   ['forgeBellows',beginForgeBellowsHold,null,endForgeBellowsHold],
+  ['mendHammer',beginMendPointer,null,releaseMendHold],
   ['pickpocketHold',beginPickpocketHold,null,endPickpocketHold],
   ['tavernSlideAim',beginTavernSlideAim,moveTavernSlideAim,endTavernSlideAim],
   ['swordStrike',beginSwordPointerStrike,null,null],
@@ -58806,7 +59159,7 @@ function endMinigamePointer(x,y){
 }
 function cancelMinigameGestures(){
   endJoustHold();cancelLockpickHold();cancelDrinkTrace();cancelWellAim();
-  cancelKnifeFlick();cancelGoldPanGesture();endForgeBellowsHold();
+  cancelKnifeFlick();cancelGoldPanGesture();endForgeBellowsHold();cancelMendHold();
   endPickpocketHold();cancelTavernSlideAim();cancelMinigamesMenuScroll();
   if(tStart&&tStart.minigameGesture){clearTapIntent(tStart);tStart=null;}
 }
@@ -58817,6 +59170,7 @@ addEventListener('keyup',e=>{
   if(mode==='jousting'&&(e.key===' '||e.key==='Enter')){endJoustHold();e.preventDefault();}
   if(mode==='lockpicking'&&(e.key===' '||e.key==='Enter')){endLockpickHold();e.preventDefault();}
   if(mode==='blacksmithing'&&e.key===' '){endForgeBellowsHold();e.preventDefault();}
+  if(mode==='swordmending'&&e.key===' '){releaseMendHold();e.preventDefault();}
   if(mode==='pickpocketing'&&e.key===' '){endPickpocketHold();e.preventDefault();}
 });
 
@@ -61905,11 +62259,11 @@ function drawSmithHammer(x,y,angle){
 }
 function drawSmithGuardArm(arm,near=false,openGrip=0,layer='all'){
   const {sx,sy,ex,ey,hx,hy}=arm;
-  // Work sleeves beneath Bastion steel: broad material planes, not silver tubes.
+  // Full steel rerebraces, shared by the shop and both minigame rigs.
   if(layer!=='forearm'){
-  rigSegment(sx,sy,ex,ey,6.76,'#50303b');
-  rigSegment(sx-.8,sy,ex-.8,ey,4.5,'#8c3b47');
-  rigSegment(sx-1.9,sy+.4,ex-1.9,ey,.8,'#b86260');
+  rigSegment(sx,sy,ex,ey,6.76,near?'#4b6271':'#3c5462');
+  rigSegment(sx-.8,sy,ex-.8,ey,4.5,'#91a7b2');
+  rigSegment(sx-1.9,sy+.4,ex-1.9,ey,.8,'#cedbdc');
   rigJoint(ex,ey,4.7,'#344d5a');rigJoint(ex-.6,ey-.7,3.8,'#8199a4');
   }
   if(layer==='upper')return;
@@ -66004,7 +66358,8 @@ function frame(now){
   render();
 }
 if(BOOT_QUERY.get('smithlab')==='1')openBlacksmithLab();
-if(BOOT_QUERY.get('forgelab')==='1')startBlacksmith('forest','minigames');
+if(BOOT_QUERY.get('forgelab')==='1')startSwordMending('forest','minigames');
+if(BOOT_QUERY.get('forgeclassic')==='1')startBlacksmith('forest','minigames');
 if(BOOT_QUERY.get('discolab')==='1')startDiscoDance('forest','minigames');
 if(BOOT_QUERY.get('merchantlab')==='1')openMerchantLab();
 if(BOOT_QUERY.get('townlab')==='1')openTownLab();
