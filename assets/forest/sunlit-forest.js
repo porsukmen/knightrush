@@ -61,10 +61,25 @@
   function model(build){
     const shapes=[];let left=Infinity,right=-Infinity,top=0,bottom=0;
     const add=(points,color)=>{
+      let sl=Infinity,sr=-Infinity,st=Infinity,sb=-Infinity;
       const path=new Path2D();points.forEach(([x,y],i)=>{
         if(i)path.lineTo(x,y);else path.moveTo(x,y);
         left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
-      });path.closePath();shapes.push({path,color});
+        sl=Math.min(sl,x);sr=Math.max(sr,x);st=Math.min(st,y);sb=Math.max(sb,y);
+      });path.closePath();
+      // Preclip the tiny below-ground roots once. The ordinary ground anchor
+      // no longer needs a canvas save/clip mask on every vector tree.
+      let groundPath=path;
+      if(sb>0){
+        const clipped=[];
+        for(let i=0;i<points.length;i++){
+          const a=points[i],b=points[(i+1)%points.length],inside=a[1]<=0,next=b[1]<=0;
+          if(inside)clipped.push(a);
+          if(inside!==next){const t=-a[1]/(b[1]-a[1]);clipped.push([a[0]+(b[0]-a[0])*t,0]);}
+        }
+        groundPath=new Path2D();clipped.forEach(([x,y],i)=>i?groundPath.lineTo(x,y):groundPath.moveTo(x,y));groundPath.closePath();
+      }
+      shapes.push({path,groundPath,color,left:sl,right:sr,top:st,bottom:sb});
     };
     build(add);return {shapes,left,right,top,bottom,width:right-left};
   }
@@ -160,7 +175,7 @@
   // Runtime caches contain ONLY the native geometry above, never generated
   // artwork. Fixed pixel tiers are used only at or below their resolution;
   // larger foreground trees stay vector-sharp. All buffers share a hard cap.
-  const nativeCache={bytes:0,budgetBytes:5*1048576,models:new Map(),surfaces:new Set(),background:null,prepared:false};
+  const nativeCache={bytes:0,budgetBytes:5*1048576,transitionBytes:0,models:new Map(),surfaces:new Set(),background:null,prepared:false};
   function releaseSurface(canvas){
     if(!canvas||!nativeCache.surfaces.delete(canvas))return;
     nativeCache.bytes-=canvas.width*canvas.height*4;canvas.width=canvas.height=1;
@@ -178,12 +193,16 @@
       // Recent surfaces stay resident; overflow uses the original vector art.
       if(entry.frame>=journeyRenderSerial-60)continue;
       nativeCache.bytes-=entry.canvas.width*entry.canvas.height*4;
+      if(entry.transition)nativeCache.transitionBytes-=entry.canvas.width*entry.canvas.height*4;
       entry.canvas.width=entry.canvas.height=1;nativeCache.models.delete(key);
     }
     return nativeCache.bytes+bytes<=nativeCache.budgetBytes;
   }
-  function paintNative(m,context){
-    for(const shape of m.shapes){context.fillStyle=material(shape.color);context.fill(shape.path);}
+  function paintNative(m,context,bounds=null){
+    for(const shape of m.shapes){
+      if(bounds&&(shape.top>bounds.bottom||shape.bottom<bounds.top||shape.right<bounds.left||shape.left>bounds.right))continue;
+      context.fillStyle=material(shape.color);context.fill(bounds?.ground?shape.groundPath:shape.path);
+    }
   }
   function prepareNativeCache(){
     if(nativeCache.prepared)return;nativeCache.prepared=true;
@@ -199,7 +218,7 @@
     for(const canvas of nativeCache.surfaces)releaseSurface(canvas);
     clearBackgroundCache();
     for(const c of nativeCache.models.values())c.canvas.width=c.canvas.height=1;
-    nativeCache.models.clear();nativeCache.bytes=0;nativeCache.prepared=false;
+    nativeCache.models.clear();nativeCache.bytes=0;nativeCache.transitionBytes=0;nativeCache.prepared=false;
     nativeCache.lastYaw=undefined;
   }
   function nativeShape(id,x,y,width,opacity=1,clipBottom=Infinity,heightRatio=1){
@@ -208,10 +227,14 @@
       y+m.top*scaleY>Math.min(VH+PAD_BOT,clipBottom))return;
     const pixels=width*viewScale,tier=pixels<=64?64:pixels<=128?128:pixels<=256?256:0,
       key=id+':'+tier+(materialPalette?':'+materialPalette.id:'');
-    // Transition materials are short-lived and spatially numerous. Caching
-    // all 16 variants displaced both settled biomes every frame. Draw those
-    // same Path2Ds directly; cache only the stable endpoint materials.
-    const cacheable=opacity===1&&g.globalAlpha===1&&tier&&(!materialPalette||materialPalette.id.endsWith(':16'));
+    // Each tree's intermediate colour is world-fixed, not animated. Reuse
+    // small transition trees too, within a 1 MiB sub-budget of the SAME 5 MiB.
+    // Large/near transitions remain vector; never retain all tiers per colour.
+    const transition=!!materialPalette&&!materialPalette.id.endsWith(':16');
+    // High-resolution views already use most of the fixed budget for the
+    // stable forest. Extra transition textures worsened DPR2 pacing; retain
+    // native transition paths there instead of crowding out the working set.
+    const cacheable=opacity===1&&g.globalAlpha===1&&tier&&(!transition||id<3&&tier<=128&&viewScale<=1.25);
     let cached=cacheable?nativeCache.models.get(key):null;
     // Coloured variants share the existing hard budget. At most two small
     // rasterizations per frame; overflow falls back to the native paths.
@@ -224,20 +247,23 @@
       if(nativeCache.builds<2&&nativeCache.bytes+bytes>nativeCache.budgetBytes){
         for(const [oldKey,entry]of nativeCache.models){
           if(entry.frame>=journeyRenderSerial-60||entry.canvas.width!==cw||entry.canvas.height!==ch)continue;
-          recycled=entry;nativeCache.models.delete(oldKey);break;
+          if(transition&&nativeCache.transitionBytes+bytes-(entry.transition?bytes:0)>1048576)continue;
+          recycled=entry;nativeCache.models.delete(oldKey);
+          if(entry.transition)nativeCache.transitionBytes-=bytes;break;
         }
       }
-      if(nativeCache.builds<2&&(recycled||reserveNative(bytes))){
+      if(nativeCache.builds<2&&(!transition||nativeCache.transitionBytes+bytes<=1048576)&&(recycled||reserveNative(bytes))){
         const canvas=recycled?.canvas||document.createElement('canvas');
         if(!recycled){canvas.width=cw;canvas.height=ch;nativeCache.bytes+=bytes;}
         const ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cw,ch);
         ctx.setTransform(cs,0,0,cs,pad-m.left*cs,pad-m.top*cs);paintNative(m,ctx);
-        cached={canvas,scale:cs,left:m.left-pad/cs,top:m.top-pad/cs};
+        if(transition)nativeCache.transitionBytes+=bytes;
+        cached={canvas,scale:cs,left:m.left-pad/cs,top:m.top-pad/cs,transition};
         nativeCache.models.set(key,cached);nativeCache.builds++;
       }
     }
     if(cached){
-      cached.frame=journeyRenderSerial;nativeCache.models.delete(key);nativeCache.models.set(key,cached);
+      if(cached.frame!==journeyRenderSerial){cached.frame=journeyRenderSerial;nativeCache.models.delete(key);nativeCache.models.set(key,cached);}
       // Source-crop the buried part: no per-object Canvas clip or extra mask.
       const factor=scale/cached.scale,factorY=scaleY/cached.scale,top=y+cached.top*scaleY,
         sourceHeight=Math.min(cached.canvas.height,(clipBottom-top)/factorY);
@@ -250,8 +276,11 @@
       // Preserve per-plane alpha in the far fade; flattening that transparency
       // would change the authored colors. Very close silhouettes also stay live.
       g.save();g.globalAlpha*=opacity;
-      if(y+m.bottom*scaleY>clipBottom){g.beginPath();g.rect(-VW*4,-PAD_TOP-6000,VW*9,clipBottom+PAD_TOP+6000);g.clip();}
-      g.translate(x,y);g.scale(scale,scaleY);paintNative(m,g);g.restore();
+      const ground=Math.abs(clipBottom-y)<1e-6;
+      if(!ground&&y+m.bottom*scaleY>clipBottom){g.beginPath();g.rect(-VW*4,-PAD_TOP-6000,VW*9,clipBottom+PAD_TOP+6000);g.clip();}
+      g.translate(x,y);g.scale(scale,scaleY);
+      paintNative(m,g,{ground,left:(-x-1)/scale,right:(VW-x+1)/scale,
+        top:(-PAD_TOP-y-1)/scaleY,bottom:(Math.min(VH+PAD_BOT,clipBottom)-y+1)/scaleY});g.restore();
     }
     state.draws++;
   }
@@ -330,7 +359,7 @@
     nativeCache.lastYaw=yaw;
     // Settling also changes yaw. Repainting and uploading a screen-sized
     // cache every settling frame cost more than these few native paths.
-    if(journey.phase==='turning'||moving){paintBackground();return;}
+    if(journey.phase==='turning'||moving||materialPalette?.continuous){paintBackground();return;}
     const key=viewScale+':'+PAD_TOP+':'+yaw+':'+(materialPalette?.id||'forest');
     let cached=nativeCache.background;
     if(cached?.key!==key){
@@ -534,8 +563,8 @@
     for(const branch of [false,true]){
       // Match scenery retirement: don't rebuild an invisible branch's cleared
       // planting rows every frame only for queueScenery to discard them again.
-      if(branch&&cam.yaw===0&&235-30-cam.z>=SPAWN_FAR)continue;
-      if(!branch&&cam.yaw===Math.PI/2&&30-cam.x<=sceneryNearLimit())continue;
+      if(branch&&cam.yaw===0&&235-36-cam.z>=SPAWN_FAR)continue;
+      if(!branch&&cam.yaw===Math.PI/2&&36-cam.x<=sceneryNearLimit())continue;
       const center=branch?cam.x-JOURNEY_LANE_WORLD:cam.z;
       for(let row=Math.floor(Math.max(0,center-28)/18);row<=Math.ceil((center+100)/18);row++){
         for(const o of rowRecords(row,branch))if(o.kind==='pool'){
@@ -580,16 +609,16 @@
     const key=branch+':'+row;let result=state.rows.get(key);if(result)return result;
     const seed=row*139+(branch?4001:0),base=row*18;
     result=[];
-    // Three staggered world-space belts, not a screen-space forest wall.
-    // The sunny verge is sparse; trunks fill the gaps behind it. Each side has
-    // a different seed so the road never becomes a mirrored avenue.
+    // Keep the readable verge; pack staggered trunks behind it like the
+    // original forest. Four world-space belts, no flat screen-space curtain.
+    // Existing foreground model sizes and clear pond/prop footprints stay put.
     for(const side of [-1,1]){
       const grove=(row%4+4)%4,s=seed+(side>0?971:227);
-      for(let belt=0;belt<3;belt++)for(let k=0;k<(belt===2?1:2);k++){
+      for(let belt=0;belt<4;belt++)for(let k=0;k<[2,3,3,2][belt];k++){
         const n=s+belt*181+k*43;
-        result.push({x:side*([8.6,15,24][belt]+R(n+8)*[2.5,4,5][belt]),
-          z:base+k*8+R(n+3)*6+(belt===2?5:0),
-          id:Math.min(2,Math.floor(R(n+17)*3)),w:[8.2,9.2,11][belt]+R(n+12)*2});
+        result.push({x:side*([8.6,14.5,22,30][belt]+R(n+8)*[2.5,3,4,4][belt]),
+          z:base+k*(belt===0?8:belt===3?9:6)+R(n+3)*(belt===0?6:3),
+          id:Math.min(2,Math.floor(R(n+17)*3)),w:[8.2,9.2,11,11][belt]+R(n+12)*2});
       }
       for(let k=0;k<4;k++)result.push({x:side*(6.45+R(s+k)*2.7),z:base+k*4.5+R(s+k+19),
         id:k===grove?(R(s+41)<.4?7:3):6,w:k===grove?2.3+R(s+k+41)*1.4:1.3+R(s+k+41)*2.6,v:R(s+k+71)});
@@ -621,8 +650,8 @@
     for(const branch of [false,true]){
       // Bounds include both verges and the outer saplings; a road outside the
       // depth range cannot contribute even a tree crown to this frame.
-      if(branch&&cam.yaw===0&&235-30-cam.z>=SPAWN_FAR)continue;
-      if(!branch&&cam.yaw===Math.PI/2&&30-cam.x<=near)continue;
+      if(branch&&cam.yaw===0&&235-36-cam.z>=SPAWN_FAR)continue;
+      if(!branch&&cam.yaw===Math.PI/2&&36-cam.x<=near)continue;
       const center=branch?cam.x-JOURNEY_LANE_WORLD:cam.z;
       // World-coordinate rows are retained through the entire corner, rather
       // than regenerated relative to the new camera when the turn ends.
@@ -695,6 +724,60 @@
       paint([[8.4,.68],[9.5,.65],[9.3,.53],[8.4,.53]],'#8bac46');
     }
   }
+  // Shallow, bevelled road stones: dimensions are authored in road space.
+  // Widen the slab, not its bevels/cracks. No bitmap, mesh engine or per-frame
+  // geometry generation; only these shared vertices are projected each draw.
+  const roadRocks=[1,2,3].map(lanes=>{
+    const w=lanes*3.36/2,h=1.24*(1+.18*(lanes-1));
+    const base=[[-w+.3,0,-.72],[-.25,0,-.72],[w-.32,0,-.72],[w,0,-.34],[w,0,.4],
+      [w-.4,0,.82],[.15,0,.82],[-w+.38,0,.82],[-w,0,.36],[-w,0,-.34]];
+    const top=[[-w+.48,h*.72,-.5],[-.25,h,-.5],[w-.5,h*.85,-.5],
+      [w-.23,h*.52,-.22],[w-.25,h*.6,.25],[w-.52,h*.92,.58],
+      [.15,h*1.03,.62],[-w+.54,h*.86,.58],[-w+.22,h*.64,.25],[-w+.2,h*.6,-.2]];
+    const vertices=[...base,...top],faces=[];
+    for(let i=0;i<10;i++)faces.push({indices:[i,(i+1)%10,(i+1)%10+10,i+10],
+      color:['#6b7b76','#6b7b76','#526965','#4d6460','#4d6460','#526965','#526965','#86a096','#a9b4a0','#86a096'][i]});
+    faces.push({indices:[10,11,12,13,14,15,16,17,18,19],color:'#a9b4a0'});
+    // Sparse moss follows the upper plane; it must not consume the whole face.
+    const add=(pts,color)=>{const indices=[];for(const p of pts){indices.push(vertices.length);vertices.push(p);}faces.push({indices,color});};
+    const roof=(u,v)=>top[0].map((n,k)=>n+(top[1][k]-n)*u+(top[7][k]-top[0][k])*v+(k===1?.008:0));
+    add([[.04,.03],[.48,.03],[.48,.20],[.3,.2],[.3,.36],[.04,.36]].map(([u,v])=>roof(u,v)),'#86a44b');
+    add([[.04,.03],[.48,.03],[.48,.08],[.04,.08]].map(([u,v])=>roof(u,v)),'#bed069');
+    const front=(x,v)=>{
+      const a=x<-.25?top[0]:top[1],b=x<-.25?top[1]:top[2];
+      return [x,(a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]))*v,-.724+.22*v];
+    };
+    add([[-.17,.2],[-.10,.2],[-.10,.47],[-.23,.6],[-.23,.89],[-.30,.89],[-.30,.57],[-.17,.44]].map(([x,v])=>front(x,v)),'#4d6460');
+    return {width:w*2,height:h,vertices,faces,screen:vertices.map(()=>[0,0])};
+  });
+  function drawRoadRock(o,point){
+    for(const group of obstacleLaneGroups(o.lanes)){
+      const lanes=group.end-group.start+1,m=roadRocks[lanes-1],
+        offset=((group.start+group.end)/2-1)*JOURNEY_LANE_WORLD;
+      let bottom=-Infinity,minX=Infinity,maxX=-Infinity,valid=true;
+      for(let i=0;i<m.vertices.length;i++){
+        const [x,h,z]=m.vertices[i],world=point(z,x+offset),c=journeyCameraPoint(world.x,world.z);
+        if(c.depth<=sceneryNearLimit()){valid=false;break;}
+        const p=journeyProjectCamera(c.side,c.depth),s=m.screen[i];
+        s[0]=p.x;s[1]=p.y-h*150/JOURNEY_LANE_WORLD*linS(p.t);
+        minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
+        if(i<10)bottom=Math.max(bottom,curvedSpriteClipY(c.depth));
+      }
+      if(!valid||maxX<0||minX>VW)continue;
+      g.save();g.beginPath();g.rect(-VW*4,-PAD_TOP-6000,VW*9,bottom+PAD_TOP+6000);g.clip();
+      for(const face of m.faces){
+        let area=0;const ids=face.indices;
+        for(let j=0;j<ids.length;j++){const a=m.screen[ids[j]],b=m.screen[ids[(j+1)%ids.length]];area+=a[0]*b[1]-b[0]*a[1];}
+        // Back-facing surfaces stay hidden as the road rotates. Signed area
+        // naturally reveals the top gradually; no distance threshold or snap.
+        if(area>=-.001)continue;
+        g.fillStyle=material(face.color);g.beginPath();
+        for(let j=0;j<ids.length;j++){const p=m.screen[ids[j]];if(j)g.lineTo(p[0],p[1]);else g.moveTo(p[0],p[1]);}
+        g.closePath();g.fill();
+      }
+      g.restore();
+    }
+  }
   function drawHazard(o,side,depth){
     if(depth>SPAWN_FAR||depth<o.type.cullZ)return;
     if(o.kind==='pond'){
@@ -705,13 +788,9 @@
     if(o.kind==='root'){
       g.save();g.globalAlpha=treeDistanceAlpha(o,depth);drawMorningRoot(o);g.restore();return;
     }
-    const p=journeyProjectCamera(side,depth),s=linS(p.t),unit=150/JOURNEY_LANE_WORLD*s,
-      width=o.lanes.length*JOURNEY_LANE_WORLD*.84;
     g.save();g.globalAlpha=obstacleDistanceAlpha(o,depth);
-    g.beginPath();g.rect(-2000,-PAD_TOP-6000,4480,curvedSpriteClipY(depth)+PAD_TOP+6000+2);g.clip();
     if(o.kind==='boulder'){
-      const lanes=Math.max(1,o.lanes.length);
-      nativeShape(4,p.x,p.y,Math.max(2.8,width)*unit,1,Infinity,.8*(1+.18*(lanes-1))/lanes);
+      drawRoadRock(o,(d,x)=>morningPoint(o.morningBranch,o.morningAt+d,x));
     }
     g.restore();
   }
@@ -765,7 +844,8 @@
       clear:()=>{state.rows.clear();floorRows.clear();clearNativeCache();riderLightCache=null;},
       setSeed:seed=>{if(state.seed!==seed){state.seed=seed;state.rows.clear();floorRows.clear();}},
       setFloorFrame:frame=>{floorFrame=frame;},floorSectionVisible,floorRow,drawFloorShape,waterShapes,
-      rowRecords,root:drawMorningRoot,
+      rowRecords,root:drawMorningRoot,rock:drawRoadRock,
+      rockDimensions:lanes=>({width:roadRocks[lanes-1].width,height:roadRocks[lanes-1].height}),
       trimRows:keys=>{for(const key of state.rows.keys())if(!keys.has(key))state.rows.delete(key);},
       report:()=>({cacheBytes:nativeCache.bytes,budgetBytes:nativeCache.budgetBytes,rows:state.rows.size,models:models.length})};
     return;

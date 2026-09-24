@@ -13,8 +13,9 @@ and scripted obstacle sequence are **not** installed in normal play.
 - `curvedRoadViews()` provides physical road frames. New woodland uses those
   frames, absolute ground-distance row IDs and the Journey camera, including
   left/right/straight previews and the post-turn coordinate rebase.
-- Dead-end trees use Journey's existing end-cap instances, drawn with the new
-  native tree models. Venues, signs, dancers and encounter props remain in the
+- Dead-end trees use four staggered, node-cached native rows (68 records) behind
+  the existing road stop, with Journey's unchanged end-cap projection/rebase.
+  The legacy renderer retains its original 14 instances. Venues, signs, dancers and encounter props remain in the
   existing depth-sorted world queue. Cave battle interiors remain unchanged.
 - Normal rocks, ponds and attached roots use the Morning art. Disco has been
   restored to its original four-column jointed floor, club entrance, dancers,
@@ -50,6 +51,51 @@ Natural biome soil (including Crimson) must start at the forest colour, then
 blend by world distance like its trees/sky: normal through the first 30 m,
 smoothly reaching full biome colour at 95 m. Never reintroduce a minimum-red
 floor at the Crimson mouth. This is opaque RGB interpolation, not alpha sheets.
+
+The sky uses a continuous reusable material profile during transitions, **not**
+the 16 discrete prop-palette steps (the old sky changed by up to 11 RGB levels
+at once). Intermediate sky frames draw the small native panorama directly;
+only stable endpoints use the screen-resolution cache. No transition textures
+accumulate. Crimson now has a deeper red sky, without changing Disco's floor.
+
+## Woodland density
+
+### Road-stone volume trial
+
+Normal Journey/Morning obstacle rocks now use a small shared road-space solid:
+an asymmetric, bevelled slab with a readable front, light upper face and darker
+side. Vertices use the existing curved-ground camera, so the top becomes visible
+with approach and side faces respond to turns. There is no threshold-based pose
+swap, new image asset or raster cache. One/two/three-lane widths remain 3.36 times
+lane count; height grows only 1 / 1.18 / 1.36. Bevel widths and the crack are not
+stretched with lane coverage. Disjoint lane groups remain separate stones.
+Roadside decorative rocks, Disco amps, Crimson skeletons and collision rules
+are untouched. Candidate art follows KR-KD broad faces, restrained moss and one
+structural crack; it is not promoted to an approved reference yet.
+
+`node tools/road-rock-volume-audit.cjs` captures 95/60/30/10/2 m approach views
+at desktop and DPR2 phone size. It checks state purity, finite projected vertices
+through left/right rotations and the existing memory cap. The local isolated
+rock-draw sample was <=0.2 ms p95, not a physical-phone FPS claim. Evidence lives
+in `output/road-rock-volume/after/`.
+
+### Staggered planting
+
+The existing foreground models/sizes stay intact. Four staggered side belts
+replace the sparse three-belt layout: the near verge remains readable, while
+middle/far ranks and the four-row end grove close empty views beyond trunks.
+Pond, root, road and special-prop footprint exclusions still apply. Outer trees
+are screen-culled before palette and footprint work, and end trees are culled
+before native drawing. The shared 5 MiB raster-cache cap is unchanged.
+
+`node tools/forest-density-transition-audit.cjs` captures desktop/DPR2 straight,
+junction and Crimson evidence and samples both real rendered sky ramps. The
+September 24 sample reduced sky jumps to <=1 RGB level with no canvas allocation
+during transitions. Denser woods add some CPU cost (roughly 0.3–0.8 ms median in
+the frozen-frame samples); this is not a zero-cost density increase or a phone
+FPS guarantee. Moving-frame, corner, biome-prop, battle-cache and Art Lab audits
+also run separately. Screenshots in `output/forest-density/after/` are candidates
+for user review, not new approved style references.
 
 Knight Rush Art controls shape/material identity; Knight Rush Cutscene controls
 scene light and depth relationships. No approved character renderer or reference
@@ -99,12 +145,36 @@ produced up to 9 bad scanlines/frame, the corrected pass produces zero.
 All native model tiers, biome variants, background and battle-plate pixels share a
 5 MiB RGBA cap. Variant rasterization is limited to two models per frame;
 overflow uses native paths. Large foreground trees never upscale a tiny cache.
-Only stable forest/full-biome materials are raster-cached; intermediate biome
-colours use their original Path2Ds. Recently used surfaces cannot evict one
+Stable forest/full-biome materials are raster-cached. Small opaque intermediate
+trees can also reuse 64/128-pixel tiers at render scale <=1.25, with a 1 MiB
+sub-limit **inside**, not on top of, the shared 5 MiB budget. High-DPI views keep
+native transition paths: extra colour textures crowded their stable working
+set and did not improve frame pacing. Larger or fading transitions also remain native paths.
+Recently used surfaces cannot evict one
 another cyclically. Matching stale surfaces are repainted in place, and the
 background surface is reused instead of reallocated. While yaw changes
 (including post-turn settling), the distant background uses its native paths
 so a full-screen texture is not repainted/uploaded every frame.
+
+The dense-woods performance pass removes duplicate end-tree ground masks.
+Model planes carry authored bounds; fully offscreen/buried planes are skipped.
+Their below-ground portions are clipped once when geometry is built, so a tree
+at its ordinary ground anchor needs no fresh canvas clip. Cached model LRU is
+touched once per frame, and biome palette lookup reuses indexed material tiers.
+Tree placement, density, camera movement and silhouettes remain unchanged.
+Batching disconnected soil chips was tested and rejected: fewer CPU submissions
+did not translate into better DPR2 frame pacing. Individual chip paths remain.
+
+Performance evidence: `tools/sunlit-frame-pacing.cjs` covers forest, Disco and
+Crimson on straights and real turns, supports repeated runs and records both RAF
+frame intervals and CPU command-submission time. `steady*` excludes the first
+30 frames; all-frame results retain startup spikes. CPU-derived rates are NOT
+actual FPS. DPR2 viewport emulation is not physical-phone hardware. The visual
+comparison tool `tools/sunlit-perf-visual-audit.cjs` requires a pre-edit snapshot
+of the two forest JS files in `output/perf-source-before/`; it checks the same
+seeded scenes without promoting new art references.
+See [PERFORMANCE_REVIEW.md](PERFORMANCE_REVIEW.md) for the before/after table,
+high-DPI regressions, rejected experiments and physical-phone testing limits.
 
 ### Stationary road battles
 

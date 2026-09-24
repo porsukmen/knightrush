@@ -23,16 +23,16 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
  finally{drawJourneyDiscoPatch=original;}return seen>0&&valid;})()`);assert(exit);
  await page.screenshot({path:path.join(out,device+'-disco-exit.png')});
  const stones=await run(`(()=>{startJourneyWithSeed(647486904);godMode=true;
-  for(let i=0;i<100;i++)update(1/60);render();const original=KRSunlitArt.nativeShape,records=[];
-  try{KRSunlitArt.nativeShape=(...args)=>{if(args[0]===4)records.push({width:args[3],ratio:args[6]});};
+  for(let i=0;i<100;i++)update(1/60);render();const original=KRSunlitArt.rock,records=[];
+  try{KRSunlitArt.rock=o=>records.push(KRSunlitArt.rockDimensions(o.lanes.length));
    for(let lanes=1;lanes<=3;lanes++){
     const req={};for(let i=0;i<lanes;i++)req[i]='jump';drawObstacleEntity(new ObstacleEntity('boulder',18,req),BIO());
    }
-  }finally{KRSunlitArt.nativeShape=original;}
+  }finally{KRSunlitArt.rock=original;}
   obstacles=[1,2,3].map((lanes,i)=>{const req={};for(let l=0;l<lanes;l++)req[l]='jump';return new ObstacleEntity('boulder',14+i*30,req);});
   render();return records;})()`);
- assert.equal(stones.length,3);const h=stones[0].width*stones[0].ratio;
- assert(stones.every((s,i)=>Math.abs(s.width*s.ratio/h-(1+.18*i))<1e-6),'Stone height must grow modestly: 1 / 1.18 / 1.36');
+ assert.equal(stones.length,3);const h=stones[0].height;
+ assert(stones.every((s,i)=>Math.abs(s.height/h-(1+.18*i))<1e-6),'Stone height must grow modestly: 1 / 1.18 / 1.36');
  assert(Math.abs(stones[2].width/stones[0].width-3)<1e-6);
  await page.screenshot({path:path.join(out,device+'-stones.png')});assert.deepEqual(errors,[]);await page.close();
  }

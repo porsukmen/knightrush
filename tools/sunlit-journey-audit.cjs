@@ -56,13 +56,16 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/sunlit-journe
    if(['disco','bloodwood'].includes(theme))assert(variants.some(p=>p.startsWith(theme+':')),'No spatial biome palette');
    cases.push({direction,theme,report});
   }
-  // A closed junction keeps its existing tree wall but uses the new models.
+  // A closed junction uses four staggered native rows behind the road stop.
   await run(`startJourneyWithSeed(647486904);godMode=true;
    globalThis.endNode=journeyRoute.nodes.find(n=>n.type!=='boss'&&n.out.length&&!n.out.some(e=>e.direction===0)&&journeyRoute.nodes.some(p=>p.out.some(e=>e.to===n.id)));
    globalThis.parentNode=journeyRoute.nodes.find(n=>n.out.some(e=>e.to===endNode.id));
    journeyRoute.from=parentNode.id;journeyRoute.next=endNode.id;journeyRoute.activeEdge=parentNode.out.find(e=>e.to===endNode.id).id;
    dist=endNode.at-25;curvedGroundDistance=dist;roadScroll=dist;armJourneyNode();render();`);
-  assert(await run('journey.endTrees.length===14'));await shot('dead-end');
+  assert(await run('journey.endTrees.length===68'));
+  assert(await run('journey.endTrees.every(t=>t.endCap&&t.z>=endNode.at+22)'));
+  assert(await run('journey.endTrees===journeyEndTrees(endNode,journeyActiveEdge())'),'End grove must reuse its world records');
+  await shot('dead-end');
   assert(await run('DRAW_QUEUE.some(o=>o.draw===drawJourneyTree&&o.ref.endCap)'));
   await page.setViewportSize({width:390,height:844});await run('resize();');await shot('phone-dead-end');
   await run('resetRun();setMode("menu");render();');

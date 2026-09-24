@@ -7720,7 +7720,7 @@ let worldA=1;   // current fade for the object being drawn — sprites multiply 
    GROWS in place with the true 1/(f+z) perspective ratio, until the real sprite
    crossfades in at exactly the same spot and size. */
 const SPAWN_FAR=150;
-// Only the fixed 14-tree end cap needs a longer crown runway; do not increase
+// Only the fixed end grove needs a longer crown runway; do not increase
 // the roadside spawn population or the hazard visibility distance.
 function treeVisibilityFar(tree){return curvedWorldActive()&&tree.endCap?SPAWN_FAR+64:SPAWN_FAR;}
 function treeDistanceAlpha(tree,depth){
