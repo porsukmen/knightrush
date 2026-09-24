@@ -34,15 +34,12 @@ const result=JSON.parse(run(`JSON.stringify((()=>{
   if(curvedWorldTrial)throw Error('F8 choice lost at stage change');
   startJourneyWithSeed(647486904);
   if(!curvedWorldTrial||loop!==1||bossMaxHp()!==105)throw Error('Fresh journey defaults');
-  // Summons are combat-local, including defeat/exit; the wolf pack is not.
-  setMode('boss');squire.present=true;pack=1;packTypes=['wolf'];setMode('dying');
-  if(squire.present||pack!==1)throw Error('Combat exit cleanup scope');
-  pendingJourneyPrototype=false;startRun(0);
-  if(activeRunPolicyId!=='endless_build'||runJourneyPrototype||curvedWorldTrial)throw Error('Normal PLAY isolation');
-  const classic=[];for(loop=1;loop<=4;loop++){biome=biomeOf(loop);classic.push([biome,bossMaxHp()]);}
-  resetRun();return {rows,classic,uniqueMaps:new Set(maps).size};
+  // Squire remains combat-local; the retired wolf pack no longer exists.
+  setMode('boss');squire.present=true;setMode('dying');
+  if(squire.present||hasCombatAlly())throw Error('Combat exit cleanup scope');
+  startRun(0);
+  if(activeRunPolicyId!=='journey_forest'||!runJourneyPrototype||!curvedWorldTrial||!journeyRoute)throw Error('PLAY must launch Journey');
+  resetRun();return {rows,uniqueMaps:new Set(maps).size};
 })())`,30000));
 assert.deepEqual(result.rows.map(r=>r.hp),[105,130,156,184,213,244,276,310]);
-assert.deepEqual(result.classic.map(r=>r[0]),['forest','swamp','volcano','forest']);
-assert.deepEqual(result.classic.map(r=>r[1]),[105,115,141.75,164]);
 console.log(JSON.stringify(result,null,2));

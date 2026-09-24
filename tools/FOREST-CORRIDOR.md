@@ -1,5 +1,29 @@
 # Forest vision: phase 1/2 checkpoint
 
+## Active renderer — 2026-09-24
+
+FOREST TEST now defaults to the production Journey running renderer (curved
+projection enabled on entry). It keeps the authored giant-tree models and
+deterministic corridor positions, but shares Journey's ground, obstacle drawing,
+far-to-near queue, distance visibility and crest mask. All six course obstacles
+are visible as they approach; this remains an endless, non-damaging preview,
+not a procedural Journey route. No special events, forks or boss cave are added.
+
+The tree adapter only projects the existing cached art; it does not redraw or
+replace the approved characters. Full-resolution baked parts reuse their current
+cache. The former GPU floor/large ground atlases do not run in this mode. Chunk
+preparation uses the 150 m Journey visibility envelope plus a 128 m lookahead,
+instead of preparing 65,536 m. This does not certify mobile memory or FPS.
+
+F8 compares curved/original Journey projection. For the archived renderer, open
+`KnightRush.html?forestRenderer=legacy` and enter **FOREST TEST · TREE** from the
+menu (G still switches its GPU/Canvas floor). Ordinary Journey is unchanged.
+The historical renderer notes below describe that legacy path, not the default.
+
+Validation: `node tools/forest-journey-render-audit.cjs` checks browser rendering,
+shared world queues, bounded chunks, F8, update-loop motion, phone framing,
+legacy opt-in and return to normal Journey. Screenshots: `output/forest-journey/`.
+
 Latest iteration: footprint-based tree cache selection (filtered 1/2/4/8/16
 levels, never enlarging a coarse source). This replaces fixed .09/.4 switches.
 Deterministic ground details now reserve conservative footprints and the test

@@ -1,0 +1,86 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {pathToFileURL}=require('node:url');
+const root=path.resolve(__dirname,'..'),out=path.join(root,'output/background-illustration');
+(async()=>{
+  fs.mkdirSync(out,{recursive:true});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:1280,height:1000},deviceScaleFactor:1}),errors=[];
+    page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?backgroundlab=1');
+    await page.waitForFunction(()=>document.querySelector('#blockout-root')?.dataset.ready==='1'||document.querySelector('#blockout-root')?.dataset.failed==='1');
+    assert.equal(await page.locator('#blockout-root').getAttribute('data-failed'),null,await page.locator('#bo-error').innerText());
+    const state=await page.evaluate(()=>KRBackgroundBlockout.state());
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().candidate),'gatherer-near-v3');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),'approved');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().referenceId),'gatherer-clearing-crisp');
+    const before=await page.evaluate(()=>KRBackgroundBlockout.report().renders);
+    await page.waitForFunction(n=>KRBackgroundBlockout.report().renders>n+6,before);
+    await page.evaluate(()=>KRBackgroundBlockout.setOptions({motion:false}));
+    const assertResolution=async p=>{
+      const r=await p.evaluate(()=>KRBackgroundBlockout.report().resolution);
+      assert(r.width>=r.displayWidth*r.renderDpr,'Lab upscales a low-res backing store');
+      assert(r.width<=Math.ceil(r.displayWidth*r.renderDpr)+1,'Unbounded supersampling');
+      assert.equal(await p.locator('#bo-canvas').evaluate(c=>getComputedStyle(c).imageRendering),'auto');
+      return r;
+    };
+    const desktopResolution=await assertResolution(page);
+    assert(desktopResolution.width>480,'Desktop still limited to 480px');
+    const builds=await page.evaluate(()=>KRBackgroundBlockout.report().backplateBuilds);
+    await page.evaluate(()=>{for(let i=0;i<8;i++)KRBackgroundBlockout.draw();});
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().backplateBuilds),builds,'Static image resampled each frame');
+    const shot=async(name,opts)=>{
+      await page.evaluate(opts=>KRBackgroundBlockout.setOptions(opts),opts);
+      assert.deepEqual(await page.evaluate(()=>KRBackgroundBlockout.report().failures),[]);
+      await page.locator('#bo-canvas').screenshot({path:path.join(out,name+'.png')});
+    };
+    await shot('01-character-composite',{});
+    await shot('01-original-colors',{lighting:'original'});
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),'diagnostic-view');
+    await shot('01-clearing-sunlight',{lighting:'sunlit'});
+    await shot('02-environment-only',{figure:'none'});
+    await shot('03-grayscale',{figure:'approved',grayscale:true});
+    await shot('04-blender-scale',{view:'perspective',grayscale:false});
+    await shot('05-dialogue',{view:'illustration',dialogue:true});
+    assert(await page.locator('#bo-labels').isDisabled());
+    await page.setViewportSize({width:390,height:844});
+    await shot('06-phone-dialogue',{phone:true});
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile overflow');
+    await shot('07-phone-scene',{dialogue:false,phone:false});
+    await assertResolution(page);
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.state()),state);
+    // Actual game in an isolated child frame, not a painted imitation of its UI.
+    await page.locator('#bo-playtest').click();
+    const frame=await (await page.locator('#bo-play-dialog iframe').elementHandle()).contentFrame();
+    await frame.waitForFunction(()=>document.querySelector('#game').dataset.backgroundReady==='1');
+    assert.equal(await frame.evaluate(()=>KRBackgroundPlaytest.report().mode),'journeyevent');
+    await frame.waitForFunction(()=>journeyRoadEventSession.context.dialogueTime>.3);
+    assert.equal(await frame.evaluate(()=>KRBackgroundPlaytest.report().paused),false,'Preview opened on pause overlay');
+    await frame.locator('#game').screenshot({path:path.join(out,'08-live-game.png')});
+    const clickChoice=async y=>{
+      const p=await frame.evaluate(y=>({x:(240*viewScale+viewX)/renderDpr(),y:(y*viewScale+viewY)/renderDpr()}),y);
+      await frame.locator('#game').click({position:p});
+    };
+    await clickChoice(670);
+    await frame.waitForFunction(()=>KRBackgroundPlaytest.report().dialogue==='response');
+    assert.equal(await frame.evaluate(()=>KRBackgroundPlaytest.report().quest.status),'collecting');
+    await frame.waitForFunction(()=>journeyRoadEventSession.context.dialogueTime>.22);
+    await clickChoice(670);
+    await frame.waitForFunction(()=>KRBackgroundPlaytest.report().mode==='run');
+    await page.locator('#bo-play-close').click();
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.state()),state,'Child run mutated lab state');
+    const retina=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:3});
+    retina.on('pageerror',e=>errors.push(e.message));
+    await retina.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?backgroundlab=1');
+    await retina.waitForFunction(()=>document.querySelector('#blockout-root')?.dataset.ready==='1');
+    await retina.evaluate(()=>KRBackgroundBlockout.setOptions({motion:false}));
+    const retinaResolution=await assertResolution(retina);assert(retinaResolution.width>1000);
+    await retina.locator('#bo-canvas').screenshot({path:path.join(out,'09-retina-3x.png')});
+    await retina.close();
+    assert.deepEqual(errors,[]);
+    const report=await page.evaluate(()=>KRBackgroundBlockout.report());
+    fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({...report,desktopResolution,retinaResolution,technical:'passed',checks:['physical display resolution / no pixelated CSS','static plate cache reused','retina 3x','live game choice click + quest + road return','child run isolation','illustration asset loaded','live NPC renders','character/environment separation','grayscale','Blender scale view','dialogue/mobile clearance','game state unchanged','no JS errors']},null,2));
+    console.log('BACKGROUND_ILLUSTRATION_OK — registered user approval preserved; diagnostic views distinguished. '+out);
+  }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

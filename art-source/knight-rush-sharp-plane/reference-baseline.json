@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Protected reference sources at Art Lab setup, plus the Mushroom Gatherer explicitly approved by the user on 2026-09-24 (empty asking hand). Not approval of other candidate art or the conversation background.",
+  "fingerprints": {
+    "drawMushroomGatherer": "94b8f697960cbe15eb3db7c4fba78a5b9eb4272b839df4fc5e49cdd6e9489484",
+    "drawSerJonathanRider": "cd50075a287e3cacc3c40122e08c5dca0a5ad775dc2f0bb5b27c7020a0144122",
+    "drawBearNatural": "538b776baace6f40da5c5517ac5399c18410e451f4708f8e54f4b92660bcc437",
+    "drawWolf": "2c20b338649a92ef52dbd018ac177c89452bafb0b311e361d45fe76c218962d4",
+    "drawMireToad": "c17a89b1cbf9f5da94046a88b1be6ce711d259c02995d8cdefbe8d49aec829c9",
+    "drawWanderingMerchant": "09bbac698afaa20db3ab99570370f39e01e2ad9b2fb92da90b53055b2f45c474",
+    "discoBodyPose": "7440f55f99ee976fe434c78163f04b33acbdbf76cad39d1e24c46cab87e7e2aa",
+    "drawDiscoKing": "5888aec3020e6209e5e9cc2cbe62fa02552f6907f697644aca6281348289c1f1",
+    "smithKnightPose": "a1ea4d0cb30784071c8aa0f5ad041d699ecc40839ead1cb170526305e7528161",
+    "drawSmithKnight": "930a1da17cd5e4858ced33cebf9e71c9e5369262914402491202a28b3abb8bbb",
+    "rigPolygon": "3a2ca2956cbeee88808be640e5a01b28767911218df487e3d738ac1f0ddfc469",
+    "rigSegment": "1b8a99c316f3327cf99b076e7e57eb58001c531db40a144f66908bce60d3682a",
+    "rigJoint": "39a773a719afd4b7d83745f2d90a62386876ea6eca4f984107ab92c37d2daa55",
+    "px": "69d6fa3e48e9150c09b0cf0d6fdd52eec7d0073db2fdfcef09e23542e72afe82",
+    "expPoly": "1e796e7a4ad10db8fc5b61acea79072a0267e67b487ad440f7b7b15f397c5dfb",
+    "expSegment": "862c373a9810ff6137e53bf0d4266e04867d58c5a71a9e5214faafb94dbe254c",
+    "drawTreeArt": "7ac61076323b5a981577de31683d30908c03511f1edc7dc2002a3c6b19f4b22b",
+    "drawMerchantDisplayItem": "63c14d613f98b547bb1cb6c7c521e1cf97106559af3ba5564385dec83f78e9c5"
+  },
+  "images": {
+    "approved-mushroom-gatherer.png": "a1791937c58f34c6a9b62fcd225b18d840ff5681d7771b72e17d155060d4c72d",
+    "approved-wagon-merchant.png": "7b4870c2097d0e1c77bc004737407fe599aacdf84b9d44ccb1412d09b1538aed",
+    "approved-item-style.png": "13f2194f4e04b3140457cea3a825773575b647177121f8ba290c220d84d283c6",
+    "blacksmith-character-reference.png": "2bbb83ab76d4778af2e3fa5c0b96a7bcdb223912af07e3aaab13479b6b650441"
+  }
+}

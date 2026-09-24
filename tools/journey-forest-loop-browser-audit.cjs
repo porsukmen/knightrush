@@ -9,7 +9,17 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await page.goto(pathToFileURL(path.resolve('KnightRush.html')).href);
   await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
   const run=code=>page.evaluate(code=>(0,eval)(code),code);
-  await run('SFX.toggle();startJourneyWithSeed(647486904);render();');
+  await run('SFX.toggle();resetRun();setMode("menu");render();');
+  for(const [x,y] of [[240,430],[85,420]]){
+   const pt=await run(`({x:(${x}*viewScale+viewX)/renderDpr(),y:(${y}*viewScale+viewY)/renderDpr()})`);
+   await page.touchscreen.tap(pt.x,pt.y);
+  }
+  assert.deepEqual(await run('[mode,runJourneyPrototype,!!journeyRoute,activeRunPolicyId,curvedWorldActive()]'),
+   ['run',true,true,'journey_forest',true]);
+  await run('resetRun();setMode("menu");');
+  await page.keyboard.press('ArrowUp');await page.keyboard.press('ArrowUp');
+  assert.equal(await run('mode==="run"&&!!journeyRoute&&curvedWorldActive()'),true);
+  await run('startJourneyWithSeed(647486904);render();');
   assert.equal(await run('curvedWorldActive()'),true);
   await page.keyboard.press('F8');assert.equal(await run('curvedWorldActive()'),false);
   await page.keyboard.press('F8');assert.equal(await run('curvedWorldActive()'),true);
@@ -28,6 +38,6 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   }
   const out=path.resolve('output/journey-forest-loop');fs.mkdirSync(out,{recursive:true});
   await page.screenshot({path:path.join(out,'forest-after-third-bear.png')});
-  assert.deepEqual(errors,[]);console.log('PASS: 3 browser victories → forest; F8 toggle; no runtime errors');
+  assert.deepEqual(errors,[]);console.log('PASS: touch/keyboard PLAY → Journey; 3 browser victories → town → forest; F8 toggle; no runtime errors');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

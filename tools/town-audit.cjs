@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const {run,shot}=require('./journey-render-audit.cjs');
-run('SFX.toggle();startJourneyWithSeed(647486904);gold=200;startBoss();setMode("boss");squire.present=true;boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);');
+run('SFX.toggle();startJourneyWithSeed(647486904);gold=200;scrap=20;startBoss();setMode("boss");squire.present=true;boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);');
 assert.equal(run('mode'),'town');assert.equal(run('squire.present'),false);assert.equal(run('loop'),1);
 const distance=run('dist');run('update(1)');assert.equal(run('dist'),distance);
 shot('town-arrival','');
@@ -32,8 +32,8 @@ assert.equal(run('gold'),gold);assert.equal(run('JSON.stringify(runSkills[0])'),
 run('openTown()');assert.equal(run('townVisit.chapter.id'),'stoneford');assert.equal(run('townVisit.forge'),null);shot('town-stoneford','');
 run('loop=3;openTown()');shot('town-emberwatch','');
 run('resetRun()');assert.equal(run('townVisit'),null);
-// Classic PLAY retains its existing direct forge; laboratorys are unchanged.
-run('debugRun=false;pendingJourneyPrototype=false;startRun(0);RUN_POLICY().afterBoss()');assert.equal(run('mode'),'shop');
+// PLAY now launches Journey and reaches town; standalone laboratories are unchanged.
+run('debugRun=false;startRun(0);RUN_POLICY().afterBoss()');assert.equal(run('mode'),'town');
 run('openBlacksmithLab()');assert.equal(run('blacksmithShop.lab!==undefined'),true);
 run('openMerchantLab()');assert.equal(run('merchantShop.lab'),true);
-console.log('TOWN_OK boss arrival, no distance advance, pause, forge RNG/build retention, store sold stock/reroll retention, exactly two building entrances, departure confirmation/single advance, chapter appearance, classic/lab isolation');
+console.log('TOWN_OK boss arrival, no distance advance, pause, forge RNG/build retention, store sold stock/reroll retention, exactly two building entrances, departure confirmation/single advance, chapter appearance, primary PLAY/lab isolation');

@@ -2,6 +2,31 @@
 
 Kısa ad: **KR-KD**. İngilizce karşılığı: **Sharp Plane**.
 
+## Güncel yön — 24 Eylül 2026
+
+Tek bir oyunun iki detay ölçeği: knight, boss ve minibossların keskin, karemsi,
+kompakt ana kütleleri; onaylı merchant ve yenilenen Disco King'in anlamlı yüz,
+kıyafet ve eşya detayları. Hedef bu ikisinin ortasıdır. NPC yakın planı daha
+detaylı olabilir, fakat uzaktan bakınca aynı oyunun sade ve güçlü silüetine döner.
+Detay eklemek ana kütleyi küçük üçgenlerle parçalamak değildir. Stil adını veya
+onaylı karakterleri bu dengeyi kurmak bahanesiyle değiştirme.
+
+Yeni çalışma giriş noktası: [Art skill](tools/skills/knight-rush-art/SKILL.md).
+Karşılaştırma: `ArtTest.html` veya `KnightRush.html?artlab=1`.
+Kontrol ve kabul: [Art üretim sözleşmesi](art-source/knight-rush-sharp-plane/ART_WORKFLOW.md).
+Lab teknik kontrol yapar; estetik onay vermez.
+
+## Cutscene ve event arka planları
+
+**Knight Rush Cutscene** için `tools/skills/knight-rush-cutscene/SKILL.md`
+kullanılır. 24 Eylül 2026'da onaylanan net mantar dayı arka planı ve sahne
+ışığıyla karakterli görünüm, `art-source/knight-rush-backgrounds/cutscene-references.js`
+içinde ayrı referanstır. Bu onay eski soru işareti arka planlarını kapsamaz.
+Her sahne orman olmak zorunda değildir; kalite, tutarlı perspektif ve ışık ilişkisi
+taşınır, aynı ev/renk/dekorlar kopyalanmaz. Blender gerektiğinde kullanılır.
+Sabit bitmap arka planlar ortak event görsel yöneticisinden alınır; her NPC'nin
+kendi resim önbelleğini veya ikinci ekran boyutlu kopyayı tutması gerekmez.
+
 Bu dosya oyuna yeni karakter, eşya veya çevre çizmeden önce okunacak görsel
 üretim rehberidir. Kullanıcının onayladığı merchant ve item çizimlerini temel
 alır. Karakterin mesleği, kıyafeti ve sahnesi değişebilir; aşağıdaki biçim dili
@@ -36,16 +61,24 @@ referans sayma. `*-before-*` klasörleri yalnızca geri dönüş arşividir.
 
 ## Ana referanslar ve öncelik
 
-1. Oyundaki orijinal Jonathan/knight ve squire çizimleri.
+1. Oyundaki orijinal Jonathan/knight, squire, ayı ve miniboss çizimleri:
+   keskin/karemsi kütle, silüet, parça kalınlığı ve uzaktan okunurluk standardı.
 2. Onaylanmış merchant ve item örnekleri:
    - [Merchant biçim referansı](art-source/knight-rush-sharp-plane/approved-merchant-style.png)
    - [22 item, tonic ve paket referansı](art-source/knight-rush-sharp-plane/approved-item-style.png)
    - [Onaylı arabalı zengin tüccar ve orman sahnesi](art-source/knight-rush-sharp-plane/approved-wagon-merchant.png)
    - [Yeni blacksmith karakteri](art-source/knight-rush-sharp-plane/blacksmith-character-reference.png)
    - [Sabit dükkân esnafı](art-source/knight-rush-sharp-plane/resident-shopkeeper-reference.png)
-3. Orijinal orman ve ayı. Mekân derinliği için onaylanmış orijinal town.
+   - [Onaylı mantar dayı](art-source/knight-rush-sharp-plane/approved-mushroom-gatherer.png):
+     24 Eylül 2026 kullanıcı onayı; karemsi sivil gövde, yüz ve iş kıyafeti referansı.
+     İsteyen eli boş, mantarlar sepette. Bu onay karakter içindir; görseldeki eski
+     konuşma arka planını yeni çevre standardı yapmaz.
+3. Yenilenen Disco King: NPC ifadesi, gösterişli kıyafet ve eklemli hareket için
+   onaylı referans. Orijinal orman: çevre standardı. Mekân derinliği için
+   onaylanmış orijinal town.
 
-Minigame çizimleri placeholder'dır; kalite veya stil referansı değildir.
+Eski minigame çizimleri placeholder'dır; kalite veya stil referansı değildir.
+Yukarıda açıkça onaylanan yenilenmiş Disco King bu kuralın istisnasıdır.
 Reddedilen yuvarlak/pastel merchant, kapüşonlu vitrin ve town deneyleri referans
 alınmaz. South Park ve Adventure Time yalnızca sade biçim, okunaklı silüet ve
 katmanlarla derinlik kurma fikri için yardımcı olabilir. Onların yüz, göz, eğri

@@ -13,7 +13,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    await page.touchscreen.tap(p.x,p.y);};
   const out=path.resolve('output/blacksmith');fs.mkdirSync(out,{recursive:true});
   const shot=async name=>{await run('render()');await page.screenshot({path:path.join(out,name+'.png')});};
-  await run(`SFX.toggle();startJourneyWithSeed(647486904);gold=130;startBoss();setMode('boss');
+  await run(`SFX.toggle();startJourneyWithSeed(647486904);gold=130;scrap=20;startBoss();setMode('boss');
     squire.present=true;boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);flashA=0;
     function smithBrowserRng(values){let i=0;return ()=>values[i++];}`);
   assert.equal(await run('mode'),'town');await tap(90,450);await run('updateTown(.4)');

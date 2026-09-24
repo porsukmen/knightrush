@@ -39,7 +39,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   assert.equal(await run('blacksmithShop'),null);
   await tap(240,359);assert.deepEqual(await run('[mode,gold,runSkills[0].evolutionDepth]'),['shop',1000,0]);
   await tap(240,750);
-  await run('startJourneyWithSeed(5);gold=100;openBlacksmithShop()');
+  await run('startJourneyWithSeed(5);gold=100;scrap=10;openBlacksmithShop()');
   assert.equal(await run('!!blacksmithShop.lab'),false,'test overrides must not leak into a real run');
   assert.deepEqual(errors,[]);
   console.log('BLACKSMITH_LAB_OK launcher, debug entry, touch controls, forced outcomes, rarity, four level cycles, animation lock, exit and real-run isolation');

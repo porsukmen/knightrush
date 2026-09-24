@@ -55,6 +55,18 @@ const sandbox={console,document,localStorage:storage,navigator:{userAgent:'runti
 sandbox.window=sandbox;sandbox.globalThis=sandbox;
 sandbox.addEventListener=noop;sandbox.removeEventListener=noop;sandbox.close=noop;
 sandbox.visualViewport=null;sandbox.AudioContext=function(){};sandbox.webkitAudioContext=function(){};
+// The game now boots local renderer modules. Validate their execution too,
+// instead of treating appendChild as a no-op or assuming a single-file build.
+sandbox.Path2D=class {constructor(){return new Proxy(this,{get:(target,key)=>target[key]||noop});}};
+document.body={appendChild(node){
+  if(node.src){
+    const path=require('node:path'),root=path.dirname(path.resolve(file)),modulePath=path.resolve(root,node.src);
+    if(!modulePath.startsWith(root+path.sep))throw Error('Module outside game root: '+node.src);
+    vm.runInContext(fs.readFileSync(modulePath,'utf8'),sandbox,{filename:node.src});
+    if(node.onload)node.onload();
+  }
+  return node;
+}};
 
 /* Cross-family balance is a development audit, never a game boot cost. It compares
    equal rarity histories by family mean so tactical specialists may peak in their

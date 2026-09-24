@@ -6,9 +6,9 @@ const report=JSON.parse(run(`JSON.stringify((()=>{
  try{
   for(let seed=0;seed<35;seed++)for(const disable of [false,true]){
    startJourneyWithSeed(seed);godMode=true;
-   const node=journeyRoute.nodes.find(n=>n.out.some(e=>e.direction===0&&e.events.some(s=>JOURNEY_ROAD_EVENTS[s.definition].kind==='normal'&&s.at-n.at<160)));
+   const node=journeyRoute.nodes.find(n=>n.out.some(e=>e.direction===0&&e.events.some(s=>['roadside_quest','roadside_cache'].includes(s.definition)&&s.at-n.at<160)));
    if(!node)continue;
-   const edge=node.out.find(e=>e.direction===0),slot=edge.events.find(s=>JOURNEY_ROAD_EVENTS[s.definition].kind==='normal');
+   const edge=node.out.find(e=>e.direction===0),slot=edge.events.find(s=>['roadside_quest','roadside_cache'].includes(s.definition));
    const parent=journeyRoute.nodes.find(n=>n.out.some(e=>e.to===node.id)),incoming=parent.out.find(e=>e.to===node.id);
    journeyRoute.from=parent.id;journeyRoute.next=node.id;journeyRoute.activeEdge=incoming.id;
    journeyRoute.total=journeyPlannedBossDistance(journeyRoute);

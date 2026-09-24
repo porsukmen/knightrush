@@ -1,0 +1,144 @@
+{
+  "id": "gatherer-blockout-v2",
+  "status": "layout-candidate",
+  "units": "metres",
+  "camera": {
+    "position": [
+      6.599999904632568,
+      -12.800000190734863,
+      1.7000000476837158
+    ],
+    "target": [
+      -0.45,
+      2.1,
+      1.7
+    ],
+    "lensMm": 55.0,
+    "projection": "perspective",
+    "render": [
+      960,
+      1024
+    ]
+  },
+  "dimensions": {
+    "personHeight": 1.75,
+    "doorHeight": 2.0,
+    "doorWidth": 0.95,
+    "tableHeight": 0.8,
+    "tableWidth": 1.6,
+    "cottageFootprint": [
+      4.2,
+      3.8
+    ],
+    "ridgeHeight": 3.83,
+    "pathWidth": 1.04
+  },
+  "actor": {
+    "feet": [
+      158.581,
+      372.614
+    ],
+    "head": [
+      158.581,
+      252.57
+    ]
+  },
+  "anchors": [
+    {
+      "id": "door",
+      "name": "Door / 0.95 \u00d7 2.00 m",
+      "point": [
+        182.655,
+        277.286
+      ],
+      "rect": [
+        156.401,
+        222.929,
+        48.653999999999996,
+        103.93699999999998
+      ],
+      "text": "The continuous path reaches a supported step and the real front-wall opening."
+    },
+    {
+      "id": "table",
+      "name": "Work table / 0.80 m high",
+      "point": [
+        85.399,
+        302.148
+      ],
+      "rect": [
+        40.98,
+        300.239,
+        88.988,
+        46.86200000000002
+      ],
+      "text": "A 1.60 \u00d7 0.70 m tabletop and four ground-contact legs. Kept outside the walking route."
+    },
+    {
+      "id": "log",
+      "name": "Fallen trunk / ground contact",
+      "point": [
+        374.342,
+        329.377
+      ],
+      "rect": [
+        297.397,
+        307.624,
+        155.368,
+        42.599999999999966
+      ],
+      "text": "The trunk radius is 0.34 m and its axis is 0.34 m above the same ground plane."
+    },
+    {
+      "id": "human",
+      "name": "Human scale / 1.75 m",
+      "point": [
+        158.581,
+        297.158
+      ],
+      "rect": [
+        135.349,
+        252.518,
+        47.172,
+        121.87199999999999
+      ],
+      "text": "This neutral mannequin is a ruler for the scene, not new character art."
+    }
+  ],
+  "planAnchors": [
+    {
+      "id": "door",
+      "point": [
+        190.222,
+        200.533
+      ]
+    },
+    {
+      "id": "table",
+      "point": [
+        164.622,
+        264.533
+      ]
+    },
+    {
+      "id": "log",
+      "point": [
+        315.378,
+        217.031
+      ]
+    },
+    {
+      "id": "human",
+      "point": [
+        258.489,
+        341.333
+      ]
+    }
+  ],
+  "checks": {
+    "pathMeetsStep": true,
+    "tableLegsOnGround": true,
+    "trunkAxisEqualsRadius": true,
+    "samePerspectiveCameraForAllMainViews": true
+  }
+}

@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const {run,shot,sandbox}=require('./journey-render-audit.cjs');
-run(`SFX.toggle();startJourneyWithSeed(647486904);gold=10000;openBlacksmithShop();
+run(`SFX.toggle();startJourneyWithSeed(647486904);gold=10000;scrap=1000;openBlacksmithShop();
  function smithTestRng(values){let i=0;return ()=>{if(i>=values.length)throw Error('Unexpected RNG');return values[i++];};}
  function smithTestBuy(index,routeRoll,rarityRoll){
    blacksmithShop.selected=index;blacksmithShop.random=smithTestRng([routeRoll,.99,rarityRoll]);
@@ -53,7 +53,7 @@ for(let i=0;i<4;i++){
  if(i<3&&boss.hp===hp&&boss.mark===mark)throw Error('No real combat effect '+i);
  if(i===3&&!squire.present)throw Error('Forged squire did not arrive');
 }
-startJourneyWithSeed(647486904);gold=100;openBlacksmithShop();
+startJourneyWithSeed(647486904);gold=100;scrap=100;openBlacksmithShop();
 const original=runSkills[0],startingGold=gold,earned=goldEarned;
 blacksmithShop.random=smithTestRng([0,.99,.999]);
 if(!beginSmithUpgrade()||gold!==startingGold-18)throw Error('Payment');

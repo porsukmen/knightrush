@@ -28,7 +28,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
       const slot=e.events.find(s=>JOURNEY_ROAD_EVENTS[s.definition].kind==='normal'&&journeyNormalContent(s)===content);if(!slot)continue;
       journeyRoute.from=n.id;journeyRoute.next=e.to;journeyRoute.activeEdge=e.id;journeyRoute.pendingArm=false;
       dist=slot.at-15;runDistance=dist;roadScroll=dist;armJourneyNode();journey.phase='main';journey.endTrees=[];
-      obstacles=[];pickups=[];updateJourneyRoadEvents(0);render();return;
+      obstacles=[];pickups=[];player.x=player.lane=journeyNormalSide(slot)>0?2:0;updateJourneyRoadEvents(0);render();return;
      }
     }throw Error('No fixture');
    }fixture('mushrooms');`);
@@ -46,20 +46,21 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   // Reinstall fixture helpers after reload.
   const fixtureSource=fs.readFileSync(__filename,'utf8').match(/function fixture\(content\)\{[\s\S]*?\}fixture\('mushrooms'\);/)[0].replace("fixture('mushrooms');",'');
   await run(fixtureSource);
-  for(const content of ['chest','well']){
+  // Special-road chest touch/loot coverage lives in journey-chest-browser-audit.
+  for(const content of ['well']){
    await run(`fixture('${content}');globalThis.before=JSON.stringify([dist,runDistance,roadScroll,journeyRoute.activeEdge]);globalThis.oldGold=gold;`);
-   await swipe();await tap(240,666);assert.equal(await run('mode'),content==='chest'?'lockpicking':'wishingwell');
+   await swipe();await tap(240,666);assert.equal(await run('mode'),'wishingwell');
    await run('for(let i=0;i<60;i++)update(1/60);render();');assert.equal(await run('JSON.stringify([dist,runDistance,roadScroll,journeyRoute.activeEdge])'),await run('before'));
    await page.keyboard.press('Escape');assert.equal(await run('paused'),true);await page.keyboard.press('Escape');
-   await tap(240,682);assert.equal(await run(content==='chest'?'lockpickGame.phase':'wellGame.phase'),content==='chest'?'playing':'ready');
-   await run(content==='chest'?`lockpickGame.phase='result';lockpickGame.won=true;render();`:`beginWellAim(WELL_THROW_ORIGIN);perfNow+=.25;launchWishingCoin({x:240+(wellGame.setup.x-240)/wellGame.setup.distance*wellGame.setup.idealLength,y:682+(wellGame.setup.y-682)/wellGame.setup.distance*wellGame.setup.idealLength});for(let i=0;i<90;i++)update(1/60);render();`);
+   await tap(240,682);assert.equal(await run('wellGame.phase'),'ready');
+   await run(`beginWellAim(WELL_THROW_ORIGIN);perfNow+=.25;launchWishingCoin({x:240+(wellGame.setup.x-240)/wellGame.setup.distance*wellGame.setup.idealLength,y:682+(wellGame.setup.y-682)/wellGame.setup.distance*wellGame.setup.idealLength});for(let i=0;i<90;i++)update(1/60);render();`);
    const reward=await run('journeyRoadReward(journeyRoadEventSession.context)');
    await tap(240,682);assert.equal(await run('mode'),'run');assert.equal(await run('gold-oldGold'),reward);
    await run(`fixture('${content}');`);await swipe();await tap(240,728);await run('update(.25);');await tap(240,666);assert.equal(await run('journeyRoadEventSession'),null);
   }
-  await run("fixture('chest');");await page.keyboard.press('e');assert.equal(await run('mode'),'run');
+  await run("fixture('well');");await page.keyboard.press('e');assert.equal(await run('mode'),'run');
   await page.keyboard.press(await run("journeyNormalSide(journeyRoadEventSession.slot)>0?'ArrowRight':'ArrowLeft'"));
-  await run('update(.25);');await page.keyboard.press('1');assert.equal(await run('mode'),'lockpicking');
+  await run('update(.25);');await page.keyboard.press('1');assert.equal(await run('mode'),'wishingwell');
   await tap(45,70);assert.equal(await run('mode'),'run');
   await run("fixture('taxman');gold=9;");await swipe();await tap(240,704);
   assert.equal(await run('gold'),4);await run('update(.25);');await tap(240,666);assert.equal(await run('mode'),'run');

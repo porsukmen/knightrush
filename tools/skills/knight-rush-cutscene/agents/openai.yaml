@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knight Rush Cutscene"
+  short_description: "Tutarlı sahneler, karakter ışığı ve mobil bütçeler"
+  default_prompt: "Use $knight-rush-cutscene to build and review a Knight Rush event scene for my requested setting."

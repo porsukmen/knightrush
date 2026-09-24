@@ -1,7 +1,7 @@
 /* Native-resolution artwork and live-rig regressions, independent of shop RNG. */
 const assert=require('node:assert/strict');
 const {run,canvas,shot}=require('./journey-render-audit.cjs');
-run('SFX.toggle();startJourneyWithSeed(5);gold=100;openBlacksmithShop();flashA=0;shakeMag=0;');
+run('SFX.toggle();startJourneyWithSeed(5);gold=100;scrap=10;openBlacksmithShop();flashA=0;shakeMag=0;');
 // Card touch geometry follows both the rotation and the selected-card lift.
 run(`for(let selected=0;selected<4;selected++){
  blacksmithShop.selected=selected;

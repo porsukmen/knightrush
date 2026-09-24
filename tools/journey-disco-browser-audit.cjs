@@ -8,6 +8,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await page.addInitScript(()=>window.requestAnimationFrame=()=>0);
   await page.goto(pathToFileURL(path.resolve('KnightRush.html')).href);
   await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
+  await page.waitForFunction(()=>!!window.KRSunlitForest);
   const run=code=>page.evaluate(code=>(0,eval)(code),code);
   const out=path.resolve('output/journey-disco');fs.mkdirSync(out,{recursive:true});
   const shot=async name=>{await run('render()');await page.screenshot({path:path.join(out,name+'.png')});};
@@ -72,26 +73,28 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   assert.equal(await run('journeyActiveEdge().id'),await run('discoFixtureInfo.edgeId'));
   await shot('03-disco-forest');
   const renderingContracts=await run(`(()=>{
-    const crowd=drawDiscoCrowdMember,patch=drawJourneyDiscoPatch,seen=[],tiles=[];
+    const crowd=drawDiscoCrowdMember,courtier=drawDiscoCourtier,patch=drawJourneyDiscoPatch,seen=[],tiles=[];
     try{
       drawDiscoCrowdMember=()=>seen.push(g.globalAlpha);
+      drawDiscoCourtier=()=>seen.push(g.globalAlpha);
       g.globalAlpha=.2;drawJourneyDiscoDancer({x:7.1,z:dist+12,index:1});
       const dancerAlpha=seen.slice();seen.length=0;
       drawJourneyDiscoEntryBall({x:7,z:dist+12,direction:1});
       const entrancePeople=seen.length;
       drawJourneyDiscoPatch=(view,at,end,left,right,color,alpha)=>{
-        if(Math.abs(right-left-2.72)<.001)tiles.push(end-at);
+        const width=window.KRSunlitDisco?.active()?KRSunlitDisco.tileWidth:2.72;
+        if(Math.abs(right-left-width)<.001)tiles.push(end-at);
       };
       drawJourneyDiscoGround();
       const tint=canopyDiscoCache;render();
       return {dancerAlpha,entrancePeople,tiles:tiles.length,minTileSpan:Math.min(...tiles),
-        tintCached:!!tint&&tint===canopyDiscoCache};
-    }finally{drawDiscoCrowdMember=crowd;drawJourneyDiscoPatch=patch;g.globalAlpha=1;}
+        tintCached:window.KRSunlitForest?.active()?KRSunlitForest.report().cacheBytes<=KRSunlitForest.report().budgetBytes:!!tint&&tint===canopyDiscoCache};
+    }finally{drawDiscoCrowdMember=crowd;drawDiscoCourtier=courtier;drawJourneyDiscoPatch=patch;g.globalAlpha=1;}
   })()`);
   assert.deepEqual(renderingContracts.dancerAlpha,[1]);
   assert.equal(renderingContracts.entrancePeople,0);
   assert(renderingContracts.tiles>0&&renderingContracts.minTileSpan>3.4,'Tiles must not be split at the midpoint');
-  assert(renderingContracts.tintCached,'Purple canopy must reuse its cached palette');
+  assert(renderingContracts.tintCached,'Purple forest must respect its bounded native cache');
   const renderTiming=await run(`(()=>{
    const times=[];for(let i=0;i<50;i++){
     perfNow+=1/60;const t=performance.now();render();

@@ -34,14 +34,8 @@ jobs:
       - name: Validate runtime boot
         run: node tools/validate-runtime.cjs KnightRush.html --boot-only
 
-      - name: Build single-file Pages artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p _site
-          cp KnightRush.html _site/index.html
-          cmp --silent KnightRush.html _site/index.html
-          test "$(find _site -type f | wc -l)" -eq 1
+      - name: Build Pages artifact with local renderer and event assets
+        run: node tools/build-pages.cjs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

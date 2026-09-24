@@ -8,6 +8,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await page.addInitScript(()=>window.requestAnimationFrame=()=>0);
   await page.goto(pathToFileURL(path.resolve('KnightRush.html')).href);
   await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
+  await page.waitForFunction(()=>!!window.KRSunlitForest);
   const run=code=>page.evaluate(code=>(0,eval)(code),code);
   const out=path.resolve('output/journey-crimson-browser');fs.mkdirSync(out,{recursive:true});
   const shot=async name=>{await run('render()');await page.screenshot({path:path.join(out,name+'.png')});};
@@ -20,7 +21,11 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
       const parent=journeyRoute.nodes.find(n=>n.out.some(e=>e.to===node.id));
       if(!parent||parent.out.find(e=>e.to===node.id).preview.theme!=='forest')continue;
       journeyRoute.from=parent.id;journeyRoute.next=node.id;journeyRoute.activeEdge=parent.out.find(e=>e.to===node.id).id;
-      dist=node.at-28;roadScroll=dist;runDistance=dist;armJourneyNode();
+      dist=node.at-28;roadScroll=dist;runDistance=dist;
+      // The fixture teleports past prior encounters; mark them traversed so a
+      // new blocking normal fight cannot interrupt this isolated turn test.
+      for(const slot of journeyActiveEdge().events)if(slot.at<dist)journeyRoute.eventRecords[slot.id]={status:'passed'};
+      armJourneyNode();
       roadsideScenery=[];obstacles=[];pickups=[];nextTreeAt=dist-4;nextSpawnAt=Infinity;spawnLoopEntities();
       return {seed,edgeId:edge.id,nodeId:node.id,direction};
      }
@@ -35,7 +40,9 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
      return amounts[0]===0&&amounts[1]===0&&amounts[2]>0&&amounts[3]>amounts[2]&&amounts[4]===1;})()`));
    assert(await run(`(()=>{const original=drawJourneyDiscoPatch,alpha=[];
     try{drawJourneyDiscoPatch=(...a)=>alpha.push(a[6]);drawJourneyBloodGround();}
-    finally{drawJourneyDiscoPatch=original;}return alpha.length>0&&alpha.every(a=>a===1);})()`));
+    finally{drawJourneyDiscoPatch=original;}
+    // Sunlit renders crimson in the shared opaque material pass, not a second road sheet.
+    return KRSunlitForest.active()?alpha.length===0:alpha.length>0&&alpha.every(a=>a===1);})()`));
    await run(`player.lane=${direction+1};chooseJourneyDirection(${direction});
     for(let i=0;i<250&&journeyRoute.activeEdge!==redInfo.edgeId;i++)update(1/60);`);
    assert.equal(await run('journeyRoute.activeEdge'),await run('redInfo.edgeId'));
@@ -69,8 +76,9 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   assert(await run(`boss.hp<${beforeSkill}`),'skill button deals real HP damage');
   await run('boss.hp=0;defeatBoss();for(let i=0;i<240&&mode!=="run";i++)update(1/60);');
   assert.equal(await run('mode'),'run');assert.equal(await run('journeyRoute.eventRecords[redSlot.id].status'),'completed');
-  const reward=await run('[gold,pack]');await run('for(let i=0;i<180;i++)update(1/60);');
-  assert.equal(await run('mode'),'run');assert.deepEqual(await run('[gold,pack]'),reward);
+  const reward=await run('[gold,bossScoreRun]');await run('for(let i=0;i<180;i++)update(1/60);');
+  assert.equal(await run('mode'),'run');assert.deepEqual(await run('[gold,bossScoreRun]'),reward);
+  assert.equal(await run('hasCombatAlly()'),false,'wolf must not become a follower');
   assert.deepEqual(errors,[]);console.log('CRIMSON_BROWSER_OK',JSON.stringify({left:true,right:true,straight:true,opaqueGround:true,stationaryFight:true,completion:true,noDuplicateReward:true,screenshots:out}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
