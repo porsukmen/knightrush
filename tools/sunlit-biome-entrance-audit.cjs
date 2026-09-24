@@ -8,6 +8,19 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
  await page.goto(pathToFileURL(path.resolve('KnightRush.html')).href);
  await page.waitForFunction(()=>!!window.KRSunlitForest);
  const run=s=>page.evaluate(s=>(0,eval)(s),s),out='output/sunlit-entrances';fs.mkdirSync(out,{recursive:true});
+ // Crimson banks must stay wine-red, not drift back to autumnal brown/orange.
+ // Check both foliage planes, bark, verge and attached root/plant materials.
+ const bankSources=['#528b41','#67984b','#4b8341','#95b951','#b2c85f','#91b44b',
+  '#805936','#b58b50','#4f432d','#775739','#b28b4f','#8bac46','#d3b06d',
+  '#50713f','#a2af50','#8da641','#526f39','#407749','#88a949','#507940',
+  '#658744','#9bb24e','#86a44b','#bed069','#735437','#b18b54','#89663e',
+  '#d2b076','#9c7748','#739447','#a9bd59'];
+ for(const source of bankSources){
+  const full=await run(`KRSunlitForest.materialAt('bloodwood',1,'${source}')`);
+  const [r,g,b]=[1,3,5].map(i=>parseInt(full.slice(i,i+2),16));
+  assert(r>b&&b>g,'Crimson bank material lost its red/burgundy hue: '+source);
+  assert.equal(await run(`KRSunlitForest.materialAt('bloodwood',0,'${source}')`),source,'Unblended forest must stay unchanged');
+ }
  const results=[];
  for(const theme of ['disco','bloodwood'])for(const direction of [-1,1]){
   await run(`roadLabState.direction=${direction};roadLabState.entry=true;
