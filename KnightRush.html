@@ -11007,51 +11007,52 @@ function journeyDiscoRoadViews(theme='disco'){
 function buildJourneyDiscoRoadViews(theme='disco'){
   if(!journeyRoute||biome!=='forest'||env!=='forest'||!journey)return [];
   const views=[],active=journeyActiveEdge();
+  const point=(x,z,out={})=>{out.x=x;out.z=z;return out;};
   const add=(edge,point,extra={})=>{if(edge?.preview.theme===theme)views.push({edge,point,...extra});};
-  const spill=(edge,at,side)=>add(edge,(d,x)=>({x,z:d}),
+  const spill=(edge,at,side)=>add(edge,(d,x,out)=>point(x,d,out),
     {spill:true,begin:at-32,end:at+6,onlySide:side});
   if(journeyActiveRoad()){
     const direction=journeyTurnDirection();
     // The selected road has the SAME world anchor as its approach preview.
     // Move the camera along the road, never interpolate the road under it.
     const from=journeyNode(journeyRoute.from),base=from.at;
-    add(active,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-base),
-      z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-base))}));
-    if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side)=>({x:side,z:at}));
+    add(active,(at,side,out)=>point(direction*(JOURNEY_LANE_WORLD+at-base),
+      journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-base)),out));
+    if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side,out)=>point(side,at,out));
     spill(active,from.at,direction);
     // Unchosen party branches remain in the old junction while the camera
     // turns, just like its trees; they are culled spatially, not on selection.
     for(const edge of from.out){
       if(edge.id===active?.id)continue;
-      if(edge.direction===0)add(edge,(at,side)=>({x:side,z:at}));
+      if(edge.direction===0)add(edge,(at,side,out)=>point(side,at,out));
       else{
         const dir=edge.direction;spill(edge,from.at,dir);
-        add(edge,(at,side)=>({x:dir*(JOURNEY_LANE_WORLD+at-from.at),
-          z:journeyForkDistance()-5-dir*side*journeyBranchWidth(Math.max(0,at-from.at))}));
+        add(edge,(at,side,out)=>point(dir*(JOURNEY_LANE_WORLD+at-from.at),
+          journeyForkDistance()-5-dir*side*journeyBranchWidth(Math.max(0,at-from.at)),out));
       }
     }
   }else{
-    add(active,(at,side)=>({x:side,z:at}));
+    add(active,(at,side,out)=>point(side,at,out));
     // Passing straight does not erase a still-visible side road. Its tiles,
     // lights and crowd keep their world positions until the junction is behind us.
     if(journeyRoute.pendingArm&&journey.passedNodeId){
       const node=journeyNode(journey.passedNodeId);
-      if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side)=>({x:side,z:at}));
+      if(journey.oldRoadEdge)add(journey.oldRoadEdge,(at,side,out)=>point(side,at,out));
       for(const edge of node.out){
         if(!edge.direction)continue;
         const direction=edge.direction;spill(edge,node.at,direction);
-        add(edge,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-node.at),
-          z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at))}));
+        add(edge,(at,side,out)=>point(direction*(JOURNEY_LANE_WORLD+at-node.at),
+          journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at)),out));
       }
     }
   }
   if(journey.phase==='approach'&&!journeyRoute.pendingArm){
     const node=journeyNode(journeyRoute.next);
     for(const edge of node.out){
-      if(edge.direction===0)add(edge,(at,side)=>({x:side,z:at}));
+      if(edge.direction===0)add(edge,(at,side,out)=>point(side,at,out));
       else{const direction=edge.direction;spill(edge,node.at,direction);
-        add(edge,(at,side)=>({x:direction*(JOURNEY_LANE_WORLD+at-node.at),
-          z:journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at))}));}
+        add(edge,(at,side,out)=>point(direction*(JOURNEY_LANE_WORLD+at-node.at),
+          journeyForkDistance()-5-direction*side*journeyBranchWidth(Math.max(0,at-node.at)),out));}
     }
   }
   return views;
@@ -11076,14 +11077,21 @@ function drawJourneyDiscoGround(){
   for(const view of views){
     if(view.spill)continue;
     const begin=view.begin??view.edge.pieces[0].start,end=view.end??view.edge.pieces.at(-1).end;
+    const nativeFloor=!!window.KRSunlitForest?.active(),first=begin+(view.edge.direction?-1:-5),
+      range=nativeFloor?KRSunlitArt.floorVisibleRange(view,first,end):null;
+    if(range&&range.from>range.to)continue;
+    const rowStartAt=range?first+Math.max(0,Math.floor((range.from-first)/4))*4:first,
+      rowEndAt=range?Math.min(end,range.to+4):end;
     // One polygon per full tile: splitting each tile midway left a subpixel
     // horizontal seam that shimmered as the camera moved.
     // Side entrances stop one tile earlier, at the marked edge of the junction.
-    for(let at=begin+(view.edge.direction?-1:-5);at<end;at+=4){
-      const center=view.point(at,0),camera=journeyCameraPoint(center.x,center.z);
-      if(window.KRSunlitForest?.active()){
+    for(let at=rowStartAt;at<rowEndAt;at+=4){
+      if(nativeFloor){
         if(!KRSunlitArt.floorSectionVisible(view,at,Math.min(at+4.02,end)))continue;
-      }else if(camera.depth<-12||camera.depth>CFG.Z_FAR+8||Math.abs(camera.side)>camera.depth*3+40)continue;
+      }else{
+        const center=view.point(at,0),camera=journeyCameraPoint(center.x,center.z);
+        if(camera.depth<-12||camera.depth>CFG.Z_FAR+8||Math.abs(camera.side)>camera.depth*3+40)continue;
+      }
       // Manufactured opaque deck: full colour right through the last tile,
       // then an exact cut at end. Natural biomes retain their separate ramps.
       drawJourneyDiscoPatch(view,at,Math.min(at+4.02,end),-6.25,6.25,'#161723',1);

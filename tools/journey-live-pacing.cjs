@@ -4,6 +4,7 @@
 // Usage: node tools/journey-live-pacing.cjs LABEL [--baseline] [--brave]
 //        [--phone|--both] [--frames=600] [--repeats=1] [--straight]
 //        [--theme=forest|disco|bloodwood]
+//        [--snapshot=output/path-to-flat-source-snapshot]
 const {chromium}=require('playwright');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createHash}=require('node:crypto');
@@ -20,9 +21,13 @@ const baseline=has('baseline'),browserName=has('brave')?'brave':'edge';
 const onlyTheme=option('theme',''),themes=onlyTheme?[onlyTheme]:['forest','disco','bloodwood'];
 assert(themes.every(t=>['forest','disco','bloodwood'].includes(t)),'Unsupported theme');
 const devices=has('both')?['desktop','phone-emulation']:[has('phone')?'phone-emulation':'desktop'];
+const snapshot=option('snapshot','');
 const sourceFiles=['KnightRush.html','assets/forest/sunlit-forest.js','assets/forest/journey-forest.js'];
+// The older stutter baseline predates adapter snapshots; retain its contract.
+// New comparisons pin the Disco adapter too, including while files are edited.
+if(!baseline||snapshot)sourceFiles.push('assets/forest/disco-grove.js');
 const sourceContents=new Map(sourceFiles.map(name=>{
- const file=baseline?path.join(root,'output/stutter-source-before',path.basename(name)):path.join(root,name);
+ const file=snapshot?path.join(root,snapshot,path.basename(name)):baseline?path.join(root,'output/stutter-source-before',path.basename(name)):path.join(root,name);
  assert(fs.existsSync(file),'Missing '+(baseline?'pre-edit baseline':'live source')+': '+file);
  return [name,fs.readFileSync(file)];
 }));
@@ -190,7 +195,7 @@ function fixtureCode(theme,turn){return `
   }
  }finally{
   await browser.close();
-  const report={label,baseline,browser:browserName,physicalPhone:false,audioTestMuted:true,method:'Native game frame(now); fixed steps used only before fixture measurement',
+  const report={label,baseline,snapshot,browser:browserName,physicalPhone:false,audioTestMuted:true,method:'Native game frame(now); fixed steps used only before fixture measurement',
    caveat:'rAF scheduling intervals estimate pacing, not guaranteed display presentation times. Chromium mobile emulation is not Safari or physical phone performance.',
    frameCount,repeats,steadyDropsFirstFrames:30,sourceHashes,calibrations,errors,results};
   fs.writeFileSync(path.join(out,label+'.json'),JSON.stringify(report,null,2));

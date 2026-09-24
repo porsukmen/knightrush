@@ -55,15 +55,18 @@
   '#95b951':'#c44360','#b2c85f':'#d15b73','#91b44b':'#b93754',
   '#805936':'#4d2234','#b58b50':'#87344b','#4f432d':'#2b1723',
   '#775739':'#542439','#b28b4f':'#913a50','#8bac46':'#8b304a','#d3b06d':'#bd6175',
-  '#50713f':'#33202a','#d6b16f':'#7e3539','#a2af50':'#91334b','#8da641':'#72253e','#526f39':'#481e2e',
-  '#dfbb7c':'#944a48','#dcb776':'#89403f','#c8a369':'#692b33','#cfaa6d':'#763139',
-  '#b39664':'#542730','#b4ad86':'#966359','#b7a66a':'#542b34','#c3ac6d':'#63313a',
+  // Verge shadow follows the user's dark red swatch (#2d161c), with
+  // warmer red light planes instead of violet/magenta grass banks.
+  '#50713f':'#2d161c','#d6b16f':'#78233f','#a2af50':'#743039','#8da641':'#56232b','#526f39':'#38191f',
+  // Wine-red soil and matching chips/ruts; bank vegetation stays unchanged.
+  '#dfbb7c':'#92344f','#dcb776':'#852c46','#c8a369':'#601b32','#cfaa6d':'#70213a',
+  '#b39664':'#4b182c','#b4ad86':'#9c6076','#b7a66a':'#542b34','#c3ac6d':'#63313a',
   '#83bfcb':'#443642','#cce5bf':'#80646a','#e5e5ab':'#b18a79',
   '#edd68a':'#bd7156','#fff2bb':'#e6a576','#638953':'#52383f','#94ad70':'#826068',
   '#d7e5d9':'#66535e','#f6f3d9':'#94777b','#7daba8':'#6a5865','#a0c3b4':'#96767b',
   '#789a69':'#674650','#9db77c':'#8b6066','#889366':'#5c4045','#b1b98a':'#886669',
   // Existing plants keep their silhouettes, but no sugary pink/green meadow.
-  '#407749':'#4e2034','#88a949':'#a43853','#507940':'#69283f',
+  '#407749':'#4e2029','#88a949':'#a43843','#507940':'#692832',
   '#f3ecc5':'#b6907c','#dcb04a':'#65313a','#8061b5':'#872e3f','#b19bdf':'#b35451',
   '#658744':'#70283f','#9bb24e':'#ad405b',
   '#6b7b76':'#625159','#a9b4a0':'#9b8278','#4d6460':'#392b37','#526965':'#493942',
@@ -255,17 +258,20 @@
    for(let row=Math.floor((from+view.offset)/4);row*4-view.offset<to;row++){
     const start=row*4-view.offset,a=Math.max(from,start),b=Math.min(to,start+4.015);
     if(!art.floorSectionVisible(view,a,Math.max(b,a+3.8)))continue;
-    const key=view.key+':'+row+':'+coordinateKey(a)+':'+coordinateKey(b);used.add(key);
+    const edge=view.edgeAt((a+b)/2),soilDetails=edge?.preview.theme!=='disco',
+      key=view.key+':'+row+':'+coordinateKey(a)+':'+coordinateKey(b)+':'+soilDetails;used.add(key);
     let shapes=floors.get(key);
     if(!shapes){
      const local={point:(d,x)=>view.point(d-view.offset,x)};
-     shapes=art.floorRow(local,row,a+view.offset,b+view.offset).filter(shape=>{
+     // Disco already suppresses these buried soil chips at paint time. Do not
+     // construct/cache their invisible geometry in the first place.
+     shapes=art.floorRow(local,row,a+view.offset,b+view.offset,soilDetails).filter(shape=>{
       if(!grassColor(shape.color))return true;
       return !shape.vertices.some(p=>insideRoad(p,.3,view));
      });floors.set(key,shapes);floorBuilds++;
     }else floorHits++;
     const rowInfo=groundRowPool[groundRows.length]||(groundRowPool[groundRows.length]={});
-    rowInfo.shapes=shapes;rowInfo.a=a;rowInfo.b=b;rowInfo.edge=view.edgeAt((a+b)/2);groundRows.push(rowInfo);
+    rowInfo.shapes=shapes;rowInfo.a=a;rowInfo.b=b;rowInfo.edge=edge;groundRows.push(rowInfo);
    }
    // Paint every grassy backing BEFORE any soil. Repainting grass per cell
    // exposed thin green horizontal seams through the soil's antialiased edge.

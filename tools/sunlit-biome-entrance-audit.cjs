@@ -40,7 +40,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    const values=entry.blend.map(distance);
    assert(values.every((v,i)=>!i||v>=values[i-1]),'Crimson soil must deepen monotonically');
    assert(values[3]<5&&new Set(entry.blend).size>=5,'Entry must be continuous, not a jump');
-   assert.equal(entry.blend.at(-1),'#7e3539','Full Crimson clay remains red');
+   assert.equal(entry.blend.at(-1),'#78233f','Full Crimson soil stays wine-red');
   }
   assert.equal(entry.incoming,'#d6b16f','Normal incoming soil must stay normal');
   await page.screenshot({path:path.join(out,`${theme}-${direction}-preview.png`)});

@@ -35,8 +35,13 @@
       plume=source?.plume||o.feather||'#268ee8';
     if(riderLightCache?.source===source&&riderLightCache.horse===horse&&riderLightCache.plume===plume)
       return riderLightCache.value;
+    // shade() returns CSS rgb(), but biome mixCol() expects hex. Passing rgb()
+    // into it silently starts from black. Preserve the native mane/tail dye;
+    // normalize once on a cache miss so subsequent biome lighting is safe too.
+    const nativeMane=source?.horseMane||shade(horse,-48),rgbMane=/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(nativeMane),
+      horseMane=rgbMane?'#'+rgbMane.slice(1).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):nativeMane;
     const value={...source,...morningRiderLight,
-      horse:mixCol(horse,'#c39856',.24),horseMane:mixCol(source?.horseMane||shade(horse,-48),'#34493f',.24),
+      horse:mixCol(horse,'#c39856',.24),horseMane,
       horseMark:mixCol(source?.horseMark||'#eee7d5','#fff0bd',.28),
       plume:mixCol(plume,'#9fcece',.15)};
     riderLightCache={source,horse,plume,value};return value;
@@ -652,12 +657,12 @@
     return shapes;
   }
   function pathEdge(d,side){return side*(half+.12*Math.sin(d*.18)+.16*Math.sin(d*.43+side));}
-  function floorRow(view,row,a,b){
+  function floorRow(view,row,a,b,soilDetails=true){
     const shapes=[],add=(pts,color)=>{const shape=floorShape(view,pts,color);if(shape)shapes.push(shape);},
       z=row*4,r=R(row*37),l=pathEdge(a,-1),rr=pathEdge(a,1),lf=pathEdge(b,-1),rf=pathEdge(b,1);
     add([[l-.8,a],[rr+.8,a],[rf+.9,b],[lf-.9,b]],'#a2af50');
     add([[l,a],[rr,a],[rf,b],[lf,b]],'#d6b16f');
-    for(let k=0;k<9;k++){
+    if(soilDetails)for(let k=0;k<9;k++){
       const seed=row*53+k*19,x=(R(seed)-.5)*(half*2-1),zz=z+.2+R(seed+8)*3.4,
         w=.09+R(seed+11)*.34,h=.09+R(seed+12)*.42;
       if(zz<a||zz+h>b)continue;
@@ -671,21 +676,39 @@
       if(row%2===0)add([[edge+side*.5,a+.8],[edge+side*1.5,a+.35],
         [edge+side*2.3,a+2.4],[edge+side*.3,a+2.1]],'#526f39');
     }
-    if(row%4===1)for(const x of [-1.1,1.1])add(
+    if(soilDetails&&row%4===1)for(const x of [-1.1,1.1])add(
       [[x,a+.5],[x+.18,a+.5],[x+.24,a+1.3],[x+.02,a+1.1]],'#b39664');
-    if(row%5===2)add([[1.8,a+.7],[2.15,a+.85],[2.23,a+1.13],[1.76,a+1.2]],'#b4ad86');
+    if(soilDetails&&row%5===2)add([[1.8,a+.7],[2.15,a+.85],[2.23,a+1.13],[1.76,a+1.2]],'#b4ad86');
     return shapes;
+  }
+  const sectionPoints=Array.from({length:4},()=>({x:0,z:0})),sectionBounds=Array.from({length:4},()=>({x:0,z:0})),
+    visibleRange={from:0,to:0},rangePoints=[{x:0,z:0},{x:0,z:0}];
+  function floorVisibleRange(view,from,to){
+    const f=floorFrame,extent=half+2.4,a=view.point(from,0,rangePoints[0]),b=view.point(to,0,rangePoints[1]),
+      da=(a.x-f.x)*f.sin+(a.z-f.z)*f.cos,db=(b.x-f.x)*f.sin+(b.z-f.z)*f.cos,
+      slope=(db-da)/(to-from);
+    visibleRange.from=from;visibleRange.to=to;
+    // Centre lines are linear; widening only affects the cross-road axis.
+    // Reserve its full width, even when the selected branch is still narrow.
+    if(Math.abs(slope)>1e-8){
+      const near=from+(f.near-extent-da)/slope,far=from+(f.far+extent-da)/slope;
+      visibleRange.from=Math.max(from,Math.min(near,far));visibleRange.to=Math.min(to,Math.max(near,far));
+    }
+    return visibleRange;
   }
   function floorSectionVisible(view,a,b){
     // Frustum planes are linear in camera space. The enclosing world box is
     // conservative even while the branch widens or the camera turns, so an
     // offscreen branch/row can be skipped before constructing its details.
-    const extent=half+2.4,points=[view.point(a,-extent),view.point(a,extent),
-      view.point(b,-extent),view.point(b,extent)];
+    const extent=half+2.4,points=sectionPoints;
+    view.point(a,-extent,points[0]);view.point(a,extent,points[1]);
+    view.point(b,-extent,points[2]);view.point(b,extent,points[3]);
     let left=Infinity,right=-Infinity,near=Infinity,far=-Infinity;
     for(const p of points){left=Math.min(left,p.x);right=Math.max(right,p.x);
       near=Math.min(near,p.z);far=Math.max(far,p.z);}
-    return !floorOutside(floorCamera([{x:left,z:near},{x:right,z:near},{x:right,z:far},{x:left,z:far}]));
+    sectionBounds[0].x=sectionBounds[3].x=left;sectionBounds[1].x=sectionBounds[2].x=right;
+    sectionBounds[0].z=sectionBounds[1].z=near;sectionBounds[2].z=sectionBounds[3].z=far;
+    return !floorOutside(floorCamera(sectionBounds));
   }
   const groundRows=[];
   function ground(){
@@ -1016,7 +1039,7 @@
       prepare:prepareNativeCache,reserveSurface,releaseSurface,
       clear:()=>{state.rows.clear();floorRows.clear();clearNativeCache();riderLightCache=null;},
       setSeed:seed=>{if(state.seed!==seed){state.seed=seed;state.rows.clear();floorRows.clear();}},
-      setFloorFrame:frame=>{floorFrame=frame;},floorSectionVisible,floorRow,drawFloorShape,waterShapes,
+      setFloorFrame:frame=>{floorFrame=frame;},floorSectionVisible,floorVisibleRange,floorRow,drawFloorShape,waterShapes,
       rowRecords,root:drawMorningRoot,rock:drawRoadRock,
       rockDimensions:lanes=>({width:roadRocks[lanes-1].width,height:roadRocks[lanes-1].height}),
       trimRows:keys=>{for(const key of state.rows.keys())if(!keys.has(key))state.rows.delete(key);},

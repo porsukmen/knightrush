@@ -6,14 +6,15 @@
  'use strict';
  const originalPatch=drawJourneyDiscoPatch;
  const active=()=>!!window.KRSunlitForest?.active();
- const floorPatch={vertices:[],color:'#161723'};
+ const floorPatch={vertices:Array.from({length:4},()=>({x:0,z:0})),color:'#161723'};
  drawJourneyDiscoPatch=function(view,at,end,left,right,color,alpha){
   if(!active())return originalPatch(view,at,end,left,right,color,alpha);
   // Shared Sunlit road projection, with the original art and world positions.
   const ratio=CURVED_ROAD_HALF/6.25;left*=ratio;right*=ratio;
-  floorPatch.vertices[0]=view.point(at,left);floorPatch.vertices[1]=view.point(at,right);
-  floorPatch.vertices[2]=view.point(end,right);floorPatch.vertices[3]=view.point(end,left);
-  g.globalAlpha=alpha;KRSunlitArt.drawFloorShape(floorPatch,color);
+  const shape=floorPatch;
+  view.point(at,left,shape.vertices[0]);view.point(at,right,shape.vertices[1]);
+  view.point(end,right,shape.vertices[2]);view.point(end,left,shape.vertices[3]);
+  g.globalAlpha=alpha;KRSunlitArt.drawFloorShape(shape,color);
  };
  window.KRSunlitDisco={version:'restored-classic',active,tileWidth:2.72};
 })();

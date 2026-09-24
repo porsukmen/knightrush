@@ -31,6 +31,9 @@ async function compare(a,b,view){
   for(const [device,width,height]of [['desktop',1280,900],['phone',390,844]]){
    await page.setViewportSize({width,height});
    await run('resize();KRMorningForest.restart();dist=40;roadScroll=40;curvedGroundDistance=40;perfNow=5;player.gallop=1.2;for(const r of forestCorridor.course)r.entity.z=r.z-dist;');
+   // Native scenery caches fill over several render frames. Compare lighting
+   // after warm-up so cache resampling is not mistaken for a scene-wide tint.
+   await run('for(let i=0;i<40;i++)render();');
    const before=await run('JSON.stringify({dist,player,journey,character:playerChar})');
    const frames=[];
    for(const enabled of [false,true]){
