@@ -1,4 +1,4 @@
-// Palette-only regression: warm red verge, unchanged soil/disco/forest.
+// Palette-only regression: restored original Crimson ground and plants.
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('node:url');
 (async()=>{
@@ -16,10 +16,10 @@ const fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('n
     forest:sources.map(c=>KRSunlitForest.materialAt('bloodwood',0,c)),sources,
     soil:KRSunlitForest.materialAt('bloodwood',1,'#d6b16f'),
     disco:KRSunlitForest.materialAt('disco',1,'#a2af50')};})()`);
-  assert.equal(colors.verge[0],'#2d161c');assert.deepEqual(colors.forest,colors.sources);
-  assert.equal(colors.soil,'#78233f');assert.equal(colors.disco,'#786477');
-  for(const c of colors.verge){const [r,g,b]=[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));
-   assert(r>b&&b-g<=12,'Verge must lean red, not purple: '+c);}
+  assert.equal(colors.verge[0],'#33202a');assert.deepEqual(colors.forest,colors.sources);
+  assert.equal(colors.soil,'#7e3539');assert.equal(colors.disco,'#786477');
+  assert.deepEqual(colors.verge.slice(1),['#91334b','#72253e','#481e2e','#4e2034','#a43853','#69283f'],
+   'Road-edge planes and separate plant colours must remain unchanged');
   await run(`roadLabState.direction=0;roadLabState.entry=false;
    startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.theme==='bloodwood'));godMode=true;
    const target=roadLabState.fixture.edge.pieces[0].start+115;
@@ -27,6 +27,6 @@ const fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('n
    perfNow=5;for(let i=0;i<40;i++)render();`);
   await page.screenshot({path:path.join(out,device+'.png')});
   assert.deepEqual(errors,[]);await page.close();
- }console.log('CRIMSON_VERGE_OK warm red banks, unchanged soil/disco/forest, desktop/phone');
+ }console.log('CRIMSON_VERGE_OK restored original Crimson palette; unchanged disco/forest; desktop/phone');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
