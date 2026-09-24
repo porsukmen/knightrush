@@ -17,9 +17,10 @@ and scripted obstacle sequence are **not** installed in normal play.
   the existing road stop, with Journey's unchanged end-cap projection/rebase.
   The legacy renderer retains its original 14 instances. Venues, signs, dancers and encounter props remain in the
   existing depth-sorted world queue. Cave battle interiors remain unchanged.
-- Normal rocks, ponds and attached roots use the Morning art. Disco has been
-  restored to its original four-column jointed floor, club entrance, dancers,
-  amps, cables and soda art in `KnightRush.html`. `disco-grove.js` is now ONLY
+- Normal rocks, ponds and attached roots use the Morning art. Disco retains
+  its four-column jointed floor, dancers, amps, cables and soda art in
+  `KnightRush.html`, with a minigame-matched open-air throne stage at the event.
+  `disco-grove.js` is now ONLY
   a shared-projection adapter, not a replacement design. Bloodwood bones/pools
   remain intact; crimson roots use the shared native geometry. New plantings
   reserve the original themed decor footprints so grass/trees cannot bury them.
@@ -42,11 +43,18 @@ Disco retains its dance-floor/light/crowd concept; bloodwood retains bones/thorn
 the wolf lair. Forge/caravan/inn/chest keep their signs, places and interactions
 on more lightly coloured variants of the same woodland. No new biome skill is
 created yet: disco and elite are candidates for later user review/reference.
-Disco again uses its original four-column coloured tiles and dark joints, with
-the original opaque RGB exit transition. Both the powered/unpowered experiment
+Disco uses four-column saturated coloured tiles and dark joints, with a hard
+cut at both deck boundaries (no RGB/alpha fade into soil). The final partial
+tile is clipped to the exact road-piece end. Both the powered/unpowered experiment
 and the contiguous three-column redesign are rejected. Whole-footprint culling
 and the shared scratch-buffer projection are retained; covered soil chips are
-omitted. **Disco's manufactured dance deck is the hard-entrance exception.**
+omitted. **Only Disco's manufactured deck has hard entry AND exit boundaries.**
+Trees/sky still blend naturally. The event stage reuses `drawDiscoThrone` and
+the approved seated `drawDiscoKing` at the minigame's relative scale, with
+speaker stacks, hanging mirror ball and string lights; no opaque club facade.
+`node tools/disco-road-stage-audit.cjs` checks approach, event handoff/cleanup,
+fully coloured final tiles, exact cut and the cache budget in both forest looks
+at desktop and phone viewport sizes. No new textures or lighting buffers.
 Natural biome soil (including Crimson) must start at the forest colour, then
 blend by world distance like its trees/sky: normal through the first 30 m,
 smoothly reaching full biome colour at 95 m. Never reintroduce a minimum-red

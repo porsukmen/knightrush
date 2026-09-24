@@ -129,7 +129,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   assert.equal(await run('journeyRoadEventSession'),null);
   await run(`const end=journeyNode(journeyRoute.next).at;
    for(let i=0;i<2000&&mode==='run'&&dist<end-20;i++)update(1/60);`);
-  assert.equal(await run('mode'),'run');await shot('08-exit-blend');
+  assert.equal(await run('mode'),'run');await shot('08-exit-hard-cut');
   await run(`startJourneyWithSeed(0);`);assert.equal(await run('discoGame'),null);
   assert.deepEqual(errors,[]);
   console.log('JOURNEY_DISCO_BROWSER_OK '+JSON.stringify({screenshots:out,freeze:true,completedWins:3,sideAndStraight:true,desktopRender:renderTiming}));

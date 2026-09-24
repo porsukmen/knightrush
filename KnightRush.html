@@ -11069,6 +11069,7 @@ function drawJourneyDiscoPatch(view,at,end,left,right,color,alpha){
   vertices.forEach((v,i)=>{const p=journeyProjectCamera(v.side,v.depth);if(i)g.lineTo(p.x,p.y);else g.moveTo(p.x,p.y);});
   g.closePath();g.fill();
 }
+const JOURNEY_DISCO_TILE_COLORS=Object.freeze(['#a043b0','#278eaa','#c39935','#586ac0','#b83c7d']);
 function drawJourneyDiscoGround(){
   const views=journeyDiscoRoadViews();if(!views.length)return;
   g.save();
@@ -11083,23 +11084,14 @@ function drawJourneyDiscoGround(){
       if(window.KRSunlitForest?.active()){
         if(!KRSunlitArt.floorSectionVisible(view,at,Math.min(at+4.02,end)))continue;
       }else if(camera.depth<-12||camera.depth>CFG.Z_FAR+8||Math.abs(camera.side)>camera.depth*3+40)continue;
-      const exit=smoothStep(clamp((end-at)/65,0,1));
-      // The dance floor itself reaches the mouth; no purple-dirt entry strip.
-      const tileMix=exit,soil=window.KRSunlitForest?.active()?KRSunlitForest.roadColorAt(view.edge,at+2):'#22381e';
-      const seam=mixCol(soil,'#161723',Math.round(tileMix*32)/32);
-      // OPAQUE material. RGB interpolation only handles the road's exit;
-      // the old green road cannot show through translucent dance-floor sheets.
-      drawJourneyDiscoPatch(view,at,Math.min(at+4.02,end),-6.25,6.25,seam,1);
-      const row=Math.floor((at-begin+5)/4),palette=['#75417f','#31646d','#80633e','#414f83','#80365f'];
-      if(tileMix>0)for(let col=0;col<4;col++){
-        const left=-6+col*3,color=mixCol(soil,palette[(row*3+col*2)%palette.length],Math.round(tileMix*32)/32);
+      // Manufactured opaque deck: full colour right through the last tile,
+      // then an exact cut at end. Natural biomes retain their separate ramps.
+      drawJourneyDiscoPatch(view,at,Math.min(at+4.02,end),-6.25,6.25,'#161723',1);
+      const row=Math.floor((at-begin+5)/4),palette=JOURNEY_DISCO_TILE_COLORS;
+      for(let col=0;col<4;col++){
+        const left=-6+col*3,color=palette[(row*3+col*2)%palette.length];
         const rowStart=begin-5+row*4,start=Math.max(at,rowStart+.22),finish=Math.min(at+4,rowStart+3.72,end);
         if(finish>start)drawJourneyDiscoPatch(view,start,finish,left+.12,left+2.84,color,1);
-      }
-      if(tileMix<.95){
-        const speck=mixCol(soil,'#74607c',.25),offset=sRnd(row*13)*8-4;
-        drawJourneyDiscoPatch(view,at+.5,Math.min(at+.75,end),offset,offset+.22,speck,1);
-        drawJourneyDiscoPatch(view,at+1.3,Math.min(at+1.46,end),-offset,-offset+.13,speck,1);
       }
     }
   }
@@ -11367,64 +11359,60 @@ function drawJourneyDiscoVenue(item){
   const scale=linS(p.t)*1.6*grow;
   g.save();g.globalAlpha=clamp((SPAWN_FAR-camera.depth)/26,0,1)*(item.reveal??1);
   g.translate(p.x,p.y);g.scale(scale,scale);
-  // A full-width forest nightclub mouth, not a small stage floating on the road.
-  // Same soft-horizon growth as the lair; the open passage surrounds the rider.
-  g.fillStyle='#0c0d19';g.fillRect(-208,-255,416,256);
-  g.fillRect(-175,-287,350,32);g.fillRect(-135,-308,270,22);
-  g.fillStyle='#20172e';g.fillRect(-142,-246,284,246);
-  g.fillStyle='#100f20';g.fillRect(-110,-208,220,208);
-  g.fillStyle='#282135';g.fillRect(-208,-253,49,255);g.fillRect(159,-253,49,255);
-  // Curtains funnel toward a dark inner room; warm/cool rims read as an entry.
+  drawJourneyDiscoStage();
+  g.restore();
+}
+function drawJourneyDiscoStage(){
+  const P=townInk,R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h);};
+  // Open-air counterpart of the minigame: the real forest remains visible
+  // between timber uprights. No building facade or painted backdrop.
+  P([[-191,0],[-155,-14],[158,-14],[192,0],[171,10],[-167,10]],'#1b1826');
   for(const side of [-1,1]){
-    g.save();g.scale(side,1);
-    g.fillStyle='#52304f';g.beginPath();g.moveTo(143,-244);g.lineTo(102,-225);
-    g.lineTo(116,-141);g.lineTo(146,-105);g.closePath();g.fill();
-    g.fillStyle='#78466c';g.fillRect(131,-236,7,97);
-    g.fillStyle='#d3a66a';g.fillRect(137,-123,11,6);
-    // Tall speaker towers with steel case corners and inset square woofers.
-    for(let row=0;row<3;row++){
-      const y=-69-row*69;
-      g.fillStyle='#111520';g.fillRect(153,y,56,66);
-      g.fillStyle='#4b455a';g.fillRect(157,y+4,48,56);
-      g.fillStyle='#202331';g.fillRect(160,y+7,42,50);
-      g.fillStyle='#6c627a';g.fillRect(168,y+14,26,3);g.fillRect(165,y+19,4,24);
-      g.fillStyle='#333245';g.fillRect(169,y+19,25,28);
-      g.fillStyle='#101524';g.fillRect(176,y+26,12,13);
-      g.fillStyle='#92909d';g.fillRect(154,y+1,6,4);g.fillRect(202,y+59,6,4);
-    }
-    g.fillStyle='#79625a';g.fillRect(212,-251,9,252);
-    g.fillStyle='#392d3b';g.fillRect(218,-251,6,252);
-    g.fillStyle=side<0?'#ba679e':'#67b9bb';g.fillRect(146,-242,3,220);
-    g.restore();
+    const x=side*184;
+    R(x-4,-272,8,263,'#654450');R(x-4,-272,2,263,'#a38260');
+    R(x+2,-269,3,260,'#342b3c');
+    P([[x-9,-15],[x+8,-15],[x+12,-7],[x-12,-7]],'#493541');
+    R(x-6,-208,12,5,'#bb9361');R(x-6,-64,12,5,'#bb9361');
   }
-  g.fillStyle='#4b3445';g.fillRect(-221,-261,442,17);
-  g.fillStyle='#8d6576';g.fillRect(-218,-260,436,3);
-  g.fillStyle='#392f46';g.fillRect(-129,-303,258,46);
-  g.fillStyle='#b68a64';g.fillRect(-126,-300,252,3);g.fillRect(-126,-260,252,3);
-  g.font='bold 26px monospace';g.textAlign='center';
-  g.fillStyle='#eac184';g.fillText('DISCO KING',0,-271);
-  g.fillStyle='#63536f';g.fillRect(-1,-244,2,32);
+  P([[-188,-277],[0,-285],[189,-277],[188,-269],[0,-277],[-188,-269]],'#715343');
+  townStroke([[-186,-276],[0,-284],[188,-276]],'#c8a877',2);
+  townStroke([[-183,-253],[-92,-240],[0,-236],[92,-240],[184,-253]],'#262332',2);
+  for(let i=0;i<13;i++){
+    const x=-174+i*29,y=-251+Math.sin(i/12*Math.PI)*15;
+    R(x-1,y,2,5,'#ac8b68');R(x-3,y+5,6,8,['#df79c0','#70d3d9','#edc767'][i%3]);
+  }
+  // Mirrored ball hangs off-centre so it never hides the crown/face.
+  townStroke([[105,-277],[105,-246]],'#a6a9b2',2);
   for(let row=0;row<7;row++)for(let col=0;col<7;col++){
     if((row===0||row===6)&&(col<2||col>4))continue;
-    g.fillStyle=['#9286b1','#d5d7e8','#74b9bf','#d19ebc'][(row*3+col)%4];
-    g.fillRect(-20+col*6,-213+row*6,5,5);
+    R(84+col*6,-246+row*6,5,5,['#d4dce0','#697e88','#a8b8be','#f0e8c5'][(col+row*2)%4]);
   }
-  const colors=['#b8689f','#68bcb9','#d4af65'];
-  for(let i=0;i<13;i++){
-    g.fillStyle=colors[i%3];g.fillRect(-204+i*34,-253,5,7);
+  // One shallow platform: top, fascia and a single grounded step.
+  P([[-146,-71],[145,-71],[177,-16],[-179,-16]],'#3b304d');
+  P([[-179,-16],[177,-16],[177,-6],[-179,-6]],'#221e32');
+  R(-176,-16,350,2,'#b29a70');
+  P([[-89,-6],[89,-6],[102,4],[-102,4]],'#625066');
+  P([[-102,4],[102,4],[102,9],[-102,9]],'#302739');
+  for(let i=0;i<7;i++){
+    const x=-142+i*41;
+    P([[x,-39],[x+35,-39],[x+40,-20],[x-5,-20]],JOURNEY_DISCO_TILE_COLORS[(i*2)%5]);
   }
-  // Low-cost painted beams, never shadow-casting lights or rapid strobes.
+  // Reuse the actual minigame throne and seated actor at their exact ratio.
+  g.save();g.translate(0,-47);g.scale(.82,.82);g.translate(-237,-411);
+  drawDiscoThrone();drawDiscoKing(240,372,.72,null,0,1);g.restore();
   for(const side of [-1,1]){
-    g.save();g.globalAlpha*=.10;g.fillStyle=side<0?'#e083c4':'#82ded4';
-    g.beginPath();g.moveTo(side*137,-236);g.lineTo(side*80,-15);
-    g.lineTo(-side*55,-15);g.closePath();g.fill();g.restore();
+    const x=side<0?-171:128;
+    P([[x,-111],[x+35,-111],[x+44,-102],[x+44,-7],[x,-7]],'#171e2c');
+    P([[x+35,-111],[x+44,-102],[x+44,-7],[x+35,-13]],'#373349');
+    R(x+3,-107,29,91,'#60566f');
+    for(const y of [-99,-57]){
+      P([[x+9,y],[x+27,y],[x+31,y+6],[x+31,y+28],[x+8,y+28],[x+5,y+22],[x+5,y+6]],'#25293d');
+      R(x+12,y+9,12,13,'#111927');R(x+10,y+3,16,2,'#817a91');
+    }
+    R(x+1,-110,5,4,'#b7b0b8');R(x+28,-14,5,4,'#b7b0b8');
+    // Cable lies on the deck; it does not become a second road-width line.
+    townStroke([[x+19,-8],[x+19,-3],[side*108,-3]],'#151523',2);
   }
-  for(let row=0;row<4;row++)for(let col=0;col<8;col++){
-    g.fillStyle=['#503150','#284d5a','#5a4b37'][(col+row)%3];
-    g.fillRect(-133+col*34,-36+row*9,31,7);
-  }
-  drawDiscoKing(120,-7,.75,'up',0);
-  g.restore();
 }
 function queueJourneyDiscoVenues(){
   for(const view of journeyDiscoRoadViews()){

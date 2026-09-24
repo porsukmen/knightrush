@@ -1,6 +1,7 @@
 /* Compatibility adapter only. The user-restored Disco art lives in
    KnightRush.html: four-column dark-jointed floor, amps, cables, soda,
-   roadside dancers and the original club entrance. Do not redesign it here. */
+   roadside dancers and the minigame-matched open-air throne stage.
+   Do not duplicate or redesign that art in this projection adapter. */
 (()=>{
  'use strict';
  const originalPatch=drawJourneyDiscoPatch;
