@@ -654,7 +654,11 @@ const SFX=(()=>{
 const PAUSE_BTN={x:VW-52,y:100,w:38,h:38};
 const MENU_RELIC_BTN=Object.freeze({x:75,y:468,w:160,h:42});
 const MENU_MINIGAMES_BTN=Object.freeze({x:245,y:468,w:160,h:42});
-const MENU_MORNING_BTN=Object.freeze({x:120,y:672,w:240,h:36});
+const MENU_PLAY_BTN=Object.freeze({x:75,y:404,w:160,h:50});
+const MENU_OLD_FOREST_BTN=Object.freeze({x:245,y:404,w:160,h:50});
+// Presentation only: both entries retain Journey rules, maps and progression.
+// Keep the choice across restarts/seed replays; ordinary PLAY restores sunlit.
+let journeyForestStyle='sunlit';
 const MINIGAME_BACK_BTN=Object.freeze({x:16,y:52,w:92,h:38});
 const MINIGAME_CARD_RECTS=Object.freeze(Array.from({length:19},(_,index)=>Object.freeze({
   x:index===18?126:8+(index%2)*236,y:118+((index/2)|0)*212,w:228,h:196
@@ -849,7 +853,8 @@ function handleAction(a,pt,parryIntent=null,input=null){
   }
   if(mode==='menu'){
     if(a==='tap'&&pt){
-      if(pt.x>VW/2-166&&pt.x<VW/2+166&&pt.y>404&&pt.y<454){ uiConfirm(); }
+      if(pointInRect(pt,MENU_PLAY_BTN)){ uiConfirm(); }
+      else if(pointInRect(pt,MENU_OLD_FOREST_BTN)){ uiConfirm('classic'); }
       else if(pointInRect(pt,MENU_RELIC_BTN)){setMode('relicdex');SFX.swipe();}
       else if(pointInRect(pt,MENU_MINIGAMES_BTN)){openMinigamesMenu();}
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>524&&pt.y<566){
@@ -857,7 +862,6 @@ function handleAction(a,pt,parryIntent=null,input=null){
         try{ window.close(); }catch(e){} }
       else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>580&&pt.y<612){ setMode('debugcfg'); SFX.swipe(); }
       else if(pt.x>VW/2-100&&pt.x<VW/2+100&&pt.y>628&&pt.y<664){ startForestCorridorPrepared(); }
-      else if(pointInRect(pt,MENU_MORNING_BTN)){ openMorningForestLab(); }
       else if(pt.x>VW-140&&pt.x<VW-10&&pt.y>VH-82&&pt.y<VH-40){ clSel=0; setMode('changelog'); SFX.swipe(); }
       else if(pt.x>10&&pt.x<140&&pt.y>VH-82&&pt.y<VH-40){ settingsOpen=true; SFX.swipe(); }
     } else if(a==='up'){ uiConfirm(); }
@@ -7687,12 +7691,12 @@ function setCurvedWorldTrial(enabled){
   curvedWorldTrial=!!enabled;journeyRoadTextureFrame=-1;journeyRoadTextureScroll=null;
   if(journey?.oldObstacles)for(const item of journey.oldObstacles)item.surfaceKey=null;
 }
-function curvedProjection(z){
+function curvedProjection(z,out={}){
   const f=CFG.FOCAL,d=Math.max(z,-f*.98),crest=CFG.Z_FAR,scale=f/(f+d);
   // Perspective of a gently descending parabolic surface. At the crest its
   // screen-space slope is zero; beyond it the foreground ground hides bases.
   const y=HORIZON_Y+(GROUND_Y-HORIZON_Y)*f*(d-crest)*(d-crest)/(crest*crest*(f+d));
-  return {t:(scale-.16)/.84,y,s:scale};
+  out.t=(scale-.16)/.84;out.y=y;out.s=scale;return out;
 }
 function sceneryNearLimit(){return curvedWorldActive()?-CFG.FOCAL*.98:-6;}
 function curvedSpriteClipY(depth){
@@ -7700,13 +7704,13 @@ function curvedSpriteClipY(depth){
   // Removing the whole mask at depth 60 exposed the below-ground pixels at once.
   return depth>=CFG.Z_FAR?HORIZON_Y:proj(depth).y;
 }
-function proj(z){
-  if(curvedWorldActive())return curvedProjection(z);
+function proj(z,out={}){
+  if(curvedWorldActive())return curvedProjection(z,out);
   const f=CFG.FOCAL, near=1, far=f/(f+CFG.Z_FAR);
   const zc=Math.max(z,-f*0.78);                       // guard the projection pole — the wider
                                                       // margin lets obstacles slide fully off-screen
   const p=(f/(f+zc)-far)/(near-far);                  // 1 at z=0, >1 once past the knight
-  return { t:p, y:lerp(HORIZON_Y,GROUND_Y,p), s:lerp(0.09,1,p*p*0.35+p*0.65) };
+  out.t=p;out.y=lerp(HORIZON_Y,GROUND_Y,p);out.s=lerp(0.09,1,p*p*0.35+p*0.65);return out;
 }
 function laneX(lane,t){ return VW/2 + journeyWorldOffset(t) + (lane-1)*lerp(24,150,t); }
 /* LINEAR perspective scale: exactly proportional to the lane spread above, so anything
@@ -9501,6 +9505,7 @@ function journeyEndTrees(node,edge){
   }
   return trees;
 }
+const curvedEndTreeTransforms=new WeakMap(),journeyTreeQueuePoint={};
 function queueCurvedEndTrees(){
   if(!runJourneyPrototype||!journey||!journeyRoute)return;
   if(journey.endTrees)queueVisibleJourneyTrees(journey.endTrees);
@@ -9510,8 +9515,11 @@ function queueCurvedEndTrees(){
     const base=journey.phase==='turning'?journey.turnStartDist+journey.turnForward-journey.turnExitTravel:dist-journey.branchTravel;
     const dir=journeyTurnDirection();
     for(const tree of trees){
-      const transformed={...tree,x:dir*(JOURNEY_LANE_WORLD+tree.z-base),z:journeyForkDistance()-5-dir*tree.x};
-      const p=journeyTreeCameraPoint(transformed);
+      let transformed=curvedEndTreeTransforms.get(tree);
+      if(!transformed){transformed={};curvedEndTreeTransforms.set(tree,transformed);}
+      Object.assign(transformed,tree);
+      transformed.x=dir*(JOURNEY_LANE_WORLD+tree.z-base);transformed.z=journeyForkDistance()-5-dir*tree.x;
+      const p=journeyTreeCameraPoint(transformed,journeyTreeQueuePoint);
       if(p.depth>sceneryNearLimit()&&p.depth<treeVisibilityFar(transformed))queueWorldDraw(p.depth,drawJourneyTree,transformed);
     }
   }else queueVisibleJourneyTrees(trees);
@@ -9519,10 +9527,10 @@ function queueCurvedEndTrees(){
 function curvedRoadViews(){
   const cam=journeyCameraPose(),views=[],active=journeyActiveRoad(),nextEnd=curvedUpcomingEnd();
   if(!active){
-    views.push({point:(d,x)=>({x,z:d}),center:dist,start:-Infinity,finish:nextEnd?.end??Infinity,
+    views.push({point:(d,x,out={})=>{out.x=x;out.z=d;return out;},center:dist,start:-Infinity,finish:nextEnd?.end??Infinity,
       offset:curvedGroundDistance-dist});
   }else if(journey.phase==='turning'||journey.phase==='settling'){
-    views.push({point:(d,x)=>({x,z:d}),center:cam.z,start:-Infinity,finish:journey.endZ??Infinity,
+    views.push({point:(d,x,out={})=>{out.x=x;out.z=d;return out;},center:cam.z,start:-Infinity,finish:journey.endZ??Infinity,
       offset:journey.curvedIncomingOffset??0});
   }
   if(runJourneyPrototype&&journey&&(active||journey.phase==='approach')){
@@ -9533,8 +9541,8 @@ function curvedRoadViews(){
         origin=journeyRoute?journeyNode(selected?journeyRoute.from:journeyRoute.next)?.at:journeyForkDistance();
       const routeBase=selected?(journey.phase==='turning'
         ?journey.turnStartDist+journey.turnForward-journey.turnExitTravel:dist-journey.branchTravel):origin;
-      views.push({point:(d,x)=>({x:dir*(JOURNEY_LANE_WORLD+d),
-        z:journeyForkDistance()-5-dir*x*journeyBranchWidth(Math.max(0,d))}),
+      views.push({point:(d,x,out={})=>{out.x=dir*(JOURNEY_LANE_WORLD+d);
+        out.z=journeyForkDistance()-5-dir*x*journeyBranchWidth(Math.max(0,d));return out;},
         center:travel,start:-JOURNEY_LANE_WORLD,
         finish:selected&&nextEnd?nextEnd.end-routeBase:Infinity,
         offset:selected?(journey.curvedSideOrigin??origin):curvedGroundDistance-dist+(origin??journeyForkDistance())});
@@ -53780,9 +53788,9 @@ const CHARGE_PRIMARY_RUNTIME_AUDIT=RUN_BOOT_AUDITS&&(()=>{
     guaranteedPreparation:true,primaryBank:true,separatePureMastery:true,
     manualLifecycle:Object.freeze(['ARMED','DEFENDING','READY','DEFENDING'])});
 })();
-function uiConfirm(){
+function uiConfirm(forestStyle='sunlit'){
   if(mode==='menu'){ debugBossStart=false; debugMiniMoves=false; }
-  if(mode==='menu'){ debugRun=false; godMode=false; setMode('charsel'); SFX.swipe(); }  // PLAY → an honest ride
+  if(mode==='menu'){ journeyForestStyle=forestStyle==='classic'?'classic':'sunlit';debugRun=false; godMode=false; setMode('charsel'); SFX.swipe(); }  // PLAY → an honest ride
   else if(mode==='charsel'){ startRun(charSel); }
   else if(mode==='score'&&modeT>0.6){ resetRun(); setMode('menu'); }  // fresh board behind the menu
 }
@@ -60750,10 +60758,13 @@ function drawMenu(){
   drawRider(VW/2,PLAYER_Y-40,1.3,{gallop:(perfNow*1.4)%1,rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,
     chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman});
   const btnBg=(x,y,w,h)=>{ g.fillStyle='rgba(5,9,16,0.55)'; g.fillRect(x,y,w,h); };
-  btnBg(VW/2-166,404,332,50);
+  btnBg(MENU_PLAY_BTN.x,MENU_PLAY_BTN.y,MENU_PLAY_BTN.w,MENU_PLAY_BTN.h);
   g.strokeStyle='#ffe37a'; g.lineWidth=2+Math.sin(perfNow*5);
-  g.strokeRect(VW/2-166,404,332,50);
-  g.font='bold 20px monospace'; g.fillStyle='#ffe37a'; g.fillText('▶ PLAY',VW/2,437);
+  g.strokeRect(MENU_PLAY_BTN.x,MENU_PLAY_BTN.y,MENU_PLAY_BTN.w,MENU_PLAY_BTN.h);
+  g.font='bold 20px monospace'; g.fillStyle='#ffe37a'; g.fillText('▶ PLAY',MENU_PLAY_BTN.x+MENU_PLAY_BTN.w/2,437);
+  btnBg(MENU_OLD_FOREST_BTN.x,MENU_OLD_FOREST_BTN.y,MENU_OLD_FOREST_BTN.w,MENU_OLD_FOREST_BTN.h);
+  g.strokeStyle='#a9c694';g.lineWidth=2;g.strokeRect(MENU_OLD_FOREST_BTN.x,MENU_OLD_FOREST_BTN.y,MENU_OLD_FOREST_BTN.w,MENU_OLD_FOREST_BTN.h);
+  g.font='bold 16px monospace';g.fillStyle='#a9c694';g.fillText('OLD FOREST',MENU_OLD_FOREST_BTN.x+MENU_OLD_FOREST_BTN.w/2,436);
   g.font='10px monospace';g.fillStyle='#9ecbff';g.fillText('SEEDED JOURNEY',VW/2,394);
   btnBg(MENU_RELIC_BTN.x,MENU_RELIC_BTN.y,MENU_RELIC_BTN.w,MENU_RELIC_BTN.h);
   g.strokeStyle='#b08ae0'; g.lineWidth=2; g.strokeRect(MENU_RELIC_BTN.x,MENU_RELIC_BTN.y,MENU_RELIC_BTN.w,MENU_RELIC_BTN.h);
@@ -60769,9 +60780,6 @@ function drawMenu(){
   g.font='bold 13px monospace'; g.fillStyle='#5c8fa0'; g.fillText('⚙ DEBUG RUN',VW/2,601);
   btnBg(VW/2-100,628,200,36);g.strokeStyle='#789967';g.strokeRect(VW/2-100,628,200,36);
   g.fillStyle='#a9c694';g.fillText('FOREST TEST · TREE',VW/2,651);
-  btnBg(MENU_MORNING_BTN.x,MENU_MORNING_BTN.y,MENU_MORNING_BTN.w,MENU_MORNING_BTN.h);
-  g.strokeStyle='#d8b86c';g.strokeRect(MENU_MORNING_BTN.x,MENU_MORNING_BTN.y,MENU_MORNING_BTN.w,MENU_MORNING_BTN.h);
-  g.fillStyle='#f1d68c';g.fillText('MORNING FOREST TEST',VW/2,MENU_MORNING_BTN.y+23);
   g.font='12px monospace';
   if(menuMsg&&perfNow<menuMsgT){ g.fillStyle='#ffe37a'; g.fillText(menuMsg,VW/2,784); }
   else if(bestScore>0){ g.fillStyle='#ffd23a'; g.fillText('best score: '+bestScore,VW/2,784); }
@@ -65653,14 +65661,13 @@ function calculateJourneyCameraPose(){
     z:lerp(journey.turnStartDist,journeyForkDistance()-5,q)+journey.turnForward*h10,
     yaw:journeyTurnDirection()*q*Math.PI/2};
 }
-function journeyCameraPoint(x,z){
+function journeyCameraPoint(x,z,out={}){
   const cam=journeyRenderFrame?.camera||journeyCameraPose(),dx=x-cam.x,dz=z-cam.z,
     c=journeyRenderFrame?journeyRenderFrame.cos:Math.cos(cam.yaw),s=journeyRenderFrame?journeyRenderFrame.sin:Math.sin(cam.yaw);
-  return {side:dx*c-dz*s,depth:dx*s+dz*c};
+  out.side=dx*c-dz*s;out.depth=dx*s+dz*c;return out;
 }
-function journeyProjectCamera(side,depth){
-  const p=proj(depth);
-  return {x:VW/2+side/JOURNEY_LANE_WORLD*lerp(24,150,p.t),y:p.y,s:p.s,t:p.t,z:depth};
+function journeyProjectCamera(side,depth,out={}){
+  proj(depth,out);out.x=VW/2+side/JOURNEY_LANE_WORLD*lerp(24,150,out.t);out.z=depth;return out;
 }
 function journeyProjectWorld(x,z){
   const p=journeyCameraPoint(x,z);return journeyProjectCamera(p.side,p.depth);
@@ -65672,10 +65679,10 @@ function drawJourneyTree(tree,stage){
     v:tree.v,gnd:tree.gnd,journeyWorld:true,endCap:tree.endCap,discoAmount:tree.discoAmount,discoEntryId:tree.discoEntryId,bloodAmount:tree.bloodAmount},stage);
   g.globalAlpha=1;worldA=1;
 }
-function journeyTreeCameraPoint(tree){
-  return tree.old?journeyCameraPoint(tree.x,tree.z):journeyCameraPoint(
+function journeyTreeCameraPoint(tree,out={}){
+  return tree.old?journeyCameraPoint(tree.x,tree.z,out):journeyCameraPoint(
     journeyTurnDirection()*(JOURNEY_LANE_WORLD+tree.d),
-    journeyForkDistance()-5-journeyTurnDirection()*tree.off*JOURNEY_LANE_WORLD*1.2*journeyTreeWidth(tree.d));
+    journeyForkDistance()-5-journeyTurnDirection()*tree.off*JOURNEY_LANE_WORLD*1.2*journeyTreeWidth(tree.d),out);
 }
 function queueJourneyTrees(){
   queueVisibleJourneyTrees(journey.oldTrees);
@@ -65683,7 +65690,7 @@ function queueJourneyTrees(){
 }
 function queueVisibleJourneyTrees(trees){
   for(const tree of trees){
-    const p=journeyTreeCameraPoint(tree);
+    const p=journeyTreeCameraPoint(tree,journeyTreeQueuePoint);
     if(p.depth>sceneryNearLimit()&&p.depth<treeVisibilityFar(tree))queueWorldDraw(p.depth,drawJourneyTree,tree);
   }
 }

@@ -7,7 +7,7 @@ function decorate(c){return Object.assign(c,{style:{},dataset:{},addEventListene
   removeEventListener:noop,setPointerCapture:noop,getBoundingClientRect:()=>({left:0,top:0,width:480,height:800})});}
 decorate(canvas);
 const root={dataset:{},style:{},clientWidth:480,clientHeight:800};
-const document={documentElement:root,hidden:false,hasFocus:()=>true,addEventListener:noop,
+const document={documentElement:root,body:{appendChild:noop},hidden:false,hasFocus:()=>true,addEventListener:noop,
   getElementById:id=>id==='game'?canvas:{style:{},offsetHeight:0},
   createElement:tag=>tag==='canvas'?decorate(createCanvas(480,800)):{style:{},dataset:{}}};
 const sandbox={console,document,localStorage:{getItem:()=>null,setItem:noop},

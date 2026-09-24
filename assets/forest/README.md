@@ -58,6 +58,12 @@ at once). Intermediate sky frames draw the small native panorama directly;
 only stable endpoints use the screen-resolution cache. No transition textures
 accumulate. Crimson now has a deeper red sky, without changing Disco's floor.
 
+The morning sky has fuller, stepped cumulus clouds at varied heights and sizes.
+Their eight authored clusters share a repeating 768-unit strip compiled into
+two material paths, using the existing warm-white/shadow biome colours. They
+reuse the panorama cache and yaw parallax; no extra texture or animated cache
+key is added. The corner audit covers positive/negative cloud wrap boundaries.
+
 ## Woodland density
 
 ### Road-stone volume trial
@@ -287,3 +293,12 @@ surface memory. Sorting uses a reusable typed buffer twice a second, only
 when the overlay is enabled. Authoring audits remain outside normal play.
 `tools/sunlit-cpu-profile.cjs --trace` is an optional offline diagnostic;
 profiling itself adds overhead and its timings must not be used as FPS claims.
+## Main menu comparison
+
+PLAY starts the current Sunlit Journey. OLD FOREST, beside it, starts the same
+Journey rules with the original forest renderer (including original special-road
+presentation). Seed replay keeps the selected look; PLAY/keyboard start restores
+Sunlit. The Morning Forest authoring entry is removed from the main menu; its
+direct `?morninglab=1` URL remains available for development.
+Regression: `node tools/forest-menu-audit.cjs` checks both looks, identical seeded
+maps and Disco/Crimson turns at desktop and phone viewport sizes.

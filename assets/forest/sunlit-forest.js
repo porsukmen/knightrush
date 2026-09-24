@@ -9,7 +9,7 @@
     vignette:drawVignette,particles:drawParticles,status:drawForestTestStatus,reset:resetRun,mode:setMode,
     masked:drawGroundMaskedWorldItem,rider:drawRider,player:drawPlayer,queue:buildWorldDrawQueue};
   const labMode=new URLSearchParams(location.search).get('morninglab')==='1';
-  const journeyForest=()=>!forestCorridor&&runJourneyPrototype&&!!journeyRoute&&!!journey&&
+  const journeyForest=()=>journeyForestStyle!=='classic'&&!forestCorridor&&runJourneyPrototype&&!!journeyRoute&&!!journey&&
     biome==='forest'&&env==='forest'&&curvedWorldActive();
   const active=()=>!!forestCorridor?.morning||(!labMode&&journeyForest());
   const R=n=>sRnd(n+state.seed),half=CURVED_ROAD_HALF;
@@ -59,7 +59,7 @@
   // leaf masses and three material values. Geometry is built once, not rebuilt
   // leaf by leaf. None of the archived generated atlas is loaded.
   function model(build){
-    const shapes=[];let left=Infinity,right=-Infinity,top=0,bottom=0;
+    const shapes=[],covers=[];let left=Infinity,right=-Infinity,top=0,bottom=0;
     const add=(points,color)=>{
       let sl=Infinity,sr=-Infinity,st=Infinity,sb=-Infinity;
       const path=new Path2D();points.forEach(([x,y],i)=>{
@@ -81,18 +81,32 @@
       }
       shapes.push({path,groundPath,color,left:sl,right:sr,top:st,bottom:sb});
     };
-    build(add);return {shapes,left,right,top,bottom,width:right-left};
+    add.cover=(left,top,right,bottom)=>covers.push({left,top,right,bottom});
+    add.crown=(x,y,w,h,colors)=>{shapes[shapes.length-3].crown={x,y,w,h,colors,key:colors.join(':')};};
+    build(add);return {shapes,covers,left,right,top,bottom,width:right-left};
   }
   const leafColors=[['#285d40','#528b41','#95b951'],['#376643','#67984b','#b2c85f'],['#23583c','#4b8341','#91b44b']];
-  function crown(add,x,y,w,h,colors){
-    const shape=(pts,c)=>add(pts.map(([a,b])=>[x+a*w,y+b*h]),c);
-    shape([[-.5,.05],[-.5,-.22],[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],
+  // The original three planes, shared in normalized coordinates. Instance
+  // geometry below is still built from these exact vertices in the same order.
+  const crownPlanes=[
+    [[-.5,.05],[-.5,-.22],[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],
       [.2,-.5],[.2,-.4],[.38,-.4],[.44,-.23],[.5,-.23],[.5,.15],[.37,.15],[.37,.32],
-      [.13,.32],[.13,.44],[-.15,.44],[-.15,.33],[-.36,.33],[-.43,.14],[-.5,.14]],colors[0]);
-    shape([[-.5,-.22],[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],[.2,-.5],[.2,-.4],
-      [.38,-.4],[.44,-.23],[.33,-.06],[.08,-.06],[.08,.1],[-.18,.1],[-.18,.02],[-.5,.02]],colors[1]);
-    shape([[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],[.2,-.5],[.2,-.39],
-      [.05,-.32],[-.12,-.32],[-.12,-.18],[-.37,-.18]],colors[2]);
+      [.13,.32],[.13,.44],[-.15,.44],[-.15,.33],[-.36,.33],[-.43,.14],[-.5,.14]],
+    [[-.5,-.22],[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],[.2,-.5],[.2,-.4],
+      [.38,-.4],[.44,-.23],[.33,-.06],[.08,-.06],[.08,.1],[-.18,.1],[-.18,.02],[-.5,.02]],
+    [[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],[.2,-.5],[.2,-.39],
+      [.05,-.32],[-.12,-.32],[-.12,-.18],[-.37,-.18]]
+  ];
+  const crownPaths=crownPlanes.map(points=>{const path=new Path2D();
+    points.forEach(([x,y],i)=>i?path.lineTo(x,y):path.moveTo(x,y));path.closePath();return path;});
+  function crown(add,x,y,w,h,colors){
+    // Guaranteed interiors of the opaque base polygon, not its bounding box.
+    // Kept deliberately inside every stepped/diagonal edge for safe occlusion.
+    add.cover(x-.30*w,y-.20*h,x+.30*w,y+.30*h);
+    add.cover(x-.42*w,y-.19*h,x+.43*w,y+.12*h);
+    add.cover(x-.10*w,y-.48*h,x+.10*w,y+.42*h);
+    for(let i=0;i<crownPlanes.length;i++)add(crownPlanes[i].map(([a,b])=>[x+a*w,y+b*h]),colors[i]);
+    add.crown(x,y,w,h,colors);
   }
   function treeModel(variant){return model(add=>{
     const bark='#805936',light='#b58b50',shade='#4f432d',leaves=leafColors[variant];
@@ -175,7 +189,51 @@
   // Runtime caches contain ONLY the native geometry above, never generated
   // artwork. Fixed pixel tiers are used only at or below their resolution;
   // larger foreground trees stay vector-sharp. All buffers share a hard cap.
-  const nativeCache={bytes:0,budgetBytes:5*1048576,transitionBytes:0,models:new Map(),surfaces:new Set(),background:null,prepared:false};
+  const nativeCache={bytes:0,budgetBytes:5*1048576,transitionBytes:0,crownBytes:0,crownBuilds:0,crownHits:0,
+    crownBlockedUntil:0,largerTierHits:0,retiredTiers:0,models:new Map(),surfaces:new Set(),background:null,prepared:false};
+  // A small reusable CPU coverage grid eliminates fully hidden trees without
+  // changing placement, silhouettes, transparency, or painter order. Only
+  // complete cells strictly inside closer opaque crowns become occluders.
+  const OCC_CELL=8;
+  let occlusion=new Uint8Array(0),occCols=0,occRows=0,occTop=0;
+  function beginOcclusion(){
+    occCols=Math.ceil(VW/OCC_CELL);occRows=Math.ceil((VH+PAD_TOT)/OCC_CELL);occTop=-PAD_TOP;
+    if(occlusion.length!==occCols*occRows)occlusion=new Uint8Array(occCols*occRows);
+    else occlusion.fill(0);
+  }
+  function rectangleCovered(left,top,right,bottom){
+    if(right<=left||bottom<=top)return false;
+    const x0=Math.max(0,Math.floor(left/OCC_CELL)),x1=Math.min(occCols,Math.ceil(right/OCC_CELL)),
+      y0=Math.max(0,Math.floor((top-occTop)/OCC_CELL)),y1=Math.min(occRows,Math.ceil((bottom-occTop)/OCC_CELL));
+    for(let row=y0;row<y1;row++)for(let col=x0;col<x1;col++)if(!occlusion[row*occCols+col])return false;
+    return true;
+  }
+  function treeOccluded(id,x,y,width,opacity,clipBottom,out){
+    if(out)out.occludedMask=0;
+    const m=models[id];if(id>2||!m||width<=0||opacity<=0||!occCols)return false;
+    const scale=width/m.width,edge=2,bottom=Math.min(VH+PAD_BOT,clipBottom),
+      left=Math.max(0,x+m.left*scale-edge),right=Math.min(VW,x+m.right*scale+edge),
+      top=Math.max(occTop,y+m.top*scale-edge),base=Math.min(bottom,y+m.bottom*scale+edge);
+    if(right<=left||base<=top)return false;
+    if(rectangleCovered(left,top,right,base))return true;
+    // A visible trunk does not require drawing all the hidden crown planes.
+    // The mask is saved with this queue item, before farther trees contribute.
+    if(out)for(let i=0;i<m.shapes.length;i++){
+      const shape=m.shapes[i];
+      if(rectangleCovered(Math.max(0,x+shape.left*scale-edge),Math.max(occTop,y+shape.top*scale-edge),
+        Math.min(VW,x+shape.right*scale+edge),Math.min(bottom,y+shape.bottom*scale+edge)))out.occludedMask|=1<<i;
+    }
+    if(opacity!==1||g.globalAlpha!==1)return false;
+    for(const rect of m.covers){
+      const rx0=Math.max(0,Math.ceil((x+rect.left*scale+edge)/OCC_CELL)),
+        rx1=Math.min(occCols,Math.floor((x+rect.right*scale-edge)/OCC_CELL)),
+        ry0=Math.max(0,Math.ceil((y+rect.top*scale+edge-occTop)/OCC_CELL)),
+        ry1=Math.min(occRows,Math.floor((Math.min(bottom,y+rect.bottom*scale-edge)-occTop)/OCC_CELL));
+      if(rx1<=rx0)continue;
+      for(let row=ry0;row<ry1;row++)occlusion.fill(1,row*occCols+rx0,row*occCols+rx1);
+    }
+    return false;
+  }
   function releaseSurface(canvas){
     if(!canvas||!nativeCache.surfaces.delete(canvas))return;
     nativeCache.bytes-=canvas.width*canvas.height*4;canvas.width=canvas.height=1;
@@ -185,22 +243,83 @@
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
     nativeCache.bytes+=bytes;nativeCache.surfaces.add(canvas);return canvas;
   }
-  function reserveNative(bytes){
+  function releaseModel(key,entry,recycle=false){
+    const bytes=entry.canvas.width*entry.canvas.height*4;
+    if(entry.transition)nativeCache.transitionBytes-=bytes;
+    if(entry.crown){
+      nativeCache.crownBytes-=bytes;
+      // Whole-tree/background demand takes priority. Do not refill the space
+      // with new crowns later in this frame, or chase it on subsequent frames.
+      nativeCache.crownBlockedUntil=Math.max(nativeCache.crownBlockedUntil,journeyRenderSerial+120);
+    }
+    if(!recycle){nativeCache.bytes-=bytes;entry.canvas.width=entry.canvas.height=1;}
+    nativeCache.models.delete(key);
+  }
+  function reclaimCrowns(bytes){
+    // Reclaim optional crowns before any whole-tree working-set entry. Avoid
+    // resetting a surface already sampled by this frame's command stream.
+    for(const [key,entry]of nativeCache.models){
+      if(nativeCache.bytes+bytes<=nativeCache.budgetBytes)break;
+      if(entry.crown&&entry.frame<journeyRenderSerial)releaseModel(key,entry);
+    }
+  }
+  function reserveNative(bytes,keepKeyA=null,keepKeyB=null){
     if(bytes>nativeCache.budgetBytes)return false;
+    reclaimCrowns(bytes);
     for(const [key,entry]of nativeCache.models){
       if(nativeCache.bytes+bytes<=nativeCache.budgetBytes)break;
       // A full working set must not chase its own tail every other frame.
       // Recent surfaces stay resident; overflow uses the original vector art.
-      if(entry.frame>=journeyRenderSerial-60)continue;
-      nativeCache.bytes-=entry.canvas.width*entry.canvas.height*4;
-      if(entry.transition)nativeCache.transitionBytes-=entry.canvas.width*entry.canvas.height*4;
-      entry.canvas.width=entry.canvas.height=1;nativeCache.models.delete(key);
+      if(entry.crown||entry.frame>=journeyRenderSerial-60||key===keepKeyA||key===keepKeyB)continue;
+      releaseModel(key,entry);
     }
     return nativeCache.bytes+bytes<=nativeCache.budgetBytes;
   }
-  function paintNative(m,context,bounds=null){
-    for(const shape of m.shapes){
+  function drawCachedCrown(crown,context,scaleX,scaleY){
+    // Only opaque foreground vector trees use this path. Far whole-tree tiers
+    // retain priority; this experiment never evicts one to admit a crown.
+    if(viewScale>1.25)return false; // DPR2 presentation was slower despite lower CPU submission time.
+    const pixels=Math.max(crown.w*scaleX,crown.h*scaleY),
+      tier=pixels<=128?128:pixels<=256?256:pixels<=512?512:0;
+    if(!tier)return false;
+    const key='crown:'+crown.key+':'+tier+':'+(materialPalette?.id||'forest');
+    let cached=nativeCache.models.get(key);
+    if(!cached){
+      if(journeyRenderSerial<nativeCache.crownBlockedUntil)return false;
+      if(nativeCache.buildFrame!==journeyRenderSerial){nativeCache.buildFrame=journeyRenderSerial;nativeCache.builds=0;}
+      if(nativeCache.builds>=2)return false;
+      const pad=2,cw=tier+pad*2,ch=Math.ceil(.94*tier)+pad*2,bytes=cw*ch*4;
+      let recycled=null;
+      if(nativeCache.bytes+bytes>nativeCache.budgetBytes||nativeCache.crownBytes+bytes>2*1048576){
+        for(const [oldKey,entry]of nativeCache.models){
+          if(!entry.crown||entry.frame>=journeyRenderSerial-60||entry.canvas.width!==cw||entry.canvas.height!==ch)continue;
+          recycled=entry;nativeCache.models.delete(oldKey);break;
+        }
+        if(!recycled)return false;
+      }
+      const canvas=recycled?.canvas||document.createElement('canvas');
+      if(!recycled){canvas.width=cw;canvas.height=ch;nativeCache.bytes+=bytes;nativeCache.crownBytes+=bytes;}
+      const ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cw,ch);
+      ctx.setTransform(tier,0,0,tier,pad+tier*.5,pad+tier*.5);
+      for(let i=0;i<3;i++){ctx.fillStyle=material(crown.colors[i]);ctx.fill(crownPaths[i]);}
+      cached={canvas,tier,pad,crown:true,frame:journeyRenderSerial};
+      nativeCache.models.set(key,cached);nativeCache.builds++;nativeCache.crownBuilds++;
+    }
+    if(cached.frame!==journeyRenderSerial){cached.frame=journeyRenderSerial;nativeCache.models.delete(key);nativeCache.models.set(key,cached);}
+    const sx=crown.w/cached.tier,sy=crown.h/cached.tier,
+      smoothing=context.imageSmoothingEnabled;
+    context.imageSmoothingEnabled=true;
+    context.drawImage(cached.canvas,crown.x-crown.w*.5-cached.pad*sx,crown.y-crown.h*.5-cached.pad*sy,
+      cached.canvas.width*sx,cached.canvas.height*sy);
+    context.imageSmoothingEnabled=smoothing;nativeCache.crownHits++;return true;
+  }
+  function paintNative(m,context,bounds=null,occludedMask=0,crownScaleX=0,crownScaleY=0){
+    for(let i=0;i<m.shapes.length;i++){
+      if(occludedMask&(1<<i))continue;
+      const shape=m.shapes[i];
       if(bounds&&(shape.top>bounds.bottom||shape.bottom<bounds.top||shape.right<bounds.left||shape.left>bounds.right))continue;
+      if(shape.crown&&crownScaleX>0&&context.globalAlpha===1&&context.globalCompositeOperation==='source-over'&&
+        !(occludedMask&(7<<i))&&drawCachedCrown(shape.crown,context,crownScaleX,crownScaleY)){i+=2;continue;}
       context.fillStyle=material(shape.color);context.fill(bounds?.ground?shape.groundPath:shape.path);
     }
   }
@@ -218,15 +337,18 @@
     for(const canvas of nativeCache.surfaces)releaseSurface(canvas);
     clearBackgroundCache();
     for(const c of nativeCache.models.values())c.canvas.width=c.canvas.height=1;
-    nativeCache.models.clear();nativeCache.bytes=0;nativeCache.transitionBytes=0;nativeCache.prepared=false;
+    nativeCache.models.clear();nativeCache.bytes=0;nativeCache.transitionBytes=0;nativeCache.crownBytes=0;
+    nativeCache.crownBuilds=0;nativeCache.crownHits=0;nativeCache.crownBlockedUntil=0;
+    nativeCache.largerTierHits=0;nativeCache.retiredTiers=0;nativeCache.prepared=false;
     nativeCache.lastYaw=undefined;
   }
-  function nativeShape(id,x,y,width,opacity=1,clipBottom=Infinity,heightRatio=1){
+  function nativeShape(id,x,y,width,opacity=1,clipBottom=Infinity,heightRatio=1,occludedMask=0){
     const m=models[id];if(!m||opacity<=0)return;const scale=width/m.width,scaleY=scale*heightRatio;
     if(x+m.right*scale<0||x+m.left*scale>VW||y+m.bottom*scaleY<-PAD_TOP||
       y+m.top*scaleY>Math.min(VH+PAD_BOT,clipBottom))return;
-    const pixels=width*viewScale,tier=pixels<=64?64:pixels<=128?128:pixels<=256?256:0,
-      key=id+':'+tier+(materialPalette?':'+materialPalette.id:'');
+    const pixels=width*viewScale*Math.max(1,heightRatio),tier=pixels<=64?64:pixels<=128?128:pixels<=256?256:0,
+      paletteKey=materialPalette?':'+materialPalette.id:'';
+    let key=id+':'+tier+paletteKey;
     // Each tree's intermediate colour is world-fixed, not animated. Reuse
     // small transition trees too, within a 1 MiB sub-budget of the SAME 5 MiB.
     // Large/near transitions remain vector; never retain all tiers per colour.
@@ -236,6 +358,20 @@
     // native transition paths there instead of crowding out the working set.
     const cacheable=opacity===1&&g.globalAlpha===1&&tier&&(!transition||id<3&&tier<=128&&viewScale<=1.25);
     let cached=cacheable?nativeCache.models.get(key):null;
+    if(cached?.replacedBy){
+      const replacement=nativeCache.models.get(cached.replacedBy);
+      if(replacement){
+        const replacementKey=cached.replacedBy;
+        if(cached.frame<journeyRenderSerial){releaseModel(key,cached);nativeCache.retiredTiers++;}
+        cached=replacement;key=replacementKey;nativeCache.largerTierHits++;
+      }else delete cached.replacedBy;
+    }
+    // A larger resident tier can render a smaller request without upscaling.
+    // Reuse it instead of creating another copy of the same model/material.
+    if(!cached&&cacheable)for(let larger=tier*2;larger<=256;larger*=2){
+      const largerKey=id+':'+larger+paletteKey,entry=nativeCache.models.get(largerKey);
+      if(entry){cached=entry;key=largerKey;nativeCache.largerTierHits++;break;}
+    }
     // Coloured variants share the existing hard budget. At most two small
     // rasterizations per frame; overflow falls back to the native paths.
     if(!cached&&cacheable){
@@ -244,15 +380,16 @@
       // Repaint an unused matching surface instead of destroying/allocating a
       // GPU texture for each of the biome's intermediate material palettes.
       let recycled=null;
+      if(nativeCache.builds<2&&nativeCache.bytes+bytes>nativeCache.budgetBytes)reclaimCrowns(bytes);
       if(nativeCache.builds<2&&nativeCache.bytes+bytes>nativeCache.budgetBytes){
         for(const [oldKey,entry]of nativeCache.models){
           if(entry.frame>=journeyRenderSerial-60||entry.canvas.width!==cw||entry.canvas.height!==ch)continue;
           if(transition&&nativeCache.transitionBytes+bytes-(entry.transition?bytes:0)>1048576)continue;
-          recycled=entry;nativeCache.models.delete(oldKey);
-          if(entry.transition)nativeCache.transitionBytes-=bytes;break;
+          recycled=entry;releaseModel(oldKey,entry,true);break;
         }
       }
-      if(nativeCache.builds<2&&(!transition||nativeCache.transitionBytes+bytes<=1048576)&&(recycled||reserveNative(bytes))){
+      if(nativeCache.builds<2&&(!transition||nativeCache.transitionBytes+bytes<=1048576)&&
+        (recycled||reserveNative(bytes,tier>64?id+':64'+paletteKey:null,tier>128?id+':128'+paletteKey:null))){
         const canvas=recycled?.canvas||document.createElement('canvas');
         if(!recycled){canvas.width=cw;canvas.height=ch;nativeCache.bytes+=bytes;}
         const ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cw,ch);
@@ -260,6 +397,14 @@
         if(transition)nativeCache.transitionBytes+=bytes;
         cached={canvas,scale:cs,left:m.left-pad/cs,top:m.top-pad/cs,transition};
         nativeCache.models.set(key,cached);nativeCache.builds++;
+        // The replacement is admitted and painted BEFORE retiring any smaller
+        // tier. If allocation failed above, every existing fallback survives.
+        for(let smaller=64;smaller<tier;smaller*=2){
+          const smallerKey=id+':'+smaller+paletteKey,entry=nativeCache.models.get(smallerKey);
+          if(!entry)continue;
+          if(entry.frame<journeyRenderSerial){releaseModel(smallerKey,entry);nativeCache.retiredTiers++;}
+          else entry.replacedBy=key;
+        }
       }
     }
     if(cached){
@@ -280,9 +425,15 @@
       if(!ground&&y+m.bottom*scaleY>clipBottom){g.beginPath();g.rect(-VW*4,-PAD_TOP-6000,VW*9,clipBottom+PAD_TOP+6000);g.clip();}
       g.translate(x,y);g.scale(scale,scaleY);
       paintNative(m,g,{ground,left:(-x-1)/scale,right:(VW-x+1)/scale,
-        top:(-PAD_TOP-y-1)/scaleY,bottom:(Math.min(VH+PAD_BOT,clipBottom)-y+1)/scaleY});g.restore();
+        top:(-PAD_TOP-y-1)/scaleY,bottom:(Math.min(VH+PAD_BOT,clipBottom)-y+1)/scaleY},occludedMask,
+        id<3&&pixels>256&&viewScale<=1.25?scale*viewScale:0,scaleY*viewScale);g.restore();
     }
     state.draws++;
+  }
+  function nativeShapeWithPalette(palette,id,x,y,width,opacity=1,clipBottom=Infinity,heightRatio=1,occludedMask=0){
+    const previous=materialPalette;
+    try{materialPalette=palette;nativeShape(id,x,y,width,opacity,clipBottom,heightRatio,occludedMask);}
+    finally{materialPalette=previous;}
   }
   // Open morning panorama, following Godot's sunny-morning sky / forest_horizon
   // composition. Low hills and two distant broadleaf ranks, never a roof.
@@ -316,12 +467,36 @@
         [x+w,24],[x,24]],color);
     }
   }));
-  const distantCloud=backgroundModel(add=>{
-    add([[0,0],[19,0],[19,-5],[36,-5],[36,-11],[65,-11],[65,-6],
-      [81,-6],[81,-9],[109,-9],[109,-4],[130,-4],[130,0],[149,0],
-      [149,3],[105,3],[105,6],[75,6],[75,3],[0,3]],'#f6f3d9');
-    add([[27,3],[75,3],[75,6],[105,6],[105,3],[133,3],[133,5],
-      [113,5],[113,8],[73,8],[73,5],[27,5]],'#d7e5d9');
+  const distantClouds=backgroundModel(add=>{
+    // Broad, stepped cumulus lobes: fuller silhouettes, not blurred circles.
+    // Compile the whole 768-unit sky strip into just two material paths once.
+    // The same world strip repeats through turns; no per-frame cloud geometry,
+    // extra textures, random placement or independently moving cache keys.
+    const crowns=[
+      [[0,0],[0,-9],[7,-16],[18,-16],[18,-25],[26,-32],[40,-32],
+        [40,-43],[50,-51],[68,-51],[79,-41],[79,-34],[93,-34],
+        [93,-26],[105,-26],[113,-18],[125,-18],[133,-10],[133,0],
+        [123,6],[20,6],[10,3]],
+      [[0,0],[0,-8],[9,-17],[25,-17],[25,-31],[34,-39],[51,-39],
+        [59,-31],[59,-27],[70,-27],[70,-45],[81,-54],[96,-54],
+        [106,-44],[106,-29],[118,-29],[126,-21],[126,-15],
+        [141,-15],[149,-7],[149,1],[136,6],[17,6],[7,3]]
+    ];
+    const bases=[
+      [[1,-1],[22,-1],[29,2],[76,2],[84,-3],[117,-3],[125,-7],
+        [133,-7],[133,0],[123,6],[20,6],[10,3]],
+      [[0,-2],[26,-2],[32,1],[70,1],[78,-4],[126,-4],[136,-8],
+        [149,-8],[149,1],[136,6],[17,6],[7,3]]
+    ];
+    // Mixed heights/sizes leave clear blue pockets and space around the sun.
+    const clusters=[[7,-211,.94,0],[290,-274,.62,1],[335,-192,1.04,0],
+      [211,-125,.57,1],[523,-251,.9,1],[642,-165,.69,0],
+      [45,-344,1.03,1],[402,-356,.85,0]];
+    for(const [x,y,s,variant]of clusters){
+      const place=points=>points.map(([px,py])=>[x+px*s,y+py*s]);
+      add(place(crowns[variant]),'#f6f3d9');
+      add(place(bases[variant]),'#d7e5d9');
+    }
   });
   const morningSun=backgroundModel(add=>{
     add([[-11,-19],[10,-19],[19,-10],[19,10],[10,19],[-10,19],[-19,10],[-19,-10]],'#fff2bb');
@@ -343,9 +518,7 @@
     g.fillStyle=sky;g.fillRect(0,-PAD_TOP,VW,HORIZON_Y+PAD_TOP+50);
     const yaw=backgroundYaw??journeyCameraPose().yaw;
     paintBackgroundModel(morningSun,VW*.59-Math.sin(yaw)*18,HORIZON_Y-201);
-    const cloudShift=yaw*18,cloudStart=Math.floor(cloudShift/370);
-    for(let i=cloudStart-1;i<=cloudStart+Math.ceil(VW/370);i++)
-      paintBackgroundModel(distantCloud,i*370-54-cloudShift,HORIZON_Y-192+((i%2+2)%2)*23);
+    paintBackgroundBelt(distantClouds,yaw,18);
     paintBackgroundBelt(distantRidge,yaw,26);
     paintBackgroundBelt(horizonWoods[0],yaw,38);
     paintBackgroundBelt(horizonWoods[1],yaw,65);
@@ -838,7 +1011,7 @@
     cvs.style.imageRendering='auto';document.title='Knight Rush — Morning Forest Lab';
   }
   if(!labMode){
-    window.KRSunlitArt={active:journeyForest,models,nativeShape,withPalette,material,polygon,
+    window.KRSunlitArt={active:journeyForest,models,nativeShape,nativeShapeWithPalette,withPalette,material,polygon,beginOcclusion,treeOccluded,
       background:(palette,yaw)=>{const previous=backgroundYaw;try{backgroundYaw=yaw;withPalette(palette,background);}finally{backgroundYaw=previous;}},
       prepare:prepareNativeCache,reserveSurface,releaseSurface,
       clear:()=>{state.rows.clear();floorRows.clear();clearNativeCache();riderLightCache=null;},
@@ -847,7 +1020,9 @@
       rowRecords,root:drawMorningRoot,rock:drawRoadRock,
       rockDimensions:lanes=>({width:roadRocks[lanes-1].width,height:roadRocks[lanes-1].height}),
       trimRows:keys=>{for(const key of state.rows.keys())if(!keys.has(key))state.rows.delete(key);},
-      report:()=>({cacheBytes:nativeCache.bytes,budgetBytes:nativeCache.budgetBytes,rows:state.rows.size,models:models.length})};
+      report:()=>({cacheBytes:nativeCache.bytes,budgetBytes:nativeCache.budgetBytes,rows:state.rows.size,models:models.length,
+        crownCacheBytes:nativeCache.crownBytes,crownCacheBuilds:nativeCache.crownBuilds,crownCacheHits:nativeCache.crownHits,
+        largerTierHits:nativeCache.largerTierHits,retiredTiers:nativeCache.retiredTiers})};
     return;
   }
   drawBackground=function(){if(active())background();else original.background();};

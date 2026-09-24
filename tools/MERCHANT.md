@@ -10,9 +10,9 @@ The current wandering-merchant draft is anchored to Knight Rush's own artwork,
 not the rejected rounded/cartoon or hooded-caravan experiments. The camp directly
 uses `drawTreeArt` from the runner. The trader uses Jonathan/Squire's `rigPolygon`,
 `rigSegment`, `rigJoint` and `px` primitives: square joints and facial features,
-hard-edged cloth silhouettes, broad lit/dark planes. The named style contract is
-[Knight Rush — Keskin Düzlem](../ART_STYLE_KESKIN_DUZLEM.md); approved merchant
-and item references are preserved under `art-source/knight-rush-sharp-plane/`.
+hard-edged cloth silhouettes, broad lit/dark planes. The current style contract is
+the [Knight Rush art skill](skills/knight-rush-art/SKILL.md); use approved live
+Art Lab models as visual anchors, not the background/UI in old shop screenshots.
 The wealthy, slightly stout merchant wears a wine-red cap/coat, teal doublet,
 cream fur collar and gold jewelry. A separate wooden table with a red cloth
 stands in front; behind him are an oblique covered wagon, a very thin seated

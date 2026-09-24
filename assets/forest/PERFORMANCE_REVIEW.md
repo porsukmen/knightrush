@@ -1,5 +1,9 @@
 # Dense forest performance review — 2026-09-24
 
+Later real-frame-loop stutter work, cache policy and validation are recorded in
+[STUTTER_REVIEW.md](STUTTER_REVIEW.md). The fixed-step measurements below remain
+historical workload results, not proof of native game-loop frame pacing.
+
 ## Scope and method
 
 This compares the approved denser woodland / volume-rock implementation before

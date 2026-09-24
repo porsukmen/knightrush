@@ -11,6 +11,12 @@
  const active=art.active,half=CURVED_ROAD_HALF,unit=150/JOURNEY_LANE_WORLD;
  const floors=new Map(),palettes=new Map(),water=new Map(),usedFloorKeys=new Set(),usedWaterKeys=new Set(),itemPool=[];
  let owner=null,views=[],rowKeys=new Set(),items=[],frameId=-1;
+ let floorBuilds=0,floorHits=0,waterBuilds=0,waterHits=0;
+ // Distance and ground scroll accumulate separately after junctions. Their
+ // subtraction can differ by floating-point dust even when the world origin
+ // has not moved. Quantize identity only (one micrometre), never geometry or
+ // projection, so these stationary rows do not rebuild on unrelated frames.
+ const coordinateKey=value=>Math.round(value*1e6);
  // Material targets, not a translucent screen overlay. Three broad values
  // remain distinct on the exact same foliage, bark and soil geometry.
  const materialTargets={disco:{
@@ -122,11 +128,16 @@
   if(!amount||!theme||theme==='forest')return color;
   const target=palette(theme,1).color(color);return amount===1?target:mixCol(color,target,amount);
  }
+ const gradientWorld={},gradientCamera={},gradientPoints=[{},{},{},{}];
+ function projectGroundPoint(view,d,x,out){
+  const w=view.point(d,x,gradientWorld),c=journeyCameraPoint(w.x,w.z,gradientCamera);
+  return journeyProjectCamera(c.side,c.depth,out);
+ }
  function groundPaint(view,edge,a,b,color){
   const c0=groundColor(edge,view.at(a),color),c1=groundColor(edge,view.at(b),color);
   if(c0===c1)return c0;
-  const project=(d,x)=>{const w=view.point(d,x),c=journeyCameraPoint(w.x,w.z);return journeyProjectCamera(c.side,c.depth);};
-  const p=project(a,0),q=project(b,0),l=project((a+b)/2,-half),r=project((a+b)/2,half);
+  const p=projectGroundPoint(view,a,0,gradientPoints[0]),q=projectGroundPoint(view,b,0,gradientPoints[1]),
+    l=projectGroundPoint(view,(a+b)/2,-half,gradientPoints[2]),r=projectGroundPoint(view,(a+b)/2,half,gradientPoints[3]);
   // Gradient is perpendicular to the projected road cross-section. It remains
   // painted into the same opaque soil polygon while a side road rotates.
   const tx=r.x-l.x,ty=r.y-l.y,len=Math.hypot(tx,ty)||1,nx=-ty/len,ny=tx/len,
@@ -167,7 +178,7 @@
    let node=journeyNode(journeyActiveRoad()?journeyRoute.from:journeyRoute.next);
    if(!journeyActiveRoad()&&journeyRoute.pendingArm&&journey.passedNodeId)node=journeyNode(journey.passedNodeId);
    const edge=side?node?.out.find(e=>e.direction===direction):null;
-   return {...view,direction,origin:p,key:[direction,p.x,p.z,view.offset].join(':'),
+   return {...view,direction,origin:p,key:direction+':'+coordinateKey(p.x)+':'+coordinateKey(p.z)+':'+coordinateKey(view.offset),
     at:d=>side?(node?.at??journeyForkDistance())+d:d,
     edgeAt:d=>side?edge:journeyActiveRoad()?(d>journeyNode(journeyRoute.from).at
       ?journeyNode(journeyRoute.from).out.find(e=>e.direction===0):journey.oldRoadEdge):journeyForestEdgeAt(d)};
@@ -181,6 +192,12 @@
    if(side<half*(v.direction?journeyBranchWidth(Math.max(0,d)):1)+margin)return true;
   }return false;
  }
+ function nearAnchor(anchors,p,width,length){
+  for(const anchor of anchors)if(Math.abs(p.x-anchor.x)<width&&Math.abs(p.z-anchor.z)<length)return true;
+  return false;
+ }
+ function grassColor(color){return color==='#a2af50'||color==='#8da641'||color==='#526f39';}
+ const rowWorldA={},rowWorldB={},rowCameraA={},rowCameraB={};
  function begin(){
   if(owner!==journeyRoute){owner=journeyRoute;floors.clear();water.clear();art.clear();headingRoute=null;}
   art.setSeed(journeyRoute.seed);art.prepare();
@@ -196,29 +213,31 @@
    // Include all four planting belts in coarse frustum/depth rejection.
    for(let row=Math.floor((low+view.offset)/18);row<=Math.ceil((high+view.offset)/18);row++){
     const d=row*18-view.offset;
-    const a=view.point(d,-36),b=view.point(d+18,36),ca=journeyCameraPoint(a.x,a.z),cb=journeyCameraPoint(b.x,b.z);
+    const a=view.point(d,-36,rowWorldA),b=view.point(d+18,36,rowWorldB),
+      ca=journeyCameraPoint(a.x,a.z,rowCameraA),cb=journeyCameraPoint(b.x,b.z,rowCameraB);
     if(Math.max(ca.depth,cb.depth)<sceneryNearLimit()-10||Math.min(ca.depth,cb.depth)>SPAWN_FAR+30)continue;
     rowKeys.add('false:'+row);
     for(const o of art.rowRecords(row,false)){
      const z=o.localZ-view.offset;if(z<view.start||z>view.finish)continue;
-     const p=view.point(z,o.x),c=journeyCameraPoint(p.x,p.z);
+     // Rejected candidates share the next unused slot; accepted objects keep
+     // their own coordinates until the whole painter queue has consumed them.
+     const item=itemPool[items.length]||(itemPool[items.length]={p:{},c:{},projected:{}}),
+       p=view.point(z,o.x,item.p),c=journeyCameraPoint(p.x,p.z,item.c);
      if(c.depth<sceneryNearLimit()||c.depth>SPAWN_FAR)continue;
-     let projected=null,width=0,clip=0;
+     const projected=item.projected;let width=0,clip=0;
      if(o.kind!=='pool'){
-      projected=journeyProjectCamera(c.side,c.depth);width=o.w*unit*linS(projected.t);
-      const m=art.models[o.id],s=width/m.width;clip=curvedSpriteClipY(c.depth);
+      journeyProjectCamera(c.side,c.depth,projected);width=o.w*unit*linS(projected.t);
+      const m=art.models[o.id],s=width/m.width;clip=c.depth>=CFG.Z_FAR?HORIZON_Y:projected.y;
       // Reject outer-belt trees before palette/road/prop-footprint work.
       if(projected.x+m.right*s<0||projected.x+m.left*s>VW||projected.y+m.top*s>clip)continue;
      }
      if(insideRoad(p,o.kind==='pool'?o.w*.6+1:o.id<3?2.1:.4))continue;
-     if((o.id<3||o.kind==='pool')&&rootAnchors.some(root=>
-       Math.abs(p.x-root.x)<(o.kind==='pool'?o.w*.6+2.6:4)&&Math.abs(p.z-root.z)<(o.kind==='pool'?6:5)))continue;
+     if((o.id<3||o.kind==='pool')&&nearAnchor(rootAnchors,p,o.kind==='pool'?o.w*.6+2.6:4,o.kind==='pool'?6:5))continue;
      const clearance=o.kind==='pool'?o.w*.6+2.6:o.id<3?3.4:2.6;
-     if(decorClearances.some(decor=>Math.abs(p.x-decor.x)<clearance&&Math.abs(p.z-decor.z)<4.5))continue;
+     if(nearAnchor(decorClearances,p,clearance,4.5))continue;
      const pal=atPalette(view.edgeAt(z),view.at(z));
-     const item=itemPool[items.length]||(itemPool[items.length]={});
-     item.record=o;item.view=view;item.z=z;item.p=p;item.c=c;item.palette=pal;
-     item.projected=projected;item.width=width;item.clip=clip;items.push(item);
+     item.record=o;item.view=view;item.z=z;item.palette=pal;
+     item.width=width;item.clip=clip;items.push(item);
     }
    }
   }
@@ -234,17 +253,17 @@
    for(let row=Math.floor((from+view.offset)/4);row*4-view.offset<to;row++){
     const start=row*4-view.offset,a=Math.max(from,start),b=Math.min(to,start+4.015);
     if(!art.floorSectionVisible(view,a,Math.max(b,a+3.8)))continue;
-    const key=view.key+':'+row+':'+a+':'+b;used.add(key);
+    const key=view.key+':'+row+':'+coordinateKey(a)+':'+coordinateKey(b);used.add(key);
     let shapes=floors.get(key);
     if(!shapes){
      const local={point:(d,x)=>view.point(d-view.offset,x)};
      shapes=art.floorRow(local,row,a+view.offset,b+view.offset).filter(shape=>{
-      if(!['#a2af50','#8da641','#526f39'].includes(shape.color))return true;
+      if(!grassColor(shape.color))return true;
       return !shape.vertices.some(p=>insideRoad(p,.3,view));
-     });floors.set(key,shapes);
-    }
+     });floors.set(key,shapes);floorBuilds++;
+    }else floorHits++;
     const rowInfo=groundRowPool[groundRows.length]||(groundRowPool[groundRows.length]={});
-    Object.assign(rowInfo,{shapes,a,b,edge:view.edgeAt((a+b)/2)});groundRows.push(rowInfo);
+    rowInfo.shapes=shapes;rowInfo.a=a;rowInfo.b=b;rowInfo.edge=view.edgeAt((a+b)/2);groundRows.push(rowInfo);
    }
    // Paint every grassy backing BEFORE any soil. Repainting grass per cell
    // exposed thin green horizontal seams through the soil's antialiased edge.
@@ -264,8 +283,7 @@
    // CPU submissions but regressed DPR2 frame pacing on the test host.
    for(const {shapes,a,b,edge}of groundRows)for(const shape of shapes){
      if(shape.color==='#d6b16f'||shape.color==='#a2af50')continue;
-     if(edge?.preview.theme==='disco'&&
-       !['#d6b16f','#a2af50','#8da641','#526f39'].includes(shape.color))continue;
+     if(edge?.preview.theme==='disco'&&!grassColor(shape.color))continue;
      art.drawFloorShape(shape,groundColor(edge,view.at((a+b)/2),shape.color));
    }
   }
@@ -273,9 +291,10 @@
   for(const item of items)if(item.record.kind==='pool'){
    const {record:o,view,z}=item;
    // Every bank and reflection uses the same road transform as its trees.
-   const key=view.key+':'+o.x+':'+z;usedWaterKeys.add(key);
+   const key=view.key+':'+coordinateKey(o.x)+':'+coordinateKey(z);usedWaterKeys.add(key);
    let shapes=water.get(key);
-   if(!shapes){shapes=art.waterShapes(false,o.x,z,o.w,5.5,false,view.point);water.set(key,shapes);}
+   if(!shapes){shapes=art.waterShapes(false,o.x,z,o.w,5.5,false,view.point);water.set(key,shapes);waterBuilds++;}
+   else waterHits++;
    art.withPalette(item.palette,()=>{for(const shape of shapes)art.drawFloorShape(shape);});
   }
   for(const key of water.keys())if(!usedWaterKeys.has(key))water.delete(key);
@@ -287,13 +306,16 @@
    const o=item.record;if(o.kind==='pool')continue;
    const p=item.projected,width=item.width;
    const entry=pool[count]||(pool[count]={});count++;
-   Object.assign(entry,{id:o.id,x:p.x,y:p.y,width,alpha:treeDistanceAlpha(o,item.c.depth),
-    clip:item.clip,palette:item.palette});
+   entry.id=o.id;entry.x=p.x;entry.y=p.y;entry.width=width;entry.alpha=treeDistanceAlpha(o,item.c.depth);
+   entry.clip=item.clip;entry.palette=item.palette;entry.occludedMask=0;
    queueWorldDraw(item.c.depth,drawScenery,entry);
   }
   queueCurvedEndTrees();
  }
- function drawScenery(o){art.withPalette(o.palette,()=>art.nativeShape(o.id,o.x,o.y,o.width,o.alpha,o.clip));}
+ function drawScenery(o){
+  const mask=occlusionFrame===journeyRenderSerial?o.occludedMask:0;
+  art.nativeShapeWithPalette(o.palette,o.id,o.x,o.y,o.width,o.alpha,o.clip,1,mask||0);
+ }
  let endGroves=new WeakMap();
  journeyEndTrees=function(node,edge){
   if(!active())return base.endTrees(node,edge);
@@ -310,14 +332,22 @@
   }
   endGroves.set(node,trees);return trees;
  };
+ const endTreeCamera={},endTreeDrawPoint={},endTreeOcclusionPoint={};
+ function projectEndTree(tree,out){
+  const c=journeyTreeCameraPoint(tree,endTreeCamera);
+  if(c.depth<=sceneryNearLimit()||c.depth>=treeVisibilityFar(tree))return null;
+  const p=journeyProjectCamera(c.side,c.depth,out),id=Math.min(2,Math.floor(tree.v*3)),
+    width=(9.6+tree.v*2)*unit*linS(p.t),m=art.models[id],s=width/m.width,
+    clip=c.depth>=CFG.Z_FAR?HORIZON_Y:p.y;
+  if(p.x+m.right*s<0||p.x+m.left*s>VW||p.y+m.top*s>clip)return null;
+  p.id=id;p.width=width;p.alpha=treeDistanceAlpha(tree,c.depth);p.clip=clip;return p;
+ }
  function drawEndTree(tree,stage){
   if(!active())return base.tree(tree,stage);
-  const c=journeyTreeCameraPoint(tree);if(c.depth<=sceneryNearLimit()||c.depth>=treeVisibilityFar(tree))return;
-  const p=journeyProjectCamera(c.side,c.depth),pal=tree.bloodAmount?palette('bloodwood',tree.bloodAmount):palette('disco',tree.discoAmount||0);
-  const id=Math.min(2,Math.floor(tree.v*3)),width=(9.6+tree.v*2)*unit*linS(p.t),m=art.models[id],s=width/m.width,
-   clip=curvedSpriteClipY(c.depth);
-  if(p.x+m.right*s<0||p.x+m.left*s>VW||p.y+m.top*s>clip)return;
-  art.withPalette(pal,()=>art.nativeShape(id,p.x,p.y,width,treeDistanceAlpha(tree,c.depth),clip));
+  const p=projectEndTree(tree,endTreeDrawPoint);if(!p)return;
+  const pal=tree.bloodAmount?palette('bloodwood',tree.bloodAmount):palette('disco',tree.discoAmount||0);
+  const mask=occlusionFrame===journeyRenderSerial&&tree.sunlitRenderMaskFrame===journeyRenderSerial?tree.sunlitRenderMask:0;
+  art.nativeShapeWithPalette(pal,p.id,p.x,p.y,p.width,p.alpha,p.clip,1,mask||0);
  }
  function lanePoint(o,d=0,x=0){
   const cam=journeyCameraPose(),sin=Math.sin(cam.yaw),cos=Math.cos(cam.yaw);
@@ -384,13 +414,48 @@
    g.save();g.translate(p.x-local,0);base.obstacle({...o,z:c.depth},stage);g.restore();
   }else hazard(o,item.point,c.depth,c.side);
  }
+ let occludedTrees=0,coveredTreePlanes=0,occlusionFrame=-1;
+ function cullCoveredTrees(){
+  art.beginOcclusion();occlusionFrame=journeyRenderSerial;
+  // Only opaque interiors of closer native tree crowns can cover a farther
+  // tree. Other actors/props never contribute coverage and are never removed.
+  // Inspect in reverse painter order, then compact without re-sorting.
+  for(let i=DRAW_QUEUE.length-1;i>=0;i--){
+   const entry=DRAW_QUEUE[i];let p=null;
+   if(entry.draw===drawScenery){
+    entry.ref.occludedMask=0;if(entry.ref.id<3)p=entry.ref;
+   }else if(entry.draw===drawEndTree){
+    entry.ref.sunlitRenderMask=0;entry.ref.sunlitRenderMaskFrame=journeyRenderSerial;
+    p=projectEndTree(entry.ref,endTreeOcclusionPoint);if(p)p.occludedMask=0;
+   }
+   entry.sunlitOccluded=!!p&&art.treeOccluded(p.id,p.x,p.y,p.width,p.alpha,p.clip,p);
+   if(entry.draw===drawEndTree&&p)entry.ref.sunlitRenderMask=p.occludedMask||0;
+   if(entry.sunlitOccluded)occludedTrees++;
+   else if(p)for(let mask=p.occludedMask||0;mask;mask&=mask-1)coveredTreePlanes++;
+  }
+  if(!occludedTrees)return;
+  let count=0;
+  for(const entry of DRAW_QUEUE)if(!entry.sunlitOccluded)DRAW_QUEUE[count++]=entry;
+  DRAW_QUEUE.length=count;
+ }
  buildWorldDrawQueue=function(stage,newForest){
-  base.queue(stage,newForest);
-  if(!active()||journey.phase!=='turning'||!journey.sunlitPreview)return;
-  for(const item of journey.sunlitPreview.obstacles){const c=journeyCameraPoint(item.x,item.z);
-   if(c.depth>item.entity.type.cullZ&&c.depth<SPAWN_FAR)queueWorldDraw(c.depth,drawPreview,item);}
-  for(const item of journey.sunlitPreview.pickups)queueWorldDraw(journeyCameraPoint(item.x,item.z).depth,drawJourneyPickup,item);
-  DRAW_QUEUE.sort(compareWorldDepthDescending);
+  occludedTrees=0;coveredTreePlanes=0;occlusionFrame=-1;base.queue(stage,newForest);
+  if(!active())return;
+  if(journey.phase==='turning'&&journey.sunlitPreview){
+   for(const item of journey.sunlitPreview.obstacles){const c=journeyCameraPoint(item.x,item.z);
+    if(c.depth>item.entity.type.cullZ&&c.depth<SPAWN_FAR)queueWorldDraw(c.depth,drawPreview,item);}
+   for(const item of journey.sunlitPreview.pickups)queueWorldDraw(journeyCameraPoint(item.x,item.z).depth,drawJourneyPickup,item);
+   DRAW_QUEUE.sort(compareWorldDepthDescending);
+  }
+  // Coverage is measured in the unshaken logical viewport and assumes normal
+  // opaque source-over drawing. A skipped pass cannot reuse last-frame masks.
+  // Straight corridors have almost no fully hidden planes; scanning their
+  // entire forest costs more than it saves. Corners and close end groves are
+  // the dense overlapping cases where coverage testing pays for itself.
+  const overlap=journey.phase==='turning'||journey.phase==='settling'||
+    (journey.endTrees?.length&&journeyForkDistance()-dist<60);
+  if(overlap&&!worldFxShakeX&&!worldFxShakeY&&g.globalAlpha===1&&g.globalCompositeOperation==='source-over'&&
+    art.beginOcclusion&&art.treeOccluded)cullCoveredTrees();
  };
  drawBackground=function(){if(!active())return base.background();begin();
   art.background(skyPalette(journeyActiveEdge(),dist),globalYaw());};
@@ -470,14 +535,14 @@
   for(const d of battlePlate.tail)drawGroundMaskedWorldItem(d.draw,d.ref,d.z,stage);
   battleHits++;return true;
  }
- function clear(){clearBattlePlate();art.clear();floors.clear();water.clear();items.length=0;itemPool.length=0;pool.length=0;owner=null;frameId=-1;endGroves=new WeakMap();}
+ function clear(){clearBattlePlate();art.clear();floors.clear();water.clear();items.length=0;itemPool.length=0;pool.length=0;owner=null;frameId=-1;endGroves=new WeakMap();floorBuilds=0;floorHits=0;waterBuilds=0;waterHits=0;occludedTrees=0;coveredTreePlanes=0;occlusionFrame=-1;}
  resetRun=function(){clear();return base.reset();};
  setMode=function(next,...args){const result=base.mode(next,...args);if(next!=='boss')clearBattlePlate();if(['menu','charsel','score','town'].includes(next))clear();return result;};
  window.KRSunlitForest={active,riderAppearance,drawBattleWorld,clearBattlePlate,
   roadColorAt:(edge,at)=>groundColor(edge,at,'#d6b16f'),
   materialAt:(theme,amount,color)=>palette(theme,amount)?.color(color)||color,
-  report:()=>({...art.report(),active:active(),floorRows:floors.size,
-  visibleScenery:count,battleCacheBytes:battlePlate?battlePlate.canvas.width*battlePlate.canvas.height*4:0,
+  report:()=>({...art.report(),active:active(),floorRows:floors.size,floorBuilds,floorHits,waterBuilds,waterHits,
+  visibleScenery:count,occludedTrees,coveredTreePlanes,battleCacheBytes:battlePlate?battlePlate.canvas.width*battlePlate.canvas.height*4:0,
   battleBuilds,battleHits,renderer:'sunlit-journey',legacyGameplay:true}),
   inspect:()=>items.map(i=>({x:i.p.x,z:i.p.z,id:i.record.id,kind:i.record.kind||'plant',palette:i.palette?.id||'forest'}))};
 })();

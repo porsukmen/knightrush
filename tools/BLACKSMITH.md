@@ -9,8 +9,9 @@ to forest with its run seed and next stage. Squire is dismissed before shopping.
 
 ## Content and progression
 
-- Current art experiment follows [Knight Rush — Keskin Düzlem](../ART_STYLE_KESKIN_DUZLEM.md):
-  blue-grey steel with broad shadow planes, burgundy work sleeves, a strapped
+- Current art follows the [Knight Rush art skill](skills/knight-rush-art/SKILL.md)
+  and its approved live Art Lab models: blue-grey steel with broad shadow planes,
+  steel upper arms (not the old burgundy sleeves), a strapped
   leather apron and brass fasteners. The original triangular Bastion build,
   projected Squire helmet, slim legs and tiny hammer remain. The forge uses
   large slate blocks, a recessed warm-stone hearth, a level back-wall tool rail and

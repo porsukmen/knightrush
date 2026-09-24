@@ -6,15 +6,24 @@ for(const retired of ['startMiniboss','packTypes','packLeap','minibossSpawned',
   assert(!new RegExp('\\b'+retired+'\\b').test(source),'Retired runtime remains: '+retired);
 }
 run('SFX.toggle();');
-// The full-width PLAY hit area and the keyboard route all use seeded Journey.
-for(const x of [100,240,380]){
+// Both compact buttons use Journey; only the forest presentation changes.
+for(const x of [100,220,260,380]){
   run(`resetRun();setMode('menu');handleAction('tap',{x:${x},y:430});`);
   assert.equal(run('mode'),'charsel');
   run('uiConfirm();');
   assert(run("mode==='run'&&activeRunPolicyId==='journey_forest'&&!!journeyRoute&&curvedWorldActive()&&!debugRun&&!godMode"));
+  assert.equal(run('journeyForestStyle'),x<240?'sunlit':'classic');
+  run('startJourneyWithSeed(647486904);');
+  assert.equal(run('journeyForestStyle'),x<240?'sunlit':'classic','seed replay keeps renderer');
 }
 run("resetRun();setMode('menu');handleAction('up');uiConfirm();");
 assert(run("mode==='run'&&journeyRoute.stage===1&&journeyMushroomQuest===null"));
+assert.equal(run('journeyForestStyle'),'sunlit','keyboard PLAY restores primary forest');
+run("resetRun();setMode('menu');handleAction('tap',{x:240,y:430});");
+assert.equal(run('mode'),'menu','gap between buttons must not start a run');
+run("handleAction('tap',{x:240,y:690});");
+assert.equal(run('mode'),'menu','removed Morning Forest menu entry stays inactive');
+assert(!source.includes('MENU_MORNING_BTN'));
 assert.equal(run("['horn','alpha','sigil'].some(id=>ARTIFACT_IDS.includes(id))"),false);
 assert.equal(run("UPG_DEFS.some(u=>u.key==='fang')"),false);
 assert.equal(run('hasCombatAlly()'),false);

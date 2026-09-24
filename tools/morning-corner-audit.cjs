@@ -34,7 +34,7 @@ async function difference(a,b){
     }finally{g=main;journeyRenderFrame=frame;journey.phase=phase;}
    })()`)).split(',')[1],'base64');
    const seams=[];
-   for(const yaw of [51/65,43/38,102/65,768/26,768/38,768/65,370/18]){
+   for(const yaw of [51/65,43/38,102/65,768/26,768/38,768/65,370/18,768/18,-768/18,0]){
     const a=await background(yaw-.00001),b=await background(yaw+.00001);
     const diff=await difference(a,b);seams.push({yaw,...diff});
     if(diff.fraction>.005){fs.writeFileSync(path.join(out,device+'-seam-before.png'),a);

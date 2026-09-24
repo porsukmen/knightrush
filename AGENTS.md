@@ -5,9 +5,12 @@ The game lives in `KnightRush.html`. Preserve unrelated working-tree changes.
 ## Art tasks
 
 For character, item, environment, or animation artwork, use
-`tools/skills/knight-rush-art/SKILL.md` and its task-relevant references.
-Start with `ART_STYLE_KESKIN_DUZLEM.md`; the approved reference list and current
-technical baselines live in `art-source/knight-rush-sharp-plane/`.
+`tools/skills/knight-rush-art/SKILL.md`, the self-contained style contract.
+Start visual reference work in Art Lab using its approved live models, selected
+through `art-source/knight-rush-sharp-plane/art-references.js`. Do not routinely
+read the archived `ART_STYLE_KESKIN_DUZLEM.md` or `ART_WORKFLOW.md`, or use old
+full-scene screenshots as character/style references. Character references
+exclude their backgrounds and UI; technical baselines remain protected.
 
 Original knight/boss/miniboss massing is the foundation. Approved merchant and
 revamped Disco King provide NPC detail, expression and material references.

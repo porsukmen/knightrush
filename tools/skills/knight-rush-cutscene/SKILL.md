@@ -7,10 +7,13 @@ description: Create or refine Knight Rush cutscene and point-and-click event bac
 
 Use the user's requested setting and story, not a fixed forest template. Resolve
 project paths from the Knight Rush repository root, three levels above this file.
-Start by reading `references/scene-contract.md`, the project's
-`ART_STYLE_KESKIN_DUZLEM.md`, and
+Start with `tools/skills/knight-rush-art/SKILL.md` for the self-contained shared style,
+`references/scene-contract.md`, and
 `art-source/knight-rush-backgrounds/cutscene-references.js`.
-Open the relevant approved plate AND its character composite before designing.
+Use Background Lab (`BackgroundTest.html` / `?backgroundlab=1`) to inspect the
+relevant approved plate AND its character composite before designing. Character
+shape references come from approved isolated Art Lab models. Do not load the
+archived `ART_STYLE_KESKIN_DUZLEM.md` as a routine prerequisite.
 The Mushroom Gatherer's crisp clearing was explicitly approved on 2026-09-24;
 it sets environment clarity, meaningful detail and scene integration quality,
 not a requirement for cottages, trees, daylight, or a fixed palette.

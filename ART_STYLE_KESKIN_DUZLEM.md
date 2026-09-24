@@ -1,5 +1,10 @@
 # Knight Rush — Keskin Düzlem
 
+> **ARŞİV — aktif üretim talimatı değildir.** Güncel stil kuralları ve onaylı
+> canlı Art Lab referans akışı `tools/skills/knight-rush-art/SKILL.md` içindedir.
+> Bu dosyayı her çizimde okumayın; yalnızca istenen tarihsel karşılaştırmalar
+> için saklanır. Aşağıdaki eski okuma/PNG yönlendirmeleri güncel skill'i geçersiz kılamaz.
+
 Kısa ad: **KR-KD**. İngilizce karşılığı: **Sharp Plane**.
 
 ## Güncel yön — 24 Eylül 2026

@@ -1,5 +1,11 @@
 # Art production and acceptance
 
+> Historical workflow archive, not a routine prerequisite. The maintained style
+> and acceptance contract is `tools/skills/knight-rush-art/SKILL.md` (from the repo
+> root), with approved live Art Lab models as the starting visual references.
+> Consult this record only for a requested historical comparison; its older PNG
+> routing does not override the current skill.
+
 ## Reference ownership
 
 The user-approved original knight, bear and minibosses establish blocky massing,
