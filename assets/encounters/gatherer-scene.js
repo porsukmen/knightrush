@@ -97,8 +97,9 @@
   const actor=Object.freeze({x:245.285,y:467.554,scale:(467.554-249.778)/168});
   // Only ONE decoded plate is retained. No extra full-screen backing canvas,
   // pixel readbacks, runtime sharpening or per-frame image allocations.
-  const previous=new URLSearchParams(location.search).get('clearing')==='original';
-  const assetId=previous?'gatherer-original':'gatherer';
+  const clearing=new URLSearchParams(location.search).get('clearing');
+  const variant=clearing==='original'?'original':clearing==='crisp'?'crisp':'simple';
+  const assetId=variant==='original'?'gatherer-original':variant==='crisp'?'gatherer':'gatherer-simple';
   let sceneDraws=0,originalColors=false;
   const manager=()=>window.KREventVisuals;
   function prepare(){return manager()?.prefetch(assetId)||Promise.resolve(false);}
@@ -120,7 +121,7 @@
     setLighting:value=>{originalColors=value==='original';},
     get ready(){return !!manager()?.peek(assetId);},
     report:()=>{const m=manager(),s=m?.describe(assetId),r=m?.report();return {
-      status:s?.status||'idle',loads:r?.loads||0,sceneDraws,asset:s?.src,variant:previous?'original':'crisp',tier:r?.tier,
+      status:s?.status||'idle',loads:r?.loads||0,sceneDraws,asset:s?.src,variant,tier:r?.tier,
       sourcePixels:s?.sourcePixels||null,decodedBytes:s?.decodedBytes||0,extraCanvasBytes:0,
       lighting:originalColors?'original':'sunlit'};}});
 })();

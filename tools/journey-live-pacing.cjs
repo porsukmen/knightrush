@@ -3,7 +3,8 @@
 // Phone mode is desktop Chromium at mobile dimensions/DPR, NOT real Safari.
 // Usage: node tools/journey-live-pacing.cjs LABEL [--baseline] [--brave]
 //        [--phone|--both] [--frames=600] [--repeats=1] [--straight]
-//        [--theme=forest|disco|bloodwood]
+//        [--theme=forest|disco|bloodwood|forge]
+//        [--venue] (straight special-road approach, 80 m before event)
 //        [--snapshot=output/path-to-flat-source-snapshot]
 const {chromium}=require('playwright');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
@@ -19,13 +20,21 @@ assert(Number.isInteger(frameCount)&&frameCount>=60&&frameCount<=10000,'frames m
 assert(Number.isInteger(repeats)&&repeats>=1&&repeats<=20,'repeats must be 1..20');
 const baseline=has('baseline'),browserName=has('brave')?'brave':'edge';
 const onlyTheme=option('theme',''),themes=onlyTheme?[onlyTheme]:['forest','disco','bloodwood'];
-assert(themes.every(t=>['forest','disco','bloodwood'].includes(t)),'Unsupported theme');
+assert(themes.every(t=>['forest','disco','bloodwood','forge','chest','caravan','inn'].includes(t)),'Unsupported theme');
 const devices=has('both')?['desktop','phone-emulation']:[has('phone')?'phone-emulation':'desktop'];
 const snapshot=option('snapshot','');
 const sourceFiles=['KnightRush.html','assets/forest/sunlit-forest.js','assets/forest/journey-forest.js'];
 // The older stutter baseline predates adapter snapshots; retain its contract.
 // New comparisons pin the Disco adapter too, including while files are edited.
 if(!baseline||snapshot)sourceFiles.push('assets/forest/disco-grove.js');
+if(!baseline&&fs.existsSync(snapshot?path.join(root,snapshot,'basalt-forge.js'):path.join(root,'assets/forest/basalt-forge.js')))
+ sourceFiles.push('assets/forest/basalt-forge.js');
+if(!baseline&&fs.existsSync(snapshot?path.join(root,snapshot,'treasure-road.js'):path.join(root,'assets/forest/treasure-road.js')))
+ sourceFiles.push('assets/forest/treasure-road.js');
+if(!baseline&&fs.existsSync(snapshot?path.join(root,snapshot,'autumn-caravan.js'):path.join(root,'assets/forest/autumn-caravan.js')))
+ sourceFiles.push('assets/forest/autumn-caravan.js');
+if(!baseline&&fs.existsSync(snapshot?path.join(root,snapshot,'mossy-inn.js'):path.join(root,'assets/forest/mossy-inn.js')))
+ sourceFiles.push('assets/forest/mossy-inn.js');
 const sourceContents=new Map(sourceFiles.map(name=>{
  const file=snapshot?path.join(root,snapshot,path.basename(name)):baseline?path.join(root,'output/stutter-source-before',path.basename(name)):path.join(root,name);
  assert(fs.existsSync(file),'Missing '+(baseline?'pre-edit baseline':'live source')+': '+file);
@@ -73,6 +82,10 @@ function fixtureCode(theme,turn){return `
   player.x=player.lane=2;chooseJourneyDirection(1);
   for(let i=0;i<300&&journey.phase!=='turning';i++)update(1/60);
   if(journey.phase!=='turning')throw Error('Fixture failed to enter a real turn');
+ }
+ if(${has('venue')&&!turn&&theme!=='forest'}){
+  for(let i=0;i<5000&&mode==='run'&&dist<roadLabState.slot.at-80;i++)update(1/60);
+  if(mode!=='run')throw Error('Venue fixture entered event too early');
  }
  hadFocus=document.hasFocus();window.__livePacing.arm=true;
  `;}

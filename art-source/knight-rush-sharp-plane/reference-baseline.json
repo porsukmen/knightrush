@@ -1,7 +1,20 @@
 {
   "version": 1,
-  "note": "Protected reference sources at Art Lab setup, plus the Mushroom Gatherer explicitly approved by the user on 2026-09-24 (empty asking hand). Not approval of other candidate art or the conversation background.",
+  "note": "Protected Art Lab sources. Gatherer approved 2026-09-24; Borin and seated merchant approved 2026-09-25. Rebuilt innkeeper v2 explicitly reapproved 2026-09-26, including pose and material palettes. Withdrawn innkeeper v1 hashes remain archived in withdrawnReferences and are not design references. All other hashes preserved. Cutscene environments are separately registered.",
   "fingerprints": {
+    "KRMossyInn.keeper": "bebd3702405fc6c97dd08c2e43ea597b5da2423fb7a0410db6fb28cb0dcf9846",
+    "KRMossyInn.keeperPose": "19ce9b11a860f9b25aafcd25ab7886622d0e091cb785311c33856065cc2f66fa",
+    "KRMossyInn.keeperMaterials": "92525d92b266788c029499f1a1945331046e662ab3e467f19dae665f4ebf7f23",
+    "KRTavernSlide.barry": "b7e9b2e758ef14d6dd8d387db641dcad25840143fb8a8b80ed8b9529392c970a",
+    "KRTavernSlide.barryPose": "355a363488d4d9ce84f662a603f1d7774a370cd7498eec4f048a5295ac7490f6",
+    "KRTavernSlide.barryMaterials": "5794b832c24ce1efbc31c1b243b475dbccf1fcc21e0881d72e42921d787898b4",
+    "KRAutumnCaravan.actor": "76ef4d20117d5e6ea143a6aa2c89b86164844c19b85207a411c8d8ad4205dc37",
+    "KRAutumnCaravan.withRoadFacing": "5d34aabe5f3560c384e5d2f2b884d67ca38fa111d0b4714ae0f1a209cab80c32",
+    "KRAutumnCaravan.withLighting": "5f09b974faf95210c96d67dbb83284d748822c75b29c465d42ad9cc12505f413",
+    "KRBasaltForge.dwarf": "2b94c1ec3ff3355d62a6d1daf4831f95ffc952056583dea5d678a983d609aaea",
+    "KRBasaltForge.muscularArm": "bf4a9fb7c241112c532d0bb86d4819a831a859f45cbc7fd8293ebc8eee7d3e14",
+    "KRBasaltForge.hammerArm": "96344b50f2d2154e6f66e32d3069d4e2e8096f91b11aad9f9beb519e82952ec0",
+    "KRBasaltForge.armPose": "cf4ac19335b3021f430cacdbdb4605b66cc26f2e10ae5163df8224ef35fa1820",
     "drawMushroomGatherer": "94b8f697960cbe15eb3db7c4fba78a5b9eb4272b839df4fc5e49cdd6e9489484",
     "drawSerJonathanRider": "cd50075a287e3cacc3c40122e08c5dca0a5ad775dc2f0bb5b27c7020a0144122",
     "drawBearNatural": "538b776baace6f40da5c5517ac5399c18410e451f4708f8e54f4b92660bcc437",
@@ -22,9 +35,23 @@
     "drawMerchantDisplayItem": "63c14d613f98b547bb1cb6c7c521e1cf97106559af3ba5564385dec83f78e9c5"
   },
   "images": {
+    "approved-innkeeper-v2.png": "9431cbbb18745096dab9b7bf723e88f8c26388c6df323a426f4b953a53c3cb12",
+    "approved-barry.png": "104efb7ce67071c750c253b43463ea8775ff79ad89c476e7ff2ec73d9d54bf27",
+    "approved-seated-merchant.png": "0824e18757f8c5b9b8a83dfdb9941e15d9604b32b590ff6cf6071c5d53112a68",
+    "approved-basalt-dwarf.png": "e229dac68b3114265a47573c045a3a1dc6280711777847d320428e86299dbfda",
     "approved-mushroom-gatherer.png": "a1791937c58f34c6a9b62fcd225b18d840ff5681d7771b72e17d155060d4c72d",
     "approved-wagon-merchant.png": "7b4870c2097d0e1c77bc004737407fe599aacdf84b9d44ccb1412d09b1538aed",
     "approved-item-style.png": "13f2194f4e04b3140457cea3a825773575b647177121f8ba290c220d84d283c6",
     "blacksmith-character-reference.png": "2bbb83ab76d4778af2e3fa5c0b96a7bcdb223912af07e3aaab13479b6b650441"
+  },
+  "withdrawnReferences": {
+    "innkeeper": {
+      "reason": "User withdrew character approval pending face revision, 2026-09-25. Historical hashes only; not a design reference.",
+      "fingerprints": {
+        "KRMossyInn.keeper": "86aab986312201c252b40417d9b829436f62f34a968b967b0717b96032810ed4",
+        "KRMossyInn.keeperPose": "454d50a88686f7cb25dbac7e6796ef045cc30320440b992d4344c20cad46d7fc"
+      },
+      "image": {"approved-innkeeper.png": "277b8a6f76e7ab5ee0311ea7519b2d794f67b08acb00c2922f0b951e245ac8c1"}
+    }
   }
 }

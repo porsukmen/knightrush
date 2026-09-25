@@ -19,6 +19,7 @@
   function drawModel(id,t,moving){
     const pulse=(1-Math.cos(t*Math.PI))/2;
     switch(id){
+      case 'barry':g.save();try{g.translate(ORIGIN-240,BASE-353);KRTavernSlide.barry(false);}finally{g.restore();}return;
       case 'knight':return drawSerJonathanRider(ORIGIN,BASE,1.5,{gallop:moving?t*.55:0,lean:moving?Math.sin(t*1.4)*.12:0});
       case 'bear':return drawBearNatural(ORIGIN,BASE,1.5,moving?'tele_paw_right':'idle',moving?pulse:t,false);
       case 'wolf':return drawWolf(ORIGIN,BASE,2,moving?'howl':'idle',moving?pulse:t,false);
@@ -37,6 +38,14 @@
         drawSmithKnight(0,0,0,0,false,moving?t%2.8:0,moving,null,null,t);
         g.restore();return;
       case 'mushroom':g.save();g.translate(ORIGIN,BASE);drawMushroomGatherer(t);g.restore();return;
+      case 'basalt-dwarf':return KRBasaltForge.dwarf(ORIGIN,BASE,1.5,t,moving?pulse:0,null,0,true,true);
+      case 'innkeeper':return KRMossyInn.keeper(ORIGIN,BASE,1.8,false);
+      case 'seated-merchant':{
+        g.save();try{g.translate(ORIGIN-165,BASE-461);
+          const pose={phase:moving?'handoff':'browse',clock:moving?pulse*1.8:0};
+          KRAutumnCaravan.withLighting(()=>{KRAutumnCaravan.actor(pose);KRAutumnCaravan.actor(pose,true);},false);
+        }finally{g.restore();}return;
+      }
       default:throw Error('Unknown art model '+id);
     }
   }
@@ -114,7 +123,7 @@
   `;document.head.appendChild(style);
   const root=document.createElement('main');root.id='art-root';
   root.innerHTML=`<div class="art-kicker">KNIGHT RUSH / ART WORKSHOP</div><h1>One world. One visual language.</h1>
-    <p>Blocky knight & boss forms · merchant detail · Disco King expression. Live models, not redrawn references. <a href="KnightRush.html?backgroundlab=1">Background Lab →</a></p>
+    <p>Blocky knight & boss forms · merchant detail · Disco King expression. Live models, not redrawn references. <a href="KnightRush.html?backgroundlab=1">Background Lab →</a> · <a href="RoadCreatorLab.html">Road Creator Lab →</a></p>
     <div class="art-controls">
       <button id="art-play">Pause</button><label>Time <input id="art-scrub" aria-label="Animation time" type="range" min="0" max="6" step="0.01" value="0"><output id="art-time">0.00s</output></label>
       <label>Pose <select id="art-pose"><option value="idle">Idle</option><option value="action">Action study</option></select></label>
@@ -122,7 +131,7 @@
       <label>Ground <select id="art-bg"><option value="neutral">Neutral</option><option value="forest">Forest</option></select></label>
       <button id="art-reset">Reset checks</button><button id="art-report">Export report</button>
     </div><div class="art-status" id="art-status" role="status" aria-live="polite">Preparing reference framing…</div>
-    <div id="art-notes"><span>Equal display height, not world size.</span><span>Small strip = distance readability.</span><span>Visual acceptance: pending user review.</span></div>
+    <div id="art-notes"><span>Equal display height, not world size.</span><span>Small strip = distance readability.</span><span>Registered user-approved anchors. New edits need review.</span></div>
     <div class="art-grid" id="art-grid"></div><pre id="art-errors"></pre>
     <details><summary>Approved scene references & review checklist</summary><p>Shape → volume → motion. Check supported props, connected hands, clear side planes and small-scale readability. The smith screenshot's old red upper sleeves are superseded by steel.</p><div class="art-approved" id="art-approved"></div></details>`;
   document.body.appendChild(root);document.title='Knight Rush — Art Lab';
@@ -198,7 +207,7 @@
     $('art-time').value=clock.toFixed(2)+'s';$('art-scrub').value=clock%6;status();
     return results;
   }
-  const report=()=>({version:1,visualApproval:'pending-user-review',technicalStatus:failures.length?'failed':'passed-sampled-checks',
+  const report=()=>({version:1,visualApproval:registry.visualApproval,technicalStatus:failures.length?'failed':'passed-sampled-checks',
     sampleCount,failures:[...failures],history:[...history],scope:'Art Lab only; no automatic aesthetic, anatomy, world-layering or phone-performance guarantee'});
   $('art-play').onclick=()=>{playing=!playing;$('art-play').textContent=playing?'Pause':'Play';last=0;};
   $('art-scrub').oninput=e=>{playing=false;$('art-play').textContent='Play';renderAt(Number(e.target.value),true);};
@@ -217,7 +226,7 @@
       if(options.view)view=options.view;if(options.background)background=options.background;
       $('art-play').textContent=playing?'Pause':'Play';$('art-pose').value=action?'action':'idle';$('art-view').value=view;$('art-bg').value=background;
     },
-    source(name){const fn=(0,eval)(name);if(typeof fn!=='function')throw Error('Not a renderer '+name);return fn.toString();},
+    source(name){const value=(0,eval)(name);if(typeof value==='function')return value.toString();if(value&&typeof value==='object')return JSON.stringify(value);throw Error('Not a renderer/material '+name);},
     bounds(){return Object.fromEntries([...entries].map(([id,v])=>[id,v.box]));}
   };
   // Game key handlers must not consume space/arrows in the authoring controls.

@@ -1,0 +1,15 @@
+/* Current, explicitly user-approved designs. Snapshot hashes live in creator-baseline.json.
+   Live code is a comparison, not automatic approval of future edits. */
+(function(root){
+ const registry={version:1,approvedOn:'2026-09-25',approval:'User approved all current special roads, including obstacles, decoration and road textures.',
+  lab:'RoadCreatorLab.html',references:[
+   {theme:'bloodwood',name:'Crimson Wilds',construction:'natural',color:'#923e55',surface:'Red soil · continuous world-distance blend',decorations:'Skulls, ribs, bones, thorns, crimson mushrooms',obstacles:{boulder:'Skeleton remains',pond:'Blood pool',root:'Tree-attached root'},venue:'Bone-framed lair and wolf',source:'KnightRush.html'},
+   {theme:'disco',name:'Disco Grove',construction:'man-made',color:'#a76cca',surface:'Coloured dance tiles · hard entry AND exit',decorations:'Supported lights, mirror balls, speakers, partygoers',obstacles:{boulder:'Amplifier',pond:'Spilled soda',root:'Leads / suspended cables'},venue:'King, throne, stage and lighting rig',source:'KnightRush.html'},
+   {theme:'forge',name:'Basalt Forge',construction:'natural',color:'#8794a5',surface:'Ash-grey basalt soil · raw ore seams · blended boundaries',decorations:'Basalt columns, boulders, ash, gold / iron / lapis deposits',obstacles:{boulder:'Faceted basalt stone',pond:'Dry basalt pit',root:'Tree-attached root'},venue:'Basalt smithy / Borin',source:'assets/forest/basalt-forge.js',cutscene:'basalt-forge'},
+   {theme:'chest',name:'Gilded Grove',construction:'natural',color:'#d9b653',surface:'Golden patterned ground · richness through material, not signage',decorations:'Raw gold, gems and gilded vegetation',obstacles:{boulder:'Gilded stone block',pond:'Dry gold-trimmed pit',root:'Tree-attached root'},venue:'Front-facing chest on a grounded pedestal',source:'assets/forest/treasure-road.js'},
+   {theme:'caravan',name:'Autumn Caravan',construction:'natural',color:'#da853c',surface:'Warm ochre earth · copper / orange autumn canopy',decorations:'Caravan supplies and autumn roadside growth',obstacles:{boulder:'Cargo obstacle',pond:'Retained natural pond',root:'Tree-attached root'},venue:'Seated roadside merchant, red display cloth and parked luxury wagon',source:'assets/forest/autumn-caravan.js',cutscene:'autumn-caravan'},
+   {theme:'inn',name:'The Mossy Oak',construction:'man-made',color:'#a4b27f',surface:'Built cobblestone surface · natural vegetation transition',decorations:'Native plane-drawn split logs, stone trough and casks',obstacles:{boulder:'Cask',pond:'Dry collapsed paving pit',root:'Supported clothesline — DUCK ONLY'},venue:'Roadside inn / bartender behind the counter',source:'assets/forest/mossy-inn.js',cutscene:'mossy-inn'}
+  ],views:['road','surface','decorations','obstacles','venue','turn-left','turn-right'],
+  notes:'Reference art approval is not a performance guarantee. Keep production road/tree geometry and collision contracts; new changes need new approval.'};
+ if(typeof module!=='undefined')module.exports=registry;else root.KRRoadCreatorReferences=registry;
+})(globalThis);

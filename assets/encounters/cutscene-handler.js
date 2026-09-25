@@ -71,11 +71,23 @@
   }
   if(typeof module!=='undefined'&&module.exports)module.exports={createHandler};
   else{
-    const original=new URLSearchParams(root.location.search).get('clearing')==='original';
+    const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'tavern-slide':Object.freeze({module:'assets/encounters/tavern-slide.js',symbol:'KRTavernSlide',
+          assetId:'tavern-slide',drawMethod:'drawCutscene',opaque:true}),
+        'tavern-games':Object.freeze({module:'assets/encounters/tavern-games.js',symbol:'KRTavernGames',
+          assetId:'tavern-games',drawMethod:'drawCutscene',opaque:true}),
+        'mossy-inn':Object.freeze({module:'assets/forest/mossy-inn.js',symbol:'KRMossyInn',
+          assetId:'mossy-inn',drawMethod:'drawCutscene',opaque:true}),
+        'autumn-caravan':Object.freeze({module:'assets/forest/autumn-caravan.js',symbol:'KRAutumnCaravan',
+          assetId:'autumn-caravan',drawMethod:'drawCutscene',opaque:true}),
+        'treasure-grove':Object.freeze({module:'assets/forest/treasure-road.js',symbol:'KRTreasureRoad',
+          assetId:'treasure-grove',drawMethod:'drawCutscene',opaque:true}),
+        'basalt-forge':Object.freeze({module:'assets/forest/basalt-forge.js',symbol:'KRBasaltForge',
+          assetId:'basalt-forge',drawMethod:'drawCutscene',opaque:true}),
         gatherer:Object.freeze({module:'assets/encounters/gatherer-scene.js',symbol:'KRGathererScene',
-          assetId:original?'gatherer-original':'gatherer',drawMethod:'drawConversation',opaque:true})
+          assetId:clearing==='original'?'gatherer-original':clearing==='crisp'?'gatherer':'gatherer-simple',drawMethod:'drawConversation',opaque:true})
       })});
   }
 })(globalThis);

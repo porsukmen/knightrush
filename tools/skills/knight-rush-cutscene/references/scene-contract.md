@@ -55,13 +55,31 @@ not permission to repeat its exact coordinates or split ratio on every NPC.
 
 ## Clarity, detail and bitmap limits
 
+All cutscenes inherit the Gatherer's same-budget clarity requirement, including
+simplified interiors and future non-forest settings. The historical fix was an
+image-generation refinement of soft painted shapes, not a numeric sharpening
+effect. Preserve composition, camera, actor space and lighting; replace smudgy
+near/midground transitions with crisp intentional boundaries between broad
+material planes. Keep supports, silhouettes and useful structural details.
+Do not introduce halos, grain, extra tiny texture, mosaic triangles, nearest-
+neighbour pixelation or a uniformly sharp distant background.
+
+Review environment-only AND with the real native actor at game size: compare
+adjacent material edges (e.g. cloth/wood, armour/anvil, feet/ground), not their
+different detail counts. Inspect the selected mobile PNG too. If softness is
+only in the lab/game rather than the source, check backing-store/DPR, CSS image
+rendering and repeated down/upscaling before regenerating. A plate remains a
+bitmap, so this is not a promise of vector-resolution edges at arbitrary zoom.
+No runtime sharpen filter, readback, duplicate texture or 4K memory workaround.
+Preserve approved originals; use versioned candidates when a repair is needed.
+
 Angular does not mean pixelated. Near rocks, wood edges, flowers and the actor
 should read cleanly at game size. Use broad intentional color planes with useful
 small structural details. Do not add random triangles, grain, bevels or blur to
 pretend there is more information. Distant shapes may simplify with depth.
 
-Current approved plate: 1215 x 1295, displayed in a 480 x 512 scene region.
-Current mobile packaging: 768 x 819. These are proven budgets for THIS shot,
+Approved Gatherer plate: 1215 x 1295, displayed in a 480 x 512 scene region.
+Gatherer mobile packaging: 768 x 819. These are proven budgets for THIS shot,
 not a mandatory aspect ratio for every future scene. Higher resolution needs a
 visible benefit and a measured budget. Compressed file size is not decoded RAM:
 width * height * 4 estimates RGBA payload; browser/GPU copies add overhead.
@@ -69,6 +87,29 @@ width * height * 4 estimates RGBA payload; browser/GPU copies add overhead.
 Keep characters and moving/clickable state out of the plate. An illustration is
 appropriate for a fixed camera; it does not replace the scrolling run's world.
 Do not build full-frame bitmap animation to make a door or a hand move.
+
+## Working interiors: approved Basalt Hearth v4
+
+Inspect the clean plate and live composite in Background Lab's Basalt view;
+the approval registry gives exact paths and hashes. This is a second quality
+anchor, not a requirement that future rooms use basalt, anvils or orange light.
+
+- Match detail density to the live actor. Broad stone, timber and steel planes
+  with a few supported tools work better here than painterly microtexture.
+- Derive contact coordinates and foreground masks from the **actual generated
+  image**, not requested prompt coordinates. V4's workface begins near source
+  y=694 despite the prompt asking for 740. Its logical contact is (315,235) in a
+  480 x 360 scene; these coordinates are specific to this shot.
+- Place the work surface at a believable reach/height before solving the arm.
+  Composite plate → body → clipped same-plate foreground → workpiece → front
+  arm/tool. A single flattened transform for every workpiece loses volume;
+  see the art skill's per-item pitch/side-plane guidance.
+- Apply scene-local material lighting to skin, beard, cloth, metal AND the
+  foreground arm/tool. Never let a separately drawn arm revert to neutral colours.
+  Compare identical poses with original and scene palettes.
+- Reuse the shared plate for occlusion, not another decoded full-size mask.
+  V4 standard 1448 x 1086 is 6,290,112 RGBA bytes; mobile 768 x 576 is 1,769,472.
+  These are retained image payload estimates, not total RAM/FPS guarantees.
 
 ## Review record
 

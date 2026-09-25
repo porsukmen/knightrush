@@ -87,13 +87,14 @@
       shapes.push({path,groundPath,color,left:sl,right:sr,top:st,bottom:sb});
     };
     add.cover=(left,top,right,bottom)=>covers.push({left,top,right,bottom});
-    add.crown=(x,y,w,h,colors)=>{shapes[shapes.length-3].crown={x,y,w,h,colors,key:colors.join(':')};};
+    add.crown=(x,y,w,h,colors,profile)=>{shapes[shapes.length-3].crown={x,y,w,h,colors,paths:profile.paths,key:profile.id+':'+colors.join(':')};};
     build(add);return {shapes,covers,left,right,top,bottom,width:right-left};
   }
   const leafColors=[['#285d40','#528b41','#95b951'],['#376643','#67984b','#b2c85f'],['#23583c','#4b8341','#91b44b']];
-  // The original three planes, shared in normalized coordinates. Instance
-  // geometry below is still built from these exact vertices in the same order.
-  const crownPlanes=[
+  // Original trees and palette, with authored mixed-size leaf masses only.
+  // No surface speckles: each mass still has three connected material planes.
+  const crownProfiles=[
+    {planes:[
     [[-.5,.05],[-.5,-.22],[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],
       [.2,-.5],[.2,-.4],[.38,-.4],[.44,-.23],[.5,-.23],[.5,.15],[.37,.15],[.37,.32],
       [.13,.32],[.13,.44],[-.15,.44],[-.15,.33],[-.36,.33],[-.43,.14],[-.5,.14]],
@@ -101,17 +102,35 @@
       [.38,-.4],[.44,-.23],[.33,-.06],[.08,-.06],[.08,.1],[-.18,.1],[-.18,.02],[-.5,.02]],
     [[-.37,-.22],[-.32,-.4],[-.12,-.4],[-.12,-.5],[.2,-.5],[.2,-.39],
       [.05,-.32],[-.12,-.32],[-.12,-.18],[-.37,-.18]]
-  ];
-  const crownPaths=crownPlanes.map(points=>{const path=new Path2D();
-    points.forEach(([x,y],i)=>i?path.lineTo(x,y):path.moveTo(x,y));path.closePath();return path;});
-  function crown(add,x,y,w,h,colors){
-    // Guaranteed interiors of the opaque base polygon, not its bounding box.
-    // Kept deliberately inside every stepped/diagonal edge for safe occlusion.
-    add.cover(x-.30*w,y-.20*h,x+.30*w,y+.30*h);
-    add.cover(x-.42*w,y-.19*h,x+.43*w,y+.12*h);
-    add.cover(x-.10*w,y-.48*h,x+.10*w,y+.42*h);
-    for(let i=0;i<crownPlanes.length;i++)add(crownPlanes[i].map(([a,b])=>[x+a*w,y+b*h]),colors[i]);
-    add.crown(x,y,w,h,colors);
+  ],covers:[[-.30,-.20,.30,.30],[-.42,-.19,.43,.12],[-.10,-.48,.10,.42]]},
+
+    // Side-grown fan: high left lobe and a lower blunt branch-tip on the right.
+    {planes:[
+      [[-.50,.04],[-.50,-.18],[-.38,-.18],[-.38,-.37],[-.19,-.37],[-.19,-.50],[.01,-.50],[.08,-.33],[.25,-.33],[.25,-.17],[.41,-.17],[.50,-.02],[.43,.16],[.28,.16],[.28,.29],[.08,.29],[-.05,.43],[-.24,.37],[-.24,.22],[-.42,.22],[-.42,.08]],
+      [[-.50,.04],[-.50,-.18],[-.38,-.18],[-.38,-.37],[-.19,-.37],[-.19,-.50],[.01,-.50],[.08,-.33],[.25,-.33],[.25,-.17],[.41,-.17],[.39,-.03],[.17,.01],[.09,.14],[-.10,.14],[-.10,.04],[-.29,.08]],
+      [[-.38,-.18],[-.38,-.37],[-.19,-.37],[-.19,-.50],[.01,-.50],[.03,-.37],[-.12,-.31],[-.12,-.16],[-.27,-.11],[-.27,-.18]]
+    ],covers:[[-.22,-.16,.22,.18],[-.16,-.32,.01,.27]]},
+    // Two stepped shoots, with a real shallow notch in the crown skyline.
+    {planes:[
+      [[-.50,-.03],[-.43,-.23],[-.31,-.23],[-.31,-.44],[-.07,-.44],[-.07,-.29],[.10,-.29],[.10,-.50],[.31,-.50],[.31,-.36],[.44,-.36],[.50,-.18],[.42,-.03],[.48,.11],[.33,.25],[.14,.25],[.14,.40],[-.06,.44],[-.22,.31],[-.38,.31],[-.38,.14],[-.50,.14]],
+      [[-.50,-.03],[-.43,-.23],[-.31,-.23],[-.31,-.44],[-.07,-.44],[-.07,-.29],[.10,-.29],[.10,-.50],[.31,-.50],[.31,-.36],[.44,-.36],[.43,-.20],[.27,-.20],[.22,-.04],[.05,-.04],[-.02,.11],[-.17,.11],[-.23,.01],[-.40,.07]],
+      [[-.31,-.23],[-.31,-.44],[-.07,-.44],[-.07,-.29],[-.16,-.23],[-.16,-.10],[-.28,-.08]]
+    ],covers:[[-.28,-.18,.27,.19],[-.13,-.26,.08,.29]]},
+    // Hanging blunt lobes: a broad upper shoulder, not a round ball or a spike.
+    {planes:[
+      [[-.50,-.15],[-.39,-.34],[-.19,-.34],[-.19,-.48],[.02,-.48],[.13,-.37],[.32,-.37],[.43,-.21],[.50,-.06],[.40,.08],[.40,.31],[.25,.43],[.13,.24],[-.02,.24],[-.12,.42],[-.28,.34],[-.28,.15],[-.43,.15]],
+      [[-.50,-.15],[-.39,-.34],[-.19,-.34],[-.19,-.48],[.02,-.48],[.13,-.37],[.32,-.37],[.43,-.21],[.34,-.09],[.27,.08],[.16,.08],[.08,-.03],[-.10,-.03],[-.18,.12],[-.32,.03],[-.42,.05]],
+      [[-.39,-.34],[-.19,-.34],[-.19,-.48],[.02,-.48],[.08,-.42],[-.06,-.32],[-.06,-.17],[-.24,-.14],[-.27,-.23],[-.43,-.23]]
+    ],covers:[[-.24,-.22,.25,.13],[-.13,-.34,.10,.19]]}
+
+  ].map((profile,id)=>({...profile,id,paths:profile.planes.map(points=>{
+    const path=new Path2D();points.forEach(([x,y],i)=>i?path.lineTo(x,y):path.moveTo(x,y));path.closePath();return path;
+  })}));
+  function crown(add,x,y,w,h,colors,form=0){
+    const profile=crownProfiles[form];
+    for(const [l,t,r,b] of profile.covers)add.cover(x+l*w,y+t*h,x+r*w,y+b*h);
+    for(let i=0;i<3;i++)add(profile.planes[i].map(([a,b])=>[x+a*w,y+b*h]),colors[i]);
+    add.crown(x,y,w,h,colors,profile);
   }
   function treeModel(variant){return model(add=>{
     const bark='#805936',light='#b58b50',shade='#4f432d',leaves=leafColors[variant];
@@ -125,8 +144,8 @@
         [0,-96],[-4,-20],[-10,2],[-28,0]],light);
       add([[6,-142],[20,-112],[12,-57],[18,-13],[34,1],[10,0],[4,-41]],shade);
       add([[-11,-116],[-38,-154],[-62,-174],[-60,-183],[-30,-164],[0,-127]],light);
-      crown(add,-43,-180,90,68,leaves);crown(add,37,-199,102,78,leaves);
-      crown(add,-34,-229,90,73,leaves);crown(add,15,-249,80,59,leaves);
+      crown(add,-43,-180,97,71,leaves,0);crown(add,37,-199,111,84,leaves,3);
+      crown(add,-34,-229,76,66,leaves,2);crown(add,15,-249,70,56,leaves,1);
     }else if(variant===1){
       // Slim beech: higher fork and deliberately quieter bark.
       add([[-22,0],[-9,-13],[-10,-105],[-4,-181],[-12,-256],[1,-260],[11,-182],
@@ -137,8 +156,8 @@
         [2,-183],[-3,-106],[-1,-14],[-8,1]],light);
       add([[6,-174],[6,-115],[11,-15],[22,0],[4,0],[0,-112]],shade);
       add([[-26,-193],[-35,-184],[-37,-212],[-31,-211]],light);
-      crown(add,-34,-219,70,59,leaves);crown(add,39,-250,69,66,leaves);
-      crown(add,-3,-276,86,66,leaves);
+      crown(add,-34,-219,62,52,leaves,3);crown(add,39,-250,83,73,leaves,0);
+      crown(add,-3,-276,77,66,leaves,2);
     }else{
       // Broad, lower forked oak: the gap between its two crowns stays open.
       add([[-31,0],[-17,-12],[-14,-78],[-33,-108],[-52,-167],[-38,-174],
@@ -148,8 +167,8 @@
         [-25,-112],[-5,-85],[-4,-19],[-11,2]],light);
       add([[8,-94],[17,-16],[35,0],[12,1],[5,-19],[-1,-71]],shade);
       add([[0,-107],[16,-145],[21,-191],[28,-189],[23,-141],[7,-104]],light);
-      crown(add,-46,-168,106,77,leaves);crown(add,34,-196,115,84,leaves);
-      crown(add,-2,-221,87,60,leaves);
+      crown(add,-46,-168,119,88,leaves,0);crown(add,34,-196,99,73,leaves,1);
+      crown(add,-2,-221,68,51,leaves,3);
     }
     // One attached moss patch, not dozens of bark grooves or leaf speckles.
     add([[-14,-6],[-14,-29],[-6,-29],[-6,-36],[0,-36],[-2,-13],[-8,-5]],'#658744');
@@ -306,7 +325,7 @@
       if(!recycled){canvas.width=cw;canvas.height=ch;nativeCache.bytes+=bytes;nativeCache.crownBytes+=bytes;}
       const ctx=canvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cw,ch);
       ctx.setTransform(tier,0,0,tier,pad+tier*.5,pad+tier*.5);
-      for(let i=0;i<3;i++){ctx.fillStyle=material(crown.colors[i]);ctx.fill(crownPaths[i]);}
+      for(let i=0;i<3;i++){ctx.fillStyle=material(crown.colors[i]);ctx.fill(crown.paths[i]);}
       cached={canvas,tier,pad,crown:true,frame:journeyRenderSerial};
       nativeCache.models.set(key,cached);nativeCache.builds++;nativeCache.crownBuilds++;
     }
@@ -361,7 +380,11 @@
     // High-resolution views already use most of the fixed budget for the
     // stable forest. Extra transition textures worsened DPR2 pacing; retain
     // native transition paths there instead of crowding out the working set.
-    const cacheable=opacity===1&&g.globalAlpha===1&&tier&&(!transition||id<3&&tier<=128&&viewScale<=1.25);
+    // Small treasure flowers visibly change petal/stem coverage as demand
+    // switches raster tiers or falls back to vectors. Keep these cheap paths
+    // in one native representation; tree caches and their budget are unchanged.
+    const treasureFlower=(id===3||id===7)&&materialPalette?.id.startsWith('chest:');
+    const cacheable=!treasureFlower&&opacity===1&&g.globalAlpha===1&&tier&&(!transition||id<3&&tier<=128&&viewScale<=1.25);
     let cached=cacheable?nativeCache.models.get(key):null;
     if(cached?.replacedBy){
       const replacement=nativeCache.models.get(cached.replacedBy);
@@ -624,7 +647,10 @@
     // Identical curved-ground strip spacing to Journey. Small polygons that
     // fit within one strip skip both redundant clipping passes entirely.
     const step=Math.max(1.5,(lo+f.focal)*.16),start=Math.floor(lo/step)*step;
-    if(hi<start+step+.001)appendFloor(vertices);
+    // Roadside water carries fixed world-space edge samples. Re-slicing these
+    // small reflected shapes with camera-dependent bands makes their shoreline
+    // and reflections change shape at strip boundaries while approaching.
+    if(shape.stableCurve||hi<start+step+.001)appendFloor(vertices);
     else for(let depth=start;depth<hi+.001;depth+=step){
       let strip=vertices;
       if(depth>lo)strip=floorClip(strip,depth,true,3);
@@ -635,12 +661,20 @@
   }
   function floorPoly(view,pts,color){drawFloorShape(floorShape(view,pts,color));}
   function morningPoint(branch,z,x){return branch?{x:JOURNEY_LANE_WORLD+z,z:235-x}:{x,z};}
-  function waterShapes(branch,x,z,width,length,road=false,point=null){
+  function waterShapes(branch,x,z,width,length,road=false,point=null,stableCurve=false){
     // One horizontal ground footprint for roadside pools AND lane obstacles.
     // Dark reflected trees, pale reflected sky and thin broken highlights read
     // as water without blur, transparency, filters or a standing sprite card.
-    const shapes=[],add=(points,color)=>shapes.push({color,vertices:points.map(([a,b])=>
-      point?point(z+b*length,x+a*width):morningPoint(branch,z+b*length,x+a*width))});
+    const shapes=[],add=(points,color)=>{
+      const vertices=points.map(([a,b])=>point?point(z+b*length,x+a*width):morningPoint(branch,z+b*length,x+a*width));
+      if(!stableCurve){shapes.push({color,vertices});return;}
+      const sampled=[];
+      for(let i=0;i<vertices.length;i++){
+        const a=vertices[i],b=vertices[(i+1)%vertices.length],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)));
+        for(let j=0;j<n;j++){const t=j/n;sampled.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t});}
+      }
+      shapes.push({color,vertices:sampled,stableCurve:true});
+    };
     const outline=[[-.52,-.28],[-.32,-.5],[.13,-.53],[.43,-.34],[.53,-.07],
       [.44,.32],[.14,.48],[-.28,.43],[-.53,.16]];
     add(outline.map(([a,b])=>[a*1.12,b*1.12]),road?'#a38e59':'#3d5d3e');

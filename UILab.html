@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knight Rush — UI Lab</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#151c20;color:#e9dfcb;font:15px/1.6 system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:30px 24px}h1{font-size:30px;margin:3px 0}h2{font-size:16px;margin:0 0 12px}.eyebrow{font-size:11px;letter-spacing:.18em;color:#c5aa79}p{color:#b6c2bd;margin:8px 0 20px}nav,.controls{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}button,select{font:inherit;padding:9px 13px;color:#eee0c6;background:#263439;border:1px solid #61706a;border-radius:4px;cursor:pointer}button[aria-pressed=true]{border-color:#e8d6ab;background:#48524b}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #fff0cd;outline-offset:3px}label{display:flex;gap:8px;align-items:center}.layout{display:grid;grid-template-columns:minmax(0,620px) minmax(240px,1fr);gap:26px;align-items:start}.stage{background:#28201c;border:1px solid #554637}canvas{display:block;width:100%;height:auto}aside{border:1px solid #3c4b4e;padding:20px;background:#1c272b}aside p{font-size:13px}.swatches{display:grid;grid-template-columns:1fr 1fr;gap:10px}.swatch{font-size:11px;color:#d1d6ca}.swatch i{display:block;height:30px;margin-bottom:4px;border:1px solid #7a7360}.swatch code{display:block;color:#aebbb7}a{color:#e8ce99}.caption{font-size:12px;margin-top:10px}.controls[hidden]{display:none}footer{margin-top:28px;font-size:12px;color:#96a7a2}@media(max-width:720px){main{padding:18px 14px}.layout{grid-template-columns:1fr}h1{font-size:26px}.swatches{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">KNIGHT RUSH / UI REFERENCE</div><h1>UI Lab <span style="color:#c5aa79">· Treasure</span></h1>
+<p>Bağımsız referans dosyası. Oyun motoru, kayıtlar, minigame ve arka planlar yüklenmez.</p>
+<nav aria-label="Referans görünümü"><button data-view="components" aria-pressed="true">Bileşenler</button><button data-view="lock" aria-pressed="false">Kilit UI</button><button data-view="loot" aria-pressed="false">Loot UI</button></nav>
+<div class="controls" id="lock-controls" hidden><label>Örnek durum <select id="lock-state"><option value="intro">Başlangıç</option><option value="playing">Oynarken</option><option value="broken">Başarısız</option></select></label><label>Zorluk <select id="difficulty"><option>EASY</option><option>NORMAL</option><option selected>HARD</option><option>MASTER</option></select></label></div>
+<div class="controls" id="loot-controls" hidden><label><input type="checkbox" id="claimed">Ödül alındı</label></div>
+<div class="layout"><section><div class="stage"><canvas id="reference" width="960" height="1080" role="img" aria-label="Treasure UI bileşenleri"></canvas></div><p class="caption" id="caption">Mevcut Treasure UI’den panel, başlık ve buton örnekleri.</p></section>
+<aside><h2>Treasure paleti</h2><div class="swatches" id="swatches"></div><h2 style="margin-top:24px">Referansın kapsamı</h2><p>Kesik köşeler, koyu taban gölgesi, ince üst ışık çizgisi; krem panel üzerine sıcak kahverengi monospace yazı.</p><p>Kaynak: <a href="assets/forest/treasure-road.js">treasure-road.js</a> içindeki <code>button</code>, <code>heading</code>, <code>sheet</code>, <code>drawGame</code> ve <code>drawLoot</code>.</p><p>Bu dosya 25 Eylül 2026 UI örneğidir. Oyundan bağımsızdır; ilerideki oyun değişiklikleri bu referansı otomatik değiştirmez. Mekanik kilit, sandık, karakter ve cutscene resmi UI referansına dahil değildir.</p><button id="export">UI örneğini PNG kaydet</button></aside></div>
+<footer>Yalnızca referans · Kontroller örnek durumları değiştirir; oyun ekonomisine veya kayıtlarına erişmez.</footer>
+</main>
+<script>
+// Standalone specimen of the existing Treasure UI. Deliberately no game imports,
+// iframe, network request, RAF, storage, or runtime coupling. Recheck the named
+// production helpers when explicitly updating this reference, not automatically.
+(()=>{'use strict';
+ const canvas=document.getElementById('reference'),g=canvas.getContext('2d');let view='components';
+ const colors=[['Panel','#ddc79b'],['Buton','#e8d6ab'],['Üst ışık','#fff0cd'],['Alt kenar','#a8824a'],['Yazı','#493323'],['Yardım metni','#725839'],['Pasif','#b2a185'],['Taban','#30241e'],['Gölge','#1f1713']];
+ document.getElementById('swatches').innerHTML=colors.map(([name,color])=>`<div class="swatch"><i style="background:${color}"></i>${name}<code>${color}</code></div>`).join('');
+ const P=(points,color)=>{g.fillStyle=color;g.beginPath();points.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();};
+ const R=(x,y,w,h,color)=>{g.fillStyle=color;g.fillRect(x,y,w,h);};
+ const L=(x,y,a,b,w,color)=>{g.strokeStyle=color;g.lineWidth=w;g.beginPath();g.moveTo(x,y);g.lineTo(a,b);g.stroke();};
+ const text=(s,x,y,size=12,color='#493323')=>{g.fillStyle=color;g.font=`bold ${size}px monospace`;g.textAlign='center';g.fillText(s,x,y,440);};
+ // Same geometry / material values as the production Treasure UI helpers.
+ function button(x,y,w,h,label,muted=false){
+  P([[x+6,y+4],[x+w-6,y+4],[x+w,y+10],[x+w,y+h],[x+w-6,y+h+6],[x+6,y+h+6],[x,y+h],[x,y+10]],'#1f1713');
+  P([[x+6,y],[x+w-6,y],[x+w,y+6],[x+w,y+h-6],[x+w-6,y+h],[x+6,y+h],[x,y+h-6],[x,y+6]],muted?'#b2a185':'#e8d6ab');
+  L(x+8,y+3,x+w-8,y+3,2,'#fff0cd');L(x+8,y+h-3,x+w-8,y+h-3,2,'#a8824a');text(label,x+w/2,y+h/2+5,13,muted?'#756853':'#493323');
+ }
+ function heading(title){g.save();g.translate(0,-84);P([[83,112],[397,112],[405,123],[397,162],[83,162],[75,123]],'#30241e');L(96,115,384,115,1,'#b68b49');text(title,240,143,21,'#f5dfad');g.restore();}
+ function sheet(y,bottom){R(0,y+12,480,bottom-y,'#30241e');P([[16,y+12],[28,y],[452,y],[464,y+12],[464,bottom],[16,bottom]],'#ddc79b');R(24,y+12,432,3,'#f6e8c3');R(24,y+20,432,1,'#a78857');for(const x of [34,446])P([[x,y+9],[x+4,y+13],[x,y+17],[x-4,y+13]],'#a07840');}
+ function scenePlaceholder(label){text(label,240,132,10,'#a89b83');L(150,155,330,155,1,'#554637');text('UI ONLY / NO SCENE ART',240,175,9,'#8f8372');}
+ function choices(y){for(const [i,name]of ['EASY','NORMAL','HARD','MASTER'].entries()){const x=28+i*108,on=document.getElementById('difficulty').value===name;button(x,y,100,36,name,!on);if(on)L(x+8,y+40,x+92,y+40,3,'#8b4c28');}}
+ function render(){
+  const height=view==='components'?540:view==='loot'?540:510;canvas.width=960;canvas.height=height*2;g.scale(2,2);R(0,0,480,height,'#28201c');
+  document.getElementById('lock-controls').hidden=view!=='lock';document.getElementById('loot-controls').hidden=view!=='loot';
+  for(const b of document.querySelectorAll('[data-view]'))b.setAttribute('aria-pressed',String(b.dataset.view===view));
+  if(view==='components'){
+   heading('THE GILDED CACHE');sheet(108,520);text('PANEL / TYPOGRAPHY',240,149,17,'#503921');text('Five pins. Three picks. Choose your challenge.',240,176,11,'#725839');
+   button(123,203,234,54,'EXAMINE THE LOCK');button(123,280,234,54,'COLLECTED',true);choices(360);text('Normal / muted / selected difficulty',240,436,11,'#725839');text('No picks left. The lock holds.',240,478,16,'#953d2c');
+  }else if(view==='lock'){
+   heading('THE GILDED CACHE');scenePlaceholder('CHEST / MECHANICAL LOCK AREA OMITTED');const state=document.getElementById('lock-state').value,d=document.getElementById('difficulty').value;
+   sheet(215,495);
+   if(state==='intro'){text('A ROYAL SEAL',240,252,17,'#503921');text('Five pins. '+({EASY:5,NORMAL:4,HARD:3,MASTER:2}[d])+' picks. Choose your challenge.',240,276,11,'#725839');text('Tap twice or hold & release.  Arrows + Space.',240,298,10,'#725839');button(123,323,234,54,'EXAMINE THE LOCK');choices(392);text('Difficulty does not change loot yet.',240,477,10,'#725839');}
+   else if(state==='playing'){text('Watch the pin. Catch it at the top.',240,254,12,'#503921');text('PINS  2 / 5',128,295,13,'#725839');for(let i=0;i<({EASY:5,NORMAL:4,HARD:3,MASTER:2}[d]);i++){const x=265+i*27;L(x,286,x+18,291,3,i<2?'#72522e':'#b5a17e');L(x+18,291,x+21,287,2,i<2?'#72522e':'#b5a17e');}text(d+'  /  Failed catch: '+({EASY:0,NORMAL:1,HARD:2,MASTER:'all'}[d])+' pins reset',240,347,10,'#725839');text('Watch a bounce for free. Speed changes each lift.',240,370,10,'#725839');}
+   else text('No picks left. The lock holds.',240,285,16,'#953d2c');
+  }else{
+   const claimed=document.getElementById('claimed').checked;heading('A FORTUNE UNCOVERED');scenePlaceholder('OPEN CHEST / CUTSCENE AREA OMITTED');sheet(210,516);text('YOUR SPOILS',240,243,14,'#503921');
+   button(42,250,396,80,claimed?'COLLECTED':'TAKE COINS',claimed);
+   // Textual amount, intentionally no new coin/icon design in this UI-only lab.
+   text('80',108,297,21,'#674421');text(claimed?'Safely in your purse.':'Tap the reward to collect it.',240,355,11,'#725839');button(108,434,264,50,claimed?'CONTINUE':'LEAVE WITHOUT LOOT');text('1: TAKE  /  ENTER: CONTINUE',240,506,10,'#725839');
+  }
+  const caption=view==='components'?'Mevcut Treasure UI’den panel, başlık ve buton örnekleri.':'Sahne alanı bilerek boş. Dikey boşluklar referans sayfası için kısaltıldı; bu oynanabilir ekran değildir.';document.getElementById('caption').textContent=caption;canvas.setAttribute('aria-label',view==='components'?'Treasure UI bileşenleri':view==='lock'?'Treasure kilit arayüzü örneği':'Treasure ganimet arayüzü örneği');
+ }
+ for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{view=b.dataset.view;render();};
+ for(const id of ['lock-state','difficulty','claimed'])document.getElementById(id).onchange=render;
+ document.getElementById('export').onclick=()=>{const a=document.createElement('a');a.download='treasure-ui-'+view+'.png';a.href=canvas.toDataURL();a.click();};
+ render();
+})();
+</script></body></html>

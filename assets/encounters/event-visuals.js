@@ -5,6 +5,20 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'tavern-slide':Object.freeze({standard:{src:'assets/encounters/tavern-slide-v2.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/tavern-slide-v2-mobile.png',width:576,height:768}}),
+    'tavern-games':Object.freeze({standard:{src:'assets/encounters/tavern-games-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/tavern-games-v1-mobile.png',width:576,height:768}}),
+    'mossy-inn':Object.freeze({standard:{src:'assets/encounters/mossy-inn-v4.png',width:1448,height:1086},
+      mobile:{src:'assets/encounters/mossy-inn-v4-mobile.png',width:768,height:576}}),
+    'autumn-caravan':Object.freeze({standard:{src:'assets/encounters/autumn-caravan-v1.png',width:1448,height:1086},
+      mobile:{src:'assets/encounters/autumn-caravan-v1-mobile.png',width:768,height:576}}),
+    'treasure-grove':Object.freeze({standard:{src:'assets/encounters/treasure-grove-v1.png',width:1120,height:1400},
+      mobile:{src:'assets/encounters/treasure-grove-v1-mobile.png',width:768,height:960}}),
+    'gatherer-simple':Object.freeze({standard:{src:'assets/encounters/mushroom-clearing-simple.png',width:1215,height:1295},
+      mobile:{src:'assets/encounters/mushroom-clearing-simple-mobile.png',width:768,height:819}}),
+    'basalt-forge':Object.freeze({standard:{src:'assets/encounters/basalt-hearth-v4.png',width:1448,height:1086},
+      mobile:{src:'assets/encounters/basalt-hearth-v4-mobile.png',width:768,height:576}}),
     gatherer:Object.freeze({standard:{src:'assets/encounters/mushroom-clearing-crisp.png',width:1215,height:1295},
       mobile:{src:'assets/encounters/mushroom-clearing-crisp-mobile.png',width:768,height:819}}),
     'gatherer-original':Object.freeze({standard:{src:'assets/encounters/mushroom-clearing.png',width:1214,height:1295},

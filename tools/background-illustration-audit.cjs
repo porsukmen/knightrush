@@ -2,19 +2,21 @@ const {chromium}=require('playwright');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output/background-illustration');
+const simple=process.argv.includes('--simple');
+const query='?backgroundlab=1&clearing='+(simple?'simple':'crisp');
 (async()=>{
   fs.mkdirSync(out,{recursive:true});
   const browser=await chromium.launch({channel:'msedge',headless:true});
   try{
     const page=await browser.newPage({viewport:{width:1280,height:1000},deviceScaleFactor:1}),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?backgroundlab=1');
+    await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+query);
     await page.waitForFunction(()=>document.querySelector('#blockout-root')?.dataset.ready==='1'||document.querySelector('#blockout-root')?.dataset.failed==='1');
     assert.equal(await page.locator('#blockout-root').getAttribute('data-failed'),null,await page.locator('#bo-error').innerText());
     const state=await page.evaluate(()=>KRBackgroundBlockout.state());
-    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().candidate),'gatherer-near-v3');
-    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),'approved');
-    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().referenceId),'gatherer-clearing-crisp');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().candidate),simple?'gatherer-simple-v1':'gatherer-near-v3');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),simple?'candidate':'approved');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().referenceId),simple?null:'gatherer-clearing-crisp');
     const before=await page.evaluate(()=>KRBackgroundBlockout.report().renders);
     await page.waitForFunction(n=>KRBackgroundBlockout.report().renders>n+6,before);
     await page.evaluate(()=>KRBackgroundBlockout.setOptions({motion:false}));
@@ -37,7 +39,7 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/background-il
     };
     await shot('01-character-composite',{});
     await shot('01-original-colors',{lighting:'original'});
-    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),'diagnostic-view');
+    assert.equal(await page.evaluate(()=>KRBackgroundBlockout.report().visualApproval),simple?'candidate':'diagnostic-view');
     await shot('01-clearing-sunlight',{lighting:'sunlit'});
     await shot('02-environment-only',{figure:'none'});
     await shot('03-grayscale',{figure:'approved',grayscale:true});
@@ -72,7 +74,7 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/background-il
     assert.equal(await page.evaluate(()=>KRBackgroundBlockout.state()),state,'Child run mutated lab state');
     const retina=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:3});
     retina.on('pageerror',e=>errors.push(e.message));
-    await retina.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?backgroundlab=1');
+    await retina.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+query);
     await retina.waitForFunction(()=>document.querySelector('#blockout-root')?.dataset.ready==='1');
     await retina.evaluate(()=>KRBackgroundBlockout.setOptions({motion:false}));
     const retinaResolution=await assertResolution(retina);assert(retinaResolution.width>1000);

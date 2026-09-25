@@ -31,6 +31,25 @@ latest code or an image in `output/` to approved status by assumption.
 - Approved Mushroom Gatherer: squared civilian proportions, face and workwear;
   his asking hand is empty, mushrooms belong in the basket.
 - Smith: current steel upper arms, not the red sleeves in an old screenshot.
+- Approved Barrel Barry (`barry`): broad human torso, smaller squared head,
+  distinct upper-arm/elbow/forearm blocks and planted palms. Inspect his isolated
+  neutral Lab render, `KRTavernSlide.barry`, `barryPose` and `barryMaterials`;
+  the table, mugs, room and UI are not character references. Preserve fixed bone
+  lengths and counter contact when adapting this construction to another pose.
+- The seated Autumn merchant (`seated-merchant`) is approved. Use its isolated
+  neutral render: crossed legs belong to the existing upper-body rig; wagon,
+  display blanket and scene lighting are not character style inputs.
+- Mossy Oak innkeeper (`innkeeper`) v2 was explicitly reapproved 2026-09-26:
+  receding hair, continuous scalp/forehead planes, squared jaw, forward shoulder
+  and upper-arm layers, planted palm and live wiping cloth. Use the current
+  isolated Lab model and `approved-innkeeper-v2.png`, not withdrawn v1 or the
+  older actor in the archived inn composite. Pose and material palettes are
+  protected alongside the renderer. Inn environment approval remains separate.
+- Approved Borin / Basalt dwarf: `KRBasaltForge.dwarf` in
+  `assets/forest/basalt-forge.js`, live in Art Lab. Compact muscular build,
+  receding crown, small squared eyes, moustache without an extra smile mark,
+  long full central beard with cheek-rooted side braids, leather workwear.
+  This is a separate smith identity, not a replacement for the town knight.
 
 Use isolated character/model views as character references. **Never import their
 backgrounds, UI or full-scene layout as a style reference.** Do not open every
@@ -44,6 +63,11 @@ plate/composite registry. That separate environment approval does not authorize
 using arbitrary NPC backgrounds. For running-world art, inspect the current
 Journey/Morning scene and the relevant native renderer; the Art Lab characters
 anchor shape language, not the composition of its neutral backdrop.
+
+For themed running-road design or revisions, also read
+`tools/skills/knight-rush-special-road/SKILL.md`. Its approved Crimson/Disco
+catalog and `RoadCreatorLab.html` cover natural/man-made transitions, decorations, obstacles and central
+event venues while preserving the existing road and trees.
 
 ## Shape and detail contract
 
@@ -95,6 +119,37 @@ patterns. Those helpers use `U` units; `expPoly` / `expSegment` use canvas units
 Do not mix units. Hands and held props follow the same articulated chain; joints
 must stay connected during idle/action, with intentional foreground layering.
 Keep live characters live rather than baking them into scene images.
+
+### Shoulder layering standard
+
+For front-facing character poses, default to drawing the torso first, then the
+shoulder caps and complete upper arms, then forearms/hands. This is the user's
+preferred construction: shoulders sit in front of the torso, and an arm reaching
+inward across the chest must not disappear beneath it. Move the connected upper
+arm with the shoulder pass, not just a detached shoulder patch. Keep the shoulder
+root attached and carry the same material/light planes through the elbow.
+
+Use a rear-arm pass only when the pose genuinely puts that limb behind the body
+(e.g. the far arm in a turned pose). Counter/prop masks must preserve the intended
+forward arm and hand contacts. Inspect both exact animation extremes and the
+in-between poses in the real scene; valid bone lengths alone cannot detect a
+layering error. Apply this default to new/revised art without silently repainting
+approved models or treating this rule as approval of future candidates.
+
+For bearded NPCs and forge workpieces, use the approved Borin as a concrete
+example rather than prescribing his appearance to all characters:
+
+- A braid begins in a parted hair mass. Its interwoven locks affect the outer
+  contour and converge into a tied end; a zigzag strip painted over a solid
+  beard reads as an attachment. Preserve a broad unbraided mass where intended.
+- Muscularity comes from shoulder/bicep/forearm volume, not longer arm bones.
+  Keep joint lengths fixed through the swing, with the tool attached to the wrist.
+- Distinguish rotation on the table from pitch/roll exposing an object's side.
+  A flattened top icon has no thickness: show cuff/palm/finger side planes.
+  Inspect the item's working silhouette at phone size, not only the UI icon.
+- Bow, shield and glove need per-item presentation, not one shared flattening
+  matrix. Preserve their production art and leave menu icons unchanged when
+  the request concerns only items lying on the anvil. Test lift AND contact.
 
 Static environments may reuse bounded screen-resolution drawing caches. Do not
 add a bitmap pipeline to code-native art without a reason. Rendering must not

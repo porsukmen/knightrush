@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "creatorCatalog": "art-source/knight-rush-special-roads/creator-references.js",
+  "creatorBaseline": "art-source/knight-rush-special-roads/creator-baseline.json",
+  "catalogNote": "The Creator catalog contains all six current approved roads. The two entries here retain original natural/man-made construction details and historical source provenance.",
+  "approvalDate": "2026-09-25",
+  "sourceCommit": "d3f338c7223c306d637518f18fabd4d63b207a07",
+  "approvalScope": "User-selected visual reference examples: road treatment, decorations, themed obstacles and event venues. Not performance approval or approval of rejected colour experiments.",
+  "liveLab": "RoadCreatorLab.html",
+  "playtestLab": "KnightRush.html?roadlab=1",
+  "baseWorld": "Current Sunlit/Journey forest; preserve road and tree structure.",
+  "references": [
+    {
+      "id": "crimson-natural",
+      "theme": "bloodwood",
+      "labLabel": "ELITE",
+      "construction": "natural",
+      "status": "approved",
+      "surface": "Existing opaque soil and tree geometry, smoothly recoloured by world distance at entrance and exit.",
+      "paletteAnchor": {"soil": "#7e3539", "flatOffRoadGrass": "#33202a"},
+      "paletteNote": "These colours identify the restored reference only; other natural themes choose their own palette.",
+      "decorations": ["skull totem", "loose skulls", "rib cages", "bones and spines", "red thorn bushes", "red mushrooms"],
+      "obstacles": [
+        {"kind": "boulder", "appearance": "skeleton remains", "variants": "distinct single, double and triple adjacent-lane skeleton compositions"},
+        {"kind": "pond", "appearance": "blood pool", "variants": "joined shoreline across adjacent occupied lanes; safe gaps stay open"},
+        {"kind": "root", "appearance": "native tree root with Crimson mother tree", "variants": "existing jump/duck and lane masks; physically attached root"}
+      ],
+      "venue": {"event": "elite_finale", "appearance": "bone-framed cave, stone dais, waiting existing wolf model", "placement": "route event slot on the road centreline"},
+      "renderers": ["drawJourneyBloodDecor", "drawBloodSkull", "drawBloodBone", "drawBloodRibs", "drawBloodThorns", "drawBloodMushrooms", "drawBloodSkeletonGroup", "drawBloodRoadObstacle", "drawJourneyBloodLair", "drawWolf"],
+      "integration": ["queueJourneyBloodWorld", "journeyRoadDecorLayout", "journeyThemeStrength", "journeyVenueVisible"]
+    },
+    {
+      "id": "disco-man-made",
+      "theme": "disco",
+      "labLabel": "DISCO",
+      "construction": "man-made",
+      "status": "approved",
+      "surface": "Opaque four-column coloured floor with dark joints and exact manufactured start/end; no fading tiles. Surrounding forest tint may blend.",
+      "decorations": ["supported roadside lighting rigs", "string lamps", "mirror balls", "speakers", "roadside dancers and cheering party members"],
+      "obstacles": [
+        {"kind": "boulder", "appearance": "fallen amplifier", "variants": "occupied-lane jump obstacle"},
+        {"kind": "root", "appearance": "heavy coiled leads or supported suspended cables", "variants": "ground jump and overhead duck variants preserve original requirements"},
+        {"kind": "pond", "appearance": "spilled soda", "variants": "joined spill across adjacent occupied lanes; safe gaps stay open"}
+      ],
+      "venue": {"event": "disco_finale", "appearance": "open-air platform, real minigame throne and live Disco King, PA speakers, supported lamps and mirror ball", "relatedLab": "KnightRush.html?discolab=1", "placement": "route event slot on the road centreline"},
+      "renderers": ["drawJourneyDiscoGround", "drawJourneyDiscoPatch", "drawDiscoRoadObstacle", "drawJourneyDiscoEntryBall", "drawJourneyDiscoParty", "drawJourneyDiscoLight", "drawJourneyDiscoDancer", "drawJourneyDiscoVenue", "drawJourneyDiscoStage", "drawDiscoThrone", "drawDiscoKing"],
+      "integration": ["buildJourneyDiscoRoadViews", "queueJourneyDiscoVenues", "journeyRoadDecorLayout", "journeyThemeStrength", "journeyVenueVisible"],
+      "knownLimitation": "Remaining FPS/frame-pacing cost, worst in turns; do not inherit this as a performance target. Tile batching trial was rejected after worse mobile-DPR measurements."
+    }
+  ],
+  "sourceMap": {
+    "KnightRush.html": "Named renderers/integration above; ROAD_LAB_CASES, JOURNEY_ROAD_THEMES and event lifecycle.",
+    "assets/forest/journey-forest.js": "Sunlit Journey adapter: materialTargets, world-distance palettes, continuous sky palette, floor/scenery integration and shared ground masking.",
+    "assets/forest/sunlit-forest.js": "Existing native trees, leaves, props, floor shapes, projection/clipping and bounded drawing caches. Root renderer is drawMorningRoot exposed as KRSunlitArt.root.",
+    "assets/forest/disco-grove.js": "Thin compatibility adapter projecting the existing Disco floor through KRSunlitArt; not a separate art implementation."
+  },
+  "audits": {
+    "paletteAndEntrances": ["tools/crimson-verge-audit.cjs", "tools/sunlit-biome-entrance-audit.cjs"],
+    "routeAndTurns": ["tools/sunlit-journey-audit.cjs", "tools/morning-corner-audit.cjs", "tools/journey-special-anchor-audit.cjs"],
+    "obstacles": ["tools/journey-connected-obstacles-audit.cjs", "tools/journey-disco-obstacles-audit.cjs", "tools/journey-obstacle-render-parity-audit.cjs"],
+    "venuesAndLifecycle": ["tools/disco-road-stage-audit.cjs", "tools/journey-venue-ground-audit.cjs", "tools/journey-disco-browser-audit.cjs", "tools/journey-crimson-browser-audit.cjs"],
+    "performance": ["tools/journey-live-pacing.cjs"],
+    "artAnchors": ["tools/art-lab-audit.cjs"]
+  },
+  "auditNote": "Choose relevant tests and inspect which renderer/style each exercises. Legacy/classic tests do not replace a current Sunlit/Journey scene check. Screenshots in output are test evidence, not automatically approved references."
+}

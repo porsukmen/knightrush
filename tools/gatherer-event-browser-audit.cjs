@@ -9,7 +9,7 @@ const fixture=fs.readFileSync(path.join(__dirname,'journey-normal-events-browser
   const browser=await chromium.launch({channel:'msedge',headless:true});
   try{
     const reports=[];
-    for(const variant of ['desktop','phone','low-memory-phone','original','missing-image']){
+    for(const variant of ['desktop','phone','low-memory-phone','crisp','original','missing-image']){
       const low=variant==='low-memory-phone',phone=variant==='phone'||low,broken=variant==='missing-image',errors=[];
       const page=await browser.newPage({viewport:phone?{width:390,height:844}:{width:480,height:800},deviceScaleFactor:phone?3:1});
       const requestedPlates=[];
@@ -27,7 +27,7 @@ const fixture=fs.readFileSync(path.join(__dirname,'journey-normal-events-browser
           }});
         }
       },{broken,low});
-      await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+(variant==='original'?'?clearing=original':''));
+      await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+(['original','crisp'].includes(variant)?'?clearing='+variant:''));
       await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.bootReady==='1');
       const run=code=>page.evaluate(code=>(0,eval)(code),code);
       assert.equal(await run('!!window.KRGathererScene'),false,'Scene should not load on the menu');
@@ -48,9 +48,9 @@ const fixture=fs.readFileSync(path.join(__dirname,'journey-normal-events-browser
         const after=await run('KRGathererScene.report()');
         assert.equal(after.status,'ready');assert(after.sceneDraws>before.sceneDraws);
         assert.equal(after.loads,1,'Plate loaded repeatedly');assert.equal(after.extraCanvasBytes,0);
-        assert.equal(after.variant,variant==='original'?'original':'crisp');
+        assert.equal(after.variant,variant==='original'?'original':variant==='crisp'?'crisp':'simple');
         assert.equal(after.tier,low?'mobile':'standard');
-        assert.equal(await run('KREventVisuals.report().active'),variant==='original'?'gatherer-original':'gatherer');
+        assert.equal(await run('KREventVisuals.report().active'),variant==='original'?'gatherer-original':variant==='crisp'?'gatherer':'gatherer-simple');
         assert.equal(await run('KRCutscenes.report().state'),'ready');
         assert.equal(await run('KRCutscenes.report().owner'),await run('journeyRoadEventSession.token'));
         assert.equal(await run("KRCutscenes.coversWorld('gatherer')"),true);

@@ -9,7 +9,9 @@ const dimensions=file=>{const b=fs.readFileSync(path.join(root,file));assert.equ
     assert.equal(r.status,'approved');assert.equal(hash(r.plate),r.plateSha256,'Approved plate changed');
     assert.equal(hash(r.composite),r.compositeSha256,'Approved composite changed');
     assert.equal(hash(r.runtimePlate),r.plateSha256,'Runtime differs from approved plate; treat a new edit as candidate');
-    const lighting=fs.readFileSync(path.join(root,r.lightingAdapter),'utf8').replace(/\r\n/g,'\n').split('  // Runtime scene shared')[0];
+    const lightingSource=fs.readFileSync(path.join(root,r.lightingAdapter),'utf8').replace(/\r\n/g,'\n'),boundary=r.lightingPrefixEnd||'  // Runtime scene shared';
+    assert(lightingSource.includes(boundary),'Lighting fingerprint boundary missing');
+    const lighting=lightingSource.split(boundary)[0];
     assert.equal(crypto.createHash('sha256').update(lighting).digest('hex'),r.lightingPrefixSha256,'Approved lighting/shoulder adapter changed');
     assert.deepEqual(dimensions(r.runtimePlate),r.dimensions);assert.deepEqual(dimensions(r.mobilePlate),r.mobileDimensions);
   }

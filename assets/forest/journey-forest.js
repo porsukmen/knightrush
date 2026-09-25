@@ -19,7 +19,73 @@
  const coordinateKey=value=>Math.round(value*1e6);
  // Material targets, not a translucent screen overlay. Three broad values
  // remain distinct on the exact same foliage, bark and soil geometry.
- const materialTargets={disco:{
+ const materialTargets={inn:{
+  '#528b41':'#50894b','#67984b':'#73a258','#4b8341':'#3e7542',
+  '#95b951':'#a8c568','#b2c85f':'#c9d985','#91b44b':'#97ba5a',
+  '#285d40':'#2f6245','#376643':'#417852','#23583c':'#28513e',
+  '#50713f':'#56784a','#d6b16f':'#ab936b','#dfbb7c':'#c8b184',
+  '#dcb776':'#b8a176','#c8a369':'#8d785a','#cfaa6d':'#988361',
+  '#b39664':'#736344','#b4ad86':'#c0b895','#b7a66a':'#8c8057','#c3ac6d':'#ae9d72',
+  '#a2af50':'#8fa456','#8da641':'#789848','#526f39':'#46663d'
+ },caravan:{
+  '#65b2e8':'#7cb7c9','#86c9ed':'#b6cfca','#acdced':'#e4d9b7',
+  '#d7e5d9':'#cfcec0','#f6f3d9':'#fff0cb','#7daba8':'#6c9185','#a0c3b4':'#a7bba0',
+  '#7eabb0':'#6d9392','#5f8d89':'#536f61','#5b8061':'#4f6145',
+  '#285d40':'#743d2e','#376643':'#99512d','#23583c':'#4e332d',
+  '#528b41':'#cd682b','#67984b':'#e98a34','#4b8341':'#ac4d28',
+  '#95b951':'#efae4b','#b2c85f':'#ffcf78','#91b44b':'#df9135',
+  '#805936':'#744d35','#b58b50':'#b58249','#4f432d':'#423b2e',
+  '#775739':'#684831','#b28b4f':'#a57945','#8bac46':'#897541','#d3b06d':'#d6af71',
+  '#50713f':'#79603b','#d6b16f':'#bd8d53','#a2af50':'#ba8940','#8da641':'#a47135','#526f39':'#6d5134',
+  '#dfbb7c':'#dbb476','#dcb776':'#e49538','#c8a369':'#93663b','#cfaa6d':'#b37a40',
+  '#b39664':'#735a3f','#b4ad86':'#d2b787','#b7a66a':'#806640','#c3ac6d':'#ad8553',
+  '#407749':'#785333','#88a949':'#d5a24b','#507940':'#aa7737',
+  '#f3ecc5':'#f4cc8f','#dcb04a':'#b55e31','#8061b5':'#a04c3a','#b19bdf':'#d88056',
+  '#658744':'#77603e','#9bb24e':'#c79447','#86a44b':'#9b7137','#bed069':'#e4b960',
+  '#6b7b76':'#777762','#a9b4a0':'#b2b28f','#4d6460':'#4b574b','#526965':'#636c58',
+  '#735437':'#704a31','#b18b54':'#bb8b4b','#89663e':'#92643b','#d2b076':'#e0b67b',
+  '#9c7748':'#a8743e','#739447':'#7d713f','#a9bd59':'#b7a24e',
+  '#3d5d3e':'#405540','#528d80':'#548878','#397878':'#345f59','#7ebcb2':'#8eb9a1',
+  '#acd7c9':'#c4d8b5','#356960':'#314f42','#46776a':'#4e7252','#e1efcf':'#efdfb4',
+  '#d6ebcf':'#d5d9ac','#91ab68':'#8d9457'
+ },chest:{
+  '#528b41':'#b48528','#67984b':'#d6a536','#4b8341':'#967728',
+  '#95b951':'#e9c450','#b2c85f':'#ffe08a','#91b44b':'#dab444',
+  '#285d40':'#495537','#376643':'#667044','#23583c':'#344636',
+  '#805936':'#735335','#b58b50':'#b48a46','#4f432d':'#393b2d',
+  '#775739':'#695139','#b28b4f':'#c19957','#8bac46':'#b89a35','#d3b06d':'#e5c678',
+  '#50713f':'#575b30','#d6b16f':'#b79b56','#a2af50':'#a5933f','#8da641':'#847b30','#526f39':'#555c30',
+  '#dfbb7c':'#dcc785','#dcb776':'#c7af6b','#c8a369':'#9d8348','#cfaa6d':'#ac914d',
+  '#b39664':'#7e6d41','#b4ad86':'#ddd09e','#b7a66a':'#766a3f','#c3ac6d':'#93834a',
+  '#407749':'#807729','#88a949':'#dec051','#507940':'#a29432',
+  '#f3ecc5':'#f2db9d','#dcb04a':'#a15b2d','#8061b5':'#a34034','#b19bdf':'#d67542',
+  '#658744':'#77632a','#9bb24e':'#cda341','#86a44b':'#ab8631','#bed069':'#e0bd61',
+  '#6b7b76':'#8a7d51','#a9b4a0':'#ccba80','#4d6460':'#504c37',
+  '#c49c48':'#c49c48','#91672e':'#91672e','#e4bc60':'#e4bc60','#ad8948':'#ad8948'
+ },forge:{
+  '#65b2e8':'#7d929c','#86c9ed':'#a5b2b5','#acdced':'#c3c7bf',
+  '#d7e5d9':'#8e9c9f','#f6f3d9':'#c1c7bf','#7daba8':'#687d84','#a0c3b4':'#96a5a5',
+  '#7eabb0':'#71878d','#5f8d89':'#596e74','#5b8061':'#465c5e',
+  '#285d40':'#303b3c','#376643':'#444e4d','#23583c':'#283234',
+  '#528b41':'#444b4c','#67984b':'#576060','#4b8341':'#383e42',
+  '#95b951':'#737973','#b2c85f':'#95978a','#91b44b':'#666e69',
+  '#805936':'#46454a','#b58b50':'#81807a','#4f432d':'#282b30',
+  '#775739':'#373a40','#b28b4f':'#737478','#8bac46':'#515954','#d3b06d':'#9b9789',
+  '#50713f':'#2b3037','#d6b16f':'#555860','#a2af50':'#474b52','#8da641':'#373c43','#526f39':'#262c33',
+  '#dfbb7c':'#74777b','#dcb776':'#656970','#c8a369':'#41464f','#cfaa6d':'#4a4f57',
+  '#b39664':'#323741','#b4ad86':'#858a8c','#b7a66a':'#34373f','#c3ac6d':'#4b4f55',
+  '#407749':'#343d40','#88a949':'#737c77','#507940':'#505b57',
+  '#f3ecc5':'#bec1b5','#dcb04a':'#b49458','#8061b5':'#556276','#b19bdf':'#9eabb8',
+  '#658744':'#444d4a','#9bb24e':'#778079','#86a44b':'#454c50','#bed069':'#858a84',
+  '#6b7b76':'#303640','#a9b4a0':'#686e77','#4d6460':'#1f252e','#526965':'#464f5c',
+  '#735437':'#3e3c3f','#b18b54':'#7d7870','#89663e':'#595657','#d2b076':'#999184',
+  '#9c7748':'#746d66','#739447':'#4c5450','#a9bd59':'#818779',
+  '#3d5d3e':'#30353b','#528d80':'#151a22','#397878':'#0d1118','#7ebcb2':'#303a46',
+  '#acd7c9':'#5b6470','#356960':'#1b222b','#46776a':'#303640','#e1efcf':'#81858a',
+  '#d6ebcf':'#737d89','#91ab68':'#484f56',
+  '#c39746':'#c39746','#efd38b':'#efd38b','#3766a3':'#3766a3','#8cafce':'#8cafce',
+  '#99a4ad':'#99a4ad','#d2d6d2':'#d2d6d2'
+ },disco:{
   '#65b2e8':'#414d6c','#86c9ed':'#808da2','#acdced':'#ada8b5',
   '#7eabb0':'#626b83','#5f8d89':'#535c70','#5b8061':'#51465e',
   '#285d40':'#2d3047','#376643':'#38344d','#23583c':'#282c41',
@@ -76,11 +142,18 @@
  const pool=[],decorClearances=[];let count=0,headingRoute=null,headingCount=-1,heading=0;
  function prepareDecorClearances(){
   decorClearances.length=0;
-  for(const theme of ['disco','bloodwood'])for(const view of journeyDiscoRoadViews(theme)){
+  for(const theme of ['disco','bloodwood','forge','chest','caravan','inn'])for(const view of journeyDiscoRoadViews(theme)){
    if(view.spill){decorClearances.push(view.point(view.begin+42.5,view.onlySide*7));continue;}
+   if(theme==='caravan'&&window.KRAutumnCaravan){
+    const venue=KRAutumnCaravan.venueLayout(view.edge);
+    if(venue)for(const anchor of venue.clearances)decorClearances.push(view.point(anchor.at,anchor.offset));
+   }
+   if(theme==='inn'&&window.KRMossyInn){
+    const venue=KRMossyInn.site(view.edge);if(venue)for(const anchor of venue.clearances)decorClearances.push(view.point(anchor.at,anchor.offset));
+   }
    // Keep the existing seeded prop layout. Reserve its ground footprint in
    // the NEW planting system, rather than moving or hiding the old props.
-   for(const decor of journeyRoadDecorLayout(view.edge)){
+   for(const decor of theme==='inn'&&window.KRMossyInn?KRMossyInn.layout(view.edge):theme==='caravan'&&window.KRAutumnCaravan?KRAutumnCaravan.layout(view.edge):theme==='chest'&&window.KRTreasureRoad?KRTreasureRoad.layout(view.edge):journeyRoadDecorLayout(view.edge)){
     const p=view.point(decor.at,decor.offset),c=journeyCameraPoint(p.x,p.z);
     if(c.depth>-45&&c.depth<SPAWN_FAR+35)decorClearances.push(p);
    }
@@ -98,8 +171,8 @@
    if(theme==='disco')target=[r*.72+b*.13,g*.66+b*.08,b*.84+r*.08];
    else if(theme==='bloodwood')target=[r*.85+g*.08,g*.55+b*.06,b*.58+r*.10];
    else if(theme==='forge')target=[r*1.04+g*.07,g*.78,b*.78];
-   else if(theme==='caravan')target=[r*.88,g*.98,b*1.13];
-   else if(theme==='inn')target=[r*1.09,g*.91,b*.76];
+   else if(theme==='caravan')target=[r*1.06+g*.06,g*.87,b*.73];
+   else if(theme==='inn')target=[r*.94,g*1.02,b*.94];
    else target=[r*1.05,g*.96,b*.83];
    const hex=materialTargets[theme]?.[color]||'#'+target.map(v=>Math.round(clamp(v,0,255)).toString(16).padStart(2,'0')).join('');
    const result=mixCol(color,hex,step/16);colors.set(color,result);return result;
@@ -255,14 +328,26 @@
    for(let row=Math.floor((from+view.offset)/4);row*4-view.offset<to;row++){
     const start=row*4-view.offset,a=Math.max(from,start),b=Math.min(to,start+4.015);
     if(!art.floorSectionVisible(view,a,Math.max(b,a+3.8)))continue;
-    const edge=view.edgeAt((a+b)/2),soilDetails=edge?.preview.theme!=='disco',
-      key=view.key+':'+row+':'+coordinateKey(a)+':'+coordinateKey(b)+':'+soilDetails;used.add(key);
+    const edge=view.edgeAt((a+b)/2),soilDetails=!['disco','inn'].includes(edge?.preview.theme),
+      key=view.key+':'+row+':'+coordinateKey(a)+':'+coordinateKey(b)+':'+soilDetails+':'+edge?.preview.theme;used.add(key);
     let shapes=floors.get(key);
     if(!shapes){
      const local={point:(d,x)=>view.point(d-view.offset,x)};
      // Disco already suppresses these buried soil chips at paint time. Do not
      // construct/cache their invisible geometry in the first place.
-     shapes=art.floorRow(local,row,a+view.offset,b+view.offset,soilDetails).filter(shape=>{
+     shapes=art.floorRow(local,row,a+view.offset,b+view.offset,soilDetails);
+     if(edge?.preview.theme==='forge'&&window.KRBasaltForge)
+      shapes.push(...KRBasaltForge.floorDetails(local,row,a+view.offset,b+view.offset));
+     if(edge?.preview.theme==='chest'&&window.KRTreasureRoad)
+      shapes.push(...KRTreasureRoad.floorDetails(local,row,a+view.offset,b+view.offset));
+     if(edge?.preview.theme==='caravan'&&window.KRAutumnCaravan)
+      shapes.push(...KRAutumnCaravan.floorDetails(local,row,a+view.offset,b+view.offset,edge,view.at(a)));
+     if(edge?.preview.theme==='inn'&&window.KRMossyInn)
+      shapes.push(...KRMossyInn.floorDetails(local,row,a+view.offset,b+view.offset,edge,view.at(a)));
+     // The opaque laid surface replaces buried soil instead of overpainting
+     // a second road-sized layer. Retain soil on the two boundary rows only.
+     if(shapes.some(shape=>shape.innBase&&shape.coversSoil))shapes=shapes.filter(shape=>shape.color!=='#d6b16f');
+     shapes=shapes.filter(shape=>{
       if(!grassColor(shape.color))return true;
       return !shape.vertices.some(p=>insideRoad(p,.3,view));
      });floors.set(key,shapes);floorBuilds++;
@@ -276,8 +361,8 @@
     if(shape.color==='#a2af50')art.drawFloorShape(shape,groundPaint(view,edge,a,b,shape.color));
    let batchPaint=null;
    const flush=()=>{if(batchPaint!==null){g.fillStyle=batchPaint;g.fill();batchPaint=null;}};
-   for(const {shapes,a,b,edge}of groundRows)for(const shape of shapes)if(shape.color==='#d6b16f'){
-    const paint=groundPaint(view,edge,a,b,shape.color);
+   for(const {shapes,a,b,edge}of groundRows)for(const shape of shapes)if(shape.color==='#d6b16f'||shape.innBase){
+    const paint=shape.innBase?shape.color:groundPaint(view,edge,a,b,shape.color);
     if(typeof paint==='string'){
      if(paint!==batchPaint){flush();batchPaint=paint;g.beginPath();}
      art.drawFloorShape(shape,paint,true);
@@ -288,8 +373,9 @@
    // CPU submissions but regressed DPR2 frame pacing on the test host.
    for(const {shapes,a,b,edge}of groundRows)for(const shape of shapes){
      if(shape.color==='#d6b16f'||shape.color==='#a2af50')continue;
+     if(shape.innBase)continue;
      if(edge?.preview.theme==='disco'&&!grassColor(shape.color))continue;
-     art.drawFloorShape(shape,groundColor(edge,view.at((a+b)/2),shape.color));
+     art.drawFloorShape(shape,(shape.treasureBuilt||shape.caravanGround)?shape.color:groundColor(edge,view.at((a+b)/2),shape.color));
    }
   }
   for(const key of floors.keys())if(!used.has(key))floors.delete(key);
@@ -298,7 +384,7 @@
    // Every bank and reflection uses the same road transform as its trees.
    const key=view.key+':'+coordinateKey(o.x)+':'+coordinateKey(z);usedWaterKeys.add(key);
    let shapes=water.get(key);
-   if(!shapes){shapes=art.waterShapes(false,o.x,z,o.w,5.5,false,view.point);water.set(key,shapes);waterBuilds++;}
+   if(!shapes){shapes=art.waterShapes(false,o.x,z,o.w,5.5,false,view.point,true);water.set(key,shapes);waterBuilds++;}
    else waterHits++;
    art.withPalette(item.palette,()=>{for(const shape of shapes)art.drawFloorShape(shape);});
   }
@@ -361,16 +447,21 @@
  let rootAnchors=[];
  function rootPositions(){
   rootAnchors.length=0;
-  for(const o of obstacles)if(o.kind==='root'&&o.roadTheme!=='disco')rootAnchors.push(lanePoint(o,0,o.side==='L'?-9.3:9.3));
-  for(const item of journey.oldObstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco')
+  for(const o of obstacles)if(o.kind==='root'&&o.roadTheme!=='disco'&&o.roadTheme!=='inn')rootAnchors.push(lanePoint(o,0,o.side==='L'?-9.3:9.3));
+  for(const item of journey.oldObstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco'&&item.entity.roadTheme!=='inn')
    rootAnchors.push({x:item.x-(item.lane-1)*JOURNEY_LANE_WORLD+(item.entity.side==='L'?-9.3:9.3),z:item.z});
-  for(const item of journey.sunlitPreview?.obstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco')
+  for(const item of journey.sunlitPreview?.obstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco'&&item.entity.roadTheme!=='inn')
    rootAnchors.push(item.point(0,item.entity.side==='L'?-9.3:9.3));
  }
  function hazard(o,point,depth,side){
   if(depth<o.type.cullZ||depth>SPAWN_FAR)return;
   g.save();g.globalAlpha=obstacleDistanceAlpha(o,depth);
-  const pal=o.roadTheme==='bloodwood'?palette('bloodwood',o.bloodAmount||1):null;
+  if(o.roadTheme==='forge'&&window.KRBasaltForge?.hazard(o,point)){g.restore();return;}
+  if(o.roadTheme==='chest'&&window.KRTreasureRoad?.hazard(o,point)){g.restore();return;}
+  if(o.roadTheme==='caravan'&&window.KRAutumnCaravan?.hazard(o,point)){g.restore();return;}
+  if(o.roadTheme==='inn'&&window.KRMossyInn?.hazard(o,point)){g.restore();return;}
+  const pal=o.roadTheme==='bloodwood'?palette('bloodwood',o.bloodAmount||1):
+    o.roadTheme==='forge'?palette('forge',1):o.roadTheme==='chest'?palette('chest',1):o.roadTheme==='caravan'?palette('caravan',1):o.roadTheme==='inn'?palette('inn',1):null;
   art.withPalette(pal,()=>{
    if(o.kind==='root')art.root(o,x=>point(0,x));
    if(o.kind==='boulder')art.rock(o,point);

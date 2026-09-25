@@ -1986,6 +1986,15 @@ try{
      keep the production startup path unchanged. */
   const validationSource=bootOnly?source:
     source.replace('RUN_BOOT_AUDITS=false','RUN_BOOT_AUDITS=true');
+  // Match the browser: blocking local scripts before the inline game must boot
+  // first (e.g. the shared tavern physics solver). Never fetch remote scripts.
+  const path=require('node:path'),htmlRoot=path.dirname(path.resolve(file));
+  for(const script of html.slice(0,match.index).matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi)){
+    const src=script[1];if(/^[a-z]+:|^\/\//i.test(src))throw new Error('External validator dependency: '+src);
+    const dependency=path.resolve(htmlRoot,src),relative=path.relative(htmlRoot,dependency);
+    if(relative.startsWith('..')||path.isAbsolute(relative))throw new Error('Dependency outside game: '+src);
+    vm.runInNewContext(fs.readFileSync(dependency,'utf8'),sandbox,{filename:dependency,timeout:10000});
+  }
   vm.runInNewContext(validationSource,sandbox,vmOptions);
   if(canvas.dataset.bootReady!=='1')throw new Error('Inline script finished without bootReady=1');
   if(criticalPostureOnly){

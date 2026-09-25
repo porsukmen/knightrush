@@ -3,9 +3,9 @@
 const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),dest=path.resolve(root,process.argv[2]||'_site');
 const files=execFileSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
-const roots=new Set(['KnightRush.html','ArtTest.html','BackgroundTest.html','MorningForestTest.html','RoadTest.html','ART_STYLE_KESKIN_DUZLEM.md']);
+const roots=new Set(['KnightRush.html','ArtTest.html','BackgroundTest.html','MorningForestTest.html','RoadTest.html','RoadCreatorLab.html','UILab.html','ART_STYLE_KESKIN_DUZLEM.md']);
 const selected=files.filter(file=>roots.has(file)||file.startsWith('assets/')||
- file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||
+ file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||file.startsWith('art-source/knight-rush-special-roads/')||
  file.startsWith('tools/')&&(file.endsWith('.js')||file.startsWith('tools/skills/')));
 fs.mkdirSync(dest,{recursive:true});
 for(const file of selected){const target=path.join(dest,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(root,file),target);}

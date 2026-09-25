@@ -2,7 +2,38 @@
 
 `event-visuals.js` is the shared runtime manager, loaded on demand. The scene
 adapter owns drawing, not image lifetime. Current bitmap-backed registration:
-Mushroom Gatherer; other existing code-native events remain unchanged.
+Mushroom Gatherer, road-only Basalt Forge, Treasure Grove, Autumn Caravan and Mossy Oak Inn;
+other existing code-native events remain unchanged. Basalt Forge uses a generated workshop plate, a native
+animated dwarf, and a clipped redraw of the same plate for foreground anvil
+occlusion (no second full-resolution bitmap). Its standard plate is 1448x1086
+(6,290,112 decoded RGBA bytes); mobile is 768x576 (1,769,472 bytes).
+
+Autumn Caravan uses these same two image dimensions. Its clearing is a single
+bottom-anchored cover crop; the seated merchant, parked wagon/horse and red
+ground cloth remain native live art. The material-lighting adapter is scoped
+to this scene, not the approved actor globally. Road-event exit or Merchant Lab
+exit releases the image; the town general store is not changed.
+
+Mossy Oak Inn selects v4's same-layout clarity edit, standard1448x1086/mobile768x576.
+The innkeeper is native and scene-lit; foreground counter occlusion redraws a
+clipped part of the same plate, with forearms and wiping cloth layered above. Inn exit
+and reset release the plate.
+
+The five inn table games use a separate candidate `tavern-games` alcove plate
+(standard 1086×1448 / mobile 576×768; 6,290,112 / 1,769,472 RGBA bytes).
+It loads only on table-game entry through the shared cutscene handler. Live
+opponents, tables and all movable gameplay props are native; the rules remain
+unchanged. Leaving cancels/releases game artwork; returning to the inn reopens
+the approved Mossy Oak scene. The roadside taxman's arm wrestling is excluded.
+Audit: `node tools/tavern-games-audit.cjs`.
+
+Tankard Slide now has a separate candidate `tavern-slide` plate (same two size
+tiers and decoded budgets), plus a native wooden table and rival. Only this
+game selects it; the other four still use `tavern-games`. Its physical table
+coordinates are independent of perspective and its AI uses the live fixed-step
+solver, evaluated in small batches during the opponent's turn. No extra bitmap
+cache, shader or per-frame image processing. Direct prototype entry:
+`?tavernslidelab=1`; audit: `node tools/tavern-slide-audit.cjs`.
 
 ## Limits
 
@@ -41,6 +72,10 @@ Only eligible registered bitmap events request an image. A swipe into the event
 activates its plate. Completion, refusal, passing, abandonment, menu/score/town,
 new run or seed reset clears ownership. The shared module-loader epoch stops late
 script completion from starting an image request after a reset.
+
+The forge stop activates the same handler on shop entry, scoped to its road
+event token. Leaving the shop releases the plate. The ordinary town smith is
+not routed through this scene.
 
 The factory supports active + one lookahead. Current blocking conversations do
 not advance the road, so the run controller generally needs only one plate; it
@@ -103,3 +138,12 @@ permission to show an NPC; the existing lane + fresh swipe checks still own entr
 Audit: `node tools/cutscene-handler-audit.cjs` (also run by `cutscene-audit.cjs`).
 Browser coverage: gatherer-event, event-visuals, normal-events and background
 illustration audits. Draw/logic tests are not physical-phone performance measurements.
+
+## Gatherer simplification trial (2026-09-25)
+
+Default Gatherer adapter selects `gatherer-simple`; `?clearing=crisp` selects
+the unchanged approved `gatherer`, and `?clearing=original` the older archive.
+The simplified candidate uses exactly the same standard/mobile decoded sizes
+as the approved crisp plate. Handler and adapter resolve the same ID; only
+one variant loads. Sharpness is in the source art, never a runtime filter.
+Background Lab defaults to the candidate and links to the protected reference.

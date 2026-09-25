@@ -23,6 +23,7 @@
 <canvas id="game"></canvas>
 <!-- invisible probe: measures the notch / dynamic-island inset so the HUD can dodge it -->
 <div id="safe" style="position:fixed;top:0;left:0;width:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden"></div>
+<script src="assets/encounters/tavern-slide-physics.js"></script>
 <script>
 "use strict";
 const BOOT_QUERY=new URLSearchParams(location.search),
@@ -989,7 +990,7 @@ addEventListener('keydown',e=>{
   }
   if(e.key==='Enter'&&GAMEPLAY_MODES.includes(mode)) return;
   if(a==='tap') handleAction('tap',{x:VW/2,y:VH/2});
-  else handleAction(a,null,null,{fresh:!e.repeat,roadToken:journeyRoadEventSession?.token,mode});
+  else handleAction(a,null,null,{fresh:!e.repeat,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,mode});
 });
 let keyboardParryHeld=false;
 addEventListener('keyup',e=>{
@@ -1041,7 +1042,7 @@ function trySwipe(cx,cy){
   cancelPlayerParryHold(tStart);
   clearProvisionalDebugParryMark(tStart);
   clearTapIntent(tStart);
-  const input={fresh:true,roadToken:tStart.roadToken,mode:tStart.roadMode};
+  const input={fresh:true,roadToken:tStart.roadToken,roadStop:tStart.roadStop,mode:tStart.roadMode};
   if(Math.abs(dx)>Math.abs(dy)) handleAction(dx>0?'right':'left',null,tStart.parryIntent,input);
   else handleAction(dy>0?'down':'up',null,tStart.parryIntent,input);
   tStart.done=true;                           // this touch is spent — lift to act again
@@ -1280,7 +1281,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   }
   if(beginMinigamePointer(t.clientX,t.clientY))return;
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
-  tStart={x:t.clientX,y:t.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadMode:mode};
+  tStart={x:t.clientX,y:t.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
   if(beginRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   armTapIntent(tStart,t.clientX,t.clientY);
@@ -1329,7 +1330,7 @@ addEventListener('mousedown',e=>{
   }
   if(beginMinigamePointer(e.clientX,e.clientY)){mDown=true;return;}
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
-  tStart={x:e.clientX,y:e.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadMode:mode};
+  tStart={x:e.clientX,y:e.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
   if(beginRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   armTapIntent(tStart,e.clientX,e.clientY);
@@ -9866,8 +9867,8 @@ const JOURNEY_ROAD_THEMES=Object.freeze({
   disco:Object.freeze({id:'disco',kind:'special',color:'#d58aff',label:'DISCO',finale:'disco_finale'}),
   bloodwood:Object.freeze({id:'bloodwood',kind:'special',color:'#df7169',label:'ELITE',finale:'elite_finale'}),
   forge:Object.freeze({id:'forge',kind:'special',color:'#eda965',label:'CINDER FORGE',finale:'forge_stop'}),
-  caravan:Object.freeze({id:'caravan',kind:'special',color:'#65c4bd',label:'CARAVAN',finale:'merchant_stop'}),
-  inn:Object.freeze({id:'inn',kind:'special',color:'#e1c67e',label:'LANTERN INN',finale:'inn_stop'}),
+  caravan:Object.freeze({id:'caravan',kind:'special',color:'#ce8141',label:'CARAVAN',finale:'merchant_stop'}),
+  inn:Object.freeze({id:'inn',kind:'special',color:'#b8ca83',label:'MOSSY OAK INN',finale:'inn_stop'}),
   chest:Object.freeze({id:'chest',kind:'special',color:'#dfb64f',label:'TREASURE CACHE',finale:'chest_stop'})
 });
 const JOURNEY_SPECIAL_THEMES=Object.freeze(['disco','bloodwood','forge','caravan','inn','chest']);
@@ -9878,8 +9879,8 @@ const JOURNEY_ROAD_EVENTS=Object.freeze({
   disco_finale:Object.freeze({id:'disco_finale',kind:'special',blocking:true}),
   elite_finale:Object.freeze({id:'elite_finale',kind:'special',blocking:true}),
   forge_stop:Object.freeze({id:'forge_stop',kind:'special',blocking:true}),
-  merchant_stop:Object.freeze({id:'merchant_stop',kind:'special',blocking:true}),
-  inn_stop:Object.freeze({id:'inn_stop',kind:'special',blocking:true}),
+  merchant_stop:Object.freeze({id:'merchant_stop',kind:'special',blocking:true,roadside:true}),
+  inn_stop:Object.freeze({id:'inn_stop',kind:'special',blocking:true,roadside:true}),
   chest_stop:Object.freeze({id:'chest_stop',kind:'special',blocking:true}),
   roadside_fight:Object.freeze({id:'roadside_fight',kind:'normal',blocking:true}),
   roadside_wolfden:Object.freeze({id:'roadside_wolfden',kind:'normal',blocking:false}),
@@ -10011,7 +10012,7 @@ function journeyNormalSlotEnabled(slot){
   // horizon. A visible prop and its clearing must never disagree or disappear
   // because another event updates normalSeen while we approach.
   const route=journeyRoute;if(!route)return false;
-  if(slot.definition==='roadside_camp'||slot.definition==='roadside_fight')return true;
+  if(slot.definition==='roadside_camp'||slot.definition==='roadside_fight'||slot.definition==='forge_stop')return true;
   const plans=route.normalPlans??={};
   if(Object.prototype.hasOwnProperty.call(plans,slot.id))return plans[slot.id];
   const content=journeyNormalContent(slot);
@@ -10821,6 +10822,10 @@ function clearEventVisuals(){
 // allocate images. Add future scene adapters here and plates to the manager catalog.
 const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer'});
 function journeyEventVisualKey(slot){
+  if(slot.definition==='inn_stop')return 'mossy-inn';
+  if(slot.definition==='merchant_stop')return 'autumn-caravan';
+  if(slot.definition==='chest_stop')return 'treasure-grove';
+  if(slot.definition==='forge_stop')return 'basalt-forge';
   return JOURNEY_ROAD_EVENTS[slot.definition]?.kind==='normal'?(JOURNEY_CUTSCENE_BINDINGS[journeyNormalContent(slot)]||null):null;
 }
 function requestJourneyEventVisual(slot,active=false){
@@ -10892,7 +10897,7 @@ function buildJourneyRoadPlan(route){
     const eligible=node.type!=='start'&&end.type!=='boss'&&(edge.baseLength??length)>=rules.leadIn+rules.normalExit+rules.minPiece;
     const special=eligible&&random()<rules.specialChance;
     if(special){
-      const theme=JOURNEY_SPECIAL_THEMES[Math.floor(random()*JOURNEY_SPECIAL_THEMES.length)],lead=theme==='disco'?8:rules.leadIn,
+      const theme=JOURNEY_SPECIAL_THEMES[Math.floor(random()*JOURNEY_SPECIAL_THEMES.length)],lead=(theme==='disco'||theme==='inn')?8:rules.leadIn,
         exit=theme==='disco'?24:rules.normalExit,available=length-lead-exit;
       const capacity=Math.min(4,Math.floor(available/rules.minPiece));let count=1;
       while(count<capacity&&random()<rules.continueChances[count-1])count++;
@@ -10996,7 +11001,7 @@ function journeyObstacleThemeAt(at){
   // No hazards in decorative spill / lead-in / exit areas. Bind the skin at
   // spawn time so an approaching turn cannot repaint an existing obstacle.
   const theme=edge?.pieces.find(piece=>at>=piece.start&&at<piece.end)?.theme;
-  return theme==='disco'||theme==='bloodwood'?theme:null;
+  return theme==='disco'||theme==='bloodwood'||theme==='forge'||theme==='chest'||theme==='caravan'||theme==='inn'?theme:null;
 }
 function journeyDiscoRoadViews(theme='disco'){
   if(journeyRenderFrame?.views.has(theme))return journeyRenderFrame.views.get(theme);
@@ -11235,6 +11240,7 @@ function journeyDecorProjection(item){
 }
 const JOURNEY_DECOR_LAYOUTS=new WeakMap();
 function journeyRoadDecorLayout(edge){
+  if(edge.preview.theme==='forge'&&window.KRBasaltForge)return KRBasaltForge.layout(edge);
   let layout=JOURNEY_DECOR_LAYOUTS.get(edge);if(layout)return layout;
   layout=[];
   const theme=edge.preview.theme,begin=edge.pieces[0].start,end=edge.pieces.at(-1).end,
@@ -11586,6 +11592,18 @@ function startJourneyRoadEvent(slot){
   try{handler.start(context);}catch(error){completeJourneyRoadEvent(token,{status:'error'});console.error(error);}
   return true;
 }
+function journeyRoadEventTriggerAt(slot){
+  if(slot.definition==='inn_stop'&&window.KRMossyInn){
+    const venue=KRMossyInn.site(journeyForestEdgeAt(slot.at));if(venue)return venue.eventAt;
+  }
+  if(slot.definition==='merchant_stop'&&window.KRAutumnCaravan){
+    const venue=KRAutumnCaravan.venueLayout(journeyForestEdgeAt(slot.at));
+    // Roadside interaction range: close enough to pass the blanket next, but
+    // before the lateral camp moves completely outside the forward camera.
+    if(venue)return venue.eventAt;
+  }
+  return slot.at;
+}
 function updateJourneyRoadEvents(dt){
   const route=journeyRoute;if(!route)return;
   updateJourneyEventVisuals();
@@ -11603,21 +11621,59 @@ function updateJourneyRoadEvents(dt){
   if(mode!=='run'||journeyRoadEventSession||journey?.phase==='turning'||journey?.phase==='settling')return;
   const edge=journeyActiveEdge();if(!edge)return;
   for(const slot of edge.events){
-    if((JOURNEY_ROAD_EVENTS[slot.definition].blocking?slot.at:slot.at-JOURNEY_ROAD_RULES.normalOfferLead)>dist||route.eventRecords[slot.id])continue;
+    // Roadside services never brake the runner or open without consent.
+    // Their existing blocking session begins only after an outer-lane swipe.
+    if(JOURNEY_ROAD_EVENTS[slot.definition].roadside){
+      if(!route.eventRecords[slot.id]&&dist>Math.min(slot.expiresAt,journeyRoadEventTriggerAt(slot)+18))
+        route.eventRecords[slot.id]={status:'passed',finishedAt:dist};
+      continue;
+    }
+    if((JOURNEY_ROAD_EVENTS[slot.definition].blocking?journeyRoadEventTriggerAt(slot):slot.at-JOURNEY_ROAD_RULES.normalOfferLead)>dist||route.eventRecords[slot.id])continue;
     if(slot.expiresAt<dist){route.eventRecords[slot.id]={status:'missed'};continue;}
     startJourneyRoadEvent(slot);
     if(journeyRoadEventSession)break;
   }
 }
+function journeyRoadsideStopSide(slot){
+  const edge=journeyForestEdgeAt(slot.at);
+  if(slot.definition==='inn_stop')return Math.sign(window.KRMossyInn?.site(edge)?.offset||1);
+  if(slot.definition==='merchant_stop')return Math.sign(window.KRAutumnCaravan?.venueLayout(edge)?.merchant.offset||1);
+  return 0;
+}
+function journeyRoadsideOffer(approach=false){
+  if(mode!=='run'||!journeyRoute||journeyRoadEventSession||['turning','settling'].includes(journey?.phase))return null;
+  for(const slot of journeyActiveEdge()?.events||[]){
+    if(!JOURNEY_ROAD_EVENTS[slot.definition].roadside||journeyRoute.eventRecords[slot.id])continue;
+    const at=journeyRoadEventTriggerAt(slot);
+    if(dist>=at-(approach?40:4)&&dist<=Math.min(at+18,slot.expiresAt))return slot;
+  }return null;
+}
+function tryJourneyRoadsideStop(action,input){
+  const slot=journeyRoadsideOffer();if(!slot||paused)return false;
+  const side=journeyRoadsideStopSide(slot),lane=side+1;
+  if(action!==(side>0?'right':'left')||player.lane!==lane||Math.abs(player.x-lane)>=.34)return false;
+  if(input&&(!input.fresh||input.mode!=='run'||input.roadStop!==slot.id||input.roadToken!=null))return false;
+  if(!startJourneyRoadEvent(slot))return false;
+  SFX.swipe();return true;
+}
 function handleJourneyRoadEventAction(action,point,input=null){
-  const s=journeyRoadEventSession;if(!s)return mode==='journeyevent';
+  const s=journeyRoadEventSession;if(!s)return tryJourneyRoadsideStop(action,input)||mode==='journeyevent';
   let consumed=false;
   try{consumed=s.handler.action?s.handler.action(s.context,action,point,input):false;}
   catch(error){completeJourneyRoadEvent(s.token,{status:'error'});console.error(error);}
   return (s.blocking&&mode!==s.ownedMode)||!!consumed;
 }
 function drawJourneyRoadEvent(){
-  const s=journeyRoadEventSession;if(!s||!s.handler.draw)return;
+  const s=journeyRoadEventSession;
+  if(!s){
+    const slot=journeyRoadsideOffer(true);if(!slot)return;
+    const side=journeyRoadsideStopSide(slot),lane=side+1,inLane=player.lane===lane&&Math.abs(player.x-lane)<.34,ready=inLane&&dist>=journeyRoadEventTriggerAt(slot)-4;
+    g.save();g.fillStyle='#283629';g.fillRect(50,169,380,55);g.textAlign='center';g.fillStyle='#f0d7a0';g.font='bold 14px monospace';
+    g.fillText(slot.definition==='inn_stop'?'THE MOSSY OAK':'TRAVELLING MERCHANT',VW/2,190);
+    g.fillStyle=ready?'#d5ed9b':'#ded4b1';g.font='12px monospace';
+    g.fillText(ready?'SWIPE '+(side>0?'RIGHT >':'< LEFT')+' TO STOP':inLane?'APPROACH, THEN SWIPE OUT TO STOP':'USE THE '+(side>0?'RIGHT':'LEFT')+' LANE, THEN SWIPE OUT',VW/2,213);g.restore();return;
+  }
+  if(!s.handler.draw)return;
   g.save();try{s.handler.draw(s.context,g);}catch(error){
     completeJourneyRoadEvent(s.token,{status:'error'});console.error(error);
   }finally{g.restore();}
@@ -11835,8 +11891,9 @@ function journeyStepDistance(movement){
   // boss/corner transition at a low frame rate. Reserved slots do not stop play.
   for(const slot of journeyActiveEdge()?.events||[])
     if(!r.eventRecords[slot.id]&&JOURNEY_ROAD_EVENTS[slot.definition].blocking&&
-      journeyRoadEventHandlers.has(slot.definition)&&slot.at>=dist)
-      movement=Math.min(movement,slot.at-dist);
+      !JOURNEY_ROAD_EVENTS[slot.definition].roadside&&
+      journeyRoadEventHandlers.has(slot.definition)&&journeyRoadEventTriggerAt(slot)>=dist)
+      movement=Math.min(movement,journeyRoadEventTriggerAt(slot)-dist);
   if(r.pendingArm||!['travel','junction'].includes(r.status))return movement;
   const node=journeyNode(r.next);
   // A latched turn must commit before movement can carry it beyond the corner
@@ -12125,7 +12182,7 @@ function spawnRoadsideSceneryRow(tz,worldPos,emit=spawnRoadsideScenery){
     let side=randomScenerySide(), off=rnd(...profile.primaryOffset);
     /* a root's mother tree claims its own ground — plant BESIDE it (flip sides, or
        step deeper into the treeline), but never leave a gap in the woods */
-    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&o.roadTheme!=='disco'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
+    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&o.roadTheme!=='disco'&&o.roadTheme!=='inn'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
     if(rootAt(side)){ if(!rootAt(-side)) side=-side; else off=rnd(...profile.fallbackOffset); }
     emit(tz,side*off);
     /* a SECOND, sparser line of trees far out on each flank — background texture
@@ -12211,11 +12268,13 @@ function spawnObstacle(z){
   lastObsFull=!!(req[0]&&req[1]&&req[2]);
   const ob=new ObstacleEntity(kind,z,req,variant);
   ob.roadTheme=journeyObstacleThemeAt(dist+z);
+  // Inn linen is exclusively a slide-under obstacle, including branch previews.
+  if(kind==='root'&&ob.roadTheme==='inn')for(const lane of ob.lanes)ob.req[lane]='duck';
   if(ob.type.motherTree&&ob.roadTheme!=='disco'){
     ob.treeV=Math.random();                   // the mother tree: a random sprite of this biome
     if(ob.roadTheme==='bloodwood')ob.bloodAmount=journeyForestBloodAt(dist+z);
     const ss=side==='L'?-1:1;                 // clear its standing room — never two trees in one
-    clearRoadsideSceneryNear(z,ss);
+    if(ob.roadTheme!=='inn')clearRoadsideSceneryNear(z,ss);
   }
   obstacles.push(ob);
   return ob.lanes;
@@ -52295,6 +52354,7 @@ function upgCost(key){
   return Math.max(1,Math.round(c*(hasRelic('seal')?0.7:1)));   // SMITH'S SEAL discount
 }
 function shopTap(pt){
+  if(blacksmithShop?.roadToken&&window.KRBasaltForge)return KRBasaltForge.tap(pt);
   const shop=blacksmithShop;if(!shop||mode!=='shop'||paused)return false;
   if(shop.phase==='result'){
     if(pointInRect(pt,SMITH_UI.confirm)){shop.phase='browse';shop.order=null;refreshSmithCards();return true;}
@@ -52504,6 +52564,7 @@ journeyRoadEventHandlers.set('forge_stop',{
   start(context){
     context.openMode(()=>{openBlacksmithShop();blacksmithShop.roadToken=context.token;
       blacksmithShop.random=journeyRandom(context.seed);});context.shop=blacksmithShop;
+    requestJourneyEventVisual(context.slot,true);
   },returnResult:context=>({status:'completed',upgrades:context.shop.attempts||0}),
   dispose(context){if(blacksmithShop===context.shop)blacksmithShop=null;}
 });
@@ -52511,6 +52572,7 @@ journeyRoadEventHandlers.set('merchant_stop',{
   start(context){
     context.openMode(()=>{openMerchantShop('road:'+journeyRoute.seed+':'+loop+':'+context.slot.id,'forest');
       merchantShop.returnMode='journeyroadresume';});context.shop=merchantShop;
+    requestJourneyEventVisual(context.slot,true);
   },returnResult:()=>({status:'completed'}),
   dispose(context){if(merchantShop===context.shop)merchantShop=null;}
 });
@@ -52602,6 +52664,15 @@ const INN_GAMES=Object.freeze([
   {id:'findqueen',name:'FIND THE QUEEN',start:()=>startFindQueen('forest','journeyinnresume')},
   {id:'drinkingcontest',name:'DRINKING CONTEST',start:()=>startDrinkingContest('forest','journeyinnresume')}
 ]);
+// Shared tavern presentation; game rules/input and event ownership stay native.
+function drawTavernPresentation(id){
+  if(id==='slide'&&window.KRTavernSlide){KRTavernSlide.draw();return true;}
+  if(id!=='slide'&&window.KRTavernGames){KRTavernGames.draw(id);return true;}
+  g.fillStyle='#302820';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  smithText('Opening the games room...',240,360,16,'#e8d6ab');
+  g.fillStyle='#ded2a2';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
+  smithText('< BACK',62,77,13,'#493323');return true;
+}
 function roadServiceChoice(action,pt){
   if(paused)return -1;
   if(action==='continue')return 2;
@@ -52616,11 +52687,12 @@ function disposeInnGame(){
   tavernSlideGame=null;armWrestleGame=null;diceGame=null;findQueenGame=null;drinkGame=null;
 }
 journeyRoadEventHandlers.set('inn_stop',{
-  start(context){context.time=0;context.inn={rested:false,playing:null,round:0};},
+  start(context){context.time=0;context.inn={rested:false,playing:null,round:0};requestJourneyEventVisual(context.slot,true);},
   update(context,dt){context.time+=dt;},
   action(context,action,pt){
     if(mode!=='journeyevent'||context.time<.22)return false;
-    const choice=roadServiceChoice(action,pt),price=18+loop*4;
+    const choice=window.KRMossyInn?KRMossyInn.choice(action,pt):roadServiceChoice(action,pt),price=18+loop*4;
+    if(choice===3){context.notice='"A hot meal, clean sheets, or a friendly wager?"';return true;}
     if(choice===0){
       if(context.inn.rested||player.currentHealthUnits>=player.maxHealthUnits){context.notice='You are already well rested.';return true;}
       if(gold<price){context.notice='Not enough coins for a room.';return true;}
@@ -52876,6 +52948,7 @@ function drawRoadAnvil(x,y,s=1){
   expRect(-17,-32,29,2,'#edf0dc');expRect(19,-31,5,3,'#324d5a');g.restore();
 }
 function drawRoadForgeArt(animate=true,includeSmith=true){
+  if(window.KRBasaltForge)return KRBasaltForge.house(animate,includeSmith);
   expPoly([[-117,4],[-116,-103],[-65,-129],[96,-129],[126,-99],[123,4]],'#263f3e');
   expRect(-105,-105,7,109,'#79583c');expRect(107,-107,7,111,'#694b35');
   expPoly([[-128,-104],[-73,-144],[82,-144],[126,-108]],'#9e7350');
@@ -52945,6 +53018,7 @@ function drawRoadServiceForestStatic(){
   expPoly([[0,330],[190,309],[480,340],[480,800],[0,800]],'#374632');
 }
 function drawJourneyInn(context){
+  if(window.KRMossyInn){KRMossyInn.drawInterior(context);return;}
   drawRoadServiceForest();g.save();g.translate(232,435);g.scale(1.95,1.95);drawRoadInnArt();g.restore();
   drawRoadInnkeeper(366,445,1.1);
   expRect(18,463,444,316,'#162827');smithText('THE WARM LANTERN',240,491,21,'#eed19b');
@@ -53057,6 +53131,10 @@ function queueJourneyExpeditionWorld(){
   const enqueue=(view,at,off,extra)=>{const point=view.point(at,off),cam=journeyCameraPoint(point.x,point.z);
     if(cam.depth>-6&&cam.depth<SPAWN_FAR)queueWorldDraw(cam.depth,drawJourneyExpeditionProp,{...point,...extra});};
   for(const theme of JOURNEY_SERVICE_THEMES)for(const view of journeyDiscoRoadViews(theme)){
+    if(theme==='forge'&&window.KRBasaltForge){KRBasaltForge.queueView(view);continue;}
+    if(theme==='chest'&&window.KRTreasureRoad){KRTreasureRoad.queueView(view);continue;}
+    if(theme==='caravan'&&window.KRAutumnCaravan){KRAutumnCaravan.queueView(view);continue;}
+    if(theme==='inn'&&window.KRMossyInn){KRMossyInn.queueView(view);continue;}
     if(view.spill){enqueue(view,view.begin+42.5,view.onlySide*7,{theme,kind:'sign'});continue;}
     const edge=view.edge,slot=edge.events.find(e=>e.definition===JOURNEY_ROAD_THEMES[theme].finale);
     const start=edge.pieces[0].start,end=edge.pieces.at(-1).end;
@@ -53481,15 +53559,20 @@ function startRoadLabCase(index){
   for(let attempt=0;attempt<30&&!fixture;attempt++){
     startJourneyWithSeed((roadLabState.seed+attempt)>>>0);
     for(const node of journeyRoute.nodes){
-      const edge=node.out.find(e=>e.direction===roadLabState.direction&&journeyNode(e.to).type!=='boss'&&e.length>160);
+      const edge=node.out.find(e=>e.direction===roadLabState.direction&&journeyNode(e.to).type!=='boss'&&e.length>160&&(!spec.theme||e.preview?.special));
       const parent=journeyRoute.nodes.find(n=>n.out.some(e=>e.to===node.id));
       if(edge&&parent){fixture={node,edge,parent};break;}
     }
   }
   if(!fixture)return false;
-  const {node,edge,parent}=fixture,end=journeyNode(edge.to).at,theme=spec.theme||'forest',
-    at=node.at+(end-node.at)*.55,piece={id:edge.id+':lab',theme,kind:spec.theme?'special':'normal',start:node.at,end,role:'finale'};
-  edge.pieces=[piece];edge.preview={theme,special:!!spec.theme};
+  const {node,edge,parent}=fixture,end=journeyNode(edge.to).at,theme=spec.theme||'forest';
+  // Use a real generated special edge at its production length. Lab changes
+  // only the theme/encounter, never stretches the route or its descendant nodes.
+  const lead=(theme==='disco'||theme==='inn')?8:JOURNEY_ROAD_RULES.leadIn,exit=theme==='disco'?24:JOURNEY_ROAD_RULES.normalExit,
+    piece={id:edge.id+':lab',theme,kind:spec.theme?'special':'normal',start:node.at+(spec.theme?lead:0),end:end-(spec.theme?exit:0),role:'finale'},
+    at=spec.theme?(theme==='bloodwood'?Math.max(piece.start+8,piece.end-70):Math.max(node.at+80,node.at+edge.length*.52)):node.at+edge.length*.55;
+  edge.pieces=spec.theme?[{id:edge.id+':lab-entry',theme:'forest',kind:'normal',start:node.at,end:piece.start,role:'entry'},piece,
+    {id:edge.id+':lab-exit',theme:'forest',kind:'normal',start:piece.end,end,role:'exit'}]:[piece];edge.preview={theme,special:!!spec.theme};
   const slot={id:edge.id+':lab-event',definition:spec.definition||JOURNEY_ROAD_THEMES[theme].finale,
     at,expiresAt:end-25,theme,pieceId:piece.id,content:spec.content,enemyId:spec.enemyId};
   edge.events=[slot];roadLabState.active=true;roadLabState.index=index;roadLabState.slot=slot;roadLabState.fixture=fixture;
@@ -53498,7 +53581,7 @@ function startRoadLabCase(index){
     journeyRoute.from=parent.id;journeyRoute.next=node.id;journeyRoute.activeEdge=parent.out.find(e=>e.to===node.id).id;
     journeyActiveEdge().events=[];dist=node.at-62;
   }else{
-    journeyRoute.from=node.id;journeyRoute.next=edge.to;journeyRoute.activeEdge=edge.id;dist=Math.max(node.at+42,at-62);
+    journeyRoute.from=node.id;journeyRoute.next=edge.to;journeyRoute.activeEdge=edge.id;dist=spec.theme?node.at+42:Math.max(node.at+42,at-62);
   }
   journeyRoute.status='travel';journeyRoute.pendingArm=false;armJourneyNode();roadScroll=dist;runDistance=dist;
   obstacles=[];pickups=[];roadsideScenery=[];nextTreeAt=dist-5;nextSpawnAt=dist+35;spawnLoopEntities();
@@ -53509,21 +53592,23 @@ function drawRoadLab(){
   smithText('Special roads, services, fights and roadside swipes',240,81,11,'#b6c9b9');
   const names=['LEFT','STRAIGHT','RIGHT'];
   for(let i=0;i<3;i++)drawSmithButton({x:18+i*150,y:100,w:144,h:36},names[i],roadLabState.direction===i-1?'#f1d189':'#75988c');
-  drawSmithButton({x:18,y:145,w:444,h:36},roadLabState.entry?'START: BEFORE THE TURN':'START: APPROACH THE EVENT','#b6d4c5');
+  drawSmithButton({x:18,y:145,w:444,h:36},roadLabState.entry?'START: BEFORE THE TURN':'START: FULL ROAD / CLOSE TO ?','#b6d4c5');
   ['SPECIAL ROADS','ROADSIDE ?','ENEMIES'].forEach((label,i)=>
     drawSmithButton({x:18+i*150,y:200,w:144,h:36},label,roadLabState.category===i?'#f1d189':'#75988c'));
   roadLabVisibleCases().forEach(({entry},i)=>{
     const rect={x:18+(i%2)*228,y:260+Math.floor(i/2)*72,w:216,h:58};
     drawSmithButton(rect,entry.label,entry.theme?JOURNEY_ROAD_THEMES[entry.theme].color:'#c9c8a8');
   });
-  smithText(['Stops on their own themed roads.','Optional: outer lane, then a fresh outward swipe.','Roadblocks: normal HP / skills / dodge / parry.'][roadLabState.category],240,617,11,'#d6c6aa');
+  smithText(['Production road lengths / F10: change test','Optional: outer lane, then a fresh outward swipe.','Roadblocks: normal HP / skills / dodge / parry.'][roadLabState.category],240,617,11,'#d6c6aa');
   smithText('TEST: 180 coins / 12 scrap / God mode / hurt hearts',240,661,11,'#a9bfae');
   smithText('Roadside ?: move to its OUTER lane, then swipe OUT.',240,683,11,'#eed496');
   drawSmithButton({x:18,y:706,w:216,h:40},'NEW SEED','#abd3c9');
   drawSmithButton({x:246,y:706,w:216,h:40},'MAIN MENU','#d6c6aa');
+  drawSmithButton({x:100,y:623,w:280,h:28},'APPROVED ROAD CREATOR LAB','#e4bd7d');
   smithText('SEED '+roadLabState.seed+'   /   F10: RETURN TO LAB',240,775,11,'#8baaa0');
 }
 function roadLabTap(pt){
+  if(pointInRect(pt,{x:100,y:623,w:280,h:28})){location.href='RoadCreatorLab.html';return;}
   for(let i=0;i<3;i++)if(pointInRect(pt,{x:18+i*150,y:100,w:144,h:36})){roadLabState.direction=i-1;return;}
   if(pointInRect(pt,{x:18,y:145,w:444,h:36})){roadLabState.entry=!roadLabState.entry;return;}
   for(let i=0;i<3;i++)if(pointInRect(pt,{x:18+i*150,y:200,w:144,h:36})){roadLabState.category=i;return;}
@@ -53542,6 +53627,12 @@ let scoreShown=0;               // the HUD's racing counter chases the continuou
 let env='forest';               // 'forest' during the run · 'cave' for the bear's lair
 const SILENT_TEST_MODES=new Set(['debugcfg','bosslabselect','bosslabmoves','skilllab','healthlab','roadlab']);
 function setMode(m){
+  const wasTavern=['tavernslide','armwrestling','diceguess','findqueen','drinkingcontest'].includes(mode)&&!(mode==='armwrestling'&&armWrestleGame?.roadAttempt);
+  // Taxman marks roadAttempt immediately AFTER startArmWrestling returns;
+  // its return target already identifies that non-tavern encounter here.
+  const nextTavern=['tavernslide','armwrestling','diceguess','findqueen','drinkingcontest'].includes(m)&&!(m==='armwrestling'&&(armWrestleGame?.roadAttempt||armWrestleGame?.returnMode==='journeyroadresume'));
+  if(wasTavern&&!nextTavern)clearEventVisuals();
+  if(mode==='merchant'&&m!=='merchant'&&!journeyRoadEventSession)clearEventVisuals();
   if(m==='menu'||m==='score'||m==='roadlab'||m==='town')clearEventVisuals();
   if(m==='journeychestloot'){
     const session=journeyRoadEventSession;
@@ -53553,6 +53644,7 @@ function setMode(m){
   }
   if(m==='journeyinnresume'&&journeyRoadEventSession?.context.inn){
     returnToJourneyInn();m='journeyevent';
+    prepareCutscene('mossy-inn',true,journeyRoadEventSession.token);
   }
   if(m==='journeyroadresume'){
     const session=journeyRoadEventSession;
@@ -53576,6 +53668,7 @@ function setMode(m){
      !['boss','bossintro','miniboss','bosslabmoves'].includes(m))resetSquireCombat();
   if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
   mode=m;modeT=0;
+  if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':'tavern-games',true,'tavern-games');
 }
 function speed(){
   /* All three pools in a cycle share one pace. Clearing the final pool advances
@@ -57087,6 +57180,7 @@ function drawFindQueenPreview(r){
   for(let i=0;i<3;i++)drawFindQueenCard(r.x+48+i*53,r.y+54,42,64,mini[i],i===1,1,i===1?8:0,i===1?'#ffe36a':0);
 }
 function drawFindQueenGame(){
+  if(findQueenGame&&drawTavernPresentation('queen'))return;
   const q=findQueenGame;if(!q)return;
   drawFindQueenArena();drawFindQueenDealer();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
@@ -57630,6 +57724,7 @@ function dropLastSetLockpickPin(){
   pin.state='idle';pin.lift=0;pin.flash=-.45;l.setCount--;return true;
 }
 function endLockpickHold(){
+  if(window.KRTreasureRoad)return KRTreasureRoad.settle();
   const l=lockpickGame;if(!l||l.holdingIndex<0)return false;
   const pin=l.pins[l.holdingIndex];l.holdingIndex=-1;if(!pin||pin.state!=='active')return false;
   if(pin.holdT<LOCKPICK_RULES.minTap&&pin.lift<.24){
@@ -57998,6 +58093,7 @@ function drawDrinkingContestPreview(r){
   g.strokeStyle='#55d9ff';g.lineWidth=4;g.beginPath();g.moveTo(r.x+42,r.y+20);g.lineTo(r.x+r.w-48,r.y+32);g.lineTo(r.x+48,r.y+48);g.lineTo(r.x+r.w-42,r.y+57);g.stroke();
 }
 function drawDrinkingContestGame(){
+  if(drinkGame&&drawTavernPresentation('drink'))return;
   const d=drinkGame;if(!d)return;drawDrinkingArena();drawDrinkScore();
   if(d.phase!=='intro'&&d.phase!=='complete')drawDrinkPattern();
   if(d.spillT>0){g.globalAlpha=d.spillT/.58;g.fillStyle='#d9952f55';for(let i=0;i<16;i++){const x=sRnd(i*31+d.spills)*VW,y=250+sRnd(i*47+d.spills)*300;g.beginPath();g.arc(x,y,4+sRnd(i*13)*9,0,TAU);g.fill();}g.globalAlpha=1;}
@@ -58646,6 +58742,7 @@ function drawArmWrestlingPreview(r){
   g.fillStyle='#ffe36a';g.font='bold 12px monospace';g.textAlign='center';g.fillText('>>>',r.x+r.w/2,r.y+91);
 }
 function drawArmWrestlingGame(){
+  if(armWrestleGame&&!armWrestleGame.roadAttempt&&drawTavernPresentation('arm'))return;
   const a=armWrestleGame;if(!a)return;drawArmWrestlingArena();drawArmOpponent(a.power);drawFirstPersonArmWrestle();drawArmWrestleMeter();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -58793,6 +58890,7 @@ function drawDiceGuessPreview(r){
   g.fillStyle='#ffe36a';g.font='bold 9px monospace';g.textAlign='center';g.fillText('HIGHER?',r.x+r.w/2,r.y+102);
 }
 function drawDiceGuessGame(){
+  if(diceGame&&drawTavernPresentation('dice'))return;
   const d=diceGame;if(!d)return;drawDiceGuessArena();drawDiceOpponent();drawFirstPersonDiceTable();drawDiceTotals();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -60000,16 +60098,13 @@ function drawPickpocketGame(){
   }
 }
 /* ---------- Tavern Table Slide: alternating mug curling with real collisions ---------- */
-const TAVERN_SLIDE_RULES=Object.freeze({mugsEach:3,friction:305,restitution:.82,minShot:310,maxShot:690,
-  stopSpeed:13,settleTime:.34,coinTossTime:1.18,aiThinkTime:.78,mugRadius:16,
-  tableTop:237,tableBottom:714,targetX:240,targetY:425,rings:Object.freeze([38,74,112]),
-  scores:Object.freeze([3,2,1])});
+const TAVERN_SLIDE_RULES=KRTavernPhysics.rules;
 const TAVERN_SLIDE_START_BTN=Object.freeze({x:140,y:670,w:200,h:50});
 let tavernSlideGame=null;
-function tavernTableBounds(y){const t=clamp((y-TAVERN_SLIDE_RULES.tableTop)/(TAVERN_SLIDE_RULES.tableBottom-TAVERN_SLIDE_RULES.tableTop),0,1);return{left:lerp(111,18,t),right:lerp(369,462,t)};}
-function tavernMugScale(y){return lerp(.70,1.16,clamp((y-TAVERN_SLIDE_RULES.tableTop)/(TAVERN_SLIDE_RULES.tableBottom-TAVERN_SLIDE_RULES.tableTop),0,1));}
-function tavernLaunchPoint(owner){return owner==='player'?{x:240,y:670}:{x:240,y:257};}
-function tavernTargetDistance(x,y){return Math.hypot(x-TAVERN_SLIDE_RULES.targetX,(y-TAVERN_SLIDE_RULES.targetY)*1.48);}
+function tavernTableBounds(y){return{left:TAVERN_SLIDE_RULES.left,right:TAVERN_SLIDE_RULES.right};}
+function tavernMugScale(y){return KRTavernPhysics.project(240,y).scale;}
+function tavernLaunchPoint(owner){return KRTavernPhysics.launch(owner);}
+function tavernTargetDistance(x,y){return Math.hypot(x-TAVERN_SLIDE_RULES.targetX,y-TAVERN_SLIDE_RULES.targetY);}
 function tavernMugScore(mug){if(!mug||!mug.onTable)return 0;const d=tavernTargetDistance(mug.x,mug.y);for(let i=0;i<TAVERN_SLIDE_RULES.rings.length;i++)if(d<=TAVERN_SLIDE_RULES.rings[i])return TAVERN_SLIDE_RULES.scores[i];return 0;}
 function tavernScores(){const score={player:0,ai:0};if(tavernSlideGame)for(const mug of tavernSlideGame.mugs)score[mug.owner]+=tavernMugScore(mug);return score;}
 function tavernCurrentOwner(t=tavernSlideGame){if(!t||t.shotIndex>=TAVERN_SLIDE_RULES.mugsEach*2)return null;const playerFirst=t.first==='player';return (t.shotIndex%2===0)===playerFirst?'player':'ai';}
@@ -60017,19 +60112,21 @@ function startTavernSlide(stageId=biome,returnMode='minigames'){
   tavernSlideGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,phase:'intro',phaseT:0,
     first:'player',shotIndex:0,mugs:[],gesture:null,shotActive:false,settleT:0,aiDelay:0,result:null,
     feedback:'PULL THE MUG BACK - RELEASE TOWARD THE BULLSEYE',feedbackCol:'#f5df9d',impactT:0,impactX:240,impactY:425,
-    coinFace:'CROWN',lastPower:0,best:0};paused=false;pausePhotoMode=false;setMode('tavernslide');SFX.relic();
+    coinFace:'CROWN',lastPower:0,best:0,physicsAccumulator:0,aiPlan:null,keyAngle:0,keyPower:.36};paused=false;pausePhotoMode=false;setMode('tavernslide');SFX.relic();
 }
 function leaveTavernSlide(){const target=tavernSlideGame&&tavernSlideGame.returnMode||'minigames';cancelTavernSlideAim();tavernSlideGame=null;setMode(target);SFX.duck();}
 function beginTavernSlideMatch(){
   const t=tavernSlideGame;if(!t)return;const best=t.best||0,playerFirst=rnd()<.5;
   Object.assign(t,{phase:'coinToss',phaseT:0,first:playerFirst?'player':'ai',coinFace:playerFirst?'CROWN':'BARREL',
     shotIndex:0,mugs:[],gesture:null,shotActive:false,settleT:0,aiDelay:TAVERN_SLIDE_RULES.aiThinkTime,
-    result:null,feedback:'THE COIN CHOOSES THE OPENING SHOT',feedbackCol:'#ffe36a',impactT:0,lastPower:0,best});SFX.tavernCoin();
+    result:null,feedback:'THE COIN CHOOSES THE OPENING SHOT',feedbackCol:'#ffe36a',impactT:0,lastPower:0,best,physicsAccumulator:0,aiPlan:null});SFX.tavernCoin();
 }
 function tavernCanPlayerAim(){const t=tavernSlideGame;return mode==='tavernslide'&&t&&!paused&&t.phase==='playing'&&!t.shotActive&&tavernCurrentOwner(t)==='player';}
 function beginTavernSlideAim(cx,cy){
-  if(!tavernCanPlayerAim())return false;const pt=toGame(cx,cy),launch=tavernLaunchPoint('player');
-  if(Math.hypot(pt.x-launch.x,pt.y-launch.y)>64)return false;
+  if(!tavernCanPlayerAim())return false;const pt=toGame(cx,cy),world=tavernLaunchPoint('player'),launch=KRTavernPhysics.project(world.x,world.y);
+  const mugScale=launch.scale*TAVERN_SLIDE_RULES.mugRadius/17;
+  if(Math.hypot(pt.x-launch.x,pt.y-launch.y)>64&&
+     !(pt.x>=launch.x-23*mugScale&&pt.x<=launch.x+35*mugScale&&pt.y>=launch.y-44*mugScale*TAVERN_SLIDE_RULES.mugHeightScale&&pt.y<=launch.y+12*mugScale))return false;
   tavernSlideGame.gesture={start:{x:pt.x,y:pt.y},current:{x:pt.x,y:pt.y},startMs:performance.now(),samples:[{x:pt.x,y:pt.y,ms:performance.now()}]};
   tavernSlideGame.feedback='PULL BACK TOWARD YOU - RELEASE TO SLIDE';tavernSlideGame.feedbackCol='#9fd8ff';return true;
 }
@@ -60037,9 +60134,11 @@ function moveTavernSlideAim(cx,cy){const t=tavernSlideGame;if(!t||!t.gesture)ret
 function cancelTavernSlideAim(){if(tavernSlideGame)tavernSlideGame.gesture=null;}
 function tavernShotVelocityFromGesture(gesture,end,releaseMs){
   const pullX=end.x-gesture.start.x,pullY=end.y-gesture.start.y,length=Math.hypot(pullX,pullY);if(pullY<24||length<34)return null;
-  const samples=gesture.samples,last=samples[samples.length-1]||gesture.start,older=samples[Math.max(0,samples.length-3)]||gesture.start,
-    sampleDt=Math.max(.035,(releaseMs-(older.ms||gesture.startMs))/1000),releaseSpeed=Math.hypot(end.x-older.x,end.y-older.y)/sampleDt,
-    power=clamp(length/130*.68+releaseSpeed/980*.32,.05,1),speed=lerp(TAVERN_SLIDE_RULES.minShot,TAVERN_SLIDE_RULES.maxShot,power),nx=-pullX/length,ny=-pullY/length;
+  // Pull distance alone controls strength; invert the near-table projection's
+  // local scale so a diagonal drag also aims diagonally on the physical table.
+  const power=clamp((length-24)/105,0,1),speed=lerp(TAVERN_SLIDE_RULES.minShot,TAVERN_SLIDE_RULES.maxShot,power),
+    start=tavernLaunchPoint('player'),p=KRTavernPhysics.project(start.x,start.y),py=KRTavernPhysics.project(start.x,start.y+1),
+    worldX=-pullX/p.scale,worldY=-pullY/(py.y-p.y),norm=Math.hypot(worldX,worldY),nx=worldX/norm,ny=worldY/norm;
   return{vx:nx*speed,vy:ny*speed,power};
 }
 function endTavernSlideAim(cx,cy){
@@ -60054,14 +60153,14 @@ function launchTavernMug(owner,vx,vy,power=.55){
   t.feedback=owner==='player'?(power>.83?'A ROYAL HEAVE!':power<.24?'A VERY POLITE SLIDE...':'MUG AWAY!'):'BARREL BARRY SENDS ONE';
   t.feedbackCol=owner==='player'?'#9fd8ff':'#ff9a62';SFX.tavernSlide();return true;
 }
-function launchTavernKeyboardShot(){if(!tavernCanPlayerAim())return false;const start=tavernLaunchPoint('player'),dx=TAVERN_SLIDE_RULES.targetX-start.x,dy=TAVERN_SLIDE_RULES.targetY-start.y,d=Math.hypot(dx,dy),speed=Math.sqrt(2*TAVERN_SLIDE_RULES.friction*d)*.99;return launchTavernMug('player',dx/d*speed,dy/d*speed,.58);}
+function launchTavernKeyboardShot(){if(!tavernCanPlayerAim())return false;const t=tavernSlideGame,speed=lerp(TAVERN_SLIDE_RULES.minShot,TAVERN_SLIDE_RULES.maxShot,t.keyPower);return launchTavernMug('player',Math.sin(t.keyAngle)*speed,-Math.cos(t.keyAngle)*speed,t.keyPower);}
 function tavernBestTarget(owner){let best=null,bestScore=0;if(tavernSlideGame)for(const mug of tavernSlideGame.mugs){const score=mug.owner===owner?tavernMugScore(mug):0;if(score>bestScore){best=mug;bestScore=score;}}return best;}
 function launchTavernAiShot(){
   const t=tavernSlideGame;if(!t||t.phase!=='playing'||t.shotActive||tavernCurrentOwner(t)!=='ai')return false;
-  const threat=tavernBestTarget('player'),attack=threat&&tavernMugScore(threat)>=2&&rnd()<.54,target=attack?{x:threat.x+rnd(-9,9),y:threat.y+rnd(-7,7)}:
-    {x:TAVERN_SLIDE_RULES.targetX+rnd(-42,42),y:TAVERN_SLIDE_RULES.targetY+rnd(-22,22)},start=tavernLaunchPoint('ai'),dx=target.x-start.x,dy=target.y-start.y,d=Math.hypot(dx,dy),
-    speed=Math.sqrt(2*TAVERN_SLIDE_RULES.friction*d)*(attack?1.10:rnd(.92,1.05));t.feedback=attack?'BARRY IS LINING UP YOUR MUG!':'BARRY SQUINTS AT THE BULLSEYE';t.feedbackCol='#ffb184';
-  return launchTavernMug('ai',dx/d*speed,dy/d*speed,clamp((speed-TAVERN_SLIDE_RULES.minShot)/(TAVERN_SLIDE_RULES.maxShot-TAVERN_SLIDE_RULES.minShot),0,1));
+  const plan=t.aiPlan;if(!plan||plan.cursor<plan.candidates.length)return false;
+  const shot=KRTavernPhysics.humanizeShot(plan.best,rnd(),rnd(),rnd()),speed=Math.hypot(shot.vx,shot.vy);
+  const launched=launchTavernMug('ai',shot.vx,shot.vy,(speed-TAVERN_SLIDE_RULES.minShot)/(TAVERN_SLIDE_RULES.maxShot-TAVERN_SLIDE_RULES.minShot));
+  t.feedback=shot.label.includes('TAKEOUT')?'BARRY ATTACKS YOUR MUG':shot.label.includes('BANK')?'BARRY PLAYS THE CUSHION':shot.label==='PROMOTION'?'BARRY PUSHES HIS OWN MUG':shot.label==='GUARD'?'BARRY LEAVES A GUARD':'BARRY DRAWS INTO THE RINGS';t.aiPlan=null;return launched;
 }
 function knockTavernMugOff(mug){if(!mug.onTable)return;mug.onTable=false;mug.fallT=0;mug.vx*=.42;mug.vy*=.42;mug.spin*=2.2;const t=tavernSlideGame;t.feedback=(mug.owner==='player'?'YOUR':'BARRY\'S')+' MUG LEFT THE TABLE!';t.feedbackCol=mug.owner==='player'?'#ff655c':'#7df078';SFX.tavernClack(1);shake(4,.16);}
 function resolveTavernCollisions(){
@@ -60070,12 +60169,13 @@ function resolveTavernCollisions(){
   if(loudest>38){t.impactT=.28;t.impactX=hitX;t.impactY=hitY;SFX.tavernClack(clamp(loudest/360,0,1));shake(clamp(loudest/75,1.5,5),.11);}
 }
 function updateTavernMugPhysics(dt){
-  const t=tavernSlideGame;let moving=false;
-  for(const mug of t.mugs){if(!mug.onTable){mug.fallT+=dt;mug.x+=mug.vx*dt;mug.y+=mug.vy*dt+110*mug.fallT*dt;mug.angle+=mug.spin*dt;mug.alpha=Math.max(0,1-mug.fallT*1.4);continue;}const speed=Math.hypot(mug.vx,mug.vy);if(speed>0){const next=Math.max(0,speed-TAVERN_SLIDE_RULES.friction*dt),ratio=speed?next/speed:0;mug.x+=mug.vx*dt;mug.y+=mug.vy*dt;mug.vx*=ratio;mug.vy*=ratio;mug.angle+=mug.spin*dt;mug.spin*=Math.pow(.35,dt);if(next>TAVERN_SLIDE_RULES.stopSpeed)moving=true;else{mug.vx=0;mug.vy=0;}}
-    const bounds=tavernTableBounds(mug.y),r=TAVERN_SLIDE_RULES.mugRadius*tavernMugScale(mug.y);if(mug.y<TAVERN_SLIDE_RULES.tableTop-r||mug.y>TAVERN_SLIDE_RULES.tableBottom+r||mug.x<bounds.left-r*.25||mug.x>bounds.right+r*.25)knockTavernMugOff(mug);
+  const t=tavernSlideGame;t.physicsAccumulator+=Math.min(dt,.1);let loudest=0;
+  while(t.physicsAccumulator>=TAVERN_SLIDE_RULES.step){t.physicsAccumulator-=TAVERN_SLIDE_RULES.step;const step=KRTavernPhysics.step(t.mugs);
+    if(step.impact>loudest){loudest=step.impact;t.impactX=step.hitX;t.impactY=step.hitY;}
+    if(step.fallen){t.feedback='OFF THE END! THAT MUG SCORES NOTHING';t.feedbackCol='#ffb184';}
+    if(t.shotActive){if(step.moving)t.settleT=0;else if((t.settleT+=TAVERN_SLIDE_RULES.step)>=TAVERN_SLIDE_RULES.settleTime)finishTavernShot();}
   }
-  resolveTavernCollisions();for(const mug of t.mugs)if(mug.onTable&&Math.hypot(mug.vx,mug.vy)>TAVERN_SLIDE_RULES.stopSpeed)moving=true;
-  if(t.shotActive){if(moving)t.settleT=0;else if((t.settleT+=dt)>=TAVERN_SLIDE_RULES.settleTime)finishTavernShot();}
+  if(loudest>38){t.impactT=.16;SFX.tavernClack(clamp(loudest/360,0,1));}
 }
 function finishTavernShot(){
   const t=tavernSlideGame;if(!t||!t.shotActive)return;t.shotActive=false;t.settleT=0;t.shotIndex++;for(const mug of t.mugs){mug.vx=0;mug.vy=0;}
@@ -60085,9 +60185,10 @@ function finishTavernShot(){
 function finishTavernMatch(){const t=tavernSlideGame,score=tavernScores(),winner=score.player>score.ai?'player':score.ai>score.player?'ai':'tie';t.phase='result';t.phaseT=0;t.result={player:score.player,ai:score.ai,winner};const matchScore=winner==='player'?100: winner==='tie'?55:25;t.best=Math.max(t.best,matchScore);t.feedback=winner==='player'?'TABLE CHAMPION!':winner==='ai'?'BARRY OWNS THE TABLE':'A PERFECTLY MESSY DRAW';t.feedbackCol=winner==='player'?'#7df078':winner==='ai'?'#ff655c':'#ffe36a';SFX.tavernScore();}
 function tavernSlideTap(pt){const t=tavernSlideGame;if(!t)return;if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveTavernSlide();return;}if((t.phase==='intro'||t.phase==='result')&&pointInRect(pt,TAVERN_SLIDE_START_BTN))beginTavernSlideMatch();}
 function updateTavernSlide(dt){
-  const t=tavernSlideGame;if(!t)return;t.phaseT+=dt;t.impactT=Math.max(0,t.impactT-dt);
+  const t=tavernSlideGame;if(!t)return;const previousPhaseT=t.phaseT;t.phaseT+=dt;t.impactT=Math.max(0,t.impactT-dt);
+  if(t.phase==='coinToss')for(let i=0;i<TAVERN_SLIDE_RULES.coinImpacts.length;i++){const at=TAVERN_SLIDE_RULES.coinImpacts[i];if(previousPhaseT<at&&t.phaseT>=at)SFX.tavernClack([.5,.25,.12][i]);}
   if(t.phase==='coinToss'&&t.phaseT>=TAVERN_SLIDE_RULES.coinTossTime){t.phase='playing';t.phaseT=0;t.aiDelay=TAVERN_SLIDE_RULES.aiThinkTime;t.feedback=t.first==='player'?'CROWN - YOU SLIDE FIRST!':'BARREL - BARRY SLIDES FIRST!';t.feedbackCol=t.first==='player'?'#9fd8ff':'#ffb184';}
-  if(t.phase==='playing'){updateTavernMugPhysics(dt);if(!t.shotActive&&tavernCurrentOwner(t)==='ai'){t.aiDelay-=dt;if(t.aiDelay<=0)launchTavernAiShot();}}
+  if(t.phase==='playing'){updateTavernMugPhysics(dt);if(!t.shotActive&&tavernCurrentOwner(t)==='ai'){t.aiDelay-=dt;if(!t.aiPlan)t.aiPlan=KRTavernPhysics.plan(t.mugs);const ready=KRTavernPhysics.advancePlan(t.aiPlan,4);if(ready&&t.aiDelay<=0)launchTavernAiShot();}}
   else if(t.phase==='resolving'){updateTavernMugPhysics(dt);if(t.phaseT>=.92)finishTavernMatch();}
 }
 function drawTavernSlideBackground(){
@@ -60119,8 +60220,20 @@ function drawTavernHud(){
   for(const side of [{owner:'player',x:146,col:'#65b9e8'},{owner:'ai',x:286,col:'#dc674b'}]){const used=t.mugs.filter(m=>m.owner===side.owner).length;for(let i=0;i<3;i++){g.globalAlpha=i<used?.25:1;g.fillStyle=side.col;g.fillRect(side.x+i*14,86,9,7);g.globalAlpha=1;}}
 }
 function drawTavernCoinToss(){const t=tavernSlideGame,p=clamp(t.phaseT/TAVERN_SLIDE_RULES.coinTossTime,0,1),y=lerp(526,330,Math.sin(p*Math.PI)),wide=Math.max(.10,Math.abs(Math.cos(p*Math.PI*5)));g.fillStyle='#05070caa';g.fillRect(54,292,372,188);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(54,292,372,188);g.save();g.translate(240,y);g.scale(wide,1);g.fillStyle='#e7ad37';g.beginPath();g.arc(0,0,42,0,TAU);g.fill();g.strokeStyle='#fff0a0';g.lineWidth=5;g.stroke();g.fillStyle='#7b4f17';g.font='bold 23px monospace';g.textAlign='center';g.fillText(p>.82?(t.first==='player'?'C':'B'):'?',0,8);g.restore();g.textAlign='center';g.font='bold 20px monospace';g.fillStyle='#ffe36a';g.fillText(p>.82?(t.first==='player'?'CROWN - YOU GO FIRST!':'BARREL - BARRY GOES FIRST!'):'CALLING THE FIRST SLIDE...',240,446);}
-function drawTavernSlidePreview(r){g.fillStyle='#542f20';g.fillRect(r.x+3,r.y+3,r.w-6,105);g.fillStyle='#8a5732';g.beginPath();g.moveTo(r.x+25,r.y+8);g.lineTo(r.x+r.w-25,r.y+8);g.lineTo(r.x+r.w-3,r.y+105);g.lineTo(r.x+3,r.y+105);g.fill();for(let i=2;i>=0;i--){g.globalAlpha=.18;g.fillStyle=['#ffe36a','#e8e2d0','#c74c4c'][i];g.beginPath();g.ellipse(r.x+r.w/2,r.y+52,[19,35,52][i],[10,17,25][i],0,0,TAU);g.fill();g.globalAlpha=1;}drawTavernMug({owner:'player',x:r.x+60,y:r.y+76,angle:.2,alpha:1});drawTavernMug({owner:'ai',x:r.x+r.w-55,y:r.y+47,angle:-.2,alpha:1});g.fillStyle='#ffe36a';g.font='bold 9px monospace';g.textAlign='center';g.fillText('CLONK!',r.x+r.w/2,r.y+101);}
+let tavernSlidePreviewImage=null;
+function drawTavernSlidePreview(r){
+  // One small menu-only bitmap, no event plate/module preload or live AI work.
+  if(!tavernSlidePreviewImage){tavernSlidePreviewImage=new Image();tavernSlidePreviewImage.src='assets/encounters/tavern-slide-preview-v2.png';}
+  g.save();try{
+    g.fillStyle='#684529';g.fillRect(r.x+3,r.y+3,r.w-6,105);
+    if(tavernSlidePreviewImage.complete&&tavernSlidePreviewImage.naturalWidth){
+      g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+      g.drawImage(tavernSlidePreviewImage,r.x+3,r.y+3,r.w-6,105);
+    }
+  }finally{g.restore();}
+}
 function drawTavernSlideGame(){
+  if(tavernSlideGame&&drawTavernPresentation('slide'))return;
   const t=tavernSlideGame;if(!t)return;drawTavernSlideBackground();drawTavernRival();drawTavernTable();const sorted=t.mugs.slice().sort((a,b)=>a.y-b.y);for(const mug of sorted)drawTavernMug(mug);if(t.phase==='playing'&&!t.shotActive){const owner=tavernCurrentOwner(t);drawTavernMug({owner,x:tavernLaunchPoint(owner).x,y:tavernLaunchPoint(owner).y,angle:0,alpha:1},true);}drawTavernHands();drawTavernAimGuide();
   if(t.impactT>0){const a=t.impactT/.28;g.globalAlpha=a;g.strokeStyle='#fff0b0';g.lineWidth=4;for(let i=0;i<8;i++){const ang=i/8*TAU,len=(1-a)*34+12;g.beginPath();g.moveTo(t.impactX+Math.cos(ang)*8,t.impactY+Math.sin(ang)*5);g.lineTo(t.impactX+Math.cos(ang)*len,t.impactY+Math.sin(ang)*len*.65);g.stroke();}g.globalAlpha=1;}
   drawTavernHud();g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
@@ -60371,7 +60484,7 @@ const MINIGAME_SYSTEM_AUDIT=(()=>{
   const tavernScoreFixture=[{owner:'player',x:TAVERN_SLIDE_RULES.targetX,y:TAVERN_SLIDE_RULES.targetY,onTable:true},
     {owner:'player',x:TAVERN_SLIDE_RULES.targetX+56,y:TAVERN_SLIDE_RULES.targetY,onTable:true},
     {owner:'ai',x:TAVERN_SLIDE_RULES.targetX+95,y:TAVERN_SLIDE_RULES.targetY,onTable:true}];
-  if(TAVERN_SLIDE_RULES.mugsEach!==3||TAVERN_SLIDE_RULES.rings.join('-')!=='38-74-112'||
+  if(TAVERN_SLIDE_RULES.mugsEach!==3||TAVERN_SLIDE_RULES.rings.join('-')!=='38-88-132'||
      TAVERN_SLIDE_RULES.scores.join('-')!=='3-2-1'||TAVERN_SLIDE_RULES.friction<=0||
      TAVERN_SLIDE_RULES.restitution<=0||TAVERN_SLIDE_RULES.restitution>=1||
      tavernMugScore(tavernScoreFixture[0])!==3||tavernMugScore(tavernScoreFixture[1])!==2||
@@ -60428,7 +60541,7 @@ const MINIGAME_MODES=new Map([
   ['findqueen',{draw:drawFindQueenGame,update:updateFindQueen}],
   ['chickenrace',{draw:drawChickenRaceGame,update:updateChickenRace}],
   ['logbalance',{draw:drawLogBalanceGame,update:updateLogBalance}],
-  ['lockpicking',{draw:drawLockpickingGame,update:updateLockpicking}],
+  ['lockpicking',{draw:()=>drawLockpickingGame(),update:dt=>updateLockpicking(dt)}],
   ['drinkingcontest',{draw:drawDrinkingContestGame,update:updateDrinkingContest}],
   ['wishingwell',{draw:drawWishingWellGame,update:updateWishingWell}],
   ['bouldering',{draw:drawBoulderingGame,update:updateBouldering}],
@@ -60658,6 +60771,14 @@ function handleMinigameKeyDown(e){
     e.preventDefault();if(!e.repeat&&pickpocketGame){
       if(pickpocketGame.phase==='intro'||pickpocketGame.phase==='result')beginPickpocketRun();
       else if(e.key===' '&&pickpocketGame.phase==='playing')beginPickpocketHold(null,null,true);
+    }return true;
+  }
+  if(mode==='tavernslide'&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    e.preventDefault();if(tavernCanPlayerAim()){const t=tavernSlideGame;
+      if(e.key==='ArrowLeft')t.keyAngle=clamp(t.keyAngle-.045,-1.12,1.12);
+      if(e.key==='ArrowRight')t.keyAngle=clamp(t.keyAngle+.045,-1.12,1.12);
+      if(e.key==='ArrowUp')t.keyPower=clamp(t.keyPower+.025,0,1);
+      if(e.key==='ArrowDown')t.keyPower=clamp(t.keyPower-.025,0,1);
     }return true;
   }
   if(mode==='tavernslide'&&(e.key===' '||e.key==='Enter')){
@@ -64045,6 +64166,7 @@ function drawSmithTableCard(i){
 }
 function drawShop(){
   const shop=blacksmithShop;if(!shop)return;
+  if(shop.roadToken&&window.KRBasaltForge)return KRBasaltForge.drawUI(shop);
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
   g.fillStyle='#0e111a';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   drawSmithScene(shop,true);
@@ -64802,6 +64924,9 @@ function openMerchantShop(visitId='stage:'+loop,environment=biome){
   }
   merchantShop={visitId,stock:visit.stock,environment:environment||'forest',selected:0,phase:'browse',clock:0,returnMode,lab:false,message:'',last:null};
   setMode('merchant');
+  // Town keeps its own native interior. Road and standalone travelling visits
+  // share one managed plate, with the road event token owning its lifetime.
+  if(returnMode!=='town'){merchantSceneCache=null;prepareCutscene('autumn-caravan',true,journeyRoadEventSession?.token??'merchant:'+visitId);}
 }
 function openMerchantLab(){
   resetRun();debugRun=true;playerChar=CHARS[0];charSel=0;syncPlayerVitals(true);
@@ -64865,6 +64990,7 @@ function updateMerchantShop(dt){
 }
 function merchantTap(pt){
   const s=merchantShop;if(!s||mode!=='merchant'||paused||s.phase!=='browse')return false;
+  if(!s.townId&&window.KRAutumnCaravan)return KRAutumnCaravan.tap(pt);
   for(let i=0;i<4;i++)if(pointInRect(pt,merchantProductRect(i))){s.selected=i;s.message='';SFX.swipe();return true;}
   if(pointInRect(pt,MERCHANT_BUY))return buyMerchantItem();
   if(pointInRect(pt,MERCHANT_REROLL))return rerollMerchantStock();
@@ -65172,8 +65298,8 @@ function drawMerchantDriver(){
   townStroke([[360,188],[386,213],[414,238],[448,246]],'#b8a071',.85);
   townStroke([[358,190],[381,219],[411,245],[447,248]],'#6f7350',.85);
 }
-function drawMerchantCampStatic(){
-  MERCHANT_ENVIRONMENTS.get(merchantEnvironmentKey())();drawMerchantWagon();
+function drawMerchantCampStatic(background=true){
+  if(background)MERCHANT_ENVIRONMENTS.get(merchantEnvironmentKey())();drawMerchantWagon();
   // Shafts attach to the frame and run either side of the horse's harness.
   townStroke([[333,256],[382,287],[408,283]],'#553f28',4);
   townStroke([[334,255],[381,285],[408,281]],'#a27f49',1.3);
@@ -65184,6 +65310,7 @@ function drawMerchantCampStatic(){
 }
 let merchantSceneCache=null;
 function merchantBackdrop(){
+  if(window.KRCutscenes?.draw('autumn-caravan',perfNow)){drawMerchantCampStatic(false);return;}
   const scale=Math.max(1,viewScale)*1.18,key=[merchantEnvironmentKey(),scale,PAD_TOP,PAD_BOT].join(':');
   if(!merchantSceneCache||merchantSceneCache.key!==key){
     const canvas=document.createElement('canvas');canvas.width=Math.ceil(480*scale);canvas.height=Math.ceil((800+PAD_TOT)*scale);
@@ -65297,6 +65424,7 @@ function drawMerchantCart(s){
 }
 function drawMerchantShop(){
   const s=merchantShop;if(!s)return;
+  if(!s.townId&&window.KRAutumnCaravan){KRAutumnCaravan.drawShop();return;}
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
   if(s.townId)drawTownShopInterior(s);else drawMerchantCart(s);
   merchantGoldLabel(gold,s.townId?388:400,s.townId?344:366,13,'#ffe09b','',s.townId?68:120);
@@ -67750,7 +67878,15 @@ function buildWorldDrawQueue(stage,newForest){
 }
 function drawModeScreen(){
   // Photo mode has no HUD, menus, labels or lab controls.
-  if(pausePhotoMode)return;
+  if(pausePhotoMode){
+    // Keep the physical chest/lock visible; only its interface is hidden.
+    if(window.KRTreasureRoad){
+      if(mode==='lockpicking')KRTreasureRoad.drawGame();
+      else if(mode==='journeyevent'&&journeyRoadEventSession?.context.loot)
+        KRTreasureRoad.drawLoot(journeyRoadEventSession.context);
+    }
+    return;
+  }
   const drawScreen=FULLSCREEN_RENDERERS.get(mode);
   if(drawScreen){drawScreen();drawJourneyEventControls();drawJourneyRoadEvent();return;}
   // HUD coordinates never inherit world shake or sprite rounding.
@@ -67852,8 +67988,8 @@ function renderFrame(){
     worldFxShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(worldFxShakeX,worldFxShakeY);
   }
-  const cutsceneId=JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
-  const opaqueCutscene=!pausePhotoMode&&mode==='journeyevent'&&journeyRoadEventSession?.context.dialogue&&
+  const cutsceneId=journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
+  const opaqueCutscene=!pausePhotoMode&&mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn)&&
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
   if(!['shop','merchant','town'].includes(mode)&&!opaqueCutscene){
   const battleWorldCached=window.KRSunlitForest?.drawBattleWorld(stage,newForest);
@@ -67964,6 +68100,7 @@ if(BOOT_QUERY.get('smithlab')==='1')openBlacksmithLab();
 if(BOOT_QUERY.get('forgelab')==='1')startSwordMending('forest','minigames');
 if(BOOT_QUERY.get('forgeclassic')==='1')startBlacksmith('forest','minigames');
 if(BOOT_QUERY.get('discolab')==='1')startDiscoDance('forest','minigames');
+if(BOOT_QUERY.get('tavernslidelab')==='1')startTavernSlide('forest','minigames');
 if(BOOT_QUERY.get('merchantlab')==='1')openMerchantLab();
 if(BOOT_QUERY.get('townlab')==='1')openTownLab();
 if(BOOT_QUERY.get('roadlab')==='1')openRoadLab();
@@ -68245,14 +68382,17 @@ if(BOOT_QUERY.get('backgroundplaytest')==='1'){
   const preview=document.createElement('script');preview.src='tools/background-playtest.js';
   document.body.appendChild(preview);
 }else if(BOOT_QUERY.get('backgroundlab')==='1'){
-  const backgroundLab=document.createElement('script');backgroundLab.src=BOOT_QUERY.get('backgroundVersion')==='v1'?'tools/background-lab-runtime.js':'tools/background-blockout-lab.js';
+  const backgroundLab=document.createElement('script');backgroundLab.src=['mossy-inn','autumn-caravan'].includes(BOOT_QUERY.get('scene'))?'tools/service-background-lab.js':BOOT_QUERY.get('scene')==='basalt-forge'?'tools/forge-background-lab.js':BOOT_QUERY.get('backgroundVersion')==='v1'?'tools/background-lab-runtime.js':'tools/background-blockout-lab.js';
   document.body.appendChild(backgroundLab);
 }else if(BOOT_QUERY.get('artlab')==='1'){
   const artRegistry=document.createElement('script');
   artRegistry.src='art-source/knight-rush-sharp-plane/art-references.js';
   artRegistry.onload=()=>{
-    const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';
-    document.body.appendChild(artLab);
+    const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
+    basalt.onload=()=>{const caravan=document.createElement('script');caravan.src='assets/forest/autumn-caravan.js';caravan.onload=()=>{
+      const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=()=>{const barry=document.createElement('script');barry.src='assets/encounters/tavern-slide.js';barry.onload=()=>{const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';document.body.appendChild(artLab);};document.body.appendChild(barry);};document.body.appendChild(inn);
+    };document.body.appendChild(caravan);};
+    document.body.appendChild(basalt);
   };
   document.body.appendChild(artRegistry);
 }else if(BOOT_QUERY.get('morninglab')==='1'){
@@ -68264,19 +68404,37 @@ if(BOOT_QUERY.get('backgroundplaytest')==='1'){
   forestRenderer.onload=()=>{
     const loadJourney=()=>{
       const journeyForestRenderer=document.createElement('script');journeyForestRenderer.src='assets/forest/journey-forest.js';
-      journeyForestRenderer.onload=()=>requestAnimationFrame(frame);
+      journeyForestRenderer.onload=()=>{
+        if(BOOT_QUERY.get('roadcreatorlab')==='1'){
+          const lab=document.createElement('script');lab.src='tools/road-creator-lab.js';document.body.appendChild(lab);
+        }else{
+          const requested=BOOT_QUERY.get('roadcase');
+          if(BOOT_QUERY.get('roadlab')==='1'&&requested)startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.theme===requested));
+          requestAnimationFrame(frame);
+        }
+      };
       journeyForestRenderer.onerror=()=>{console.error('Journey forest adapter could not load');requestAnimationFrame(frame);};
       document.body.appendChild(journeyForestRenderer);
     };
     const discoGrove=document.createElement('script');discoGrove.src='assets/forest/disco-grove.js';
-    discoGrove.onload=loadJourney;
+    const loadBasalt=()=>{
+      const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
+      const loadCaravan=()=>{const script=document.createElement('script');script.src='assets/forest/autumn-caravan.js';
+        const loadInn=()=>{const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=loadJourney;inn.onerror=loadJourney;document.body.appendChild(inn);};
+        script.onload=loadInn;script.onerror=()=>{console.error('Autumn caravan could not load');loadInn();};document.body.appendChild(script);};
+      const loadTreasure=()=>{const script=document.createElement('script');script.src='assets/forest/treasure-road.js';
+        script.onload=loadCaravan;script.onerror=()=>{console.error('Treasure road could not load');loadCaravan();};document.body.appendChild(script);};
+      basalt.onload=loadTreasure;basalt.onerror=()=>{console.error('Basalt forge art could not load');loadTreasure();};
+      document.body.appendChild(basalt);
+    };
+    discoGrove.onload=loadBasalt;
     discoGrove.onerror=()=>{console.error('Disco grove art could not load');loadJourney();};
     document.body.appendChild(discoGrove);
   };
   forestRenderer.onerror=()=>{console.error('Sunlit forest renderer could not load');requestAnimationFrame(frame);};
   document.body.appendChild(forestRenderer);
 }
-if(BOOT_QUERY.get('artlab')!=='1'&&BOOT_QUERY.get('backgroundlab')!=='1'&&typeof Image!=='undefined'&&!forestTreeGalleryMode){
+if(BOOT_QUERY.get('artlab')!=='1'&&BOOT_QUERY.get('backgroundlab')!=='1'&&BOOT_QUERY.get('roadcreatorlab')!=='1'&&typeof Image!=='undefined'&&!forestTreeGalleryMode){
   setInterval(()=>{if(forestCorridor&&!forestPreparing)prepareForestBaked();},750);
 }
 bootCheckpoint('script-complete');
