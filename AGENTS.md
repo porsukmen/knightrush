@@ -2,6 +2,14 @@
 
 The game lives in `KnightRush.html`. Preserve unrelated working-tree changes.
 
+## UI tasks
+
+Use `tools/skills/knight-rush-ui/SKILL.md` for menu, HUD, service and minigame UI.
+Start with standalone `UILab.html`. Treasure Chest is the sole approved UI
+reference: use its classic brown/cream palette and lower parchment sheets in
+every venue. Tavern/minigame UI reference approval is withdrawn for now.
+Keep common geometry/interaction conventions and UI approval separate from art.
+
 ## Art tasks
 
 For character, item, environment, or animation artwork, use
@@ -13,7 +21,9 @@ full-scene screenshots as character/style references. Character references
 exclude their backgrounds and UI; technical baselines remain protected.
 
 Original knight/boss/miniboss massing is the foundation. Approved merchant and
-revamped Disco King provide NPC detail, expression and material references.
+Duke and Royal Shuffle dealer provide NPC detail, expression and material references.
+Disco King is withdrawn as a character reference; Oakbreaker is excluded.
+Their game assets remain; Disco road biome approval is separate.
 Prototypes, rejected work, and old minigame placeholders are not style anchors.
 Do not equate a passing render test with aesthetic approval.
 

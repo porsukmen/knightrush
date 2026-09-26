@@ -74,6 +74,12 @@
     const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'wolf-den-forest':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenForest',
+          assetId:'wolf-den-forest',drawMethod:'drawCutscene',opaque:true}),
+        'wolf-den-outside':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenOutside',
+          assetId:'wolf-den-outside',drawMethod:'drawCutscene',opaque:true}),
+        'wolf-den-inside':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenInside',
+          assetId:'wolf-den-inside',drawMethod:'drawCutscene',opaque:true}),
         'royal-shuffle':Object.freeze({module:'assets/encounters/royal-shuffle.js',symbol:'KRRoyalShuffle',
           assetId:'royal-shuffle',drawMethod:'drawCutscene',opaque:true}),
         'tavern-chug':Object.freeze({module:'assets/encounters/tavern-chug.js',symbol:'KRTavernChug',

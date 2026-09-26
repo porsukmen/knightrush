@@ -141,23 +141,26 @@
   L([0,-23],[5,-20],3,k.light);L([6,-16],[10,-13],2,k.dark);g.restore();
  }
  function drawCutscene(){R(0,-PAD_TOP,480,800+PAD_TOT,'#30231c');const im=window.KREventVisuals?.peek('tavern-arm');if(im){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(im,0,80,480,640);g.restore();return true;}R(0,80,480,640,'#75543a');return false;}
- function button(r,label,active=false){cut(r.x,r.y+4,r.w,r.h,'#493022');cut(r.x,r.y,r.w,r.h,active?'#b77b43':'#e1c18a');R(r.x+8,r.y+3,r.w-16,3,active?'#ecc482':'#ffdfab');T(label,r.x+r.w/2,r.y+r.h/2+5,15,'#4a2f20',r.w-15);}
+ function button(r,label,active=false){KRUI.button(g,r,label,'tavern',{selected:active,size:15,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
  function draw(){const s=armWrestleGame;if(!s)return;g.save();try{
   drawCutscene();actor(true,'body',s);table();actor(true,'front',s);player(s);
+  if(pausePhotoMode)return;
   R(0,-PAD_TOP,480,81+PAD_TOP,'#2d231c');T('OAKBREAKER',240,29,23);T('STRONG ARMS. LOUD MOUTH.',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
   const text=s.phase==='intro'?'“Careful. I charge extra for splinters.”':s.phase==='result'?(s.result.win?'“Fine. That one counts.”':'“Other arm next time?”'):s.cue==='windup'?'HE SETS HIS SHOULDER...':s.cue==='surge'?'HOLD YOUR GROUND.':s.cue==='recover'?'HIS GRIP SOFTENS — PUSH!':'He sizes you up.';
-  cut(47,112,386,31,'#38271f');T(text,240,132,12,'#eed8ae');
+  KRUI.panel(g,{x:47,y:112,w:386,h:31},'tavern');T(text,240,132,12,'#eed8ae');
+  KRUI.sheet(g,{x:16,y:516,w:448,h:792+PAD_BOT-516});
+  const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   cut(32,531,416,115,'#35261f');T('OUTLAST THE BRAGGART',240,554,18);
-   ['HOLD to push. RELEASE to catch your breath.','Watch his shoulder: a heavy surge is coming.','Push as he relaxes for a strong counter.','Constant pushing burns you out.'].forEach((t,i)=>T(t,240,579+i*17,10));button(ARM_WRESTLE_START_BTN,'LOCK HANDS');
+   paperText('OUTLAST THE BRAGGART',240,554,18);
+   ['HOLD to push. RELEASE to catch your breath.','Watch his shoulder: a heavy surge is coming.','Push as he relaxes for a strong counter.','Constant pushing burns you out.'].forEach((t,i)=>paperText(t,240,579+i*17,10));button(ARM_WRESTLE_START_BTN,'LOCK HANDS');
   }else if(s.phase==='result'){
-   cut(32,544,416,100,'#35261f');T(s.result.win?'YOU BROKE HIS STREAK.':'THE OAK STILL BELONGS TO HIM.',240,573,17);
-   T(Math.round(s.result.time)+' SECONDS  /  '+s.result.counters+' COUNTERS',240,604,12);button(ARM_WRESTLE_REPLAY_BTN,'REMATCH');
+   paperText(s.result.win?'YOU BROKE HIS STREAK.':'THE OAK STILL BELONGS TO HIM.',240,573,17);
+   paperText(Math.round(s.result.time)+' SECONDS  /  '+s.result.counters+' COUNTERS',240,604,12);button(ARM_WRESTLE_REPLAY_BTN,'REMATCH');
   }else{
-   cut(42,591,396,53,'#35261f');T('YOUR STAMINA',240,608,10);cut(75,618,330,14,'#574133');
+   paperText('YOUR STAMINA',240,608,10);KRUI.panel(g,{x:75,y:618,w:330,h:14},'tavern');
    R(79,621,322*s.energy,8,s.energy<.22?'#d57f51':'#d8bd79');
    const label=s.phase==='ready'?(s.phaseT<.7?'ELBOWS DOWN...':'READY...'):s.phase==='pinning'?'DOWN!':s.held?'PUSHING — RELEASE TO REST':'HOLD TO PUSH';
-   button(holdRect,label,s.held);T(s.counterT>0?'COUNTER!':s.energy<.22?'BREATHE. YOU ARE LOSING STRENGTH.':'Release during his surge. Catch his recovery.',240,754,11);
+   button(holdRect,label,s.held);paperText(s.counterT>0?'COUNTER!':s.energy<.22?'BREATHE. YOU ARE LOSING STRENGTH.':'Release during his surge. Catch his recovery.',240,754,11);
   }
  }finally{g.restore();}}
  window.KRTavernArm={assetId:'tavern-arm',drawCutscene,draw,actor,pose,materials,table,player,knightMaterials,holdRect};

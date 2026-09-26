@@ -412,12 +412,8 @@
   return roadServiceChoice(action,pt);
  }
  function button(r,label,price=null,enabled=true){
-  const {x,y,w,h}=r;
-  P([[x+6,y+4],[x+w-6,y+4],[x+w,y+10],[x+w,y+h],[x+5,y+h+5],[x,y+h-1],[x,y+10]],'#1d201a');
-  P([[x+5,y],[x+w-5,y],[x+w,y+5],[x+w,y+h-5],[x+w-5,y+h],[x+5,y+h],[x,y+h-5],[x,y+5]],enabled?'#ded2a2':'#938975');
-  L(x+8,y+4,x+w-8,y+4,2,'#f3e6bd');L(x+7,y+h-3,x+w-7,y+h-3,2,'#9c824f');
-  if(price===null)smithText(label,x+w/2,y+h/2+5,13,'#3d3828',w-20);
-  else{smithText(label,x+w/2,y+20,13,'#3d3828',w-20);merchantGoldLabel(price,x+w/2,y+39,11,'#59432a','',90);}
+  const p=KRUI.theme('tavern');KRUI.button(g,r,price===null?label:'','tavern',{enabled,size:13,variant:label==='BACK TO THE ROAD'?'secondary':undefined});
+  if(price!==null){smithText(label,r.x+r.w/2,r.y+20,13,enabled?p.ink:p.mutedInk,r.w-20);merchantGoldLabel(price,r.x+r.w/2,r.y+39,11,enabled?p.ink:p.mutedInk,'',90);}
  }
  function drawScene(lit=true){
   if(!drawCutscene()){
@@ -434,14 +430,15 @@
  }
  function drawInterior(context,lit=true){
   drawScene(lit);
-  R(0,447,480,353+PAD_BOT,'#302820');
-  P([[20,33],[458,33],[466,67],[450,80],[22,80],[13,47]],'#344d3a');L(25,37,452,37,2,'#c4a365');
+  R(0,447,480,353+PAD_BOT,KRUI.theme('tavern').dark);
+  KRUI.sheet(g,{x:16,y:447,w:448,h:345+PAD_BOT});
+  KRUI.panel(g,{x:13,y:33,w:453,h:47},'tavern');
   smithText('THE MOSSY OAK',240,62,22,'#f0d7a0',410);
-  smithText('"Welcome, traveller. A room or a game?"',240,480,12,'#e1c99d',430);
-  merchantGoldLabel(gold,405,513,13,'#f2d17e');
+  smithText('"Welcome, traveller. A room or a game?"',240,480,12,KRUI.theme().ink,430);
+  merchantGoldLabel(gold,405,513,13,KRUI.theme().ink);
   button(ROAD_SERVICE_BUTTONS[0],context.inn.rested?'WELL RESTED':'A ROOM AND A HOT MEAL, PLEASE',18+loop*4,!context.inn.rested&&player.currentHealthUnits<player.maxHealthUnits&&gold>=18+loop*4);
   button(ROAD_SERVICE_BUTTONS[1],'ANY GAMES GOING?',5,gold>=5);
-  smithText(context.notice||'"Beds are ready. The regulars need another player."',240,679,11,'#d5bd95',422);
+  smithText(context.notice||'"Beds are ready. The regulars need another player."',240,679,11,KRUI.theme().paperSoft,422);
   button(ROAD_SERVICE_BUTTONS[2],'BACK TO THE ROAD');
  }
  window.KRMossyInn={assetId:'mossy-inn',drawCutscene,drawScene,drawInterior,keeper,keeperPose,keeperMaterials,choice,site,layout,queueView,floorDetails,pavingColors,hazard,UI};

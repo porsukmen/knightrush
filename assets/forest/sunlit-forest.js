@@ -9,7 +9,7 @@
     vignette:drawVignette,particles:drawParticles,status:drawForestTestStatus,reset:resetRun,mode:setMode,
     masked:drawGroundMaskedWorldItem,rider:drawRider,player:drawPlayer,queue:buildWorldDrawQueue};
   const labMode=new URLSearchParams(location.search).get('morninglab')==='1';
-  const journeyForest=()=>journeyForestStyle!=='classic'&&!forestCorridor&&runJourneyPrototype&&!!journeyRoute&&!!journey&&
+  const journeyForest=()=>!forestCorridor&&runJourneyPrototype&&!!journeyRoute&&!!journey&&
     biome==='forest'&&env==='forest'&&curvedWorldActive();
   const active=()=>!!forestCorridor?.morning||(!labMode&&journeyForest());
   const R=n=>sRnd(n+state.seed),half=CURVED_ROAD_HALF;
@@ -560,7 +560,7 @@
     nativeCache.lastYaw=yaw;
     // Settling also changes yaw. Repainting and uploading a screen-sized
     // cache every settling frame cost more than these few native paths.
-    if(journey.phase==='turning'||moving||materialPalette?.continuous){paintBackground();return;}
+    if(journey?.phase==='turning'||moving||materialPalette?.continuous){paintBackground();return;}
     const key=viewScale+':'+PAD_TOP+':'+yaw+':'+(materialPalette?.id||'forest');
     let cached=nativeCache.background;
     if(cached?.key!==key){

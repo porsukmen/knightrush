@@ -23,6 +23,8 @@
 <canvas id="game"></canvas>
 <!-- invisible probe: measures the notch / dynamic-island inset so the HUD can dodge it -->
 <div id="safe" style="position:fixed;top:0;left:0;width:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden"></div>
+<script src="assets/ui/knight-rush-ui.js"></script>
+<script src="assets/ui/menu-map-paper.js"></script>
 <script src="assets/encounters/tavern-slide-physics.js"></script>
 <script src="assets/encounters/duke-bluff-core.js"></script>
 <script src="assets/encounters/tavern-coin.js"></script>
@@ -550,7 +552,7 @@ function toGame(cx,cy){
 
 /* ============================== 4. AUDIO (synthesized) ============================== */
 const SFX=(()=>{
-  let ac=null, master=null, muted=false, testMuted=false, vol=0.5; // vol 0..1 (0.5 = old loudness)
+  let ac=null, master=null, muted=true, testMuted=false, vol=0.5; // Start silent; M/settings can enable sound.
   try{ const s=parseFloat(localStorage.getItem('kr_vol')); if(!isNaN(s)) vol=clamp(s,0,1); }catch(e){}
   function init(){ if(ac) return; try{
     ac=new (window.AudioContext||window.webkitAudioContext)();
@@ -658,9 +660,12 @@ const SFX=(()=>{
 /* action() receives 'left' | 'right' | 'up' | 'down' | 'tap' (tap carries a point) */
 /* pause button hit-area (drawn in the HUD, top-right under the weapon pool) */
 const PAUSE_BTN={x:VW-52,y:100,w:38,h:38};
-const MENU_RELIC_BTN=Object.freeze({x:75,y:468,w:160,h:42});
-const MENU_MINIGAMES_BTN=Object.freeze({x:245,y:468,w:160,h:42});
-const MENU_PLAY_BTN=Object.freeze({x:75,y:404,w:160,h:50});
+function menuSheetY(){return VH+PAD_BOT-246;}
+const MENU_RELIC_BTN=Object.freeze({x:246,get y(){return menuSheetY()+102;},w:158,h:44});
+const MENU_MINIGAMES_BTN=Object.freeze({x:76,get y(){return menuSheetY()+102;},w:158,h:44});
+const MENU_PLAY_BTN=Object.freeze({x:76,get y(){return menuSheetY()+34;},w:328,h:54});
+const MENU_SETTINGS_BTN=Object.freeze({x:76,get y(){return menuSheetY()+160;},w:158,h:42});
+const MENU_DEBUG_BTN=Object.freeze({x:246,get y(){return menuSheetY()+160;},w:158,h:42});
 const MENU_OLD_FOREST_BTN=Object.freeze({x:245,y:404,w:160,h:50});
 // Presentation only: both entries retain Journey rules, maps and progression.
 // Keep the choice across restarts/seed replays; ordinary PLAY restores sunlit.
@@ -812,6 +817,10 @@ function armSkillLabTooltipHold(start,cx,cy){
   },SKILL_TOOLTIP_HOLD_MS);
   return true;
 }
+function debugKillBossHit(pt){
+  return !!(pt&&!paused&&!settingsOpen&&debugRun&&boss&&!boss._moveLab&&!activeSkillLabCombat()&&mode==='boss'
+    &&pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop);
+}
 function handleAction(a,pt,parryIntent=null,input=null){
   if(roadLabState.active&&a==='tap'&&pt&&pointInRect(pt,{x:348,y:7,w:124,h:30})){openRoadLab();return;}
   if(mode==='roadlab'){if(a==='tap'&&pt)roadLabTap(pt);return;}
@@ -824,6 +833,8 @@ function handleAction(a,pt,parryIntent=null,input=null){
   }
   if(moveTreeOpen){if(a==='tap'&&pt)moveTreeTap(pt);return;}
   if(moveHistoryOpen){if(a==='tap'&&pt)moveHistoryTap(pt);return;}
+  // The debug escape must also work while a parry diagnostic freezes input.
+  if(a==='tap'&&debugKillBossHit(pt)){debugKillBoss();return;}
   if(!paused&&debugParryInputFrozen){
     if(a==='parry'||a==='tap'){
       debugParryInputFrozen=false;debugParryInputMark=null;SFX.swipe();
@@ -860,16 +871,10 @@ function handleAction(a,pt,parryIntent=null,input=null){
   if(mode==='menu'){
     if(a==='tap'&&pt){
       if(pointInRect(pt,MENU_PLAY_BTN)){ uiConfirm(); }
-      else if(pointInRect(pt,MENU_OLD_FOREST_BTN)){ uiConfirm('classic'); }
       else if(pointInRect(pt,MENU_RELIC_BTN)){setMode('relicdex');SFX.swipe();}
       else if(pointInRect(pt,MENU_MINIGAMES_BTN)){openMinigamesMenu();}
-      else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>524&&pt.y<566){
-        menuMsg='brave knight, close the tab to truly leave'; menuMsgT=perfNow+2.5;
-        try{ window.close(); }catch(e){} }
-      else if(pt.x>VW/2-80&&pt.x<VW/2+80&&pt.y>580&&pt.y<612){ setMode('debugcfg'); SFX.swipe(); }
-      else if(pt.x>VW/2-100&&pt.x<VW/2+100&&pt.y>628&&pt.y<664){ startForestCorridorPrepared(); }
-      else if(pt.x>VW-140&&pt.x<VW-10&&pt.y>VH-82&&pt.y<VH-40){ clSel=0; setMode('changelog'); SFX.swipe(); }
-      else if(pt.x>10&&pt.x<140&&pt.y>VH-82&&pt.y<VH-40){ settingsOpen=true; SFX.swipe(); }
+      else if(pointInRect(pt,MENU_DEBUG_BTN)){ setMode('debugcfg'); SFX.swipe(); }
+      else if(pointInRect(pt,MENU_SETTINGS_BTN)){ settingsOpen=true; SFX.swipe(); }
     } else if(a==='up'){ uiConfirm(); }
     return;
   }
@@ -913,8 +918,6 @@ function handleAction(a,pt,parryIntent=null,input=null){
     toggleBearTurntableMouth();return;
   }
   if(a==='tap'&&pt&&activeSkillLabCombat()&&skillLabCombatTap(pt))return;
-  if(a==='tap' && pt && debugRun && boss && !boss._moveLab && !activeSkillLabCombat()&&mode==='boss'
-     && pt.x>VW-128&&pt.x<VW-16&&pt.y>150+uiTop&&pt.y<186+uiTop){ debugKillBoss(); return; }
   /* The command panel owns every tap during the Bear's player phase. A tap
      outside its buttons must never leak through as a parry or Rush input. */
   if(mode==='boss'&&isPlayerTurn()){
@@ -936,7 +939,7 @@ function handleAction(a,pt,parryIntent=null,input=null){
 }
 addEventListener('keydown',e=>{
   if(e.code==='F10'&&!e.repeat&&(roadLabState.active||mode==='roadlab')){openRoadLab();e.preventDefault();return;}
-  if(e.code==='F8'&&!e.repeat){setCurvedWorldTrial(!curvedWorldTrial);e.preventDefault();return;}
+  if(e.code==='F8'&&!e.repeat){e.preventDefault();return;} // Retired renderer toggle; legacy code stays archived.
   if(e.code==='F9'&&!e.repeat){journeyPerf.enabled=!journeyPerf.enabled;e.preventDefault();return;}
   if(paused&&journeyMapOpen&&(e.key==='Escape'||e.key==='p'||e.key==='P')){
     journeyMapOpen=false;e.preventDefault();return;
@@ -1061,6 +1064,7 @@ function clearTapIntent(start=tStart){
 }
 function immediateParryTapEligible(pt){
   if(paused||settingsOpen||(mode!=='boss'&&mode!=='miniboss')) return false;
+  if(debugKillBossHit(pt)) return false;
   if(mode==='boss'&&isPlayerTurn()) return false;
   if(pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&
      pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop) return false;
@@ -2271,7 +2275,7 @@ function drawSerJonathanRider(x,y,scale,o){
     bob=air>0?0:Math.abs(Math.sin(gal))*-.38,
     riderBob=(air>0?-leap*.24:Math.sin(gal*2+.9)*.34)-shieldLunge*.24,
     atk=clamp(o.attack||0,0,1),parry=clamp(o.parry||0,0,1),combo=o.swordCombo||null,
-    swordAction=o.swordAction||null,
+    swordAction=o.swordAction||null,mountedIdle=o.mountedIdle||null,
     bow=o.bowAction||null,bowActive=!shieldActive&&!!(bow&&bow.visible>0),
     counter=clamp(o.counter||0,0,1),callSignal=clamp(o.callSignal||0,0,1),
     squireVariant=!!o.squire,squireHunter=!!o.squireHunter,
@@ -2363,6 +2367,11 @@ function drawSerJonathanRider(x,y,scale,o){
   g.restore();
   /* Symmetric rear silhouette: paired haunches and a central cleft make the
      camera direction unmistakable. */
+  // Menu breathing expands the barrel only; legs and hoof contacts stay planted.
+  g.save();
+  if(mountedIdle){g.translate(9*U,23.4*U);
+    g.scale(1+mountedIdle.horseBreath*.035,1+mountedIdle.horseBreath*.03);
+    g.translate(-9*U,-23.4*U);}
   rigHexagon(1.2,15+bob,4,12.4+bob,8.55,13.2+bob,8.35,22.2+bob,4.1,23.4+bob,1.5,21+bob,horse);
   rigHexagon(9.45,13.2+bob,14,12.4+bob,16.8,15+bob,16.5,21+bob,13.9,23.4+bob,9.65,22.2+bob,horse);
   rigQuad(7.9,13.7+bob,10.1,13.7+bob,9.65,22.4+bob,8.35,22.4+bob,horseD);
@@ -2453,13 +2462,14 @@ function drawSerJonathanRider(x,y,scale,o){
     ])rigPolygon(tick.map(([bx,by])=>[bx,by+bob]),horseMark);
   }
   /* Near hind legs hang under the haunches; they no longer skate sideways. */
+  g.restore();
   drawSerJonathanHorseLeg(5.2,-1,Math.PI,false,horse,gal,air,bob,horseD,mane,
     horseLowerCoat(4));
   drawSerJonathanHorseLeg(12.8,1,0,false,horse,gal,air,bob,horseD,mane,
     horseLowerCoat(8));
   /* The tail is the strongest rear-view cue: its root must sit ON the rump, not
      disappear behind it. The broad brush overlaps the cleft and hangs centrally. */
-  const tail=Math.sin(gal+1.7)*1.25,tailL=shade(horse,-34);
+  const tail=mountedIdle?mountedIdle.tailSway:Math.sin(gal+1.7)*1.25,tailL=shade(horse,-34);
   rigSegment(9,14.7+bob,9+tail*.16,20.5+bob,3.05,mane);
   rigSegment(9+tail*.16,20.5+bob,9+tail*.48,25.7+bob,2.8,mane);
   rigSegment(9+tail*.48,25.7+bob,9+tail,29.2+bob,2.5,mane);
@@ -2488,7 +2498,17 @@ function drawSerJonathanRider(x,y,scale,o){
 
   /* Rear-camera articulated crouch. Pelvis, spine, neck and equipment now share
      one world-depth skeleton; no finished body part is compressed to fake depth. */
-  const duckPose=serJonathanDuckPose(duck,riderBob),duckFold=duckPose.fold,
+  const duckPose=serJonathanDuckPose(duck,riderBob);
+  if(mountedIdle){
+    // Lift the actual chest/spine, not just shoulder caps on a frozen torso.
+    // All armour and attachments use this same pose; the seated pelvis stays put.
+    duckPose.shoulderWorld.y+=mountedIdle.breath;
+    duckPose.headWorld.y+=mountedIdle.breath;
+    duckPose.shoulder=serJonathanProjectWorldPoint(duckPose.shoulderWorld,duckPose.hipY);
+    duckPose.head=serJonathanProjectWorldPoint(duckPose.headWorld,duckPose.hipY);
+    duckPose.shoulderY=duckPose.shoulder.y;duckPose.headY=duckPose.head.y;
+  }
+  const duckFold=duckPose.fold,
     depthScale=duckPose.farScale,farDepthScale=duckPose.armScale,
     poseDriveY=shieldLunge*1.45+shieldBodyDrive*1.05+(swordAction?.bodyDrive||0)*.72,
     /* The shield sweep begins in Jonathan's torso, then travels through the
@@ -3411,7 +3431,7 @@ function drawSerJonathanRider(x,y,scale,o){
     armor,armorD,armorL,steelL);
   /* The plume is parented to the helmet frame. Like the shield, it advances into
      depth and descends in projection rather than receiving hand-authored Y offsets. */
-  const plumeSway=Math.sin(gal+2.2)*.7,
+  const plumeSway=Math.sin(gal+2.2)*.7+(mountedIdle?.plumeSway||0),
     trackerPlumeScale=squireHunter&&Number(o.squireHunter)>=2?1+squireRankLevel*.10:1,
     plumeDX=headX-duckPose.head.x,plumeDY=headY-duckPose.headY,
     plumePoint=(side,height)=>{const point=serJonathanProjectHeadPoint(duckPose,side,height);
@@ -3420,7 +3440,7 @@ function drawSerJonathanRider(x,y,scale,o){
     plume1=plumePoint(.2,(squireVariant?4.55*squireHeadComp*trackerPlumeScale:6.65)),
     plume2=plumePoint((squireVariant?1.15*squireHeadComp:2.8)+plumeSway,
       squireVariant?5.55*squireHeadComp*trackerPlumeScale:9.05),
-    plume3=plumePoint((squireVariant?2.0*squireHeadComp:4.7)+plumeSway*1.4,
+    plume3=plumePoint((squireVariant?2.0*squireHeadComp:4.7)+plumeSway*1.4+(mountedIdle?.plumeTip||0),
       squireVariant?4.75*squireHeadComp*trackerPlumeScale:7.95);
   if(!squireHunter){
   rigSegment(plumeRoot.x,plumeRoot.y,plume1.x,plume1.y,
@@ -7148,7 +7168,6 @@ function drawWolf(x,y,scale,state,t,hurtFlash,contactXs){
   const hy=1+headY-crouch;
   /* A long wedge skull replaces the old round dog head. */
   px(4.5,hy,13,7,fur); px(5.5,hy-3.8,3,4.6,furD); px(13.5,hy-3.8,3,4.6,furD);
-  px(14.2,hy-3.8,1.2,1.5,'#2a2c36');
   g.fillStyle='#7a2020'; g.fillRect(6.2*U,(hy+1.5)*U,3*U,2.5*U); g.fillRect(12.8*U,(hy+1.5)*U,3*U,2.5*U);
   g.fillStyle='#ffd23a'; g.shadowColor='#ffd23a'; g.shadowBlur=6*scale;
   g.fillRect(6.8*U,(hy+1.9)*U,1.8*U,1.7*U); g.fillRect(13.4*U,(hy+1.9)*U,1.8*U,1.7*U); g.shadowBlur=0;
@@ -7690,9 +7709,10 @@ function drawWeaponPickup(kind,x,y,s,t){
    the knight, so passing objects slide by BEHIND him, not through him. */
 // Reversible rendering trial. Gameplay distances, spawn seeds and collisions
 // never read this option. The legacy renderer remains the default/control.
-let curvedWorldTrial=new URLSearchParams(location.search).get('curvedWorld')==='1';
+let curvedWorldTrial=true;
 function curvedWorldActive(){return curvedWorldTrial&&env==='forest'&&biome==='forest'&&(!forestCorridor||forestJourneyRenderer());}
 function setCurvedWorldTrial(enabled){
+  enabled=true; // Production always uses the current road renderer.
   if(enabled&&!curvedWorldTrial)curvedGroundDistance=roadScroll;
   curvedWorldTrial=!!enabled;journeyRoadTextureFrame=-1;journeyRoadTextureScroll=null;
   if(journey?.oldObstacles)for(const item of journey.oldObstacles)item.surfaceKey=null;
@@ -9033,7 +9053,7 @@ function updateMagmaChamberFx(dt){
 /* v9.8 — rebuilt from scratch. One vast rock throat around a single opening:
    through it, the full moon, stars and treeline of the forest you rode in from.
    Every detail GROWS from a surface — ceiling, walls or floor. Nothing floats. */
-function drawCave(){
+function drawCave(project=proj){
   const mx2=VW*0.5, mw2=152, mtop=HORIZON_Y-118, mbot=HORIZON_Y+40;
   /* flat dark rock — no gradient halo hazing around the entrance */
   g.fillStyle='#0f0c0a'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -9131,7 +9151,7 @@ function drawCave(){
   g.globalAlpha=1;
   /* cracked slab floor: stepped pixel cracks + scattered rubble */
   for(let i=0;i<24;i++){
-    const z=sRnd(i*17+1)*CFG.Z_FAR*0.9, pz=proj(z);
+    const z=sRnd(i*17+1)*CFG.Z_FAR*0.9, pz=project(z);
     const x=VW/2+(sRnd(i*17+2)-0.5)*2*lerp(50,300,pz.t);
     g.fillStyle='#0d0d11';
     for(let k=0;k<3;k++) g.fillRect(x+k*4*pz.s*((i%2)?1:-1),pz.y+k*2.6*pz.s,4.4*pz.s+1,2.2*pz.s+1);
@@ -9171,6 +9191,11 @@ function drawCave(){
   /* (no drifting motes, no mid-air drips — nothing floats in the lair) */
 }
 function drawBackground(){
+  // Keep the old forest available as source, never as a runtime fallback.
+  if(window.KRSunlitArt){KRSunlitArt.background(null,journey?journeyCameraPose().yaw:0);return;}
+  g.fillStyle='#30241e';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+}
+function drawLegacyForestBackground(){
   const disco=journeyForestDiscoAt(dist)*journeyDiscoReveal(journeyForestDiscoEntryAt(dist)),blend=Math.round(disco*24)/24;
   const blood=Math.round(journeyForestBloodAt(dist)*24)/24;
   const redSky={'#100b19':'#19090e','#302b50':'#613039','#21182f':'#351720','#110c1c':'#1c0b12',
@@ -9940,7 +9965,7 @@ function journeyNormalContent(slot){
   if(slot.definition==='roadside_camp')return 'camp';
   if(slot.definition==='roadside_fight')return 'fight';
   if(slot.definition==='roadside_wolfden')return 'wolfden';
-  const pool=slot.definition==='roadside_quest'?['mushrooms','chickens','traveler']:['well','taxman'];
+  const pool=slot.definition==='roadside_quest'?['mushrooms','traveler']:['well','taxman'];
   return pool[journeyKeySeed(journeyRoute.seed,'content:'+slot.id)%pool.length];
 }
 function journeyFollowupPending(content){
@@ -10145,16 +10170,15 @@ function drawJourneyNormalConversation(context){
   drawJourneyNormalConversationPanel(context);
 }
 function drawJourneyNormalConversationPanel(context){
-  g.fillStyle='#090e16';g.fillRect(20,512,440,276);g.strokeStyle='#7b8964';g.lineWidth=2;g.strokeRect(20,512,440,276);
-  g.textAlign='center';g.fillStyle='#fff0a2';g.font='bold 18px monospace';
+  const p=KRUI.theme();KRUI.sheet(g,{x:20,y:505,w:440,h:283});
+  g.textAlign='center';g.fillStyle=p.ink;g.font='bold 18px monospace';
   g.fillText(JOURNEY_NORMAL_TITLES[context.content],240,543,416);
   const lines=journeyNormalLines(context);
-  g.fillStyle='#d2d8ca';g.font='13px monospace';lines.forEach((line,i)=>g.fillText(line,240,575+i*23,414));
+  g.fillStyle=p.paperSoft;g.font='13px monospace';lines.forEach((line,i)=>g.fillText(line,240,575+i*23,414));
   for(const {rect,label,id} of journeyNormalChoices(context)){
-    const color=id==='decline'?'#beb7a5':id==='pay'?'#ffe37a':'#c0f79a';
-    g.fillStyle='#161f23';g.fillRect(rect.x,rect.y,rect.w,rect.h);g.strokeStyle=color;g.strokeRect(rect.x,rect.y,rect.w,rect.h);g.fillStyle=color;g.font='bold 14px monospace';g.fillText(label,240,rect.y+29,rect.w-20);
+    KRUI.button(g,rect,label,'treasure',{variant:id==='decline'?'secondary':undefined,size:14});
   }
-  g.fillStyle='#15211d';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#dddcb8';g.font='bold 20px monospace';g.fillText('II',PAUSE_BTN.x+PAUSE_BTN.w/2,PAUSE_BTN.y+uiTop+PAUSE_BTN.h/2+7);
+  KRUI.button(g,{...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II','treasure',{size:20,variant:'secondary'});
 }
 journeyRoadEventHandlers.set('roadside_quest',journeyNormalHandler);
 journeyRoadEventHandlers.set('roadside_cache',journeyNormalHandler);
@@ -10808,6 +10832,7 @@ function loadEventVisualModule(src,symbol){
 async function prepareCutscene(sceneId,active=false,owner=sceneId){
   if(typeof Image==='undefined')return Promise.resolve(false);
   const epoch=eventVisualEpoch;
+  if(sceneId.startsWith('wolf-den-')&&(!await loadEventVisualModule('assets/encounters/wolf-den-poses.js','KRWolfDenPoses')||epoch!==eventVisualEpoch))return false;
   if(!await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals')||epoch!==eventVisualEpoch)return false;
   if(!await loadEventVisualModule('assets/encounters/cutscene-handler.js','KRCutscenes')||epoch!==eventVisualEpoch)return false;
   return active?window.KRCutscenes.open(sceneId,owner):window.KRCutscenes.prepare(sceneId);
@@ -10825,7 +10850,7 @@ function clearEventVisuals(){
 }
 // Bitmap-backed event registrations. Existing code-native encounters do not
 // allocate images. Add future scene adapters here and plates to the manager catalog.
-const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer'});
+const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest'});
 function journeyEventVisualKey(slot){
   if(slot.definition==='inn_stop')return 'mossy-inn';
   if(slot.definition==='merchant_stop')return 'autumn-caravan';
@@ -11827,10 +11852,10 @@ function drawJourneyMap(){
   if(!journeyRoute)return;
   const r=journeyRoute;
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);g.globalAlpha=1;
-  g.fillStyle='#070b13';g.fillRect(10,40,460,724);
-  g.strokeStyle='#778ba5';g.lineWidth=2;g.strokeRect(10,40,460,724);
+  KRUI.panel(g,{x:10,y:40,w:460,h:724},'treasure');
+  g.strokeStyle=KRUI.theme().edge;g.lineWidth=2;g.strokeRect(10,40,460,724);
   g.textAlign='center';g.font='bold 22px monospace';g.fillStyle='#ffe37a';g.fillText('JOURNEY MAP',240,73);
-  g.font='12px monospace';g.fillStyle='#55dcff';g.fillText('SEED '+r.seed+' / STAGE '+r.stage,240,96);
+  g.font='12px monospace';g.fillStyle=KRUI.theme().soft;g.fillText('SEED '+r.seed+' / STAGE '+r.stage,240,96);
   g.font='11px monospace';g.fillStyle='#aebdd2';
   g.fillText(Math.floor(dist)+' / '+Math.round(r.total)+' m  ·  '+r.status.toUpperCase(),240,118);
   g.font='8px monospace';
@@ -11868,8 +11893,7 @@ function drawJourneyMap(){
   const p=journeyMapPosition();g.fillStyle='#55dcff';g.beginPath();g.arc(p.x,p.y,5,0,TAU);g.fill();
   g.strokeStyle='#fff';g.lineWidth=2;g.stroke();
   for(const [x,label] of [[36,'REPLAY SEED'],[254,'NEW SEED']]){
-    g.strokeStyle='#55dcff';g.strokeRect(x,700,190,32);g.fillStyle='#55dcff';g.font='bold 11px monospace';
-    g.fillText(label,x+95,721);
+    KRUI.button(g,{x,y:700,w:190,h:32},label,'treasure',{size:11});
   }
   g.fillStyle='#ffe37a';g.font='11px monospace';g.fillText('TAP ELSEWHERE / ESC: BACK TO PAUSE',240,751);g.restore();
 }
@@ -12222,7 +12246,10 @@ function spawnLoopEntities(){
     nextTreeAt+=spawnRoadsideSceneryRow(nextTreeAt-dist,nextTreeAt);
   }
   const stageEnd=stageDistance();
-  while(dist+SPAWN_FAR > nextSpawnAt && nextSpawnAt < stageEnd-30){
+  // Plan obstacle footprints before the forest's farthest planting rows.
+  // Drawing/collision distances remain unchanged.
+  const spawnAhead=SPAWN_FAR+(window.KRSunlitForest?.active()?72:0);
+  while(dist+spawnAhead > nextSpawnAt && nextSpawnAt < stageEnd-30){
     const worldPos=nextSpawnAt; nextSpawnAt+=CFG.SPAWN_GAP;   // the runway before the cave stays clean
     if(worldPos>stageEnd-40) continue;                    // clear runway before the boss
     if(journeyRoute){
@@ -12270,9 +12297,10 @@ function spawnObstacle(z){
   /* keep pickups reachable: uncover any lane holding a pickup (never strand one inside) */
   for(let l=0;l<3;l++) if(req[l]&&pickupNear(l)) req[l]=null;
   if(!req[0]&&!req[1]&&!req[2]) return [];    // everything conflicted — skip this one
-  lastObsFull=!!(req[0]&&req[1]&&req[2]);
   const ob=new ObstacleEntity(kind,z,req,variant);
   ob.roadTheme=journeyObstacleThemeAt(dist+z);
+  if(window.KRSunlitForest&&!KRSunlitForest.reserveObstacle(ob,dist+z))return [];
+  lastObsFull=!!(req[0]&&req[1]&&req[2]);
   // Inn linen is exclusively a slide-under obstacle, including branch previews.
   if(kind==='root'&&ob.roadTheme==='inn')for(const lane of ob.lanes)ob.req[lane]='duck';
   if(ob.type.motherTree&&ob.roadTheme!=='disco'){
@@ -12800,11 +12828,13 @@ function updatePlayerSwordCombo(dt){
   }else if(clip.returning)player.swordCombo=null;
 }
 function updatePlayer(dt){
+  const previousX=player.x;
   if(!(runJourneyPrototype&&journey&&journey.phase==='turning'))
     player.x+=(player.lane-player.x)*Math.min(1,CFG.LANE_EASE*dt);
   const resting=mode==='evolution'||mode==='shop';
-  const inFight=(mode==='boss'||mode==='miniboss'||mode==='bossintro');
-  player.gallop=resting?0:(player.gallop+dt*(inFight?0.55:speed()/9))%1; // reward rooms are still
+  const travelling=!resting&&(mode==='run'||Math.abs(player.x-previousX)>.001);
+  // Stationary combat is a planted horse, not a slow running-in-place loop.
+  player.gallop=travelling?(player.gallop+dt*(mode==='run'?speed()/9:.55))%1:0;
   if(player.jumpT>=0){ player.jumpT+=dt; if(player.jumpT>jumpDur()){ player.jumpT=-1;
     burst(laneX(player.x,1),PLAYER_Y+8,8,['#8a744f','#5c4a30'],110,260,3,.4); } }
   if(player.duckT>=0){ player.duckT+=dt; if(player.duckT>CFG.DUCK_TIME) player.duckT=-1; }
@@ -12819,7 +12849,7 @@ function updatePlayer(dt){
   player.invuln=Math.max(0,player.invuln-dt);
   updateSquire(dt);
   /* galloping dust */
-  if(!resting&&Math.random()<dt*14) burst(laneX(player.x,1)+rnd(-12,12),PLAYER_Y+10,1,['#6a5a40'],40,60,3,.5);
+  if(travelling&&player.jumpT<0&&Math.random()<dt*14) burst(laneX(player.x,1)+rnd(-12,12),PLAYER_Y+10,1,['#6a5a40'],40,60,3,.5);
 }
 function squireFormationX(){
   const knightX=laneX(player.x,1),side=player.x<.45?1:-1;
@@ -12888,15 +12918,17 @@ function drawPlayer(){
   const rushLunge=characterSpecialLungeAmount(),shieldAction=activePlayerShieldPose(),
     swordAction=activePlayerSwordPreviewPose(),
     shieldLunge=shieldAction?shieldAction.lunge:0,jumpH=jumpHeight(),
-    y=PLAYER_Y-jumpH-rushLunge*68-shieldLunge*136,
-    shadowY=PLAYER_Y+4-shieldLunge*136;
+    shieldTravel=shieldAction?.kind==='bash'?shieldApproachPosition(boss?.turnAction,shieldLunge):null,
+    x=shieldTravel?shieldTravel.x:laneX(player.x,1),
+    groundY=shieldTravel?shieldTravel.y:PLAYER_Y-shieldLunge*136,
+    y=groundY-jumpH-rushLunge*68,shadowY=groundY+4;
   /* Ground contact belongs behind the hooves. Drawing the old shadow after the
      rider left a bright gap and made horse and Knight look suspended. */
   g.globalAlpha=0.32*(1-jumpH/CFG.JUMP_H*.78);g.fillStyle='#000';
-  g.beginPath();g.ellipse(laneX(player.x,1),shadowY,22-rushLunge*4-shieldLunge*2.5,
+  g.beginPath();g.ellipse(x,shadowY,22-rushLunge*4-shieldLunge*2.5,
     4.8-shieldLunge*.7,0,0,TAU);g.fill();g.globalAlpha=1;
   if(player.invuln>0 && (perfNow*14|0)%2===0) g.globalAlpha=0.45;   // shield i-frames blink
-  drawRider(laneX(player.x,1),y,1.02+rushLunge*.08-shieldLunge*.035,{
+  drawRider(x,y,1.02+rushLunge*.08-shieldLunge*.035,{
     gallop:player.gallop, lean, duck,
     air:player.jumpT>=0?clamp(player.jumpT/jumpDur(),0,1):0,
     rigId:playerChar.rigId,
@@ -12927,7 +12959,9 @@ function drawSquire(captureRecall=false){
     fallSide=dying?squire.deathSide:(baseX<laneX(player.x,1)?-1:1),
     deathPose=dying?mountedRiderDeathPose(deathTime,fallSide):null,
     horsePanic=deathPose?.horsePanic||0,
-    x=baseX,y=PLAYER_Y+9-strike*13-cheer*5-shieldLunge*98,
+    shieldTravel=shieldAction?.kind==='bash'?shieldApproachPosition(boss?.turnAction,shieldLunge):null,
+    x=shieldTravel?shieldTravel.x:baseX,
+    y=(shieldTravel?shieldTravel.y:PLAYER_Y+9-shieldLunge*98)-strike*13-cheer*5,
     scale=.72*(1+strike*.05+shieldLunge*.06),appearance=squire.appearance,
     visualBulk=dying?squire.deathVisualBulk:squireVisualBulk(),
     rankLevel=dying?squire.deathRankLevel:squireVeterancyRank().visualLevel,
@@ -45895,6 +45929,35 @@ function isSquireShieldTurnAction(action){
   return !!(action&&action.shieldTimeline&&action.actorId==='ally'&&
     action.command?.squireShieldBash);
 }
+function buildShieldApproach(actorId){
+  if(!boss)return null;
+  const ally=actorId==='ally',p=proj(boss.z),
+    scale=ally?.72*1.06:1.02-.035,
+    bulk=ally?squireVisualBulk():0,
+    // Match the approved rider rig's shield centre at the authored contact pose.
+    // Upper-body growth is pivoted at the saddle, not at the horse's feet.
+    hip=10-.24,shoulder=serJonathanDuckPose(0,-.24).shoulderY-1.45,
+    shieldX=9+(6.15-9)*(1+bulk*1.20),
+    shieldY=hip+(shoulder-5.75-hip)*(1+bulk*1.85);
+  return {fromX:ally?squire.visualX:laneX(player.x,1),fromY:PLAYER_Y+(ally?9:0),
+    toX:laneX(boss.x,p.t)-(shieldX-9)*U*scale,
+    toY:p.y-22*p.s-(shieldY-30)*U*scale};
+}
+function shieldApproachPosition(action,amount){
+  const travel=action?.shieldTravel;if(!travel)return null;
+  const t=shieldActionPoseTime(action),T=SHIELD_BASH_TIMING;
+  // The arm retracts quickly, but the mounted actor travels back throughout
+  // the remount beat; a full cross-lane return must not snap in 0.32 seconds.
+  if(t>T.holdEnd)amount=1-easeInOut(clamp((t-T.holdEnd)/(T.remountEnd-T.holdEnd),0,1));
+  return {x:lerp(travel.fromX,travel.toX,amount),y:lerp(travel.fromY,travel.toY,amount)};
+}
+function shieldActionPoseTime(action){
+  const contacts=action.shieldTimeline.contacts,
+    extra=contacts[contacts.length-1]-SHIELD_BASH_TIMING.impact;
+  // Hold the planted strike until every contact resolves, then recover once.
+  return action.t<=SHIELD_BASH_TIMING.impact?action.t:
+    Math.max(SHIELD_BASH_TIMING.impact,action.t-extra);
+}
 const PLAYER_SHIELD_POSE_SCRATCH={active:false,kind:'bash',t:0,forward:0,reach:0,detach:0,
   flip:0,drive:0,retreat:0,remount:0,settle:0,lunge:0,impact:0,
   prepare:0,guard:0,sweep:0,cancel:0};
@@ -45971,11 +46034,11 @@ function squireParryPoseAt(t,p=SQUIRE_PARRY_POSE_SCRATCH){
 function activePlayerShieldPose(){
   const action=boss&&boss.turnAction;
   if(!isShieldTurnAction(action))return activePlayerParryShieldPose();
-  return shieldBashPoseAt(action.t,PLAYER_SHIELD_POSE_SCRATCH);
+  return shieldBashPoseAt(shieldActionPoseTime(action),PLAYER_SHIELD_POSE_SCRATCH);
 }
 function activeSquireShieldPose(){
   const action=boss&&boss.turnAction;
-  return isSquireShieldTurnAction(action)?shieldBashPoseAt(action.t,SQUIRE_SHIELD_POSE_SCRATCH):
+  return isSquireShieldTurnAction(action)?shieldBashPoseAt(shieldActionPoseTime(action),SQUIRE_SHIELD_POSE_SCRATCH):
     squire.parryT>=0?squireParryPoseAt(squire.parryT):null;
 }
 const PLAYER_BOW_POSE_SCRATCH={visible:0,raise:0,drawAmount:0,recoil:0,recipe:null,chargeIntensity:0,preparedFocus:false};
@@ -47574,6 +47637,7 @@ function performPlayerAction(command,options=null){
   boss.playerActionTimer=duration;
   boss.turnAction={command,delivery,actorId,t:0,hitIndex:0,hits,hitInterval,impactDelay,
     bowTimeline,shieldTimeline,swordTimeline,nextReleaseIndex:0,markPulseTimeline,markPulseIndex:0,
+    shieldTravel:shieldTimeline?buildShieldApproach(actorId):null,
     attackSerial:boss.attackSerial,markGenerated:0,freeFollowUp,
     preparedDetonationFirst,preparedDetonationFollow,
     preparedDetonationSnapshot:options?.preparedDetonation||null,
@@ -49356,8 +49420,11 @@ function defeatBoss(){
   const overkill=Math.max(0,-boss.hp),pts=roadFight?CFG.ROAD_FIGHT_SCORE:RUN_POLICY().bossScoreAt(loop),
     okPts=Math.round(overkill*CFG.OVERKILL_MULT);
   bossScoreRun+=pts;overkillRun+=okPts;if(!roadFight)bossKills++;
-  floater(VW/2,300,(roadFight?'ENEMY DEFEATED  +':'BOSS SLAIN  +')+pts,'#ffe37a',26);
-  if(okPts>0)floater(VW/2,336,'OVERKILL '+healthDamageText(overkill)+' DMG · SCORE +'+okPts,'#ff9a3a',20);
+  // The den is one continuous encounter: no victory banner over the next wolf.
+  if(!boss.wolfDen){
+    floater(VW/2,300,(roadFight?'ENEMY DEFEATED  +':'BOSS SLAIN  +')+pts,'#ffe37a',26);
+    if(okPts>0)floater(VW/2,336,'OVERKILL '+healthDamageText(overkill)+' DMG · SCORE +'+okPts,'#ff9a3a',20);
+  }
   SFX.win();flash('#ffe37a',.5);shake(12,.6);stopTime(.25);
   boss.pendingBreak=null;boss.parryReaction=null;boss.knightRushRecovery=null;
   boss.turnAction=null;boss.playerActionTimer=0;boss.state='dying';boss.stateT=0;boss._stg=0;
@@ -49391,6 +49458,9 @@ function updateBossVisualFx(dt){
       life:.6,maxLife:.6,size:2.2,col:Math.random()<.5?'#ff6a2a':'#ffd23a',grav:-30});
 }
 function updateBoss(dt){
+  if(boss?.wolfDen&&boss.denArrivalT<.7&&boss.state!=='dying'){
+    boss.denArrivalT=Math.min(.7,boss.denArrivalT+dt);return;
+  }
   if(!boss) return;
   /* A turn choice freezes combat logic. Break alone may finish its short pose-in
      animation, then holds the completed species pose until the chosen action. */
@@ -51981,7 +52051,8 @@ function drawImpBack(x,y,scale,t,spd){
 /* back view: haunches, spine ridge, ears over the head, and the tail wagging left-right */
 function drawWolfBack(x,y,scale,t,spd,duck=0){
   const U2=2.6*scale;
-  const px2=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(a*U2),Math.round(b*U2),Math.round(w*U2),Math.round(h*U2)); };
+  const px2=(a,b,w,h,c)=>{const l=Math.round(a*U2),top=Math.round(b*U2);g.fillStyle=c;
+    g.fillRect(l,top,Math.round((a+w)*U2)-l,Math.round((b+h)*U2)-top);};
   const trot=spd>0?Math.sin(t*11):0, bob=spd>0?Math.abs(Math.sin(t*11))*1.4:Math.sin(t*2)*0.4;
   const fur='#6d7280', furD='#4d5160', furL='#8a8fa0';
   /* Scale toward the planted feet: the delayed crouch visibly follows the
@@ -51992,7 +52063,7 @@ function drawWolfBack(x,y,scale,t,spd,duck=0){
   /* haunches: two rounded hip masses */
   px2(-8,-14,7,11,fur); px2(1,-14,7,11,fur);
   px2(-8,-14,7,3,furL); px2(1,-14,7,3,furL);
-  px2(-3,-12,6,8,furD);                          // shadowed cleft between the hips
+  px2(-3,-14,6,10,furD);                         // continuous coat, not a hole between the hips
   /* spine ridge + shoulders peeking beyond */
   px2(-5,-17,10,4,fur); px2(-4,-18,8,2,furL);
   /* head from behind: just ears + crown over the shoulders */
@@ -52822,12 +52893,11 @@ function drawScrapIcon(x,y,scale=1){
 }
 function drawJourneyLootRow(entry,r){
   const claimed=entry.claimed,isScrap=entry.kind==='scrap',mid=r.y+r.h/2;
-  expRect(r.x,r.y,r.w,r.h,claimed?'#263d32':'#344439');
-  g.strokeStyle=claimed?'#68775b':isScrap?'#a8becb':'#c8aa67';g.lineWidth=2;g.strokeRect(r.x,r.y,r.w,r.h);
+  const p=KRUI.theme();KRUI.button(g,r,'','treasure',{enabled:!claimed});
   if(isScrap)drawScrapIcon(r.x+36,mid,1.25);else drawCoin(r.x+36,mid,1.35,.25);
-  g.textAlign='left';g.fillStyle=claimed?'#a2bda0':isScrap?'#dce6eb':'#f3db97';
+  g.textAlign='left';g.fillStyle=claimed?p.mutedInk:p.ink;
   g.font='bold 23px monospace';g.fillText(String(entry.amount),r.x+70,mid+9);
-  smithText(claimed?'COLLECTED':isScrap?'TAKE SCRAP':'TAKE COINS',r.x+r.w-95,mid+5,13,claimed?'#a2bda0':'#f2dfb1');
+  smithText(claimed?'COLLECTED':isScrap?'TAKE SCRAP':'TAKE COINS',r.x+r.w-95,mid+5,13,claimed?p.mutedInk:p.ink);
 }
 function drawJourneyFightLoot(context){
   const loot=context.loot;
@@ -52846,12 +52916,13 @@ function drawJourneyFightLoot(context){
   g.save();g.rotate(-.32);drawScrapIcon(-16,-37,3.5);g.restore();
   drawScrapIcon(59,4,1.3);drawCoin(-67,7,1.05,.25);drawCoin(-44,20,.8,.25);
   g.restore();
-  smithText('SALVAGE FROM THE ROAD',240,416,17,'#ead2a0');
-  smithText('Scrap pays for blacksmith skill upgrades.',240,443,12,'#b9c8bf');
+  KRUI.sheet(g,{x:16,y:382,w:448,h:414});
+  smithText('SALVAGE FROM THE ROAD',240,416,17,KRUI.theme().ink);
+  smithText('Scrap pays for blacksmith skill upgrades.',240,443,12,KRUI.theme().paperSoft);
   loot.entries.forEach((entry,i)=>drawJourneyLootRow(entry,journeyLootRewardRect(context,i)));
-  smithText('Select each reward to collect it.',240,681,11,'#b5c6b1');
+  smithText('Select each reward to collect it.',240,681,11,KRUI.theme().paperSoft);
   drawSmithButton(CHEST_CONTINUE_RECT,loot.entries.some(e=>!e.claimed)?'LEAVE LOOT':'CONTINUE','#e3c78c');
-  smithText('1: COINS  /  2: SCRAP  /  ENTER: CONTINUE',240,786,10,'#a0b29c');
+  smithText('1: COINS  /  2: SCRAP  /  ENTER: CONTINUE',240,786,10,KRUI.theme().paperSoft);
 }
 function drawJourneyChestLoot(context){
   const loot=context.loot,entry=loot.entries[0],claimed=!!entry?.claimed;
@@ -52860,14 +52931,14 @@ function drawJourneyChestLoot(context){
   smithText(loot.won?'The forest kept this one well hidden.':'Three broken picks. The chest stays closed.',240,118,12,'#b7c7b4');
   drawCoin(405,154,.8,.25);smithText(String(gold),439,159,14,'#edd8a2');
   drawRoadTreasureChest(228,422,2.2,loot.won);
-  expRect(24,466,432,180,'#132827');expRect(24,466,432,3,'#a28a54');
-  smithText(loot.won?'REWARDS':'NO REWARDS',240,500,18,'#e9d1a0');
+  KRUI.sheet(g,{x:16,y:466,w:448,h:330});
+  smithText(loot.won?'REWARDS':'NO REWARDS',240,500,18,KRUI.theme().ink);
   if(entry){
     drawJourneyLootRow(entry,CHEST_REWARD_RECT);
-    smithText(claimed?'Added to your purse.':'Select the reward to collect it.',240,630,11,'#b5c6b1');
-  }else smithText('Nothing taken. Nothing lost but the picks.',240,568,12,'#c1baa6');
+    smithText(claimed?'Added to your purse.':'Select the reward to collect it.',240,630,11,KRUI.theme().paperSoft);
+  }else smithText('Nothing taken. Nothing lost but the picks.',240,568,12,KRUI.theme().paperSoft);
   drawSmithButton(CHEST_CONTINUE_RECT,entry&&!claimed?'LEAVE LOOT':'CONTINUE','#e3c78c');
-  smithText('1: TAKE REWARD  /  ENTER: CONTINUE',240,786,10,'#a0b29c');
+  smithText('1: TAKE REWARD  /  ENTER: CONTINUE',240,786,10,KRUI.theme().paperSoft);
 }
 function drawRoadLantern(x,y,scale=1){
   g.save();g.translate(x,y);g.scale(scale,scale);
@@ -53055,10 +53126,10 @@ function drawRoadInnkeeper(x,y,s){
 }
 function drawJourneyCamp(context){
   drawRoadsideScene('camp');g.save();g.translate(227,411);g.scale(2.65,2.65);drawRoadCampArt();g.restore();
-  expRect(18,463,444,316,'#162827');smithText('A QUIET CAMP',240,497,23,'#efd5a0');
-  smithText('Warm your hands. Let the road wait.',240,522,12,'#becdb6');
+  KRUI.sheet(g,{x:18,y:463,w:444,h:316});smithText('A QUIET CAMP',240,497,23,KRUI.theme().ink);
+  smithText('Warm your hands. Let the road wait.',240,522,12,KRUI.theme().paperSoft);
   drawSmithButton(ROAD_SERVICE_BUTTONS[0],context.rested?'FIRE SPENT':'REST — RECOVER TWO HEARTS','#b9d794',!context.rested);
-  smithText(context.notice||'One free rest at this campsite.',240,633,12,'#d8bc8d');
+  smithText(context.notice||'One free rest at this campsite.',240,633,12,KRUI.theme().paperSoft);
   drawSmithButton(ROAD_SERVICE_BUTTONS[2],'PACK UP AND RIDE ON','#e3d3b2');
 }
 function drawRoadServiceGold(){smithText(''+gold,419,490,15,'#f6d37c',70);drawCoin(447,485,.65,perfNow);}
@@ -53209,8 +53280,11 @@ function drawWolfMeat(x,y,s=1){
   expSegment(-13,-12,-4,-15,1.6,'#f1b18b');g.restore();
 }
 function drawDenWolf(x,y,s=1,pose='sit',t=0,pup=false,moving=false){
+  if(pup&&window.KRWolfDen)return KRWolfDen.pup(x,y,s,t,pose==='walk'||pose==='back',moving);
+  if(window.KRWolfDen)return KRWolfDen.wolf(x,y,s,pose==='sit'?0:1,pose==='walk'||pose==='back'?1:0,t,moving,
+    ['wave','fight','pup','befriended','left'].includes(journeyRoadEventSession?.context.den?.slide));
   // Reuse the actual game model and its back-view rig, including fur and face.
-  // The pup differs in size only; no alternate wolf skin is introduced here.
+  // Loading fallback only; the ready event module supplies the pup proportions.
   g.save();
   if(pose==='back'||pose==='walk'){
     drawWolfBack(x,y,s*1.17,t,moving?1:0,pose==='back'?duckPostureAmountAt(player.duckT):0);
@@ -53222,10 +53296,14 @@ function drawDenWolf(x,y,s=1,pose='sit',t=0,pup=false,moving=false){
 }
 let wolfDenBackdropCache=new Map(),wolfDenBackdropSize='';
 function drawWolfDenBackdrop(kind){
+  if(window.KRCutscenes?.draw(kind==='inside'?'wolf-den-inside':kind==='forest'?'wolf-den-forest':'wolf-den-outside',perfNow)){
+    if(wolfDenBackdropCache.size)wolfDenBackdropCache.clear();return;
+  }
   const key=[viewScale,PAD_TOP,PAD_BOT].join(':');
   if(wolfDenBackdropSize!==key){wolfDenBackdropCache.clear();wolfDenBackdropSize=key;}
   let canvas=wolfDenBackdropCache.get(kind);
   if(!canvas){
+    wolfDenBackdropCache.clear(); // Only the current error/loading fallback.
     canvas=document.createElement('canvas');canvas.width=Math.ceil(VW*viewScale);canvas.height=Math.ceil((VH+PAD_TOT)*viewScale);
     const main=g,c=canvas.getContext('2d');
     try{
@@ -53356,99 +53434,110 @@ function drawWolfDenCaveArt(){
   expPoly([[286,473],[302,462],[322,466],[317,476]],'#6d806c');
 }
 function drawWolfDenExterior(){drawWolfDenBackdrop('entrance');}
+const WOLF_DEN_PACK=Object.freeze([[229,448,.94],[155,415,.73],[310,408,.7],[354,467,.84]]);
 function drawWolfDenInterior(combat=false){
   drawWolfDenBackdrop('inside');
   if(combat){
-    const left=3-(journeyRoadEventSession?.context.den?.kills||0);
-    for(let i=0;i<left;i++)drawDenWolf(181+i*55,331+(i%2)*8,.39,'sit',perfNow+i);
+    const kills=journeyRoadEventSession?.context.den?.kills||0;
+    g.save();g.translate(0,-PAD_TOP);g.scale(1,(800+PAD_TOT)/800);
+    for(let i=kills+1;i<4;i++){const [x,y,s]=WOLF_DEN_PACK[i];
+      if(window.KRWolfDen)KRWolfDen.adult(x,y,s,perfNow+i*3,true);else drawWolf(x,y,s,'idle',0,false);}
+    window.KRWolfDen?.feedingPup(perfNow,false);
+    g.restore();
   }
 }
+function wolfDenScene(context){
+  const slide=context?.den?.slide;
+  if(['flee','trail'].includes(slide)||!slide)return 'wolf-den-forest';
+  return ['pack','fight','wave','pup','feeding','befriended','left'].includes(slide)?'wolf-den-inside':'wolf-den-outside';
+}
+function wolfDenHotspots(context){
+  const slide=context.den.slide;
+  if(slide==='trail')return [{x:326,y:320,w:132,h:147},null];
+  if(slide==='entrance')return [{x:155,y:229,w:205,h:210},null];
+  if(slide==='pup')return [{x:183,y:448,w:129,h:133},null];
+  return [null,null];
+}
 function drawWolfDenAdventure(context){
-  const d=context.den,inside=['wave','pup','befriended','left'].includes(d.slide);
-  if(inside)drawWolfDenInterior();else if(['entrance','escaped'].includes(d.slide))drawWolfDenExterior();else drawWolfDenBackdrop('forest');
+  const d=context.den,scene=wolfDenScene(context);
+  drawWolfDenBackdrop(scene==='wolf-den-inside'?'inside':scene==='wolf-den-forest'?'forest':'entrance');
+  g.save();g.translate(0,-PAD_TOP);g.scale(1,(800+PAD_TOT)/800);
   if(d.slide==='entrance'||d.slide==='escaped'){
-    // Four bodies at different depths, one pack. No fifth adult joins the fight.
-    for(const [x,y,s,off] of [[222,325,.49,0],[281,339,.59,1],[194,382,.78,2],[305,399,.91,3]])
-      drawDenWolf(x,y,s,'sit',perfNow+off);
-    expSegment(69,421,76,268,7,'#795637');expSegment(76,268,110,273,5,'#bb9461');
-    expSegment(76,268,78,414,2,'#c3a574');
-    if(!d.meatTaken){
-      expSegment(100,272,96,298,2,'#d0b68d');drawWolfMeat(93,326,1.15);
-      smithText('TAKE',74,434,10,'#f1d58a');smithText('MEAT',74,447,10,'#f1d58a');
-    }
+    if(!d.meatTaken){if(window.KRWolfDen)KRWolfDen.meat(90,479,1);else drawWolfMeat(90,479,1);}
+    else if(d.t-d.meatAt<.45){g.save();const a=clamp((d.t-d.meatAt)/.45,0,1);g.globalAlpha=1-a;
+      window.KRWolfDen?.meat(90+a*110,479+a*80,1-a*.4);g.restore();}
   }else if(d.slide==='flee'){
-    const f=clamp((d.t-.2)/.95,0,1);drawDenWolf(218+f*330,436-f*37,1.9-f*.55,f>0?'walk':'sit',perfNow,false,f>0);
-  }else if(d.slide==='trail'||d.slide==='searched'){
-    expPoly([[152,430],[183,393],[260,400],[299,437],[244,465],[167,455]],'#485842');
-    for(let i=0;i<5;i++){
-      const x=250+i*34,y=423-i*11;expRect(x,y,6,5,'#172b29');expRect(x+1,y-4,2,2,'#172b29');expRect(x+5,y-3,2,2,'#172b29');
-    }
-    if(d.find?.kind==='gold')drawCoin(228,423,1.4,.25);
-    if(d.find?.kind==='scrap')drawScrapIcon(228,423,1.8);
-  }else if(d.slide==='wave'){
-    drawDenWolf(240,444,1.8,'walk',perfNow,false,true);
+    if(window.KRWolfDen){const p=KRWolfDen.departure(d.t);
+      KRWolfDen.wolf(p.x,p.y,p.scale,p.rise,p.turn,d.t,p.walk>0,false,false,p.yaw);}
+    else drawDenWolf(229,572,1.48,'sit',d.t);
+  }else if(d.slide==='trail'){window.KRWolfDen?.tracks();
+  }else if(d.slide==='pack'||d.slide==='wave'){
+    for(let i=d.kills;i<4;i++){const [x,y,s]=WOLF_DEN_PACK[i];window.KRWolfDen?.adult(x,y,s,perfNow+i*3,true);}
+    window.KRWolfDen?.feedingPup(perfNow,false);
   }else{
-    drawDenWolf(252,449,1.65,'sit',perfNow,true);
-    if(d.slide==='befriended')drawWolfMeat(291,452,.62);
+    const reveal=easeInOut(clamp(d.t/1.5,0,1)),feeding=d.slide==='feeding';
+    const x=d.slide==='pup'?lerp(78,245,reveal):feeding?lerp(245,273,easeInOut(clamp(d.t/1.2,0,1))):273;
+    const y=d.slide==='pup'?lerp(490,539,reveal):539;
+    window.KRWolfDen?.pup(x,y,d.slide==='pup'?lerp(.8,1.12,reveal):1.12,perfNow,false,false,feeding&&d.t>.6);
+    if(feeding){const offer=easeInOut(clamp(d.t/.65,0,1)),eat=clamp((d.t-1.5)/.9,0,1);
+      g.save();g.globalAlpha=1-eat;window.KRWolfDen?.meat(lerp(315,275,offer),lerp(641,549,offer),.57);g.restore();}
   }
-  const title={flee:'A WATCHFUL WOLF',trail:'INTO THE TREES',searched:'WHERE IT SAT',entrance:'THE WOLF DEN',escaped:'A WISE RETREAT',
-    wave:'THE PACK CLOSES IN',pup:'ONE LAST PAIR OF EYES',befriended:'A LITTLE TRUST',left:'BACK TO THE FOREST'}[d.slide];
-  smithText(title,240,76,24,'#ead5a4',448);
-  smithText('A ROADSIDE ADVENTURE',240,101,10,'#aec5bd');
-  if(journeyMeat>0){drawWolfMeat(404,135,.43);smithText('× '+journeyMeat,440,140,12,'#edd4ab');}
-  expPoly([[17,503],[462,503],[466,629],[14,629]],'#14292e');
-  expRect(20,503,439,2,'#7b9187');
-  const lines={
-    flee:['A grey wolf was watching from the roadside.','At your approach, it slips between the trees.'],
-    trail:['Bent grass. Fresh pawprints. A gap in the trees.','Something glints where the wolf was sitting.','Do you search the spot, or follow?'],
-    searched:d.find?.kind==='nothing'?['You search beneath the flattened grass.','Only old leaves and a rather damp sock.','No treasure this time.']:['A torn traveler\'s pouch lies beneath the leaves.',`You collect ${d.find?.amount} ${d.find?.kind==='gold'?'coins':'scrap'}.`,'The pawprints disappear into the undergrowth.'],
-    entrance:['The trail ends at a den beneath old stone.','Four wolves turn toward you in the darkness.','A strip of smoked meat hangs on a stick to the left.'],
-    escaped:['You back away without turning your shoulders.','The wolves watch, but do not give chase.','Some stories are best left unfinished.'],
-    wave:[`${d.kills} / 4 wolves defeated.`, 'Another wolf steps out of the dark.','There is no rest between them.'],
-    pup:['The den is quiet. One lone pup remains.','It looks at you with bright, unblinking eyes.','A small nose twitches. It smells your pack.'],
-    befriended:d.alreadyHadPup?['You leave a meal for the little one.','Your own pup gives a friendly tail-wag.','One companion is enough for this journey.']:['The pup takes the meat, then nudges your hand.','When you stand, it stands with you.','New companion: follows you and bites for 3 each turn.'],
-    left:['The pup curls back into its straw nest.','You leave the den behind.','The road carries on.']
-  }[d.slide]||[];
-  lines.forEach((line,i)=>smithText(line,240,535+i*25,12,'#d2dfd6',419));
-  if(d.notice)smithText(d.notice,240,618,11,'#eed48b',416);
-  wolfDenChoices(context).forEach((label,i)=>drawSmithButton(WOLF_DEN_BUTTONS[i],label,i?'#b9cac0':'#e8cf90',
-    !(d.slide==='pup'&&i===0&&!wolfDenHasMeat())));
-  if(!wolfDenChoices(context).length)smithText(d.slide==='wave'?'GET READY...':'THE WOLF RUNS...',240,698,13,'#b4c8c3');
+  g.restore();
+  if(wolfDenChoices(context).length)KRUI.sheet(g,{x:16,y:624,w:448,h:172});
+  if(d.slide==='pup')smithText('A little one stays behind.',240,659,14,KRUI.theme().ink,420);
+  if(d.slide==='befriended')smithText(d.alreadyHadPup?'A meal for the little one.':'A new companion.',240,659,14,KRUI.theme().ink,420);
+  if(d.notice)smithText(d.notice,240,677,12,KRUI.theme().paperSoft,420);
+  wolfDenChoices(context).forEach((label,i)=>KRUI.button(g,WOLF_DEN_BUTTONS[i],label,'tavern',
+    {size:14,variant:i?'secondary':'primary',enabled:!(d.slide==='pup'&&i===0&&!wolfDenHasMeat())}));
 }
 /* Wolf Den is a run-owned, optional point-and-click adventure. Its four fights
    share one event receipt, never pass through stage rewards, and never heal. */
 let journeyMeat=0,wolfPup=null;
-const WOLF_DEN_MEAT_RECT=Object.freeze({x:26,y:252,w:98,h:203});
-const WOLF_DEN_BUTTONS=Object.freeze([{x:28,y:655,w:424,h:48},{x:28,y:717,w:424,h:48}]);
+const WOLF_DEN_MEAT_RECT=Object.freeze({x:52,y:426,w:82,h:94});
+const WOLF_DEN_BUTTONS=Object.freeze([{x:80,y:695,w:320,h:40},{x:80,y:747,w:320,h:38}]);
 for(let i=0;i<4;i++)ENCOUNTERS.register(new EncounterDefinition('den_wolf_'+i,'boss',{
-  name:'DEN WOLF '+(i+1)+' / 4',hitText:'The pack caught you',finisherHit:'Lost in the wolf den',
+  name:'DEN WOLF',hitText:'The pack caught you',finisherHit:'Lost in the wolf den',
   arenaLine:'THE DEN PACK',roadEnemy:true,roadOnly:true,roadHp:[24,28,32,38][i],
   attacks:WOLF_DUEL_ATTACKS.slice(0,3),scale:2.15,finisherReach:8,element:'earth',
-  draw:(x,y,s,anim,t,hurt)=>drawWolf(x,y,s,anim,t,hurt)
+  draw:(x,y,s,anim,t,hurt,contacts)=>{
+    const a=boss?.denArrivalT===undefined?1:easeInOut(clamp(boss.denArrivalT/.7,0,1)),from=WOLF_DEN_PACK[i];
+    const xx=lerp(from[0],x,a),yy=lerp(from[1]*(800+PAD_TOT)/800-PAD_TOP,y,a),ss=lerp(from[2],s,a);
+    if(window.KRWolfDen)KRWolfDen.combat(xx,yy,ss,anim,t,hurt,contacts);else drawWolf(xx,yy,ss,anim,t,hurt,contacts);
+  }
 }));
-function wolfDenSlide(context,slide){context.den.slide=slide;context.den.t=0;context.den.notice='';}
+function wolfDenSlide(context,slide){
+  context.den.slide=slide;context.den.t=0;context.den.notice='';
+  const scene=wolfDenScene(context),d=context.den;
+  if(d.visualScene!==scene){
+    d.visualScene=scene;d.visualPending=typeof Image!=='undefined';
+    prepareCutscene(scene,true,context.token).then(()=>{
+      if(journeyRoadEventSession?.context===context&&d.visualScene===scene){d.visualPending=false;d.t=0;}
+    });
+  }
+}
 function wolfDenHasMeat(){return journeyMeat>0||hasRelic('meat');}
 function wolfDenTakeMeat(context){
   const s=journeyRoadEventSession,d=context.den;
   if(paused||mode!=='journeyevent'||s?.context!==context||s.route!==journeyRoute||
      d?.slide!=='entrance'||d.t<.25||d.meatTaken)return false;
-  d.meatTaken=true;journeyMeat++;
-  d.notice='Smoked meat added to your pack.';SFX.coin();return true;
+  d.meatTaken=true;d.meatAt=d.t;journeyMeat++;
+  SFX.coin();return true;
 }
 function wolfDenChoices(context){
   const d=context.den;
-  if(d.slide==='trail')return ['LOOK WHERE THE WOLF WAS SITTING','FOLLOW THE WOLF'];
-  if(d.slide==='entrance')return ['ENTER THE DEN · FIGHT 4 WOLVES','RUN AWAY'];
-  if(d.slide==='pup')return [wolfPup?'FEED THE PUP · LET IT STAY HERE':wolfDenHasMeat()?'OFFER YOUR MEAT · BEFRIEND':'OFFER FOOD · REQUIRES MEAT','LEAVE THE PUP'];
+  if(d.slide==='trail')return ['FOLLOW','BACK TO THE ROAD'];
+  if(d.slide==='entrance')return ['ENTER','LEAVE'];
+  if(d.slide==='pup'&&d.t>=1.5)return [wolfDenHasMeat()?'OFFER MEAT':'NO FOOD','LEAVE'];
   if(['searched','escaped','befriended','left'].includes(d.slide))return ['BACK TO THE ROAD'];
   return [];
 }
 function startWolfDenFight(context){
   if(journeyRoadEventSession?.context!==context||context.den.kills>=4)return false;
   context.roadState??={env,obstacles,pickups,roadsideScenery};
-  context.den.slide='fight';context.den.t=0;
+  wolfDenSlide(context,'fight');
   context.openMode(()=>startBoss('den_wolf_'+context.den.kills,context));
-  context.game=boss;boss.wolfDen=true;env='cave';return true;
+  player.x=player.lane=1;player.jumpT=player.duckT=-1;
+  context.game=boss;boss.wolfDen=true;boss.denArrivalT=0;env='cave';return true;
 }
 function finishWolfDenFight(context){
   if(journeyRoadEventSession?.context!==context||context.den?.slide!=='fight'||
@@ -53456,17 +53545,19 @@ function finishWolfDenFight(context){
   context.den.kills++;
   journeyRoadEventHandlers.get('elite_finale').dispose(context);
   context.game=null;
+  if(context.den.kills<4)return startWolfDenFight(context);
   journeyRoadEventSession.ownedMode='journeyevent';setMode('journeyevent');
-  wolfDenSlide(context,context.den.kills===4?'pup':'wave');return true;
+  wolfDenSlide(context,'pup');return true;
 }
 journeyRoadEventHandlers.set('roadside_wolfden',{
   start:context=>journeyNormalHandler.start(context),
   update(context,dt){
     if(!context.den){journeyNormalHandler.update(context,dt);return;}
     if(paused)return;
-    const d=context.den;d.t+=dt;
-    if(d.slide==='flee'&&d.t>=1.25)wolfDenSlide(context,'trail');
-    else if(d.slide==='wave'&&d.t>=1.1)startWolfDenFight(context);
+    const d=context.den;if(d.visualPending)return;d.t+=dt;
+    if(d.slide==='flee'&&d.t>=(window.KRWolfDen?.departureTiming.end??7.79))wolfDenSlide(context,'trail');
+    else if(d.slide==='pack'&&d.t>=1.65)startWolfDenFight(context);
+    else if(d.slide==='feeding'&&d.t>=2.6)wolfDenSlide(context,'befriended');
   },
   action(context,action,pt,input){
     if(paused)return false;
@@ -53474,29 +53565,26 @@ journeyRoadEventHandlers.set('roadside_wolfden',{
       const entered=journeyNormalHandler.action(context,action,pt,input);
       if(entered&&mode==='journeyevent'){
         context.den={slide:'flee',t:0,kills:0,meatTaken:false,searched:false};
+        wolfDenSlide(context,'flee');
         journeyRoadEventSession.ownedMode='journeyevent';
       }
       return entered;
     }
     if(mode!=='journeyevent')return false;
-    const d=context.den;if(d.t<.25)return true;
-    if(d.slide==='entrance'&&action==='tap'&&pt&&pointInRect(pt,WOLF_DEN_MEAT_RECT)){
+    const d=context.den;if(d.t<.25||d.visualPending)return true;
+    const scenePt=pt?{x:pt.x,y:(pt.y+PAD_TOP)/((800+PAD_TOT)/800)}:null;
+    if(d.slide==='entrance'&&action==='tap'&&scenePt&&pointInRect(scenePt,WOLF_DEN_MEAT_RECT)){
       wolfDenTakeMeat(context);return true;
     }
     const choices=wolfDenChoices(context),choice=choices.findIndex((c,i)=>action==='choice'+(i+1)||
-      (action==='tap'&&pt&&pointInRect(pt,WOLF_DEN_BUTTONS[i]))||choices.length===1&&action==='continue');
+      (action==='tap'&&pt&&(pointInRect(pt,WOLF_DEN_BUTTONS[i])||(wolfDenHotspots(context)[i]&&pointInRect(scenePt,wolfDenHotspots(context)[i]))))||choices.length===1&&action==='continue');
     if(choice<0)return true;
     if(d.slide==='trail'){
-      if(choice===1){wolfDenSlide(context,'entrance');return true;}
-      if(!d.searched){
-        d.searched=true;const random=journeyRandom(journeyKeySeed(context.seed,'wolf-den-search')),roll=random();
-        d.find=roll<.5?{kind:'nothing',amount:0}:roll<.8?{kind:'gold',amount:12+Math.floor(random()*13)}:{kind:'scrap',amount:2+Math.floor(random()*2)};
-        if(d.find.kind==='gold')awardGold(d.find.amount);else if(d.find.kind==='scrap')awardScrap(d.find.amount);
-      }
-      wolfDenSlide(context,'searched');return true;
+      if(choice===0){wolfDenSlide(context,'entrance');return true;}
+      context.finish({status:'completed',content:'wolfden',wolves:0,branch:'declined'});return true;
     }
     if(d.slide==='entrance'){
-      if(choice===1)wolfDenSlide(context,'escaped');else startWolfDenFight(context);
+      if(choice===1)wolfDenSlide(context,'escaped');else wolfDenSlide(context,'pack');
       return true;
     }
     if(d.slide==='pup'){
@@ -53506,7 +53594,7 @@ journeyRoadEventHandlers.set('roadside_wolfden',{
       else{const index=relics.findIndex(r=>r?.type==='meat');relics[index]=null;syncArtifactCache();}
       d.alreadyHadPup=!!wolfPup;
       wolfPup??={lane:player.x,attack:null,bondedAt:context.slot.id};
-      wolfDenSlide(context,'befriended');SFX.relic();return true;
+      wolfDenSlide(context,'feeding');SFX.relic();return true;
     }
     context.finish({status:'completed',content:'wolfden',wolves:d.kills,
       branch:d.slide,find:d.find||null,meatTaken:d.meatTaken,befriended:d.slide==='befriended'&&!d.alreadyHadPup});
@@ -53524,9 +53612,32 @@ function queueWolfPupAssist(){
   boss.pupAssistedPhase=boss.playerPhaseSerial;
   wolfPup.attack={boss,phase:boss.playerPhaseSerial,t:0,hit:false};
 }
+const WOLF_PUP_FOLLOW_DISTANCE=6,WOLF_PUP_FOLLOW_SCREEN_GAP=52;
+function updateWolfPupTrail(dt){
+  const p=wolfPup;
+  if(!['run','boss','bossintro'].includes(mode)){p.trail=null;p.jump=0;return;}
+  let trail=p.trail;
+  const delta=trail?roadScroll-trail.road:0;
+  if(!trail||trail.mode!==mode||delta<0||delta>CFG.Z_FAR){
+    const initial={d:-WOLF_PUP_FOLLOW_DISTANCE,lane:player.x,jump:0};
+    trail=p.trail={mode,road:roadScroll,d:0,samples:[initial,{...initial,d:0}]};
+  }
+  // Use travelled road distance, not a fixed timer or a second lane easing.
+  // In a stationary arena a short virtual stride preserves delayed dodges.
+  trail.d+=mode==='run'?Math.max(0,roadScroll-trail.road):dt*CFG.BASE_SPEED;
+  trail.road=roadScroll;
+  const samples=trail.samples,sample={d:trail.d,lane:player.x,jump:jumpHeight()},last=samples.at(-1);
+  // Distance buckets keep this bounded even while stopped or on high-Hz screens.
+  if(Math.floor(last.d*20)===Math.floor(sample.d*20))samples[samples.length-1]=sample;
+  else samples.push(sample);
+  const target=trail.d-WOLF_PUP_FOLLOW_DISTANCE;
+  while(samples.length>2&&samples[1].d<=target)samples.shift();
+  const a=samples[0],b=samples[1],f=clamp((target-a.d)/Math.max(.00001,b.d-a.d),0,1);
+  p.lane=lerp(a.lane,b.lane,f);p.jump=lerp(a.jump,b.jump,f)*.5;
+}
 function updateWolfPup(dt){
   if(!wolfPup||paused)return;
-  wolfPup.lane=lerp(wolfPup.lane,player.x,1-Math.exp(-dt*7));
+  updateWolfPupTrail(dt);
   const a=wolfPup.attack;if(!a)return;
   if(mode!=='boss'||boss!==a.boss||!player.alive||boss.state==='dying'||
      boss.playerPhaseSerial!==a.phase||!['player','playerResolve'].includes(boss.phase)){
@@ -53536,11 +53647,16 @@ function updateWolfPup(dt){
   if(a.t>=.36&&!a.hit){a.hit=true;hurtBoss(3,false,'companion');floater(VW/2+65,390,'PUP BITE','#b9d9d6',12);}
   if(a.t>=.8)wolfPup.attack=null;
 }
-function drawWolfPupFollower(){
+function drawWolfPupFollower(foreground=true){
   if(!wolfPup||!player.alive||!['run','boss','bossintro'].includes(mode))return;
   const attack=wolfPup.attack,leap=attack?Math.sin(Math.PI*clamp(attack.t/.8,0,1)):0,
-    x=clamp(laneX(wolfPup.lane,1)+46,24,VW-24),y=PLAYER_Y+14-leap*115-jumpHeight()*.5;
-  drawDenWolf(x,y,.48,'back',perfNow,true,mode==='run'||leap>0);
+    x=clamp(laneX(wolfPup.lane,1),24,VW-24),groundY=PLAYER_Y+WOLF_PUP_FOLLOW_SCREEN_GAP-leap*115,
+    y=groundY-(wolfPup.jump||0);
+  // Sort by floor contact, not airborne head height: the trailing pup is
+  // nearer the camera even while jumping across the horse's silhouette.
+  if((groundY>=PLAYER_Y)!==foreground)return;
+  if(window.KRWolfDen)KRWolfDen.pup(x,y,.56,perfNow,true,mode==='run'||leap>0,false,groundY);
+  else drawDenWolf(x,y,.56,'back',perfNow,true,mode==='run'||leap>0);
 }
 const ROAD_LAB_CASES=Object.freeze([
   ...['forge','caravan','inn','bloodwood','disco'].map(theme=>({id:theme,label:JOURNEY_ROAD_THEMES[theme].label,theme})),
@@ -53549,7 +53665,6 @@ const ROAD_LAB_CASES=Object.freeze([
   {id:'chest',label:'TREASURE CACHE',theme:'chest'},
   ...ROAD_ENEMIES.map(e=>({id:e.id,label:e.name,definition:'roadside_fight',enemyId:e.id})),
   {id:'well',label:'? WISHING WELL',definition:'roadside_cache',content:'well'},
-  {id:'chickens',label:'? ESCAPED CHICKENS',definition:'roadside_quest',content:'chickens'},
   {id:'traveler',label:'? WOUNDED TRAVELER',definition:'roadside_quest',content:'traveler'},
   {id:'taxman',label:'? ROYAL TAX COLLECTOR',definition:'roadside_cache',content:'taxman'},
   {id:'wolfden',label:'? WOLF DEN',definition:'roadside_wolfden',content:'wolfden'}
@@ -53886,9 +54001,9 @@ const CHARGE_PRIMARY_RUNTIME_AUDIT=RUN_BOOT_AUDITS&&(()=>{
     guaranteedPreparation:true,primaryBank:true,separatePureMastery:true,
     manualLifecycle:Object.freeze(['ARMED','DEFENDING','READY','DEFENDING'])});
 })();
-function uiConfirm(forestStyle='sunlit'){
+function uiConfirm(){
   if(mode==='menu'){ debugBossStart=false; debugMiniMoves=false; }
-  if(mode==='menu'){ journeyForestStyle=forestStyle==='classic'?'classic':'sunlit';debugRun=false; godMode=false; setMode('charsel'); SFX.swipe(); }  // PLAY → an honest ride
+  if(mode==='menu'){ journeyForestStyle='sunlit';debugRun=false; godMode=false; startRun(0); } // PLAY directly selects Jonathan; other riders remain in source.
   else if(mode==='charsel'){ startRun(charSel); }
   else if(mode==='score'&&modeT>0.6){ resetRun(); setMode('menu'); }  // fresh board behind the menu
 }
@@ -54273,6 +54388,7 @@ function drawSquireCombatHUD(){
 function drawHUD(){
   g.save(); g.translate(0,uiTop);           // keep the HUD clear of phone notches / islands
   g.textAlign='left'; g.font='bold 16px monospace';
+  if(!boss?.wolfDen){
   /* Run-local currency wallet, clear of the stage bar and hearts. */
   drawCoin(26,19,.7,.25);
   g.fillStyle='#000';g.fillText(gold,46,27);g.fillStyle='#ffd23a';g.fillText(gold,44,25,89);
@@ -54298,8 +54414,9 @@ function drawHUD(){
   g.fillStyle='#3f7bff'; g.fillRect(bx,by,bw*clamp(dist/stageDistance(),0,1),7);
   g.fillStyle='#ff4d3a'; g.fillRect(bx+bw-3,by-3,5,13);
   /* relic slots */
-  for(let i=0;i<5;i++) drawRelicSlot(14+i*43,66,38,relics[i]);
-  if(journeyMeat>0){
+  }
+  for(let i=0;i<5;i++)if(!boss?.wolfDen||relics[i])drawRelicSlot(14+i*43,66,38,relics[i]);
+  if(journeyMeat>0&&!boss?.wolfDen){
     drawRelicSlot(236,66,38,{type:'meat'});
     expRect(258,67,15,13,'#181d21');
     smithText(String(journeyMeat),265,77,9,'#efd6ac');
@@ -54316,9 +54433,8 @@ function drawHUD(){
   drawSquireCombatHUD();
   /* pause button (top-right, under the weapon counts) */
   if(GAMEPLAY_MODES.includes(mode)){
-    g.fillStyle='#00000077'; g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y,PAUSE_BTN.w,PAUSE_BTN.h);
-    g.strokeStyle='#e8e2d055'; g.lineWidth=2; g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y,PAUSE_BTN.w,PAUSE_BTN.h);
-    g.fillStyle='#e8e2d0';
+    KRUI.button(g,PAUSE_BTN,'','treasure',{variant:'secondary'});
+    g.fillStyle=KRUI.theme().onDark;
     g.fillRect(PAUSE_BTN.x+11,PAUSE_BTN.y+9,5,20); g.fillRect(PAUSE_BTN.x+22,PAUSE_BTN.y+9,5,20);
   }
   /* boss HP bar with fight-phase status */
@@ -54337,7 +54453,7 @@ function drawHUD(){
     else if(boss.state==='breakRecover') st='RECOVERING';
     else if(boss.state==='finisher') st='NO ESCAPE.';
     else if(boss.phase==='dodge') st='survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
-    drawHPBar(activeBossDefinition().name,boss.hp,boss.maxhp,st);
+    drawHPBar(boss.wolfDen?'':activeBossDefinition().name,boss.hp,boss.maxhp,boss.wolfDen?'':st);
     drawBossPostureBar(boss);
     drawBossMarkTokens(boss);
     drawBossBleedStatus(boss);
@@ -54351,6 +54467,7 @@ function drawHUD(){
     /* Tap the full meter to spend it. Input uses KNIGHT_RUSH_BTN in final screen
        coordinates; this draw position cancels uiTop to stay pinned above the
        physical bottom safe area on every aspect ratio. */
+    if(!boss.wolfDen||knightRush>0||knightRushQueued){
     const special=activeCharacterSpecial(),rw=286,rx=VW/2-rw/2,ry=VH-uiTop-39;
     const rushArmed=knightRushQueued,
       rushFull=(knightRush>=special.maxCharge||rushArmed)&&boss.phase==='dodge',
@@ -54369,6 +54486,7 @@ function drawHUD(){
     g.fillText(rushArmed?special.name+' ARMED — NEXT OPENING':
       rushReady?special.name+' READY — TAP':
       special.name+'  '+Math.round(knightRush/special.maxCharge*100)+'%',VW/2,ry+12);
+    }
     if(isPlayerTurn()) drawPlayerTurnUI();
   }
   if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
@@ -54392,20 +54510,10 @@ function drawHUD(){
   g.restore();
 }
 function drawTurnButton(rect,title,sub,col='#e8e2d0',enabled=true,move=null){
-  g.fillStyle=enabled?'rgba(13,16,25,.94)':'rgba(10,11,16,.88)';
-  g.fillRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle=enabled?col:'#4b4d58';g.lineWidth=2;
-  g.strokeRect(rect.x+.5,rect.y+.5,rect.w-1,rect.h-1);
-  const mutation=moveFrameMutation(move);
-  if(mutation)drawSkillMutationRarityFrame(mutation,rect);
-  g.textAlign='center';g.font='bold 16px monospace';
-  g.fillStyle=enabled?col:'#656774';
-  g.fillText(title,rect.x+rect.w/2,rect.y+(sub?22:rect.h/2+6));
-  if(sub){
-    const subSize=Math.max(7,Math.min(10,Math.floor((rect.w-8)/Math.max(1,sub.length*.61))));
-    g.font=subSize+'px monospace';g.fillStyle=enabled?'#aeb2c2':'#555764';
-    g.fillText(sub,rect.x+rect.w/2,rect.y+38);
-  }
+  const id=currentUITheme(),p=KRUI.theme(id);KRUI.button(g,rect,'',id,{enabled,variant:'secondary'});
+  const mutation=moveFrameMutation(move);if(mutation)drawSkillMutationRarityFrame(mutation,rect);
+  KRUI.text(g,title,rect.x+rect.w/2,rect.y+(sub?22:rect.h/2+6),16,enabled?col:p.mutedInk,rect.w-12);
+  if(sub)KRUI.text(g,sub,rect.x+rect.w/2,rect.y+38,10,enabled?p.soft:p.mutedInk,rect.w-8);
 }
 function skillButtonSubtitle(skill){
   const finish=text=>{
@@ -54712,8 +54820,8 @@ function drawSkillTooltip(){
       ?breakdown.rows.length+' HITS · '+finals.join(' / ')+' · TOTAL '+healthDamageText(breakdown.total,true)
       :'FINAL DAMAGE '+healthDamageText(breakdown.total,true);
   g.save();
-  g.fillStyle='rgba(2,3,7,.78)';g.fillRect(0,0,VW,VH);
-  g.fillStyle='rgba(8,11,18,.98)';g.fillRect(x,y,w,h);
+  g.fillStyle='rgba(31,23,19,.78)';g.fillRect(0,0,VW,VH);
+  KRUI.panel(g,{x,y,w,h},'treasure');
   g.strokeStyle=command.col;g.lineWidth=3;g.strokeRect(x+.5,y+.5,w-1,h-1);
   g.fillStyle=command.col;g.fillRect(x,y,w,6);
   g.textAlign='left';g.font='bold 23px monospace';g.fillStyle='#f4f1e8';
@@ -54785,12 +54893,12 @@ function drawPlayerTurnUI(){
     if(hasCombatAlly())drawPartyTabs();
     else{
       g.textAlign='left';g.font='bold 14px monospace';g.fillStyle='#e8e2d0';
-      g.fillText('CHOOSE AN ACTION',30,578);
+      if(!boss.wolfDen)g.fillText('CHOOSE AN ACTION',30,578);
     }
     g.textAlign='right';g.font='bold 12px monospace';g.fillStyle='#7fc9ff';
     if(!hasCombatAlly())g.fillText('AP '+boss.ap+'/'+boss.apMax+' · R '+boss.resolve+'/'+boss.resolveMax,450,578);
     g.textAlign='center';g.font='bold 9px monospace';g.fillStyle='#777d8d';
-    g.fillText('HOLD FIGHT · '+fightAp.label+' '+fightAp.current+'/'+fightAp.max+
+    if(!boss.wolfDen)g.fillText('HOLD FIGHT · '+fightAp.label+' '+fightAp.current+'/'+fightAp.max+
       ' · R '+boss.resolve+'/'+boss.resolveMax,130,600);
     const fightEnabled=turnCommandAvailable(fight,actorId),
       fightDamage=turnCommandDamageBreakdown(fight).total,
@@ -55998,6 +56106,7 @@ function drawDiscoDance(){
     drawDiscoCourtier(...p,i,d.sceneT,d.crowdCheer);
   }
   drawDiscoPlayer(240,719,1.22,d.playerPose,discoPlayerMoveAmount(d.playerPoseT),d.sceneT);
+  if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
   drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
   if(d.phase==='intro'){
@@ -56232,6 +56341,7 @@ function drawSlotMachineGame(){
   drawRider(52,748,.62,{gallop:(perfNow*.55)%1,rigId:playerChar.rigId,feather:playerChar.feather,
     horse:playerChar.horse,chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman});
   drawSlotCabinet();
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -56389,6 +56499,7 @@ function drawPunchingRider(){
 function drawPunchBagGame(){
   const p=punchGame;if(!p)return;
   drawPunchBagArena();drawPunchingRider();drawSirPunchington();
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -56654,6 +56765,7 @@ function drawJoustPreview(r){
 function drawJoustGame(){
   const j=joustGame;if(!j)return;
   drawJoustArena();drawJoustRiders();
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -56944,6 +57056,7 @@ function drawSwordDuelPreview(r){
 function drawSwordDuelGame(){
   const s=swordGame;if(!s)return;
   drawSwordDuelArena();drawSwordDuelFighters();
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -57226,7 +57339,8 @@ function drawChickenRaceChrome(){
   g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
 }
 function drawChickenRaceGame(){
-  const c=chickenRaceGame;if(!c)return;drawChickenRaceArena();drawChickenRaceChrome();
+  const c=chickenRaceGame;if(!c)return;drawChickenRaceArena();
+  if(pausePhotoMode){drawChickenRaceTrack();return;}drawChickenRaceChrome();
   g.fillStyle='#080a0edc';g.fillRect(53,104,374,70);g.strokeStyle='#f1b33b';g.lineWidth=2;g.strokeRect(53,104,374,70);
   g.textAlign='center';g.font='bold 22px monospace';g.fillStyle='#ffe36a';g.fillText('THE ROYAL CHICKEN DERBY',VW/2,133);
   g.font='bold 11px monospace';g.fillStyle='#f4ead0';g.fillText(c.coins+' COINS  |  '+c.message,VW/2,158);
@@ -57439,7 +57553,7 @@ function drawLogBalanceGame(){
     drawLogWeightObject({x:126,y:286,side:'left',kind:'boot',weight:2,angle:-.2});
     drawLogWeightObject({x:354,y:315,side:'right',kind:'anvil',weight:3,angle:.2});
   }
-  drawBalanceLog();drawLogBalanceMeter();
+  drawBalanceLog();if(pausePhotoMode)return;drawLogBalanceMeter();
   for(const popup of b.popups){g.globalAlpha=1-popup.t/.8;g.fillStyle=popup.col;g.font='bold 17px monospace';g.textAlign='center';g.fillText(popup.text,popup.x,popup.y-popup.t*45);g.globalAlpha=1;}
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -57680,6 +57794,7 @@ function drawLockpickingPreview(r){
 }
 function drawLockpickingGame(){
   const l=lockpickGame;if(!l)return;drawLockpickingArena();drawLockChest();
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
   g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
@@ -57924,10 +58039,11 @@ function drawWishingWellPreview(r){
   g.strokeStyle='#ffe36a';g.lineWidth=3;g.setLineDash([5,4]);g.beginPath();g.moveTo(r.x+18,r.y+93);g.quadraticCurveTo(r.x+r.w*.42,r.y+12,r.x+r.w/2,r.y+55);g.stroke();g.setLineDash([]);drawWishingCoin(r.x+29,r.y+82,.42,perfNow*7);
 }
 function drawWishingWellGame(){
-  const w=wellGame;if(!w)return;drawWishingWellArena();drawWellWind();drawWishingWellStructure();drawWellAimGuide();
+  const w=wellGame;if(!w)return;drawWishingWellArena();drawWellWind();drawWishingWellStructure();if(!pausePhotoMode)drawWellAimGuide();
   if(w.phase==='flying')drawWishingCoin(w.coinPos.x,w.coinPos.y,lerp(1,.45,w.flightT/WELL_RULES.flightTime),perfNow*15);
   if(w.phase==='result'&&!w.result.hit)drawWishingCoin(w.coinPos.x,w.coinPos.y,.55,perfNow*4);
   if(w.impactT>0&&w.result&&w.result.hit){const impact=clamp(w.impactT/.8,0,1);g.globalAlpha=impact;g.strokeStyle=w.result.col;g.lineWidth=4;g.beginPath();g.ellipse(w.setup.x,w.setup.y,20+(1-impact)*70,7+(1-impact)*25,0,0,TAU);g.stroke();g.globalAlpha=1;}
+  if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
   g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
@@ -58186,6 +58302,7 @@ function drawBoulderingGame(){
     drawBoulderRock(b.rocks[row][col],active,active&&col===b.cursor);
   }
   drawBoulderKnight();
+  if(pausePhotoMode)return;
   drawBoulderStamina();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
@@ -58701,7 +58818,7 @@ function drawKnifeFlipGame(){
   if(k.phase==='intro'||k.phase==='result'){x=240;y=KNIFE_FLIP_RULES.tableY;angle=0;}
   else if(k.phase==='aiming'&&k.flick){const pull=clamp((k.flick.startY-k.flick.y)/150,0,1);y-=pull*20;angle=k.flick.originAngle+clamp((k.flick.x-k.flick.startX)*.008,-.28,.28);}
   else if(k.phase==='stuck')angle=k.angle+Math.sin(k.phaseT*46)*.09*(1-k.phaseT/KNIFE_FLIP_RULES.settleTime);
-  drawKnifeBlade(x,y,angle,1);drawKnifeFlickGuide();
+  drawKnifeBlade(x,y,angle,1);if(pausePhotoMode)return;drawKnifeFlickGuide();
   g.fillStyle='#080a0edb';g.fillRect(152,92,176,62);g.strokeStyle='#d5a750';g.lineWidth=2;g.strokeRect(152,92,176,62);
   g.textAlign='center';g.font='bold 12px monospace';g.fillStyle='#aeb2c2';g.fillText('CLEAN STICKS',VW/2,113);
   g.font='bold 28px monospace';g.fillStyle='#ffe36a';g.fillText(String(k.score),VW/2,143);
@@ -58863,6 +58980,7 @@ function drawGoldPanningPreview(r){
 }
 function drawGoldPanningGame(){
   const k=goldPanGame;if(!k)return;drawGoldPanningArena();drawGoldProspector(k.phase==='intro'?0:k.phase==='result'?1:k.elapsed/GOLD_PAN_RULES.duration);drawGoldPanBowl();
+  if(pausePhotoMode)return;
   g.fillStyle='#080a0edb';g.fillRect(145,88,190,66);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(145,88,190,66);g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#d5c7a1';g.fillText('STOLEN GOLD',240,111);g.font='bold 29px monospace';g.fillStyle='#ffe36a';g.fillText(String(k.score),240,145);
   const approach=clamp(k.elapsed/GOLD_PAN_RULES.duration,0,1);g.fillStyle='#171a20';g.fillRect(112,164,256,13);g.fillStyle='#ff655c';g.fillRect(112,164,256*approach,13);g.strokeStyle='#111';g.strokeRect(112,164,256,13);g.font='bold 8px monospace';g.fillStyle='#e8e2d0';g.fillText('PROSPECTOR APPROACH',240,174);
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.fillText('< BACK',62,77);
@@ -59196,6 +59314,7 @@ function drawSwordMending(){
   g.save();g.translate(MEND_SMITH.x,MEND_SMITH.y);g.scale(MEND_SMITH.scale,MEND_SMITH.scale);
   drawSmithKnight(0,0,0,0,false,0,false,null,pose,m.clock);g.restore();
   drawMendAnvil();drawMendTongs(pose);drawMendBlade();drawMendHammer(pose);
+  if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8c8a7');
   drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8c8a7');
   smithText('CROOKED STEEL',240,110,25,'#ecd19a',326);
@@ -59564,6 +59683,7 @@ function drawBlacksmithGame(){
     g.globalAlpha=1;
   }
   drawForgeHeatMeter();
+  if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
   drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
   smithText('THE LITTLE HAMMER',240,110,23,'#ecd29c',325);
@@ -59723,7 +59843,7 @@ function drawPickpocketPreview(r){
   g.strokeStyle='#7f8996';g.lineWidth=16;g.lineCap='round';g.beginPath();g.moveTo(r.x+24,r.y+107);g.lineTo(r.x+r.w*.55,r.y+67);g.stroke();g.fillStyle='#ffe36a';g.beginPath();g.arc(r.x+r.w*.64,r.y+53,8,0,TAU);g.fill();g.fillStyle='#ffb45e';g.font='bold 9px monospace';g.textAlign='center';g.fillText('SHH!',r.x+r.w/2,r.y+101);
 }
 function drawPickpocketGame(){
-  const p=pickpocketGame;if(!p)return;drawPickpocketMarket();drawPickpocketNoble();drawPickpocketHands();drawPickpocketMeters();
+  const p=pickpocketGame;if(!p)return;drawPickpocketMarket();drawPickpocketNoble();drawPickpocketHands();if(pausePhotoMode)return;drawPickpocketMeters();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
   g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
   if(p.phase==='intro'){
@@ -60144,31 +60264,29 @@ const MINIGAME_SYSTEM_AUDIT=(()=>{
     forgeHits:FORGE_RULES.hits,pickpocketCoins:PICKPOCKET_RULES.coins,tavernMugs:TAVERN_SLIDE_RULES.mugsEach});
 })();
 function drawMinigamesMenu(){
-  g.fillStyle='rgba(5,7,12,.90)';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  g.textAlign='center';g.font='bold 31px monospace';g.fillStyle='#ffe36a';g.fillText('MINIGAMES',VW/2,70);
-  g.font='12px monospace';g.fillStyle='#aeb2c2';g.fillText('ROADSIDE ODDITIES & QUESTIONABLE KNIGHTLY SPORTS',VW/2,100);
+  const p=KRUI.theme('tavern');g.fillStyle=p.dark;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  KRUI.text(g,'MINIGAMES',VW/2,35,26,p.onDark);
+  KRUI.text(g,'ROADSIDE ODDITIES & QUESTIONABLE KNIGHTLY SPORTS',VW/2,100,11,p.soft,456);
   g.save();g.beginPath();g.rect(0,MINIGAME_LIST_TOP,VW,MINIGAME_LIST_BOTTOM-MINIGAME_LIST_TOP);g.clip();
   for(let i=0;i<MINIGAMES.list.length;i++){
     const def=MINIGAMES.list[i],source=MINIGAME_CARD_RECTS[i],r={x:source.x,y:source.y-minigameMenuScroll,w:source.w,h:source.h};
     if(r.y+r.h<MINIGAME_LIST_TOP-4||r.y>MINIGAME_LIST_BOTTOM+4)continue;
-    g.fillStyle='#11141d';g.fillRect(r.x,r.y,r.w,r.h);g.strokeStyle=def.col;g.lineWidth=3;g.strokeRect(r.x,r.y,r.w,r.h);
-    g.save();g.beginPath();g.rect(r.x+3,r.y+3,r.w-6,108);g.clip();def.drawPreview(r);
-    const fade=g.createLinearGradient(0,r.y+72,0,r.y+112);fade.addColorStop(0,'#11141d00');fade.addColorStop(1,'#11141d');g.fillStyle=fade;g.fillRect(r.x+3,r.y+70,r.w-6,43);g.restore();
-    g.font='bold 11px monospace';g.fillStyle=def.col;
-    for(let line=0;line<def.cardTitle.length;line++)g.fillText(def.cardTitle[line],r.x+r.w/2,r.y+127+line*14);
-    g.font='8px monospace';g.fillStyle='#c5c8d2';g.fillText(def.cardStat,r.x+r.w/2,r.y+161);
-    g.fillStyle=def.col;g.fillRect(r.x+31,r.y+171,r.w-62,17);
-    g.font='bold 9px monospace';g.fillStyle='#11141d';g.fillText('PLAY',r.x+r.w/2,r.y+183);
+    KRUI.panel(g,r,'tavern');
+    g.save();g.beginPath();g.rect(r.x+4,r.y+5,r.w-8,106);g.clip();def.drawPreview(r);
+    const fade=g.createLinearGradient(0,r.y+72,0,r.y+112);fade.addColorStop(0,p.panel+'00');fade.addColorStop(1,p.panel);g.fillStyle=fade;g.fillRect(r.x+3,r.y+70,r.w-6,43);g.restore();
+    for(let line=0;line<def.cardTitle.length;line++)KRUI.text(g,def.cardTitle[line],r.x+r.w/2,r.y+127+line*14,11,p.onDark,r.w-16);
+    KRUI.text(g,def.cardStat,r.x+r.w/2,r.y+161,9,p.soft,r.w-14);
+    KRUI.button(g,{x:r.x+31,y:r.y+171,w:r.w-62,h:20},'PLAY','tavern',{size:10});
   }
   g.restore();
   const maxScroll=maxMinigameMenuScroll(),trackY=120,trackH=596,viewH=MINIGAME_LIST_BOTTOM-MINIGAME_LIST_TOP,
     contentH=viewH+maxScroll,thumbH=Math.max(42,trackH*viewH/contentH),thumbY=trackY+(trackH-thumbH)*(maxScroll?minigameMenuScroll/maxScroll:0);
-  g.fillStyle='#252934';g.fillRect(472,trackY,4,trackH);g.fillStyle='#ffe36a';g.fillRect(470,thumbY,8,thumbH);
-  const topFade=g.createLinearGradient(0,MINIGAME_LIST_TOP,0,MINIGAME_LIST_TOP+24);topFade.addColorStop(0,'#05070cff');topFade.addColorStop(1,'#05070c00');g.fillStyle=topFade;g.fillRect(0,MINIGAME_LIST_TOP,VW,25);
-  const bottomFade=g.createLinearGradient(0,MINIGAME_LIST_BOTTOM-30,0,MINIGAME_LIST_BOTTOM);bottomFade.addColorStop(0,'#05070c00');bottomFade.addColorStop(1,'#05070cff');g.fillStyle=bottomFade;g.fillRect(0,MINIGAME_LIST_BOTTOM-30,VW,30);
-  g.fillStyle='#11141df2';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.font='bold 13px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);g.font='bold 9px monospace';g.fillStyle='#ffe36a';g.textAlign='right';g.fillText(MINIGAMES.ids.length+' GAMES',466,77);
-  g.textAlign='center';g.font='8px monospace';g.fillStyle='#777d8b';g.fillText('DRAG / SWIPE / MOUSE WHEEL TO BROWSE',VW/2,748);
+  g.fillStyle=p.panel;g.fillRect(472,trackY,4,trackH);g.fillStyle=p.accent;g.fillRect(470,thumbY,8,thumbH);
+  const topFade=g.createLinearGradient(0,MINIGAME_LIST_TOP,0,MINIGAME_LIST_TOP+24);topFade.addColorStop(0,p.dark);topFade.addColorStop(1,p.dark+'00');g.fillStyle=topFade;g.fillRect(0,MINIGAME_LIST_TOP,VW,25);
+  const bottomFade=g.createLinearGradient(0,MINIGAME_LIST_BOTTOM-30,0,MINIGAME_LIST_BOTTOM);bottomFade.addColorStop(0,p.dark+'00');bottomFade.addColorStop(1,p.dark);g.fillStyle=bottomFade;g.fillRect(0,MINIGAME_LIST_BOTTOM-30,VW,30);
+  KRUI.button(g,MINIGAME_BACK_BTN,'< BACK','tavern',{variant:'secondary'});
+  KRUI.text(g,MINIGAMES.ids.length+' GAMES',425,77,10,p.accent,80);
+  KRUI.text(g,'DRAG / SWIPE / MOUSE WHEEL TO BROWSE',VW/2,748,9,p.soft,430);
 }
 
 
@@ -60512,122 +60630,106 @@ function letterbox(t){                          // cinematic black bars easing i
   const h=easeOut(clamp(t,0,1))*64;
   g.fillStyle='#000'; g.fillRect(0,-PAD_TOP,VW,h+PAD_TOP); g.fillRect(0,VH-h,VW,h+PAD_BOT);
 }
+function menuCaveProjection(z){
+  // A fixed camera, independent of the last run's road bend or biome.
+  const far=CFG.FOCAL/(CFG.FOCAL+CFG.Z_FAR),
+    t=(CFG.FOCAL/(CFG.FOCAL+z)-far)/(1-far);
+  return {t,y:lerp(HORIZON_Y,GROUND_Y,t),s:lerp(.09,1,t*t*.35+t*.65)};
+}
+function drawMenuSwordMotes(pose,t){
+  if(!pose)return;
+  const {base,tip}=pose,dx=tip.x-base.x,dy=tip.y-base.y,len=Math.hypot(dx,dy)||1,
+    nx=dy/len,ny=-dx/len;
+  g.save();
+  // Fixed, bounded title-screen accents. No combat particles, RNG or pooling.
+  for(let i=0;i<7;i++){
+    const clock=t*.57+i/7,age=clock-Math.floor(clock),seed=i*37+Math.floor(clock)*101;
+    if(age>.72)continue;
+    const life=age/.72,u=.20+.76*sRnd(seed+1),side=i%2?1:-1,
+      drift=side*(3+life*(7+sRnd(seed+3)*6)),
+      x=lerp(base.x,tip.x,u)+nx*drift,y=lerp(base.y,tip.y,u)+ny*drift-life*12,
+      size=(1-life)*1.5+.7;
+    g.globalAlpha=Math.sin(life*Math.PI)*.72;g.fillStyle=i%3?'#a9dfff':'#f2f7ff';
+    g.fillRect(x-size/2,y-size/2,size,size);
+  }
+  const glint=(t*.23)%1;
+  g.globalAlpha=Math.sin(glint*Math.PI)*.65;g.strokeStyle='#d8f4ff';g.lineWidth=1.2;
+  g.beginPath();g.moveTo(lerp(base.x,tip.x,glint),lerp(base.y,tip.y,glint));
+  g.lineTo(lerp(base.x,tip.x,Math.min(1,glint+.07)),lerp(base.y,tip.y,Math.min(1,glint+.07)));g.stroke();
+  g.restore();
+}
+function menuKnightIdlePose(t){
+  const cycle=((t%7.2)+7.2)%7.2/7.2,
+    breath=cycle<.38?smoothStep(cycle/.38):1-smoothStep((cycle-.38)/.62);
+  return {breath:breath*.32,
+    horseBreath:(1-Math.cos(t*TAU/6.4+.55))*.5,
+    tailSway:Math.sin(t*TAU/11+1.7)*1.45,
+    plumeSway:Math.sin(t*1.7)*.28+Math.sin(t*2.9+.7)*.09,
+    plumeTip:Math.sin(t*1.7-.45)*.12};
+}
+function drawMenuEncounter(){
+  const height=menuSheetY()+PAD_TOP,zoom=height/560,backdropZoom=Math.max(1.16,zoom);
+  // One continuous cave fills the viewport behind the floating menu sheet.
+  g.save();g.translate(VW/2+32,-PAD_TOP);g.scale(backdropZoom,backdropZoom);g.translate(-VW/2,-125);
+  drawCave(menuCaveProjection);
+  g.restore();
+  drawBearNatural(302,-PAD_TOP+height*.51,1.32*zoom,'idle',0,false);
+  // Hold the real second-cut follow-through; no attack loop or detached prop.
+  const swordAction=backSwordPoseAt(2,{}),swordFx={};
+  // Seated chest breathing, planted horse breathing and a slow tail swish.
+  drawSerJonathanRider(148,-PAD_TOP+height*1.05,2.25*zoom,{gallop:0,lean:0,duck:0,
+    feather:'#268ee8',horse:'#6f4327',swordAction,swordFxTarget:swordFx,
+    mountedIdle:menuKnightIdlePose(perfNow)});
+  drawMenuSwordMotes(swordFx.swordFxPose,perfNow);
+}
 function drawMenu(){
-  /* animated forest idles behind the title */
-  g.textAlign='center';
-  const bob=Math.sin(perfNow*2)*6;
-  g.font='bold 56px monospace';
-  g.fillStyle='#000'; g.fillText('KNIGHT',VW/2+4,224+bob+4); g.fillText('RUSH',VW/2+4,280+bob+4);
-  g.fillStyle='#e8e2d0'; g.fillText('KNIGHT',VW/2,220+bob);
-  g.fillStyle='#3f7bff'; g.fillText('RUSH',VW/2,276+bob);
-  g.font='15px monospace'; g.fillStyle='#aeb2c2';
-  g.fillText('a moonlit gauntlet through the wolfwood',VW/2,312+bob);
-  drawRider(VW/2,PLAYER_Y-40,1.3,{gallop:(perfNow*1.4)%1,rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,
-    chubby:playerChar.chubby,monkey:playerChar.monkey,caveman:playerChar.caveman});
-  const btnBg=(x,y,w,h)=>{ g.fillStyle='rgba(5,9,16,0.55)'; g.fillRect(x,y,w,h); };
-  btnBg(MENU_PLAY_BTN.x,MENU_PLAY_BTN.y,MENU_PLAY_BTN.w,MENU_PLAY_BTN.h);
-  g.strokeStyle='#ffe37a'; g.lineWidth=2+Math.sin(perfNow*5);
-  g.strokeRect(MENU_PLAY_BTN.x,MENU_PLAY_BTN.y,MENU_PLAY_BTN.w,MENU_PLAY_BTN.h);
-  g.font='bold 20px monospace'; g.fillStyle='#ffe37a'; g.fillText('▶ PLAY',MENU_PLAY_BTN.x+MENU_PLAY_BTN.w/2,437);
-  btnBg(MENU_OLD_FOREST_BTN.x,MENU_OLD_FOREST_BTN.y,MENU_OLD_FOREST_BTN.w,MENU_OLD_FOREST_BTN.h);
-  g.strokeStyle='#a9c694';g.lineWidth=2;g.strokeRect(MENU_OLD_FOREST_BTN.x,MENU_OLD_FOREST_BTN.y,MENU_OLD_FOREST_BTN.w,MENU_OLD_FOREST_BTN.h);
-  g.font='bold 16px monospace';g.fillStyle='#a9c694';g.fillText('OLD FOREST',MENU_OLD_FOREST_BTN.x+MENU_OLD_FOREST_BTN.w/2,436);
-  g.font='10px monospace';g.fillStyle='#9ecbff';g.fillText('SEEDED JOURNEY',VW/2,394);
-  btnBg(MENU_RELIC_BTN.x,MENU_RELIC_BTN.y,MENU_RELIC_BTN.w,MENU_RELIC_BTN.h);
-  g.strokeStyle='#b08ae0'; g.lineWidth=2; g.strokeRect(MENU_RELIC_BTN.x,MENU_RELIC_BTN.y,MENU_RELIC_BTN.w,MENU_RELIC_BTN.h);
-  g.font='bold 14px monospace'; g.fillStyle='#b08ae0'; g.fillText('RELIC CODEX',MENU_RELIC_BTN.x+MENU_RELIC_BTN.w/2,495);
-  btnBg(MENU_MINIGAMES_BTN.x,MENU_MINIGAMES_BTN.y,MENU_MINIGAMES_BTN.w,MENU_MINIGAMES_BTN.h);
-  g.strokeStyle='#ff5ac8';g.lineWidth=2;g.strokeRect(MENU_MINIGAMES_BTN.x,MENU_MINIGAMES_BTN.y,MENU_MINIGAMES_BTN.w,MENU_MINIGAMES_BTN.h);
-  g.fillStyle='#ff8bd4';g.fillText('♫ MINIGAMES',MENU_MINIGAMES_BTN.x+MENU_MINIGAMES_BTN.w/2,495);
-  btnBg(VW/2-80,524,160,42);
-  g.strokeStyle='#8b8fa0'; g.strokeRect(VW/2-80,524,160,42);
-  g.fillStyle='#aeb2c2'; g.fillText('QUIT',VW/2,551);
-  btnBg(VW/2-80,580,160,32);
-  g.strokeStyle='#5c8fa066'; g.lineWidth=1.5; g.strokeRect(VW/2-80,580,160,32);
-  g.font='bold 13px monospace'; g.fillStyle='#5c8fa0'; g.fillText('⚙ DEBUG RUN',VW/2,601);
-  btnBg(VW/2-100,628,200,36);g.strokeStyle='#789967';g.strokeRect(VW/2-100,628,200,36);
-  g.fillStyle='#a9c694';g.fillText('FOREST TEST · TREE',VW/2,651);
-  g.font='12px monospace';
-  if(menuMsg&&perfNow<menuMsgT){ g.fillStyle='#ffe37a'; g.fillText(menuMsg,VW/2,784); }
-  else if(bestScore>0){ g.fillStyle='#ffd23a'; g.fillText('best score: '+bestScore,VW/2,784); }
-  /* changelog — bottom right · settings — bottom left */
-  btnBg(VW-136,VH-78,122,34); btnBg(14,VH-78,122,34);
-  g.strokeStyle='#8b8fa066'; g.lineWidth=1.5; g.strokeRect(VW-136,VH-78,122,34);
-  g.font='bold 12px monospace'; g.fillStyle='#8b8fa0'; g.fillText('CHANGELOG',VW-75,VH-56);
-  g.strokeStyle='#8b8fa066'; g.strokeRect(14,VH-78,122,34);
-  g.fillText('⚙ SETTINGS',75,VH-56);
+  const p=KRUI.theme('treasure'),sheetY=menuSheetY();
+  drawMenuEncounter();
+  if(pausePhotoMode)return;
+  // Title belongs to the encounter, not to a settings-like panel header.
+  g.save();g.textAlign='left';g.font='bold 38px monospace';
+  g.fillStyle='#100d12';g.fillText('KNIGHT',27,-PAD_TOP+68);g.fillText('RUSH',27,-PAD_TOP+110);
+  g.fillStyle='#efe4cb';g.fillText('KNIGHT',24,-PAD_TOP+65);
+  g.fillStyle='#7199df';g.fillText('RUSH',24,-PAD_TOP+107);g.restore();
+  KRMenuMapPaper.draw(g,sheetY-8);
+  const b=(r,label,primary=false,size=14)=>KRUI.button(g,r,label,'treasure',{variant:primary?undefined:'secondary',size});
+  b(MENU_PLAY_BTN,'▶ PLAY',true,20);
+  b(MENU_RELIC_BTN,'RELIC CODEX');b(MENU_MINIGAMES_BTN,'MINIGAMES');
+  b(MENU_SETTINGS_BTN,'SETTINGS');b(MENU_DEBUG_BTN,'DEBUG RUN',false,13);
+  if(menuMsg&&perfNow<menuMsgT)KRUI.text(g,menuMsg,VW/2,sheetY+220,10,p.paperSoft,360);
+  else if(bestScore>0)KRUI.text(g,'BEST SCORE · '+bestScore,VW/2,sheetY+220,10,p.paperSoft);
 }
 /* ---------- settings sheet: floats over the menu or the pause screen ---------- */
+function currentUITheme(){
+  return 'treasure'; // One classic palette; the scene keeps its own colours.
+}
 function drawSettings(){
-  const showDebugOptions=debugRun||debugMoveLabActive();
-  const showRunAutoParry=debugRun&&!debugMoveLabActive();
-  g.fillStyle='rgba(5,7,12,0.86)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  g.textAlign='center';
-  g.strokeStyle=journeyPerf.enabled?'#8ed9ff':'#8b8fa0';g.lineWidth=2;
-  g.strokeRect(VW/2-160,VH/2-262,320,38);g.font='bold 13px monospace';g.fillStyle=g.strokeStyle;
-  g.fillText('PERFORMANCE: '+(journeyPerf.enabled?'ON':'OFF')+'  (F9)',VW/2,VH/2-237);
-  g.strokeStyle=curvedWorldTrial?'#c0f79a':'#8b8fa0';g.lineWidth=2;
-  g.strokeRect(VW/2-160,VH/2-214,320,38);g.font='bold 13px monospace';g.fillStyle=g.strokeStyle;
-  g.fillText('WORLD: '+(curvedWorldTrial?'CURVED TEST':'ORIGINAL')+'  (F8)',VW/2,VH/2-189);
-  g.font='bold 26px monospace'; g.fillStyle='#e8e2d0'; g.fillText('SETTINGS',VW/2,VH/2-150);
-  /* volume: − [========  ] + */
-  g.font='bold 14px monospace'; g.fillStyle='#aeb2c2'; g.fillText('VOLUME',VW/2,VH/2-102);
-  const bx=VW/2-110, by=VH/2-84, bw=220, bh=30;
-  g.strokeStyle='#8b8fa0'; g.lineWidth=2;
-  g.strokeRect(VW/2-160,by,38,bh); g.strokeRect(VW/2+122,by,38,bh);
-  g.font='bold 20px monospace'; g.fillStyle='#e8e2d0';
-  g.fillText('−',VW/2-141,by+22); g.fillText('+',VW/2+141,by+22);
-  g.fillStyle='#00000088'; g.fillRect(bx,by,bw,bh);
-  g.fillStyle=SFX.muted?'#5c5f6a':'#3f7bff'; g.fillRect(bx+2,by+2,(bw-4)*SFX.vol,bh-4);
-  g.strokeStyle='#e8e2d055'; g.strokeRect(bx,by,bw,bh);
-  g.font='bold 12px monospace'; g.fillStyle='#e8e2d0';
-  g.fillText(Math.round(SFX.vol*100)+'%',VW/2,by+20);
-  /* mute toggle */
-  g.strokeStyle=SFX.muted?'#ffe37a':'#8b8fa0'; g.lineWidth=2; g.strokeRect(VW/2-90,VH/2-26,180,42);
-  g.font='bold 14px monospace'; g.fillStyle=SFX.muted?'#ffe37a':'#aeb2c2';
-  g.fillText(SFX.muted?'SOUND: MUTED (M)':'SOUND: ON (M)',VW/2,VH/2+1);
+  const showDebugOptions=debugRun||debugMoveLabActive(),showRunAutoParry=debugRun&&!debugMoveLabActive(),id=currentUITheme(),p=KRUI.theme(id);
+  g.fillStyle=p.dark+'f2';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  KRUI.sheet(g,{x:44,y:VH/2-246,w:392,h:(showRunAutoParry?272:showDebugOptions?226:44)+306});
+  const b=(x,y,w,h,label,selected=false,size=13)=>KRUI.button(g,{x,y,w,h},label,id,{variant:'secondary',selected,size});
+  KRUI.text(g,'SETTINGS',VW/2,VH/2-200,26,p.ink);
+  b(VW/2-160,VH/2-178,320,38,'PERFORMANCE: '+(journeyPerf.enabled?'ON':'OFF')+'  (F9)',journeyPerf.enabled);
+  KRUI.text(g,'VOLUME',VW/2,VH/2-102,14,p.paperSoft);
+  const bx=VW/2-110,by=VH/2-84,bw=220,bh=30;
+  b(VW/2-160,by,38,bh,'−',false,20);b(VW/2+122,by,38,bh,'+',false,20);
+  KRUI.shape(g,{x:bx,y:by,w:bw,h:bh},p.panel);
+  g.fillStyle=SFX.muted?p.muted:p.accent;g.fillRect(bx+2,by+2,(bw-4)*SFX.vol,bh-4);
+  KRUI.shape(g,{x:VW/2-24,y:by+4,w:48,h:22},p.dark,3);KRUI.text(g,Math.round(SFX.vol*100)+'%',VW/2,by+20,12,p.onDark);
+  b(VW/2-90,VH/2-26,180,42,SFX.muted?'SOUND: MUTED (M)':'SOUND: ON (M)',SFX.muted,14);
   if(showDebugOptions){
-    g.strokeStyle=debugHitboxesEnabled?'#ffe37a':'#8b8fa0';g.lineWidth=2;
-    g.strokeRect(VW/2-125,VH/2+30,250,38);
-    g.font='bold 13px monospace';g.fillStyle=debugHitboxesEnabled?'#ffe37a':'#aeb2c2';
-    g.fillText('DEBUG HITBOXES: '+(debugHitboxesEnabled?'ON':'OFF'),VW/2,VH/2+55);
-
-    g.strokeStyle=debugParryFreezeEnabled?'#b56cff':'#8b8fa0';g.lineWidth=2;
-    g.strokeRect(VW/2-125,VH/2+76,250,38);
-    g.font='bold 13px monospace';g.fillStyle=debugParryFreezeEnabled?'#d8b6ff':'#aeb2c2';
-    g.fillText('PARRY INPUT FREEZE: '+(debugParryFreezeEnabled?'ON':'OFF'),VW/2,VH/2+101);
-
-    g.strokeStyle=debugSnapshotsEnabled?'#8ee8a0':'#8b8fa0';g.lineWidth=2;
-    g.strokeRect(VW/2-125,VH/2+122,250,38);
-    g.font='bold 13px monospace';g.fillStyle=debugSnapshotsEnabled?'#8ee8a0':'#aeb2c2';
-    g.fillText('COMBAT SNAPSHOTS: '+(debugSnapshotsEnabled?'ON':'OFF'),VW/2,VH/2+147);
-
-    g.strokeStyle=debugParryStaggerEnabled?'#ffb13b':'#8b8fa0';g.lineWidth=2;
-    g.strokeRect(VW/2-125,VH/2+168,250,38);
-    g.strokeRect(VW/2-111,VH/2+179,16,16);
-    g.font='bold 12px monospace';g.fillStyle=debugParryStaggerEnabled?'#ffe37a':'#8b8fa0';
-    if(debugParryStaggerEnabled)g.fillText('X',VW/2-103,VH/2+192);
-    g.font='bold 13px monospace';
-    g.fillText('PARRY STAGGER: '+(debugParryStaggerEnabled?'ON':'OFF'),VW/2+14,VH/2+193);
-
-    if(showRunAutoParry){
-      g.strokeStyle=debugAutoParryEnabled?'#b56cff':'#8b8fa0';g.lineWidth=2;
-      g.strokeRect(VW/2-125,VH/2+214,250,38);
-      g.font='bold 13px monospace';g.fillStyle=debugAutoParryEnabled?'#d8b6ff':'#aeb2c2';
-      g.fillText('AUTO PARRY: '+(debugAutoParryEnabled?'ON':'OFF'),VW/2,VH/2+239);
-    }
+    b(VW/2-125,VH/2+30,250,38,'DEBUG HITBOXES: '+(debugHitboxesEnabled?'ON':'OFF'),debugHitboxesEnabled);
+    b(VW/2-125,VH/2+76,250,38,'PARRY INPUT FREEZE: '+(debugParryFreezeEnabled?'ON':'OFF'),debugParryFreezeEnabled);
+    b(VW/2-125,VH/2+122,250,38,'COMBAT SNAPSHOTS: '+(debugSnapshotsEnabled?'ON':'OFF'),debugSnapshotsEnabled);
+    b(VW/2-125,VH/2+168,250,38,'PARRY STAGGER: '+(debugParryStaggerEnabled?'ON':'OFF'),debugParryStaggerEnabled);
+    if(showRunAutoParry)b(VW/2-125,VH/2+214,250,38,'AUTO PARRY: '+(debugAutoParryEnabled?'ON':'OFF'),debugAutoParryEnabled);
   }
-  /* back */
   const backY=showRunAutoParry?VH/2+272:showDebugOptions?VH/2+226:VH/2+44;
-  g.strokeStyle='#e8e2d0'; g.strokeRect(VW/2-70,backY,140,44);
-  g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,backY+28);
+  b(VW/2-70,backY,140,44,'◄ BACK',false,16);
 }
 function settingsTap(pt){
-  if(pt.x>VW/2-160&&pt.x<VW/2+160&&pt.y>VH/2-262&&pt.y<VH/2-224){
+  if(pt.x>VW/2-160&&pt.x<VW/2+160&&pt.y>VH/2-178&&pt.y<VH/2-140){
     journeyPerf.enabled=!journeyPerf.enabled;SFX.swipe();return;
-  }
-  if(pt.x>VW/2-160&&pt.x<VW/2+160&&pt.y>VH/2-214&&pt.y<VH/2-176){
-    setCurvedWorldTrial(!curvedWorldTrial);SFX.swipe();return;
   }
   const by=VH/2-84;
   if(pt.y>by-6&&pt.y<by+36){
@@ -60775,29 +60877,26 @@ const CHANGELOGS=[
 ];
 let clSel=0;
 function drawChangelog(){
-  g.fillStyle='rgba(5,7,12,0.9)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  const p=KRUI.theme();g.fillStyle=p.dark;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
-  g.font='bold 24px monospace'; g.fillStyle='#8ad8e8'; g.fillText('CHANGELOG',VW/2,48);
+  g.font='bold 24px monospace'; g.fillStyle=p.onDark; g.fillText('CHANGELOG',VW/2,48);
   /* version tabs */
   for(let i=0;i<CHANGELOGS.length;i++){
     const x=20+i*92, sel=clSel===i;
-    g.strokeStyle=sel?'#8ad8e8':'#3a3a44'; g.lineWidth=sel?2:1.5; g.strokeRect(x,64,84,32);
-    g.font='bold 13px monospace'; g.fillStyle=sel?'#8ad8e8':'#8b8fa0';
-    g.fillText(CHANGELOGS[i].v,x+42,85);
+    KRUI.button(g,{x,y:64,w:84,h:32},CHANGELOGS[i].v,'treasure',{selected:sel,size:13});
   }
-  g.textAlign='left';
-  let y=122;
+  KRUI.sheet(g,{x:14,y:100,w:452,h:VH-184});g.textAlign='left';
+  let y=137;
   for(const line of CHANGELOGS[clSel].lines){
     if(line===''){ y+=8; continue; }
     const bullet=line.startsWith('·');
     const head=!bullet&&!line.startsWith(' ');
     g.font=head?'bold 13px monospace':'11px monospace';
-    g.fillStyle=head?'#ffd23a':bullet?'#e8e2d0':'#aeb2c2';
+    g.fillStyle=head?p.ink:p.paperSoft;
     g.fillText(line,26,y); y+=head?23:19;
   }
   g.textAlign='center';
-  g.strokeStyle='#e8e2d0'; g.lineWidth=2; g.strokeRect(VW/2-70,VH-72,140,44);
-  g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,VH-44);
+  KRUI.button(g,{x:VW/2-70,y:VH-72,w:140,h:44},'◄ BACK','treasure',{size:16});
 }
 function bossHomeStage(definitionId){
   return STAGES.list.find(stage=>stage.bossIds.includes(definitionId))||STAGES.list[0];
@@ -63302,23 +63401,27 @@ function debugCfgTap(pt){
 }
 function debugKillBoss(){
   if(!boss||boss.state==='dying') return;
+  debugParryInputFrozen=false;debugParryInputMark=null;
+  knightRushQueued=false;knightRushSequence=null;
+  boss.pendingBreak=null;boss.parryReaction=null;boss.knightRushRecovery=null;
+  boss.turnAction=null;boss.playerActionTimer=0;
   boss.hp=0; projectiles=[]; hazards=[];
   boss.state='dying'; boss.stateT=0; boss._stg=0;
   floater(VW/2,300,'DEBUG: BOSS FELLED','#9ecbff',20); SFX.win(); flash('#9ecbff',.3);
 }
 let menuMsg='', menuMsgT=0;
 function drawRelicDex(){
-  g.fillStyle='rgba(5,7,12,0.88)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  const p=KRUI.theme();g.fillStyle=p.dark;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   g.textAlign='center';
-  g.font='bold 26px monospace'; g.fillStyle='#b08ae0'; g.fillText('THE RELIC CODEX',VW/2,58);
-  g.font='11px monospace'; g.fillStyle='#8b8fa0';
+  g.font='bold 26px monospace'; g.fillStyle=p.onDark; g.fillText('THE RELIC CODEX',VW/2,58);
+  g.font='11px monospace'; g.fillStyle=p.soft;
   g.fillText('every slain stage boss guards two — you carry up to FIVE',VW/2,80);
   const keys=ARTIFACT_IDS;
   for(let i=0;i<keys.length;i++){
     const d=ARTIFACT_DEFS[keys[i]];
     const col=i%2, row=(i/2)|0;
     const x=14+col*230, y=96+row*52;
-    g.fillStyle='rgba(0,0,0,0.4)'; g.fillRect(x,y,222,46);
+    KRUI.panel(g,{x,y,w:222,h:46},'treasure');
     g.strokeStyle=d.col+'66'; g.lineWidth=1.5; g.strokeRect(x,y,222,46);
     drawRelicSlot(x+4,y+4,38,{type:keys[i],charged:true});
     g.textAlign='left';
@@ -63331,8 +63434,7 @@ function drawRelicDex(){
   }
   g.textAlign='center';
   const by=96+Math.ceil(keys.length/2)*52+12;      // the back button sits BELOW the last card
-  g.strokeStyle='#e8e2d0'; g.lineWidth=2; g.strokeRect(VW/2-70,by,140,42);
-  g.font='bold 16px monospace'; g.fillStyle='#e8e2d0'; g.fillText('◄ BACK',VW/2,by+27);
+  KRUI.button(g,{x:VW/2-70,y:by,w:140,h:42},'◄ BACK','treasure',{size:16});
 }
 function drawBossIntro(){
   letterbox(modeT);
@@ -63409,13 +63511,10 @@ function smithText(text,x,y,size=12,col='#efe7d0',maxWidth=420){
   g.fillText(text,x,y);
 }
 function drawSmithButton(rect,label,color,enabled=true){
-  g.fillStyle='#201a17';g.fillRect(rect.x+2,rect.y+4,rect.w,rect.h);
-  g.fillStyle=enabled?'#49372b':'#342b24';g.fillRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle=enabled?'#ae8a57':'#625140';g.lineWidth=2;
-  g.strokeRect(rect.x,rect.y,rect.w,rect.h);
-  g.strokeStyle='#71583d';g.lineWidth=1;g.strokeRect(rect.x+4,rect.y+4,rect.w-8,rect.h-8);
-  for(const x of [rect.x+9,rect.x+rect.w-9]){g.fillStyle='#c3a575';g.beginPath();g.arc(x,rect.y+rect.h/2,1.5,0,TAU);g.fill();}
-  smithText(label,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?color:'#828590',rect.w-16);
+  const id=currentUITheme(),p=KRUI.theme(id);
+  KRUI.button(g,rect,'',id,{enabled,variant:'secondary'});
+  // Legacy callers use this colour for selected lab options and item rarity.
+  KRUI.text(g,label,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?(color||p.onDark):p.mutedInk,rect.w-16);
 }
 function drawSmithItem(kind,x,y,scale=1,neutral=false){
   g.save();g.translate(x,y);g.scale(scale,scale);
@@ -64545,19 +64644,11 @@ function merchantGoldLabel(amount,x,y,size=12,color='#ffe09b',prefix='',maxWidth
   drawCoin(left+textWidth+gap+icon/2,y-1,icon/25,.25);g.restore();
 }
 function merchantPriceButton(rect,prefix,amount,color,enabled=true){
-  drawMerchantButton(rect,'',color,enabled);
-  merchantGoldLabel(amount,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?color:'#828590',prefix,rect.w-24);
+  drawMerchantButton(rect,'',color,enabled);const p=KRUI.theme(merchantShop?.townId?'forest':'caravan');
+  merchantGoldLabel(amount,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?p.ink:p.mutedInk,prefix,rect.w-24);
 }
 function drawMerchantButton(rect,label,color,enabled=true){
-  if(merchantShop?.townId){drawSmithButton(rect,label,color,enabled);return;}
-  g.save();g.translate(rect.x,rect.y);
-  const {w,h}=rect;
-  // Crisp cut corners and straight edges, consistent with the game's UI.
-  g.beginPath();g.moveTo(4,0);g.lineTo(w-4,0);g.lineTo(w,4);g.lineTo(w,h-4);
-  g.lineTo(w-4,h);g.lineTo(4,h);g.lineTo(0,h-4);g.lineTo(0,4);g.closePath();
-  g.fillStyle=enabled?'#345c58':'#536860';g.fill();g.strokeStyle='#263f3b';g.lineWidth=1.5;g.stroke();
-  townStroke([[7,h-4],[w-7,h-3]],enabled?'#638674':'#788b78',.8);
-  smithText(label,w/2,h/2+5,13,enabled?color:'#b0b89f',w-14);g.restore();
+  KRUI.button(g,rect,label,merchantShop?.townId?'forest':'caravan',{enabled,size:13});
 }
 function openMerchantShop(visitId='stage:'+loop,environment=biome){
   const returnMode=mode==='merchant'?'run':mode;
@@ -65126,10 +65217,11 @@ function drawMerchantShop(){
   g.restore();
 }
 function drawScore(){
-  g.fillStyle='rgba(5,7,12,0.82)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  const p=KRUI.theme();g.fillStyle=p.dark+'e8';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  KRUI.sheet(g,{x:40,y:151,w:400,h:520});
   g.textAlign='center';
-  g.font='bold 34px monospace'; g.fillStyle='#ff4d3a'; g.fillText('THE RIDE ENDS',VW/2,200);
-  g.font='13px monospace'; g.fillStyle='#aeb2c2'; g.fillText(deathReason,VW/2,228);
+  g.font='bold 34px monospace'; g.fillStyle='#953d2c'; g.fillText('THE RIDE ENDS',VW/2,200);
+  g.font='13px monospace'; g.fillStyle=p.paperSoft; g.fillText(deathReason,VW/2,228);
   const earnedGoldPts=goldEarned*CFG.GOLD_SCORE_MULT;
   const unspentGoldPts=gold*CFG.GOLD_SCORE_MULT;
   const routePts=distanceScore();
@@ -65148,17 +65240,17 @@ function drawScore(){
   g.font='16px monospace';
   let y=290, shown=Math.floor(modeT*3.5);      // rows tick in one by one
   rows.forEach((r,i)=>{ if(i>=shown) return;
-    g.textAlign='left'; g.fillStyle='#e8e2d0'; g.fillText(r[0],80,y+i*38);
-    g.textAlign='right'; g.fillStyle='#ffd23a'; g.fillText('+'+r[1],VW-80,y+i*38);
+    g.textAlign='left'; g.fillStyle=p.ink; g.fillText(r[0],80,y+i*38);
+    g.textAlign='right'; g.fillStyle=p.ink; g.fillText('+'+r[1],VW-80,y+i*38);
   });
   if(shown>=rows.length){
     const totalY=y+rows.length*38+20;
-    g.strokeStyle='#e8e2d055'; g.beginPath(); g.moveTo(80,totalY-30); g.lineTo(VW-80,totalY-30); g.stroke();
-    g.textAlign='left'; g.font='bold 22px monospace'; g.fillStyle='#e8e2d0'; g.fillText('TOTAL',80,totalY);
-    g.textAlign='right'; g.fillStyle='#ffe37a'; g.fillText(total,VW-80,totalY);
+    g.strokeStyle=p.edge; g.beginPath(); g.moveTo(80,totalY-30); g.lineTo(VW-80,totalY-30); g.stroke();
+    g.textAlign='left'; g.font='bold 22px monospace'; g.fillStyle=p.ink; g.fillText('TOTAL',80,totalY);
+    g.textAlign='right'; g.fillStyle=p.ink; g.fillText(total,VW-80,totalY);
     if(newBestThisRun){ g.textAlign='center'; g.font='bold 15px monospace';
-      g.fillStyle='#c0f79a'; g.fillText('★ NEW BEST ★',VW/2,totalY+32); }
-    g.textAlign='center'; g.font='bold 17px monospace'; g.fillStyle='#ffe37a';
+      g.fillStyle='#406f52'; g.fillText('★ NEW BEST ★',VW/2,totalY+32); }
+    g.textAlign='center'; g.font='bold 17px monospace'; g.fillStyle=p.ink;
     if((perfNow*1.6|0)%2===0) g.fillText('TAP FOR MAIN MENU',VW/2,totalY+78);
   }
 }
@@ -67550,18 +67642,10 @@ function buildWorldDrawQueue(stage,newForest){
   dr.sort(compareWorldDepthDescending);
 }
 function drawModeScreen(){
-  // Photo mode has no HUD, menus, labels or lab controls.
-  if(pausePhotoMode){
-    // Keep the physical chest/lock visible; only its interface is hidden.
-    if(window.KRTreasureRoad){
-      if(mode==='lockpicking')KRTreasureRoad.drawGame();
-      else if(mode==='journeyevent'&&journeyRoadEventSession?.context.loot)
-        KRTreasureRoad.drawLoot(journeyRoadEventSession.context);
-    }
-    return;
-  }
+  // Photo mode keeps the CURRENT screen. Never substitute the world underneath.
   const drawScreen=FULLSCREEN_RENDERERS.get(mode);
-  if(drawScreen){drawScreen();drawJourneyEventControls();drawJourneyRoadEvent();return;}
+  if(drawScreen){drawScreen();if(!pausePhotoMode)drawJourneyEventControls();drawJourneyRoadEvent();return;}
+  if(pausePhotoMode){if(mode==='journeyevent')drawJourneyRoadEvent();return;}
   // HUD coordinates never inherit world shake or sprite rounding.
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
   drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyQuestHUD();drawJourneyRoadEvent();
@@ -67661,12 +67745,13 @@ function renderFrame(){
     worldFxShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(worldFxShakeX,worldFxShakeY);
   }
-  const cutsceneId=journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
-  const opaqueCutscene=!pausePhotoMode&&mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn)&&
+  const cutsceneId=journeyRoadEventSession?.context.den?wolfDenScene(journeyRoadEventSession.context):
+    journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
+  const opaqueCutscene=mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn)&&
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
-  if(!['shop','merchant','town'].includes(mode)&&!opaqueCutscene){
+  if(!FULLSCREEN_RENDERERS.has(mode)&&!opaqueCutscene){
   FRONT_WORLD_ITEMS.length=0;
-  const battleWorldCached=window.KRSunlitForest?.drawBattleWorld(stage,newForest);
+  const battleWorldCached=!boss?.wolfDen&&window.KRSunlitForest?.drawBattleWorld(stage,newForest);
   if(!battleWorldCached){
   if(newForest)drawForestWorld();
   else if(env==='cave'){if(boss?.wolfDen)drawWolfDenInterior(true);else stage.arena();}
@@ -67683,9 +67768,10 @@ function renderFrame(){
      while remaining in front of the boss/world it struck. */
   drawParticles(false,true);
   if(!FULLSCREEN_RENDERERS.has(mode)){
-    drawWolfPupFollower();
+    drawWolfPupFollower(false);
     drawSquire();
     if(player.alive||player.mountedDeath) drawPlayer();
+    drawWolfPupFollower(true);
     drawProjectiles();
   }
   drawCombatDebugGeometry();
@@ -67699,27 +67785,21 @@ function renderFrame(){
 
   drawModeScreen();
   if(roadLabState.active&&!paused)drawSmithButton({x:348,y:7,w:124,h:30},'ROAD LAB (F10)','#e2c586');
-  if(moveHistoryOpen)drawMoveHistory();
-  if(moveTreeOpen)drawMoveTree();
-  if(skillTooltipIndex>=0)drawSkillTooltip();
-  if(skillLabTooltipMutationId)drawSkillLabMutationTooltip();
-  if(paused&&!pausePhotoMode){                      // photo mode leaves the frozen game completely clean
-    g.fillStyle='rgba(5,7,12,0.78)'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-    if(debugMoveLabActive()) drawMoveLabPauseControls();
-    g.textAlign='center'; g.font='15px monospace'; g.fillStyle='#aeb2c2';
-    g.fillText('tap outside buttons or press P to resume',VW/2,VH/2-22);
-    g.strokeStyle='#ffe37a'; g.lineWidth=2; g.strokeRect(VW/2-90,VH/2+20,180,46);
-    g.font='bold 15px monospace'; g.fillStyle='#ffe37a'; g.fillText('▣ SCREENSHOT',VW/2,VH/2+50);
-    g.strokeStyle='#8b8fa0'; g.strokeRect(VW/2-90,VH/2+78,180,46);
-    g.fillStyle='#aeb2c2'; g.fillText('⚙ SETTINGS',VW/2,VH/2+108);
-    g.strokeStyle='#e8e2d0'; g.strokeRect(VW/2-90,VH/2+136,180,46);
-    g.fillStyle='#e8e2d0'; g.fillText('MAIN MENU',VW/2,VH/2+166);
-    if(journeyRoute){
-      g.strokeStyle='#55dcff';g.strokeRect(150,VH/2+194,180,40);
-      g.fillStyle='#55dcff';g.fillText('ROUTE MAP',240,VH/2+220);
-    }
+  if(moveHistoryOpen&&!pausePhotoMode)drawMoveHistory();
+  if(moveTreeOpen&&!pausePhotoMode)drawMoveTree();
+  if(skillTooltipIndex>=0&&!pausePhotoMode)drawSkillTooltip();
+  if(skillLabTooltipMutationId&&!pausePhotoMode)drawSkillLabMutationTooltip();
+  if(paused&&!pausePhotoMode){
+    const id=currentUITheme(),p=KRUI.theme(id);g.fillStyle=p.dark+'dd';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+    KRUI.sheet(g,{x:14,y:VH/2-88,w:452,h:journeyRoute?336:283});
+    KRUI.text(g,'PAUSED',VW/2,VH/2-49,23,p.ink);
+    if(debugMoveLabActive())drawMoveLabPauseControls();
+    KRUI.text(g,'tap outside buttons or press P to resume',VW/2,VH/2-22,13,p.paperSoft,426);
+    const b=(y,label,primary=false,h=46)=>KRUI.button(g,{x:VW/2-90,y,w:180,h},label,id,{size:15,variant:primary?undefined:'secondary'});
+    b(VH/2+20,'▣ SCREENSHOT',true);b(VH/2+78,'⚙ SETTINGS');b(VH/2+136,'MAIN MENU');
+    if(journeyRoute)b(VH/2+194,'ROUTE MAP',false,40);
   }
-  if(settingsOpen) drawSettings();                  // the settings sheet floats over it all
+  if(settingsOpen&&!pausePhotoMode) drawSettings(); // screenshot hides overlays, not its scene
   /* fullscreen flash */
   if(flashA>0){ g.globalAlpha=flashA; g.fillStyle=flashCol; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT); g.globalAlpha=1; }
   if(paused&&!pausePhotoMode&&journeyMapOpen)drawJourneyMap();
@@ -68064,7 +68144,7 @@ if(BOOT_QUERY.get('backgroundplaytest')==='1'){
   artRegistry.onload=()=>{
     const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
     basalt.onload=()=>{const caravan=document.createElement('script');caravan.src='assets/forest/autumn-caravan.js';caravan.onload=()=>{
-      const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=()=>{const barry=document.createElement('script');barry.src='assets/encounters/tavern-slide.js';barry.onload=()=>{const duke=document.createElement('script');duke.src='assets/encounters/duke-bluff.js';duke.onload=()=>{const arm=document.createElement('script');arm.src='assets/encounters/tavern-arm.js';arm.onload=()=>{const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';document.body.appendChild(artLab);};document.body.appendChild(arm);};document.body.appendChild(duke);};document.body.appendChild(barry);};document.body.appendChild(inn);
+const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=()=>{const barry=document.createElement('script');barry.src='assets/encounters/tavern-slide.js';barry.onload=()=>{const duke=document.createElement('script');duke.src='assets/encounters/duke-bluff.js';duke.onload=()=>{const rules=document.createElement('script');rules.src='assets/encounters/royal-shuffle-core.js';rules.onload=()=>{const dealer=document.createElement('script');dealer.src='assets/encounters/royal-shuffle.js';dealer.onload=()=>{const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';document.body.appendChild(artLab);};document.body.appendChild(dealer);};document.body.appendChild(rules);};document.body.appendChild(duke);};document.body.appendChild(barry);};document.body.appendChild(inn);
     };document.body.appendChild(caravan);};
     document.body.appendChild(basalt);
   };

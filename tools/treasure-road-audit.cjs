@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/treasure-road
  try{for(const [device,width,height,dpr]of [['desktop',775,1000,1],['phone',390,844,2]]){
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:dpr,hasTouch:true}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
-  await page.addInitScript(({phone})=>{window.requestAnimationFrame=()=>0;
+  await page.addInitScript(({phone})=>{window.requestAnimationFrame=()=>0;Date.now=()=>1800000000000;
    Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>phone?4:8});Object.defineProperty(navigator,'deviceMemory',{get:()=>phone?4:8});},{phone:device==='phone'});
   await page.goto(pathToFileURL(path.join(root,'KnightRush.html')).href);
   await page.waitForFunction(()=>window.KRTreasureRoad&&window.KRSunlitForest);
@@ -14,6 +14,7 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/treasure-road
   const shot=async name=>{await run('render();');await page.screenshot({path:path.join(out,device+'-'+name+'.png')});};
   const start=async(theme='chest',direction=0)=>run(`roadLabState.entry=${direction!==0};roadLabState.direction=${direction};
    Math.random=(()=>{let seed=731;return()=>((seed=Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;})();
+   initAmbient();lastObsFull=false;
    startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.theme==='${theme}'));godMode=true;SFX.setTestMuted(true);`);
   if(device==='desktop')for(const theme of ['bloodwood','disco']){await start(theme);await run('dist=roadLabState.slot.at-90;roadScroll=dist;');await shot('reference-'+theme);}
   await start();

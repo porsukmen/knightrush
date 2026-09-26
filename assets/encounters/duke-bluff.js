@@ -97,7 +97,7 @@
  function coin(t,starter){
   KRTavernCoin.draw(g,coinPose(t,starter));
  }
- function button(r,label,enabled=true,selected=false){cut(r.x,r.y+3,r.w,r.h,'#31241e');cut(r.x,r.y,r.w,r.h,enabled?selected?'#f2d69c':'#d4b778':'#70634e');L(r.x+7,r.y+3,r.x+r.w-7,r.y+3,2,enabled?'#ffebba':'#96846a');if(selected)R(r.x+8,r.y+r.h-6,r.w-16,4,'#813c47');T(label,r.x+r.w/2,r.y+r.h/2+5,14,enabled?'#4b3227':'#c3b397',r.w-10);}
+ function button(r,label,enabled=true,selected=false){KRUI.button(g,r,label,'court',{enabled,selected,size:14,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
  function canPlay(s){return s.phase==='turn'&&s.turn==='player';}
  function draw(){const s=diceGame;if(!s)return;g.save();try{
   drawCutscene();actor(true,'body',s);table();
@@ -110,31 +110,34 @@
   if(s.phase==='result'&&s.phaseT<.7){const u=Math.min(1,s.phaseT/.7),e=u*u*(3-2*u),fromPlayer=s.result.loser==='player',n=3-s.losses[s.result.loser],x=(fromPlayer?48:69)+n*22,y=fromPlayer?503:384;seal(x+(382-x)*e,y+((fromPlayer?379:506)-y)*e-Math.sin(u*Math.PI)*28);}
   if(s.phase!=='intro'&&s.phase!=='coinToss')for(let i=0;i<3;i++)die(184+i*55,485,rolling?1+(Math.floor(s.phaseT*18)+i*2)%6:s.playerDice[i],37,rolling?Math.sin(s.phaseT*22+i)*.1:0,reveal&&s.playerDice[i]===s.bid?.face);
   cup(381,500,.61);
-  if(s.bid){cut(142,407,196,42,'#382725');T(s.bid.owner==='duke'?"DUKE CLAIMS AT LEAST":"YOU CLAIMED AT LEAST",240,422,9,'#d8b983');T(String(s.bid.count)+' ×',222,442,17);die(268,434,s.bid.face,22);}
+  if(pausePhotoMode){if(s.phase==='coinToss')coin(s.phaseT,s.starter);return;}
+  if(s.bid){KRUI.panel(g,{x:142,y:407,w:196,h:42},'court');T(s.bid.owner==='duke'?"DUKE CLAIMS AT LEAST":"YOU CLAIMED AT LEAST",240,422,9,'#d8b983');T(String(s.bid.count)+' ×',222,442,17);die(268,434,s.bid.face,22);}
   else if(s.phase!=='intro'&&s.phase!=='coinToss')T('OPEN WITH AN HONEST CLAIM... OR NOT.',240,429,10,'#ecd0a0');
   if(s.phase==='coinToss')coin(s.phaseT,s.starter);
-  R(0,-PAD_TOP,480,82+PAD_TOP,'#2e241d');T("DUKE'S BLUFF",240,29,22);T('SIX DICE. THREE SEALS. NO WILD ONES.',240,48,9,'#cbb38c');
+  R(0,-PAD_TOP,480,82+PAD_TOP,KRUI.theme('court').dark);T("DUKE'S BLUFF",240,29,22);T('SIX DICE. THREE SEALS. NO WILD ONES.',240,48,9,'#cbb38c');
   button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
   if(s.round)T('HAND '+s.round,240,95,10,'#e8c895');
+  KRUI.sheet(g,{x:16,y:510,w:448,h:792+PAD_BOT-510});
+  const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   cut(25,523,430,145,'#352820');T('OUTBID HIM. OR CALL HIS BLUFF.',240,548,17);
-   ['You see your 3 dice. His 3 stay hidden.','Claim how many dice share one face, across BOTH hands.','Raise the count — or the face at the same count.','Call BLUFF to open both cups. Wrong side loses a seal.','Lose all 3 seals and the match is over.'].forEach((t,i)=>T(t,240,571+i*19,10,'#dfc8a1'));
+   paperText('OUTBID HIM. OR CALL HIS BLUFF.',240,548,17);
+   ['You see your 3 dice. His 3 stay hidden.','Claim how many dice share one face, across BOTH hands.','Raise the count — or the face at the same count.','Call BLUFF to open both cups. Wrong side loses a seal.','Lose all 3 seals and the match is over.'].forEach((t,i)=>paperText(t,240,571+i*19,10,'#dfc8a1'));
    button(DICE_REPLAY_BTN,'FLIP FOR FIRST');
   }else if(s.phase==='coinToss'){
    const settled=coinPose(s.phaseT,s.starter).settled;
-   cut(25,530,430,139,'#352820');T(settled?(s.starter==='player'?'CROWN — YOU OPEN!':'BARREL — DUKE OPENS!'):'WHO MAKES THE FIRST CLAIM?',240,558,17);
-   T('CROWN: YOU     /     BARREL: DUKE',240,593,12,'#dfc8a1');
-   T(settled?'First claim decided. Now shake the dice.':'Let the coin land on the table...',240,633,11,'#dfc8a1');
+   paperText(settled?(s.starter==='player'?'CROWN — YOU OPEN!':'BARREL — DUKE OPENS!'):'WHO MAKES THE FIRST CLAIM?',240,558,17);
+   paperText('CROWN: YOU     /     BARREL: DUKE',240,593,12,'#dfc8a1');
+   paperText(settled?'First claim decided. Now shake the dice.':'Let the coin land on the table...',240,633,11,'#dfc8a1');
   }else if(s.phase==='result'||s.phase==='revealing'){
-   cut(25,530,430,139,'#352820');
-   if(s.phase==='revealing'){T(s.result.caller==='player'?'YOU CALLED BLUFF!':'DUKE CALLS YOUR BLUFF!',240,559,18);T('THE CUPS TELL THE TRUTH.',240,585,12);}
-   else{T(s.matchWinner?(s.matchWinner==='player'?'THE DUKE CONCEDES.':'THE DUKE KEEPS HIS TITLE.'):s.result.loser==='duke'?'THE DUKE LOSES A SEAL.':'YOU LOSE A SEAL.',240,556,17);T('CLAIM: '+s.bid.count+' × '+s.bid.face+'     FOUND: '+s.result.count,240,583,14);T(s.result.truth?'The claim was true. The caller pays.':'Not enough dice. The bidder pays.',240,607,11,'#d7c3a1');T('YOU '+(3-s.losses.player)+' SEALS     DUKE '+(3-s.losses.duke)+' SEALS',240,641,12);button(DICE_REPLAY_BTN,s.matchWinner?'REMATCH':'NEXT HAND');}
+
+   if(s.phase==='revealing'){paperText(s.result.caller==='player'?'YOU CALLED BLUFF!':'DUKE CALLS YOUR BLUFF!',240,559,18);paperText('THE CUPS TELL THE TRUTH.',240,585,12);}
+   else{paperText(s.matchWinner?(s.matchWinner==='player'?'THE DUKE CONCEDES.':'THE DUKE KEEPS HIS TITLE.'):s.result.loser==='duke'?'THE DUKE LOSES A SEAL.':'YOU LOSE A SEAL.',240,556,17);paperText('CLAIM: '+s.bid.count+' × '+s.bid.face+'     FOUND: '+s.result.count,240,583,14);paperText(s.result.truth?'The claim was true. The caller pays.':'Not enough dice. The bidder pays.',240,607,11,'#d7c3a1');paperText('YOU '+(3-s.losses.player)+' SEALS     DUKE '+(3-s.losses.duke)+' SEALS',240,641,12);button(DICE_REPLAY_BTN,s.matchWinner?'REMATCH':'NEXT HAND');}
   }else{
-   cut(25,526,430,34,'#352820');const texts=['He studies your claim.','He gives you a measuring look.','He pauses with his hand on the cup.','He looks entirely too comfortable.'];T(rolling?'SHAKING THE BONES...':s.turn==='duke'?'DUKE IS CONSIDERING...':s.bid?texts[s.tell]:'YOUR OPENING CLAIM',240,548,12);
-   const playable=canPlay(s);T('HOW MANY DICE?',240,570,9);T('WHICH FACE?',240,628,9);
+   const texts=['He studies your claim.','He gives you a measuring look.','He pauses with his hand on the cup.','He looks entirely too comfortable.'];paperText(rolling?'SHAKING THE BONES...':s.turn==='duke'?'DUKE IS CONSIDERING...':s.bid?texts[s.tell]:'YOUR OPENING CLAIM',240,548,12);
+   const playable=canPlay(s);paperText('HOW MANY DICE?',240,570,9);paperText('WHICH FACE?',240,628,9);
    for(let i=0;i<6;i++){button(rects.count[i],String(i+1),playable,s.selected.count===i+1);const r=rects.face[i];button(r,'',playable,s.selected.face===i+1);die(r.x+r.w/2,r.y+21,i+1,25);}
    button(rects.raise,s.bid?'RAISE CLAIM':'MAKE CLAIM',playable&&KRDukeRules.valid(s.selected,s.bid));button(rects.call,'BLUFF!',playable&&!!s.bid);
-   const minimum=KRDukeRules.next(s.bid);T(playable&&!KRDukeRules.valid(s.selected,s.bid)?minimum?'Raise to at least '+minimum.count+' × '+minimum.face+', or call BLUFF.':'No higher claim. Call BLUFF.':'Your claim counts ALL SIX dice. Ones are ordinary.',240,764,10,'#cdb58b');
+   const minimum=KRDukeRules.next(s.bid);paperText(playable&&!KRDukeRules.valid(s.selected,s.bid)?minimum?'Raise to at least '+minimum.count+' × '+minimum.face+', or call BLUFF.':'No higher claim. Call BLUFF.':'Your claim counts ALL SIX dice. Ones are ordinary.',240,764,10,'#cdb58b');
   }
  }finally{g.restore();}}
  function tap(pt){const s=diceGame;if(!s)return;if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveDiceGuess();return;}

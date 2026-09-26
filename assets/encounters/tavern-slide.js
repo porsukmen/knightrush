@@ -10,8 +10,8 @@
  const W=(pts,c)=>P(pts.map(([x,y])=>{const p=surface(x,y);return[p.x,p.y];}),c);
  function WL(x,y,X,Y,w,c){const a=surface(x,y),b=surface(X,Y);L(a.x,a.y,b.x,b.y,w,c);}
  function bevel(x,y,w,h,c){P([[x+7,y],[x+w-7,y],[x+w,y+7],[x+w,y+h-7],[x+w-7,y+h],[x+7,y+h],[x,y+h-7],[x,y+7]],c);}
- function button(r,s){bevel(r.x,r.y+4,r.w,r.h,'#38271e');bevel(r.x,r.y,r.w,r.h,'#e3c184');L(r.x+8,r.y+4,r.x+r.w-8,r.y+4,2,'#ffdfa0');T(s,r.x+r.w/2,r.y+r.h/2+5,14,'#50301d',r.w-16);}
- function panel(y,h,title,lines){bevel(35,y+4,410,h,'#291e19');bevel(35,y,410,h,'#dfc08b');T(title,240,y+26,17,'#57321d',385);lines.forEach((s,i)=>T(s,240,y+51+i*19,11,'#664327',385));}
+ function button(r,s){KRUI.button(g,r,s,'tavern',{size:14,variant:s==='< BACK'||s==='II'?'secondary':undefined});}
+ function panel(y,h,title,lines){KRUI.panel(g,{x:35,y,w:410,h},'tavern',{light:true});const p=KRUI.theme('tavern');T(title,240,y+26,17,p.ink,385);lines.forEach((s,i)=>T(s,240,y+51+i*19,11,p.ink,385));}
  function drawCutscene(){
   R(0,-PAD_TOP,480,800+PAD_TOT,'#30231c');const img=window.KREventVisuals?.peek('tavern-slide');
   if(img){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(img,0,90,480,640);g.restore();return true;}
@@ -185,6 +185,7 @@
  function draw(){g.save();try{
   drawCutscene();const t=tavernSlideGame;barry(true,'body');table();barry(true,'front');
   for(const layer of mugLayers(t))mug(layer.m,layer.ghost);
+  if(pausePhotoMode){if(t.phase==='coinToss')coin(t.phaseT,t.first);return;}
   const owner=tavernCurrentOwner(t),score=tavernScores();
   if(t.phase==='playing'&&!t.shotActive){
    if(owner==='player'){

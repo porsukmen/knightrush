@@ -8,8 +8,8 @@
  const L=(x,y,X,Y,w,c)=>{g.strokeStyle=c;g.lineWidth=w;g.lineCap='butt';g.beginPath();g.moveTo(x,y);g.lineTo(X,Y);g.stroke();};
  const T=(s,x,y,size=12,c=C.ink,max=420)=>smithText(s,x,y,size,c,max);
  function bevel(x,y,w,h,c,cut=7){P([[x+cut,y],[x+w-cut,y],[x+w,y+cut],[x+w,y+h-cut],[x+w-cut,y+h],[x+cut,y+h],[x,y+h-cut],[x,y+cut]],c);}
- function button(r,label,on=true){bevel(r.x,r.y+5,r.w,r.h,'#201b16');bevel(r.x,r.y,r.w,r.h,on?C.paper:'#aa9a7a');L(r.x+9,r.y+4,r.x+r.w-9,r.y+4,2,C.light);L(r.x+8,r.y+r.h-3,r.x+r.w-8,r.y+r.h-3,2,C.gold);T(label,r.x+r.w/2,r.y+r.h/2+5,14,C.ink,r.w-18);}
- function panel(y,h,title,lines=[],tone=C.ink){bevel(28,y+5,424,h,'#211b16');bevel(28,y,424,h,C.panel);L(39,y+5,441,y+5,2,C.light);T(title,240,y+27,16,tone,396);lines.forEach((s,i)=>T(s,240,y+50+i*19,11,C.ink,394));}
+ function button(r,label,on=true){KRUI.button(g,r,label,'tavern',{enabled:on,size:14,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
+ function panel(y,h,title,lines=[],tone=C.ink){KRUI.panel(g,{x:28,y,w:424,h},'tavern',{light:true});T(title,240,y+27,16,tone,396);lines.forEach((s,i)=>T(s,240,y+50+i*19,11,KRUI.theme('tavern').ink,394));}
  function header(title){R(0,-PAD_TOP,480,102+PAD_TOP,C.dark);T('THE MOSSY OAK  /  '+title,240,31,15,C.paper,442);button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');L(122,77,358,77,1,'#866c43');}
  function drawCutscene(){
   R(0,-PAD_TOP,480,800+PAD_TOT,C.dark);const img=window.KREventVisuals?.peek('tavern-games');

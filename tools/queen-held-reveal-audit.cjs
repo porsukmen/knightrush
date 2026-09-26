@@ -6,6 +6,7 @@ for(const when of ['shuffle','settle','choose']){
  assert(R.catchPocket(s));until(s,'surprise');const q=R.pocketCard(s);let p=R.trajectory(s,q),h=R.handTargets(s)[0];
  while(s.phase==='surprise'){
   R.update(s,1/240);const n=R.trajectory(s,q),w=R.handTargets(s)[0];
+  if(n.turn>=.5){assert.equal(n.frontality,1,'Face must already be square to the viewer before it is revealed');assert.equal(n.angle,0);}
   assert(Math.hypot(n.x-p.x,n.y-p.y)<2);assert(Math.hypot(w[0]-h[0],w[1]-h[1])<5);
   if(s.phase==='surprise'&&s.phaseT>=.18){assert(Math.abs(w[0]-n.x+3)<1e-8);assert(Math.abs(w[1]-n.y-24)<1e-8);}
   p=n;h=w;

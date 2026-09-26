@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harita parşömeni · Knight Rush tasarım denemesi</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#211a15;color:#e8d6ab;font:14px monospace;display:grid;justify-items:center;padding:28px 12px 40px}
+h1{font-size:17px;margin:0 0 10px;text-align:center}p{color:#baa88f;max-width:550px;line-height:1.6;text-align:center;margin:0 0 16px}
+canvas{display:block;width:min(480px,100%);height:auto;touch-action:manipulation}
+.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:12px 0}
+button{font:inherit;border:1px solid #a88958;color:#e8d6ab;background:#493323;padding:10px 16px;cursor:pointer}button:hover,button:focus-visible{background:#61492f;outline:2px solid #e8d6ab;outline-offset:2px}
+small{color:#bca78a;max-width:500px;text-align:center;line-height:1.6}#feedback{min-height:24px;margin:10px 0 0;color:#e8d6ab}
+</style>
+<h1>YOL HARİTASI / CANVAS ÖNİZLEME</h1>
+<p>Oyunun Treasure UI çizimleriyle hazırlanmış, çalışır tasarım denemesi. Görsel dosyası kullanılmıyor.</p>
+<canvas id="preview" width="960" height="920" tabindex="0" role="group" aria-label="Knight Rush parşömen menü örneği. Ok tuşları ile seçim, Enter ile deneme."></canvas>
+<div class="controls"><button id="folds" aria-pressed="true">Kat izleri: açık</button><button id="ink" aria-pressed="true">Harita çizgileri: açık</button></div>
+<p id="feedback" aria-live="polite">Yalnızca tasarım örneği · Oyuna eklenmedi</p>
+<small>PLAY: açık krem ana eylem. Diğerleri: koyu kahverengi yardımcı eylemler. Harita çizgileri dekoratiftir; tıklanmaz ve rota seçimi göstermez.</small>
+<script src="art-source/knight-rush-ui/ui-specimen-treasure-v2.js"></script>
+<script>
+const canvas=document.querySelector('canvas'),g=canvas.getContext('2d'),W=480,H=460;
+let folds=true,ink=true,hover=-1;
+const buttons=[
+ {x:88,y:158,w:304,h:58,label:'PLAY',primary:true},
+ {x:88,y:240,w:146,h:46,label:'MINIGAMES'},
+ {x:246,y:240,w:146,h:46,label:'RELIC CODEX'},
+ {x:88,y:302,w:146,h:46,label:'SETTINGS'},
+ {x:246,y:302,w:146,h:46,label:'DEBUG RUN'}
+];
+const edge=[[27,35],[94,28],[143,33],[153,42],[159,32],[257,27],[329,33],[406,25],
+ [439,35],[456,61],[451,132],[459,182],[450,235],[456,300],[451,357],[459,399],
+ [438,422],[370,418],[357,423],[365,404],[351,419],[267,426],[179,420],[91,429],
+ [47,419],[21,399],[26,347],[21,286],[26,223],[19,213],[31,207],[24,193],[28,132],[20,73]];
+function path(points,close=false){g.beginPath();points.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));if(close)g.closePath()}
+function poly(points,color){path(points,true);g.fillStyle=color;g.fill()}
+function line(points,color,width=1){path(points);g.strokeStyle=color;g.lineWidth=width;g.stroke()}
+function mapInk(){
+ g.save();g.globalAlpha=.40;g.lineJoin='miter';
+ // Small, angular cartography in the margins; never behind a label.
+ for(const [x,y,s] of [[42,113,1],[63,103,.85],[77,127,.6],[414,272,.85],[431,263,.7]]){
+  line([[x-12*s,y+15*s],[x,y-13*s],[x+17*s,y+15*s]],'#725839',1);
+  line([[x,y-13*s],[x+2*s,y+4*s],[x+10*s,y+15*s]],'#725839',1);
+  line([[x-5*s,y-2*s],[x,y],[x+3*s,y-4*s]],'#725839',1);
+ }
+ poly([[48,154],[52,168],[43,188],[52,206],[65,216],[61,234],[49,249],[48,269],[42,284],
+ [43,267],[43,247],[56,231],[59,218],[47,209],[37,189],[46,168]],'#aa8b59');
+ line([[48,154],[52,168],[43,188],[52,206],[65,216],[61,234],[49,249],[48,269],[42,284]],'#725839',1);
+ for(const [x,y] of [[414,166],[430,183],[416,206],[435,224],[409,235],[60,321],[48,334]]){
+  line([[x,y+6],[x,y-11]],'#725839',1);
+  line([[x-6,y-1],[x,y-11],[x+6,y-1],[x+3,y-1],[x+8,y+4],[x-8,y+4],[x-3,y-1]],'#725839',1);
+ }
+ g.setLineDash([3,5]);line([[73,143],[65,157],[71,184],[64,199]],'#725839');
+ line([[417,247],[407,274],[416,300],[428,322],[416,342],[413,367]],'#725839');g.setLineDash([]);
+ g.translate(65,380);g.globalAlpha=.55;
+ const ring=[];for(let i=0;i<8;i++){const a=i*Math.PI/4;ring.push([Math.cos(a)*15,Math.sin(a)*15]);}
+ line([...ring,ring[0]],'#725839',.8);
+ line([[-22,0],[22,0]],'#725839',.8);line([[0,-25],[0,23]],'#725839',.8);
+ poly([[0,-23],[4,0],[0,18],[-4,0]],'#725839');poly([[0,-23],[0,18],[-4,0]],'#ddc79b');g.restore();
+}
+function draw(){
+ g.setTransform(2,0,0,2,0,0);g.clearRect(0,0,W,H);
+ g.save();g.translate(3,9);poly(edge,'#17110e');g.restore();
+ g.save();g.translate(0,3);poly(edge,'#957249');g.restore();
+ poly(edge,'#ddc79b');g.save();path(edge,true);g.clip();
+ // Paper depth uses the same crisp planes as the runtime UI: no image,
+ // blur, shadow filter, random noise or render loop.
+ poly([[18,31],[159,31],[156,422],[22,425]],'#e3cea4');
+ poly([[316,30],[443,23],[455,415],[316,424]],'#d5bb8c');
+ line([...edge,edge[0]],'#ba9962',6);
+ line([[27,36],[93,30],[143,35]],'#f6e8c3',2);
+ line([[160,34],[256,29],[329,35],[403,27]],'#f6e8c3',2);
+ // Treasure's thin double rule and diamond ornaments, adapted to loose paper.
+ line([[39,94],[40,54],[141,48]],'#a78857',1);
+ line([[43,88],[44,58],[140,52]],'#f6e8c3',1);
+ line([[173,48],[256,43],[329,48],[401,42]],'#a78857',1);
+ line([[40,352],[38,395],[93,408],[176,402],[273,408],[342,402]],'#a78857',1);
+ line([[44,355],[43,391],[94,404],[176,398],[273,404],[340,398]],'#f6e8c3',1);
+ for(const [x,y] of [[44,65],[432,352]])poly([[x,y-4],[x+3,y],[x,y+4],[x-3,y]],'#a07840');
+ if(ink)mapInk();
+ if(folds){
+  for(const x of [158,316]){
+   poly([[x-5,30],[x,34],[x-1,421],[x-5,423]],'#cbb184');
+   poly([[x,34],[x+3,31],[x+3,423],[x-1,421]],'#ead6b1');
+  }
+  poly([[24,227],[158,230],[315,224],[456,228],[456,231],[315,227],[158,233],[24,230]],'#cfb78d');
+  line([[25,232],[158,235],[315,229],[456,233]],'#ecdab7',1);
+ }
+ g.restore();
+ // Turned-back corner: clear thickness rather than a rectangular bevel.
+ poly([[407,27],[440,34],[456,62],[451,109],[423,84]],'#a88858');
+ poly([[407,27],[433,42],[451,64],[429,79],[418,56]],'#f0dfb9');
+ poly([[429,79],[451,64],[444,84],[426,91]],'#c4a36c');
+ line([[409,29],[434,44],[450,64]],'#fff0cd',1.5);
+ poly([[21,399],[46,407],[63,423],[47,419]],'#b08d58');
+ poly([[21,399],[38,382],[40,401],[63,423],[44,411]],'#efddb5');
+ // Restrained seal, using faceted UI geometry and the existing diamond motif.
+ poly([[392,386],[411,393],[403,420],[395,414],[389,420]],'#725039');
+ const seal=[[383,376],[396,369],[411,372],[421,383],[419,398],[407,407],[391,404],[380,393]];
+ g.save();g.translate(1,3);poly(seal,'#725039');g.restore();poly(seal,'#8d5538');
+ poly([[386,378],[396,374],[409,377],[415,386],[411,398],[396,400],[386,391]],'#a16b46');
+ line([[386,384],[391,378],[405,378]],'#c08a58',1.5);
+ poly([[400,380],[406,387],[400,395],[394,387]],'#70462f');
+ KRUI.text(g,'KNIGHT RUSH',240,112,31,'#493323',304);
+ line([[117,130],[222,130]],'#a78857');line([[258,130],[363,130]],'#a78857');
+ poly([[240,126],[244,130],[240,134],[236,130]],'#a07840');
+ for(let i=0;i<buttons.length;i++){const b=buttons[i];KRUI.button(g,b,b.label,'treasure',{size:b.primary?23:14,variant:b.primary?undefined:'secondary',focus:hover===i});}
+ KRUI.text(g,'BEST SCORE · 12,480',240,381,12,'#725839',250);
+}
+function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+function hit(e){const p=point(e);return buttons.findIndex(b=>p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h)}
+canvas.addEventListener('pointermove',e=>{const next=hit(e);if(next!==hover){hover=next;canvas.style.cursor=hover<0?'default':'pointer';draw()}});
+canvas.addEventListener('pointerleave',()=>{hover=-1;draw()});
+canvas.addEventListener('click',e=>{const i=hit(e);if(i>=0)document.querySelector('#feedback').textContent=buttons[i].label.replace('▶ ','')+' · Tasarım önizlemesi; oyun başlatılmaz.'});
+canvas.addEventListener('keydown',e=>{if(['ArrowDown','ArrowRight','ArrowUp','ArrowLeft'].includes(e.key)){e.preventDefault();hover=(hover+(e.key==='ArrowDown'||e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;draw();}
+ if(e.key==='Enter'||e.key===' '){e.preventDefault();if(hover>=0)document.querySelector('#feedback').textContent=buttons[hover].label+' · Tasarım önizlemesi; oyun başlatılmaz.';}});
+for(const [id,toggle] of [['folds',()=>folds=!folds],['ink',()=>ink=!ink]])document.getElementById(id).onclick=e=>{const on=toggle();e.currentTarget.setAttribute('aria-pressed',String(on));e.currentTarget.textContent=(id==='folds'?'Kat izleri':'Harita çizgileri')+': '+(on?'açık':'kapalı');draw()};
+draw();
+</script></html>

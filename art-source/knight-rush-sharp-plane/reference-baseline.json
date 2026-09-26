@@ -2,6 +2,12 @@
   "version": 1,
   "note": "Protected Art Lab sources. Gatherer approved 2026-09-24; Borin and seated merchant approved 2026-09-25. Rebuilt innkeeper v2 explicitly reapproved 2026-09-26, including pose and material palettes. Withdrawn innkeeper v1 hashes remain archived in withdrawnReferences and are not design references. All other hashes preserved. Cutscene environments are separately registered.",
   "fingerprints": {
+    "KRDukeBluff.actor": "7655ee2c3c74f9857ebdf7f01aca2c5372df859e06f460e4362f24eaa7f227ca",
+    "KRDukeBluff.pose": "132b50ad207576de93306fea6a115eb38c77aeaf6bdad5fb2a85336a4110ed60",
+    "KRDukeBluff.materials": "9bbc5196fdca6ac67c6af6bc6b7267fad84ccb830fba67ac23f36b73416ebb5b",
+    "KRRoyalShuffle.actor": "38a2deca45040889a2361f96245b4fdef29719f5508622f30f61dd8a08585541",
+    "KRRoyalShuffle.pose": "952b7186b861c64c1de9b220af80473ef6ee38471b78d158e4e976108eb38c2a",
+    "KRRoyalShuffle.materials": "db9545c4bf28f9c9c4ac78cb0feef9d73f10375495d81539c764010244f8aacf",
     "KRMossyInn.keeper": "bebd3702405fc6c97dd08c2e43ea597b5da2423fb7a0410db6fb28cb0dcf9846",
     "KRMossyInn.keeperPose": "19ce9b11a860f9b25aafcd25ab7886622d0e091cb785311c33856065cc2f66fa",
     "KRMossyInn.keeperMaterials": "92525d92b266788c029499f1a1945331046e662ab3e467f19dae665f4ebf7f23",
@@ -21,8 +27,6 @@
     "drawWolf": "2c20b338649a92ef52dbd018ac177c89452bafb0b311e361d45fe76c218962d4",
     "drawMireToad": "c17a89b1cbf9f5da94046a88b1be6ce711d259c02995d8cdefbe8d49aec829c9",
     "drawWanderingMerchant": "09bbac698afaa20db3ab99570370f39e01e2ad9b2fb92da90b53055b2f45c474",
-    "discoBodyPose": "7440f55f99ee976fe434c78163f04b33acbdbf76cad39d1e24c46cab87e7e2aa",
-    "drawDiscoKing": "5888aec3020e6209e5e9cc2cbe62fa02552f6907f697644aca6281348289c1f1",
     "smithKnightPose": "a1ea4d0cb30784071c8aa0f5ad041d699ecc40839ead1cb170526305e7528161",
     "drawSmithKnight": "930a1da17cd5e4858ced33cebf9e71c9e5369262914402491202a28b3abb8bbb",
     "rigPolygon": "3a2ca2956cbeee88808be640e5a01b28767911218df487e3d738ac1f0ddfc469",
@@ -45,6 +49,13 @@
     "blacksmith-character-reference.png": "2bbb83ab76d4778af2e3fa5c0b96a7bcdb223912af07e3aaab13479b6b650441"
   },
   "withdrawnReferences": {
+    "disco": {
+      "reason": "User withdrew Disco King character approval, 2026-09-26. Game and special-road assets remain; historical hashes are not design references.",
+      "fingerprints": {
+        "discoBodyPose": "7440f55f99ee976fe434c78163f04b33acbdbf76cad39d1e24c46cab87e7e2aa",
+        "drawDiscoKing": "5888aec3020e6209e5e9cc2cbe62fa02552f6907f697644aca6281348289c1f1"
+      }
+    },
     "innkeeper": {
       "reason": "User withdrew character approval pending face revision, 2026-09-25. Historical hashes only; not a design reference.",
       "fingerprints": {

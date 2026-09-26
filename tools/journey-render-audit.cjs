@@ -18,6 +18,11 @@ const sandbox={console,document,localStorage:{getItem:()=>null,setItem:noop},
 sandbox.window=sandbox;sandbox.globalThis=sandbox;sandbox.visualViewport=null;
 const source=fs.readFileSync('KnightRush.html','utf8').match(/<script>([\s\S]*?)<\/script>/i)[1];
 vm.createContext(sandbox);
+// Match production's eagerly loaded, side-effect-free rules/UI dependencies.
+for(const file of ['assets/ui/knight-rush-ui.js','assets/encounters/tavern-slide-physics.js',
+ 'assets/encounters/duke-bluff-core.js','assets/encounters/tavern-coin.js',
+ 'assets/encounters/tavern-arm-core.js','assets/encounters/tavern-chug-core.js','assets/encounters/royal-shuffle-core.js'])
+ vm.runInContext(fs.readFileSync(file,'utf8'),sandbox);
 if(process.env.KNIGHT_AUDIT_SEED)vm.runInContext(`Math.random=(()=>{
   let seed=${Number(process.env.KNIGHT_AUDIT_SEED)>>>0};
   return ()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};

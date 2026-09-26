@@ -48,13 +48,7 @@
    g.drawImage(image,(image.width-sw)/2,image.height-sh,sw,sh,0,-PAD_TOP,480,height);return true;
   }finally{g.restore();}
  }
- function button(r,label,enabled=true){
-  const {x,y,w,h}=r;
-  P([[x+5,y+4],[x+w-5,y+4],[x+w,y+9],[x+w,y+h],[x+w-5,y+h+5],[x+5,y+h+5],[x,y+h],[x,y+9]],'#241b17');
-  P([[x+5,y],[x+w-5,y],[x+w,y+5],[x+w,y+h-5],[x+w-5,y+h],[x+5,y+h],[x,y+h-5],[x,y+5]],enabled?'#ead7ac':'#b3a185');
-  L(x+8,y+3,x+w-8,y+3,2,'#fff0cc');L(x+8,y+h-3,x+w-8,y+h-3,2,'#a27a43');
-  smithText(label,x+w/2,y+h/2+5,13,enabled?'#503720':'#756853',w-12);
- }
+ function button(r,label,enabled=true){KRUI.button(g,r,label,'caravan',{enabled,size:13,variant:label==='BACK TO THE ROAD'?'secondary':undefined});}
  function price(r,prefix,amount,enabled=true){button(r,'',enabled);merchantGoldLabel(amount,r.x+r.w/2,r.y+r.h/2+5,13,enabled?'#503720':'#756853',prefix,r.w-16);}
  const UI={item:i=>({x:24+i*110,y:441,w:102,h:111}),
   buy:{x:30,y:687,w:255,h:43},reroll:{x:297,y:687,w:153,h:43},
@@ -338,8 +332,7 @@
    g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
    drawScene(s,sceneLit);
    if(pausePhotoMode)return;
-   P([[91,6],[389,6],[398,15],[389,48],[91,48],[82,15]],'#30241e');
-   L(100,9,380,9,1,'#b98d4d');smithText('THE AUTUMN CARAVAN',240,33,17,'#f5dfad');
+   KRUI.heading(g,{x:82,y:6,w:316,h:42},'THE AUTUMN CARAVAN','caravan',17);
    P([[334,382],[448,382],[454,388],[448,404],[334,404],[328,398],[328,388]],'#30241e');
    merchantGoldLabel(gold,391,398,12,'#ffe4a5','',106);
    for(let i=0;i<4;i++){
@@ -358,9 +351,8 @@
     }else{smithText('SOLD',cx,501,11,'#5c432e');}
    }
    const item=s.stock[s.selected],blocked=merchantBlock(item),active=s.phase==='handoff',rerolling=s.phase==='reroll';
-   R(0,583,480,217+PAD_BOT,'#30241e');
-   P([[30,601],[39,592],[441,592],[450,601],[450,675],[30,675]],'#dfc99e');
-   L(41,597,438,597,2,'#fff0c9');L(42,625,438,625,1,'#b39868');
+   R(0,583,480,217+PAD_BOT,KRUI.theme('caravan').dark);
+   KRUI.panel(g,{x:30,y:592,w:420,h:83},'caravan',{light:true});L(42,625,438,625,1,KRUI.theme('caravan').edge);
    const reveal=item.sold&&s.last===item&&(!active||s.clock>=.864);
    smithText(merchantName(item,reveal),240,619,16,'#523b24',390);
    const desc=item.kind==='heal'?'Restore up to two hearts. Not consumed at full health.':

@@ -19,7 +19,7 @@
   function drawModel(id,t,moving){
     const pulse=(1-Math.cos(t*Math.PI))/2;
     switch(id){
-      case 'oakbreaker':g.save();try{g.translate(ORIGIN-240,BASE-438);KRTavernArm.actor(false,'all',{power:moving?pulse:.5,phase:'playing',cue:moving?'surge':'rest'},t);}finally{g.restore();}return;
+      case 'royal-shuffle':g.save();try{g.translate(ORIGIN-240,BASE-410);const s=KRRoyalShuffleRules.create(1);s.elapsed=t;if(moving){s.phase='surprise';s.phaseT=pulse;s.pocketCaught=true;}KRRoyalShuffle.actor(s,false);}finally{g.restore();}return;
       case 'duke':g.save();try{g.translate(ORIGIN-240,BASE-340);KRDukeBluff.actor(false,'all',{phase:moving?'revealing':'turn',phaseT:moving?pulse*.9:0,tell:0});}finally{g.restore();}return;
       case 'barry':g.save();try{g.translate(ORIGIN-240,BASE-353);KRTavernSlide.barry(false);}finally{g.restore();}return;
       case 'knight':return drawSerJonathanRider(ORIGIN,BASE,1.5,{gallop:moving?t*.55:0,lean:moving?Math.sin(t*1.4)*.12:0});
@@ -31,10 +31,6 @@
         drawWanderingMerchant({phase:moving?'handoff':'browse',clock:pulse*1.8});
         drawWanderingMerchant({phase:moving?'handoff':'browse',clock:pulse*1.8},true);
         g.restore();return;
-      case 'disco':{
-        const u=(t/1.4)%1,dir=['left','up','right','down'][Math.floor(t/1.4)%4];
-        return drawDiscoKing(ORIGIN,BASE,1.6,moving?dir:null,moving?Math.sin(u*Math.PI)**2:0,0,t);
-      }
       case 'smith':
         g.save();g.translate(ORIGIN,BASE-180);g.scale(1.5,1.5);
         drawSmithKnight(0,0,0,0,false,moving?t%2.8:0,moving,null,null,t);

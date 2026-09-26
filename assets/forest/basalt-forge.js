@@ -432,14 +432,10 @@
  }
  const UI={confirm:{x:28,y:677,w:278,h:47},leave:{x:320,y:677,w:132,h:47}};
  const card=i=>({x:28+i%2*217,y:399+Math.floor(i/2)*91,w:207,h:80});
- function button(r,label,enabled=true){
-  P([[r.x+5,r.y],[r.x+r.w-5,r.y],[r.x+r.w,r.y+5],[r.x+r.w,r.y+r.h-5],[r.x+r.w-5,r.y+r.h],[r.x+5,r.y+r.h],[r.x,r.y+r.h-5],[r.x,r.y+5]],enabled?'#475967':'#303b47');
-  R(r.x+6,r.y+3,r.w-12,2,enabled?'#d4a65c':'#56616a');
-  smithText(label,r.x+r.w/2,r.y+r.h/2+5,12,enabled?'#f2dfb7':'#839099',r.w-12);
- }
+ function button(r,label,enabled=true){KRUI.button(g,r,label,'forge',{enabled,size:12,variant:label==='RIDE ON'?'secondary':undefined});}
  function drawUI(shop){
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-  R(0,-PAD_TOP,VW,VH+PAD_TOT,'#192632');
+  R(0,-PAD_TOP,VW,VH+PAD_TOT,KRUI.theme('forge').dark);
   if(!window.KRCutscenes?.draw('basalt-forge',perfNow)){
   workshop();
   const work=!!shop.order&&shop.phase!=='browse',t=shop.clock,
@@ -454,16 +450,16 @@
   hammerArm(lift,result,strike);g.restore();
   }
   const work=!!shop.order&&shop.phase!=='browse',t=shop.clock;
-  R(16,14,190,48,'#202d39');R(16,14,3,48,'#c89b56');
+  KRUI.panel(g,{x:16,y:14,w:190,h:48},'treasure');
   smithText('BASALT HEARTH',111,35,16,'#eed7a6');smithText('BORIN · DWARVEN SMITH',111,51,9,'#aebfc7');
-  R(294,351,168,23,'#202d39');drawCoin(311,362,.4,.25);smithText(String(gold),344,367,12,'#e5c776');
+  KRUI.panel(g,{x:294,y:351,w:168,h:23},'treasure');drawCoin(311,362,.4,.25);smithText(String(gold),344,367,12,'#e5c776');
   drawScrapIcon(397,362,.4);smithText(String(scrap),430,367,12,'#c6d3d7');
-  // UI is a slate order ledger, not the town smith's spread of tilted cards.
-  P([[0,374],[480,374],[480,800],[0,800]],'#1d2b37');R(0,374,480,5,'#7f8d92');
+  // The craft ledger now shares Treasure's brown cards and parchment notes.
+  R(0,374,480,426,KRUI.theme('forge').dark);R(0,374,480,3,KRUI.theme('forge').edge);
   if(!work){
    for(let i=0;i<runSkills.length;i++){
     const r=card(i),q=shop.cards[i],sel=i===shop.selected;
-    R(r.x,r.y,r.w,r.h,sel?'#425461':'#293b48');R(r.x,r.y,4,r.h,sel?'#e9b967':'#657b87');
+    KRUI.panel(g,r,'forge');R(r.x,r.y,4,r.h,sel?KRUI.semantic.focus:KRUI.theme('forge').edge);
     drawSmithItem(smithItemKind(runSkills[i].baseId),r.x+32,r.y+31,.74);
     const labels=['SHARPSHOOT','MARK BURST','SHIELD BASH','CALL SQUIRE'];
     smithText(labels[i]||runSkills[i].name,r.x+127,r.y+22,11,sel?'#f5e2b6':'#bbcbd0',146);
@@ -472,14 +468,15 @@
     drawScrapIcon(r.x+137,r.y+61,.37);smithText(q.maxed?'APEX':String(q.scrapCost),r.x+167,r.y+65,11,'#b6c7ce');
    }
    const q=shop.cards[shop.selected],skill=runSkills[shop.selected];
-   smithText(skill.evolutionName||skill.name,240,602,15,'#f1d5a1',419);
-   smithText(q.maxed?'APEX REACHED':q.fail?Math.round(q.fail*100)+'% FAIL · HALF COINS REFUNDED':'FIRST UPGRADE GUARANTEED',240,624,11,'#9eb9c7',419);
-   smithText(shop.message||'Choose your craft. I will wake the steel.',240,651,11,shop.message?'#efad83':'#c7c4b8',424);
+   KRUI.sheet(g,{x:20,y:568,w:440,h:96});
+   smithText(skill.evolutionName||skill.name,240,602,15,KRUI.theme().ink,419);
+   smithText(q.maxed?'APEX REACHED':q.fail?Math.round(q.fail*100)+'% FAIL · HALF COINS REFUNDED':'FIRST UPGRADE GUARANTEED',240,624,11,KRUI.theme().paperSoft,419);
+   smithText(shop.message||'Choose your craft. I will wake the steel.',240,651,11,shop.message?'#914e31':KRUI.theme().paperSoft,424);
    button(UI.confirm,q.maxed?'APEX COMPLETE':'FORGE UPGRADE',!q.maxed&&gold>=q.price&&scrap>=q.scrapCost);
   }else{
    const reveal=t>=SMITH_RULES.reveal,quality=t>=SMITH_RULES.rarity,o=shop.order,
     c=quality?(o.success?SKILL_MUTATION_RARITY_COL[o.rarity]:'#d9987d'):'#b5c1c7';
-   R(44,401,392,241,'#293c49');R(44,401,392,4,c);
+   KRUI.panel(g,{x:44,y:401,w:392,h:241},'forge');R(44,401,392,4,c);
    smithText(!reveal?'THE HAMMER IS SPEAKING...':quality?(o.success?'A FINE PIECE OF WORK':'EVEN STONE HAS BAD DAYS'):'A NEW TECHNIQUE',240,434,14,c,369);
    drawSmithItem(smithItemKind(o.skillId),240,486,1.6,!quality);
    smithText(reveal?(o.success?o.command.evolutionName||o.command.name:'The metal would not hold.'):'Heating · shaping · tempering',240,548,15,c,352);

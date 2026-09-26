@@ -233,13 +233,7 @@
   // Feet meet the generated dais (source y~1015), not the step riser below it.
   chest(240,435,1.08,open,t);
  }
- function button(r,label,muted=false){
-  const {x,y,w,h}=r;
-  P([[x+6,y+4],[x+w-6,y+4],[x+w,y+10],[x+w,y+h],[x+w-6,y+h+6],[x+6,y+h+6],[x,y+h],[x,y+10]],'#1f1713');
-  P([[x+6,y],[x+w-6,y],[x+w,y+6],[x+w,y+h-6],[x+w-6,y+h],[x+6,y+h],[x,y+h-6],[x,y+6]],muted?'#b2a185':'#e8d6ab');
-  L(x+8,y+3,x+w-8,y+3,2,'#fff0cd');L(x+8,y+h-3,x+w-8,y+h-3,2,'#a8824a');
-  smithText(label,x+w/2,y+h/2+5,13,muted?'#756853':'#493323');
- }
+ function button(r,label,muted=false){KRUI.button(g,r,label,'treasure',{enabled:!muted,size:13,variant:label==='II'||label==='LEAVE WITHOUT LOOT'?'secondary':undefined});}
  function heading(title,sub){
   P([[83,112],[397,112],[405,123],[397,162],[83,162],[75,123]],'#30241e');
   L(96,115,384,115,1,'#b68b49');

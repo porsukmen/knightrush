@@ -24,7 +24,7 @@ candidate renderers, then inspect those renderer functions. Do not promote the
 latest code or an image in `output/` to approved status by assumption.
 
 - Knight, bear, wolf and toad: compact squared masses, silhouette and volume.
-- Approved merchant and revamped Disco King: purposeful NPC detail, expression,
+- Approved merchant, Duke and Royal Shuffle dealer: purposeful NPC detail, expression,
   clothes, material separation and articulation. They do not replace the first
   group's blocky foundation. NPC close-ups may be richer; road-size silhouettes
   must still read as the same game.
@@ -69,6 +69,13 @@ For themed running-road design or revisions, also read
 catalog and `RoadCreatorLab.html` cover natural/man-made transitions, decorations, obstacles and central
 event venues while preserving the existing road and trees.
 
+## Separate UI references
+
+Treasure Chest is now the sole approved UI reference; tavern/minigame UI was
+withdrawn as an anchor. See `UILab.html` and `tools/skills/knight-rush-ui/SKILL.md`.
+Use classic brown and parchment, not contextual recolouring. This UI decision
+does not change any independent character or background approvals.
+
 ## Shape and detail contract
 
 - Crisp native-resolution 2D/2.5D medieval fantasy: rectangular/stepped masses,
@@ -82,8 +89,10 @@ event venues while preserving the existing road and trees.
   Occupation/weight comes from designed proportions, not stretching a whole model.
 - Detail explains structure/material: buckles, seams, rivets, folds and wear
   where they belong. Do not scatter marks or fracture every surface to add detail.
-- Old minigames and rejected prototypes are placeholders, not anchors. The
-  explicitly approved revamped Disco King is an exception. External cartoons
+- Old minigames and rejected prototypes are placeholders, not anchors. Only
+  explicitly approved current minigame characters in the registry are anchors.
+  Disco King approval was withdrawn 2026-09-26; Oakbreaker is excluded. Neither
+  is a character reference. This does not revoke the Disco road biome reference. External cartoons
   may inspire clarity/layering, not replace Knight Rush faces, contours or palette.
 
 ## Colour, lighting and depth
@@ -111,7 +120,8 @@ Use existing renderers through their actual code/Lab adapters, not redrawn copie
 | Knight proportions / horse / armour | `drawSerJonathanRider`, `drawSquireHelmet25D`, `drawSerJonathanShield` |
 | Animal volume | `drawBearNatural`, `drawWolf`, `drawMireToad` |
 | NPC face / cloth / gold | `drawWanderingMerchant`, `drawMushroomGatherer` |
-| Expressive pose / steel articulation | `discoBodyPose`, `drawDiscoKing`, `smithKnightPose`, `drawSmithKnight` |
+| Noble/dealer articulation | `KRDukeBluff.actor`, `KRDukeBluff.pose`, `KRRoyalShuffle.actor`, `KRRoyalShuffle.pose` (encounter modules) |
+| Steel articulation | `smithKnightPose`, `drawSmithKnight` |
 | Item materials | `drawMerchantDisplayItem` |
 
 Reuse `rigPolygon`, `rigSegment`, `rigJoint`, `px` and existing material/attachment

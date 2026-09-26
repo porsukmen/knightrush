@@ -185,27 +185,30 @@
  function camera(s){const d=s.player.done,t=s.elapsed;return{roll:d*(Math.sin(t*.92)*.024+Math.sin(t*1.61)*.006),x:Math.sin(t*.81)*d*5,y:Math.cos(t*1.23)*d*3};}
  function drawCutscene(){const im=window.KREventVisuals?.peek('tavern-chug');R(-30,50,540,740,'#795b3b');if(im){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(im,-24,52,528,704);g.restore();return true;}return false;}
  function world(s){const c=camera(s);g.save();g.beginPath();g.rect(0,80,480,541);g.clip();g.translate(240+c.x,370+c.y);g.rotate(c.roll);g.translate(-240,-370);drawCutscene();actor(true,'body',s);table();actor(true,'front',s);player(s);g.restore();}
- function button(r,label){cut(r.x,r.y+4,r.w,r.h,'#493022');cut(r.x,r.y,r.w,r.h,'#e1c18a');R(r.x+8,r.y+3,r.w-16,3,'#ffdfab');T(label,r.x+r.w/2,r.y+r.h/2+5,14,'#4a2f20',r.w-15);}
- function meter(x,y,w,value,label,c){T(label,x+w/2,y-5,10);cut(x,y,w,11,'#584233');R(x+3,y+3,(w-6)*Math.min(1,value),5,c);}
+ function button(r,label){KRUI.button(g,r,label,'tavern',{size:14,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
+ function meter(x,y,w,value,label,c,onPaper=false){T(label,x+w/2,y-5,10,onPaper?KRUI.theme().ink:KRUI.theme().onDark);cut(x,y,w,11,'#584233');R(x+3,y+3,(w-6)*Math.min(1,value),5,c);}
  function draw(){const s=drinkGame;if(!s)return;g.save();try{
-  R(0,-PAD_TOP,480,800+PAD_TOT,'#2d231c');world(s);
-  R(0,-PAD_TOP,480,80+PAD_TOP,'#2d231c');T('LAST MUG STANDING',240,28,22);T('SIR CHUGS-A-LOT',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
-  cut(134,109,212,38,'#38271f');meter(147,132,186,s.rival.done,'SIR CHUGS', '#d19a58');
+  R(0,-PAD_TOP,480,800+PAD_TOT,KRUI.theme('tavern').dark);world(s);
+  if(pausePhotoMode)return;
+  R(0,-PAD_TOP,480,80+PAD_TOP,KRUI.theme('tavern').dark);T('LAST MUG STANDING',240,28,22);T('SIR CHUGS-A-LOT',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  KRUI.panel(g,{x:134,y:109,w:212,h:38},'tavern');meter(147,132,186,s.rival.done,'SIR CHUGS', '#d19a58');
+  KRUI.sheet(g,{x:16,y:516,w:448,h:792+PAD_BOT-516});
+  const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   cut(27,528,426,115,'#35261f');T('ONE MUG. NO STEADY HANDS.',240,551,17);
-   ['DRAG UP to tilt your mug. DOWN to ease off.','The emptier it gets, the steeper the angle.','Too steep? Foam builds, then you spill.','Drinking makes your hand — and the room — sway.'].forEach((t,i)=>T(t,240,575+i*17,10));button(DRINK_START_BTN,'RAISE THE MUGS');T('Keyboard: UP / DOWN tilt. SPACE lowers the mug.',240,752,10);
+   paperText('ONE MUG. NO STEADY HANDS.',240,551,17);
+   ['DRAG UP to tilt your mug. DOWN to ease off.','The emptier it gets, the steeper the angle.','Too steep? Foam builds, then you spill.','Drinking makes your hand — and the room — sway.'].forEach((t,i)=>paperText(t,240,575+i*17,10));button(DRINK_START_BTN,'RAISE THE MUGS');paperText('Keyboard: UP / DOWN tilt. SPACE lowers the mug.',240,752,10);
   }else if(s.phase==='result'){
-   cut(31,536,418,109,'#35261f');T(s.result.tie?'A VERY WOBBLY DRAW.':s.result.win?'LAST MUG STANDING!':'SIR CHUGS TAKES THE ROUND.',240,565,17);
-   T(s.result.win?'“Was the room always doing that?”':'“Another? After the floor stops moving.”',240,591,11);T(s.result.time.toFixed(1)+' SECONDS  /  '+s.result.spills+' SPILLS',240,616,11);button(DRINK_REPLAY_BTN,'ANOTHER ROUND');
+   paperText(s.result.tie?'A VERY WOBBLY DRAW.':s.result.win?'LAST MUG STANDING!':'SIR CHUGS TAKES THE ROUND.',240,565,17);
+   paperText(s.result.win?'“Was the room always doing that?”':'“Another? After the floor stops moving.”',240,591,11);paperText(s.result.time.toFixed(1)+' SECONDS  /  '+s.result.spills+' SPILLS',240,616,11);button(DRINK_REPLAY_BTN,'ANOTHER ROUND');
   }else{
    // Fixed HUD/control plane: no transformed hitboxes or postprocessing.
-   cut(28,550,424,65,'#35261f');meter(43,578,181,s.player.done,'YOU','#dfb658');meter(257,578,180,s.player.foam,'FOAM','#e58e58');
-   const drunk=s.player.done<.18?'STEADY':s.player.done<.48?'WARMING UP':s.player.done<.76?'WOBBLY':'ROOM IS SPINNING';T(drunk,240,604,10,'#eac68d');
-   cut(controlRect.x,controlRect.y,controlRect.w,controlRect.h,'#4b3426');R(50,633,380,2,'#94693b');
-   T(s.phase==='ready'?'MUGS UP...':s.player.spillT>0?'SPILLED! EASE OFF.':s.player.held?'ADJUST YOUR TILT':'DRAG HERE TO DRINK',240,651,15);
+   meter(43,578,181,s.player.done,'YOU','#dfb658',true);meter(257,578,180,s.player.foam,'FOAM','#e58e58',true);
+   const drunk=s.player.done<.18?'STEADY':s.player.done<.48?'WARMING UP':s.player.done<.76?'WOBBLY':'ROOM IS SPINNING';paperText(drunk,240,604,10,'#eac68d');
+   cut(controlRect.x,controlRect.y,controlRect.w,controlRect.h,KRUI.theme().paper);R(50,633,380,2,'#94693b');
+   paperText(s.phase==='ready'?'MUGS UP...':s.player.spillT>0?'SPILLED! EASE OFF.':s.player.held?'ADJUST YOUR TILT':'DRAG HERE TO DRINK',240,651,15);
    const x=66,w=348,target=KRChugRules.ideal(s.player);R(x,680,w,9,'#241f19');R(x+w*Math.max(0,target-.04),676,w*.105,17,'#a5ad76');
-   const px=x+w*s.player.actual;P([[px-6,670],[px+6,670],[px,678]],'#ffdf97');R(px-1,679,2,17,'#ffdf97');T('LOWER    <   MUG ANGLE   >    HIGHER',240,714,10);T('Drag up / down · release to lower',240,735,10);
-   T('UP / DOWN tilt  ·  SPACE rest',240,775,10,'#bda683');
+   const px=x+w*s.player.actual;P([[px-6,670],[px+6,670],[px,678]],'#ffdf97');R(px-1,679,2,17,'#ffdf97');paperText('LOWER    <   MUG ANGLE   >    HIGHER',240,714,10);paperText('Drag up / down · release to lower',240,735,10);
+   paperText('UP / DOWN tilt  ·  SPACE rest',240,775,10,'#bda683');
   }
  }finally{g.restore();}}
  window.KRTavernChug={assetId:'tavern-chug',drawCutscene,draw,world,actor,pose,materials,tankard,table,player,camera,controlRect,mugPoint,playerPose,playerMugPoint};

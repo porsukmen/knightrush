@@ -5,6 +5,12 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'wolf-den-forest':Object.freeze({standard:{src:'assets/encounters/wolf-den-forest-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/wolf-den-forest-v1-mobile.png',width:576,height:768}}),
+    'wolf-den-outside':Object.freeze({standard:{src:'assets/encounters/wolf-den-outside-v2.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/wolf-den-outside-v2-mobile.png',width:576,height:768}}),
+    'wolf-den-inside':Object.freeze({standard:{src:'assets/encounters/wolf-den-inside-v2.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/wolf-den-inside-v2-mobile.png',width:576,height:768}}),
     'royal-shuffle':Object.freeze({standard:{src:'assets/encounters/royal-shuffle-v1.png',width:1086,height:1448},
       mobile:{src:'assets/encounters/royal-shuffle-v1-mobile.png',width:576,height:768}}),
     'tavern-chug':Object.freeze({standard:{src:'assets/encounters/tavern-chug-v1.png',width:1086,height:1448},

@@ -17,6 +17,69 @@
  // has not moved. Quantize identity only (one micrometre), never geometry or
  // projection, so these stationary rows do not rebuild on unrelated frames.
  const coordinateKey=value=>Math.round(value*1e6);
+ // Placement is a spawn-time decision, not a visibility decision. Keep a
+ // bounded local-road ledger through camera turns and world-origin rebases.
+ const placementRows=new Map(),usedPlacementRows=new Set(),plantingRows=new Map(),usedPlantingRows=new Set();
+ let placementOwner=null,decorPlanKey='',placementChecks=0,rootSpawnChecks=0,rootSpawnRejected=0,decorPlanBuilds=0,plantingBuilds=0;
+ function ensurePlacementOwner(){
+  if(placementOwner===journeyRoute)return;
+  placementOwner=journeyRoute;placementRows.clear();plantingRows.clear();decorPlanKey='';
+  placementChecks=0;rootSpawnChecks=0;rootSpawnRejected=0;
+ }
+ function placementRow(edge,z){
+  const key=(edge?.id??'forest')+':'+Math.floor(z/18);
+  let row=placementRows.get(key);
+  if(!row){row={decisions:new Map(),roots:[]};placementRows.set(key,row);}
+  usedPlacementRows.add(key);return row;
+ }
+ function rootOverlaps(o,site){
+  return (o.id<3||o.kind==='pool')&&Math.abs(o.x-site.x)<(o.kind==='pool'?o.w*.6+2.6:4)&&
+   Math.abs(o.localZ-site.z)<(o.kind==='pool'?6:5);
+ }
+ function placementAllowed(view,o,z,p){
+  const edge=view.edgeAt(z),row=placementRow(edge,o.localZ),key=coordinateKey(o.x)+':'+coordinateKey(o.localZ)+':'+o.id;
+  const known=row.decisions.get(key);if(known)return known.allowed;
+  placementChecks++;
+  let allowed=!insideRoad(p,o.kind==='pool'?o.w*.6+1:o.id<3?2.1:.4)&&
+   !nearAnchor(decorClearances,p,o.kind==='pool'?o.w*.6+2.6:o.id<3?3.4:2.6,4.5);
+  if(allowed)for(let r=Math.floor(o.localZ/18)-1;r<=Math.floor(o.localZ/18)+1;r++){
+   const other=placementRows.get((edge?.id??'forest')+':'+r);
+   if(other?.roots.some(site=>rootOverlaps(o,site))){allowed=false;break;}
+  }
+  row.decisions.set(key,{allowed,record:o});return allowed;
+ }
+ function plantedRow(view,row){
+  const key=view.key+':'+row;usedPlantingRows.add(key);
+  let plan=plantingRows.get(key);
+  if(!plan){
+   plantingBuilds++;plan={records:[],ledgers:new Set()};
+   for(const o of art.rowRecords(row,false)){
+    const z=o.localZ-view.offset;if(z<view.start||z>view.finish)continue;
+    const edge=view.edgeAt(z),p=view.point(z,o.x);
+    plan.ledgers.add((edge?.id??'forest')+':'+Math.floor(o.localZ/18));
+    if(placementAllowed(view,o,z,p))plan.records.push({record:o,z,p,palette:atPalette(edge,view.at(z))});
+   }
+   plantingRows.set(key,plan);
+  }
+  for(const key of plan.ledgers)usedPlacementRows.add(key);
+  return plan.records;
+ }
+ function reserveObstacle(o,at){
+  if(!active()||o.kind!=='root'||o.roadTheme==='disco'||o.roadTheme==='inn')return true;
+  ensurePlacementOwner();rootSpawnChecks++;
+  const edge=journeySpawnRoadAt(at)?.edge??journeyActiveEdge(),
+   offset=journeyActiveRoad()?journey.curvedSideOrigin-journeyNode(journeyRoute.from).at:curvedGroundDistance-dist,
+   site={x:o.side==='L'?-9.3:9.3,z:at+offset};
+  // A late obstacle must never erase already placed scenery. This also covers
+  // branch previews that were visible before the player chose that branch.
+  for(let r=Math.floor(site.z/18)-1;r<=Math.floor(site.z/18)+1;r++){
+   const row=placementRows.get((edge?.id??'forest')+':'+r);
+   if(row)for(const decision of row.decisions.values())if(decision.allowed&&rootOverlaps(decision.record,site)){
+    rootSpawnRejected++;return false;
+   }
+  }
+  placementRow(edge,site.z).roots.push(site);return true;
+ }
  // Material targets, not a translucent screen overlay. Three broad values
  // remain distinct on the exact same foliage, bark and soil geometry.
  const materialTargets={inn:{
@@ -141,6 +204,10 @@
   '#d6ebcf':'#be6c62','#91ab68':'#62303a'}};
  const pool=[],decorClearances=[];let count=0,headingRoute=null,headingCount=-1,heading=0;
  function prepareDecorClearances(){
+  const key=[journeyRoute.activeEdge,journeyRoute.from,journeyRoute.next,journeyRoute.pendingArm,
+   journeyActiveRoad(),journey.phase==='approach',journey.passedNodeId,journey.oldRoadEdge?.id,
+   journeyForkDistance(),coordinateKey(curvedGroundDistance-dist)].join(':');
+  if(key===decorPlanKey)return;decorPlanKey=key;decorPlanBuilds++;
   decorClearances.length=0;
   for(const theme of ['disco','bloodwood','forge','chest','caravan','inn'])for(const view of journeyDiscoRoadViews(theme)){
    if(view.spill){decorClearances.push(view.point(view.begin+42.5,view.onlySide*7));continue;}
@@ -154,8 +221,7 @@
    // Keep the existing seeded prop layout. Reserve its ground footprint in
    // the NEW planting system, rather than moving or hiding the old props.
    for(const decor of theme==='inn'&&window.KRMossyInn?KRMossyInn.layout(view.edge):theme==='caravan'&&window.KRAutumnCaravan?KRAutumnCaravan.layout(view.edge):theme==='chest'&&window.KRTreasureRoad?KRTreasureRoad.layout(view.edge):journeyRoadDecorLayout(view.edge)){
-    const p=view.point(decor.at,decor.offset),c=journeyCameraPoint(p.x,p.z);
-    if(c.depth>-45&&c.depth<SPAWN_FAR+35)decorClearances.push(p);
+    decorClearances.push(view.point(decor.at,decor.offset));
    }
   }
  }
@@ -277,7 +343,8 @@
   if(owner!==journeyRoute){owner=journeyRoute;floors.clear();water.clear();art.clear();headingRoute=null;}
   art.setSeed(journeyRoute.seed);art.prepare();
   if(frameId===journeyRenderSerial)return;
-  frameId=journeyRenderSerial;views=getViews();rowKeys.clear();items.length=0;rootPositions();prepareDecorClearances();
+  ensurePlacementOwner();usedPlacementRows.clear();usedPlantingRows.clear();
+  frameId=journeyRenderSerial;views=getViews();rowKeys.clear();items.length=0;prepareDecorClearances();
   const cam=journeyCameraPose(),f=CFG.FOCAL;
   art.setFloorFrame({x:cam.x,z:cam.z,cos:Math.cos(cam.yaw),sin:Math.sin(cam.yaw),focal:f,
    near:journeyDepthAtY(VH+PAD_BOT+32),far:CFG.Z_FAR,
@@ -292,31 +359,32 @@
       ca=journeyCameraPoint(a.x,a.z,rowCameraA),cb=journeyCameraPoint(b.x,b.z,rowCameraB);
     if(Math.max(ca.depth,cb.depth)<sceneryNearLimit()-10||Math.min(ca.depth,cb.depth)>SPAWN_FAR+30)continue;
     rowKeys.add('false:'+row);
-    for(const o of art.rowRecords(row,false)){
-     const z=o.localZ-view.offset;if(z<view.start||z>view.finish)continue;
-     // Rejected candidates share the next unused slot; accepted objects keep
-     // their own coordinates until the whole painter queue has consumed them.
+    for(const placed of plantedRow(view,row)){
+     const o=placed.record,z=placed.z;if(z<view.start||z>view.finish)continue;
+     // The plan owns immutable world anchors; only camera/projection scratch
+     // is reused. Painter queue items cannot overwrite another tree's anchor.
      const item=itemPool[items.length]||(itemPool[items.length]={p:{},c:{},projected:{}}),
-       p=view.point(z,o.x,item.p),c=journeyCameraPoint(p.x,p.z,item.c);
+       p=placed.p,c=journeyCameraPoint(p.x,p.z,item.c);
+     item.p=p;
      if(c.depth<sceneryNearLimit()||c.depth>SPAWN_FAR)continue;
      const projected=item.projected;let width=0,clip=0;
      if(o.kind!=='pool'){
       journeyProjectCamera(c.side,c.depth,projected);width=o.w*unit*linS(projected.t);
       const m=art.models[o.id],s=width/m.width;clip=c.depth>=CFG.Z_FAR?HORIZON_Y:projected.y;
-      // Reject outer-belt trees before palette/road/prop-footprint work.
+      // Only projection/visibility work remains in the per-frame path.
       if(projected.x+m.right*s<0||projected.x+m.left*s>VW||projected.y+m.top*s>clip)continue;
      }
-     if(insideRoad(p,o.kind==='pool'?o.w*.6+1:o.id<3?2.1:.4))continue;
-     if((o.id<3||o.kind==='pool')&&nearAnchor(rootAnchors,p,o.kind==='pool'?o.w*.6+2.6:4,o.kind==='pool'?6:5))continue;
-     const clearance=o.kind==='pool'?o.w*.6+2.6:o.id<3?3.4:2.6;
-     if(nearAnchor(decorClearances,p,clearance,4.5))continue;
-     const pal=atPalette(view.edgeAt(z),view.at(z));
-     item.record=o;item.view=view;item.z=z;item.palette=pal;
+     item.record=o;item.view=view;item.z=z;item.palette=placed.palette;
      item.width=width;item.clip=clip;items.push(item);
     }
    }
   }
   art.trimRows(rowKeys);
+  for(const key of plantingRows.keys())if(!usedPlantingRows.has(key))plantingRows.delete(key);
+  if(placementRows.size>256)for(const key of placementRows.keys()){
+   if(!usedPlacementRows.has(key))placementRows.delete(key);
+   if(placementRows.size<=256)break;
+  }
  }
  const groundRows=[],groundRowPool=[];
  function ground(){
@@ -440,19 +508,6 @@
   const mask=occlusionFrame===journeyRenderSerial&&tree.sunlitRenderMaskFrame===journeyRenderSerial?tree.sunlitRenderMask:0;
   art.nativeShapeWithPalette(pal,p.id,p.x,p.y,p.width,p.alpha,p.clip,1,mask||0);
  }
- function lanePoint(o,d=0,x=0){
-  const cam=journeyCameraPose(),sin=Math.sin(cam.yaw),cos=Math.cos(cam.yaw);
-  return {x:cam.x+x*cos+(o.z+d)*sin,z:cam.z-x*sin+(o.z+d)*cos};
- }
- let rootAnchors=[];
- function rootPositions(){
-  rootAnchors.length=0;
-  for(const o of obstacles)if(o.kind==='root'&&o.roadTheme!=='disco'&&o.roadTheme!=='inn')rootAnchors.push(lanePoint(o,0,o.side==='L'?-9.3:9.3));
-  for(const item of journey.oldObstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco'&&item.entity.roadTheme!=='inn')
-   rootAnchors.push({x:item.x-(item.lane-1)*JOURNEY_LANE_WORLD+(item.entity.side==='L'?-9.3:9.3),z:item.z});
-  for(const item of journey.sunlitPreview?.obstacles||[])if(item.entity.kind==='root'&&item.entity.roadTheme!=='disco'&&item.entity.roadTheme!=='inn')
-   rootAnchors.push(item.point(0,item.entity.side==='L'?-9.3:9.3));
- }
  function hazard(o,point,depth,side){
   if(depth<o.type.cullZ||depth>SPAWN_FAR)return;
   g.save();g.globalAlpha=obstacleDistanceAlpha(o,depth);
@@ -484,7 +539,7 @@
   const point=(at,x)=>({x:dir*(JOURNEY_LANE_WORLD+at-atBase),z:corner-dir*x});
   try{
    obstacles=[];pickups=[];roadsideScenery=[];
-   while(next<arrival+SPAWN_FAR&&next<stageDistance()-30){
+   while(next<arrival+SPAWN_FAR+72&&next<stageDistance()-30){
     const at=next;next+=CFG.SPAWN_GAP;
     const road=journeySpawnRoadAt(at);if(!road||at>stageDistance()-40||journeySpawnClearance(road,at))continue;
     spawnPattern(at-dist);
@@ -631,14 +686,17 @@
   for(const d of battlePlate.tail)drawWorldItemOrDefer(d,stage);
   battleHits++;return true;
  }
- function clear(){clearBattlePlate();art.clear();floors.clear();water.clear();items.length=0;itemPool.length=0;pool.length=0;owner=null;frameId=-1;endGroves=new WeakMap();floorBuilds=0;floorHits=0;waterBuilds=0;waterHits=0;occludedTrees=0;coveredTreePlanes=0;occlusionFrame=-1;}
+ function clear(){clearBattlePlate();art.clear();floors.clear();water.clear();items.length=0;itemPool.length=0;pool.length=0;owner=null;frameId=-1;endGroves=new WeakMap();floorBuilds=0;floorHits=0;waterBuilds=0;waterHits=0;occludedTrees=0;coveredTreePlanes=0;occlusionFrame=-1;
+  placementRows.clear();usedPlacementRows.clear();plantingRows.clear();usedPlantingRows.clear();placementOwner=null;decorPlanKey='';placementChecks=0;rootSpawnChecks=0;rootSpawnRejected=0;decorPlanBuilds=0;plantingBuilds=0;}
  resetRun=function(){clear();return base.reset();};
  setMode=function(next,...args){const result=base.mode(next,...args);if(next!=='boss')clearBattlePlate();if(['menu','charsel','score','town'].includes(next))clear();return result;};
- window.KRSunlitForest={active,riderAppearance,drawBattleWorld,clearBattlePlate,
+ window.KRSunlitForest={active,riderAppearance,drawBattleWorld,clearBattlePlate,reserveObstacle,
   roadColorAt:(edge,at)=>groundColor(edge,at,'#d6b16f'),
   materialAt:(theme,amount,color)=>palette(theme,amount)?.color(color)||color,
   report:()=>({...art.report(),active:active(),floorRows:floors.size,floorBuilds,floorHits,waterBuilds,waterHits,
-  visibleScenery:count,occludedTrees,coveredTreePlanes,battleCacheBytes:battlePlate?battlePlate.canvas.width*battlePlate.canvas.height*4:0,
+  visibleScenery:count,occludedTrees,coveredTreePlanes,placementRows:placementRows.size,plantingRows:plantingRows.size,
+  placementChecks,plantingBuilds,decorPlanBuilds,rootSpawnChecks,rootSpawnRejected,
+  battleCacheBytes:battlePlate?battlePlate.canvas.width*battlePlate.canvas.height*4:0,
   battleBuilds,battleHits,renderer:'sunlit-journey',legacyGameplay:true}),
-  inspect:()=>items.map(i=>({x:i.p.x,z:i.p.z,id:i.record.id,kind:i.record.kind||'plant',palette:i.palette?.id||'forest'}))};
+  inspect:()=>items.map(i=>({x:i.p.x,z:i.p.z,id:i.record.id,w:i.record.w,kind:i.record.kind||'plant',palette:i.palette?.id||'forest'}))};
 })();

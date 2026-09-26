@@ -225,7 +225,7 @@
   g.save();g.translate(p.x,p.y-p.lift);g.rotate(p.angle||0);g.scale(Math.max(.025,flip)*.66*(p.widthScale??1),.43*(p.heightScale??1));
   const front=Math.max(0,Math.min(1,p.frontality||0));
   const outline=(a,b,c)=>P(a.map(([x,y],i)=>[x+(b[i][0]-x)*front,y+(b[i][1]-y)*front]),c);
-  outline([[-35,-49],[36,-49],[43,58],[-38,58]],[[-39,-52],[41,-52],[41,56],[-39,56]],'#122f29');
+  outline([[-35,-49],[36,-49],[43,58],[-38,58]],[[-40,-54],[40,-54],[40,56],[-40,56]],'#122f29');
   outline([[-34,-54],[34,-54],[40,50],[36,55],[-36,55],[-40,50]],[[-40,-54],[40,-54],[40,50],[40,55],[-40,55],[-40,50]],highlight?'#edca72':'#bca477');
   outline([[-33,-56],[33,-56],[39,48],[35,52],[-35,52],[-39,48]],[[-39,-56],[39,-56],[39,48],[39,52],[-39,52],[-39,48]],'#f3e7cb');
   const surface=cardSurface(1,front);
@@ -291,29 +291,32 @@
    drawCutscene();actor(s,lit,'body');table();cards(s);actor(s,lit,'front');cards(s,true);
   }finally{g.restore();}
  }
- function button(r,label,disabled=false){cut(r.x,r.y+4,r.w,r.h,'#493427');cut(r.x,r.y,r.w,r.h,disabled?'#897b59':'#dcc48c');R(r.x+8,r.y+3,r.w-16,3,disabled?'#a09572':'#ffdfaa');T(label,r.x+r.w/2,r.y+r.h/2+5,13,'#483124',r.w-16);}
+ function button(r,label,disabled=false){KRUI.button(g,r,label,'court',{enabled:!disabled,size:13,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
  function pocketHit(pt){const p=toWorld(pt),q=KRRoyalShuffleRules.pocket;return Math.abs(p.x-q.x)<=22&&p.y>=q.y-28&&p.y<=q.y+18;}
  function draw(){const s=findQueenGame;if(!s)return;g.save();try{
-  R(0,-PAD_TOP,480,800+PAD_TOT,'#29241d');world(s);
-  R(0,-PAD_TOP,480,80+PAD_TOP,'#29241d');T('ROYAL SHUFFLE',240,27,22);T('TWO KINGS. ONE QUEEN. WATCH THE HANDS.',240,47,9,'#c9b488');
+  R(0,-PAD_TOP,480,800+PAD_TOT,KRUI.theme('court').dark);world(s);
+  if(pausePhotoMode)return;
+  R(0,-PAD_TOP,480,80+PAD_TOP,KRUI.theme('court').dark);T('ROYAL SHUFFLE',240,27,22);T('TWO KINGS. ONE QUEEN. WATCH THE HANDS.',240,47,9,'#c9b488');
   button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
-  cut(146,96,188,29,'#352a23');T(s.hand?'HAND '+s.hand+' / 3':'THE VELVET FOX',240,115,12);
+  KRUI.panel(g,{x:146,y:96,w:188,h:29},'court');T(s.hand?'HAND '+s.hand+' / 3':'THE VELVET FOX',240,115,12);
   T('YOU  '+s.you,85,160,12);T('FOX  '+s.dealer,397,160,12);
   for(let i=0;i<2;i++){crown(72+i*24,179,7,i<s.you?'#e9c778':'#776347');crown(384+i*24,179,7,i<s.dealer?'#e9c778':'#776347');}
   const titles={restore:'BACK ON THE TABLE',coverup:'“JUST A KING. SHALL WE?”',pocketReveal:'“LOOKING FOR THIS KING?”',memorize:'REMEMBER THE RED QUEEN',flip:'FACE DOWN',shuffle:'FOLLOW THE LADY',settle:'YOUR CALL',surprise:'“HOW DID YOU SEE THAT?”',choose:'WHERE IS THE QUEEN?',reveal:s.caught?'CAUGHT RED-HANDED':'LET US SEE…'};
+  KRUI.sheet(g,{x:16,y:535,w:448,h:792+PAD_BOT-535});
+  const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   cut(25,554,430,94,'#342b24');T('BEST OF THREE',240,576,17);
-   T('Follow the queen. Win two hands.',240,597,11);
-   T('Double lifts, hand-offs, false drops. Trust the cards.',240,615,10);
-   T('Queen on the table? Pick it. In his pocket? Tap it.',240,633,10);
-   button(FIND_QUEEN_START_BTN,'DEAL THE CARDS');T('Do not fall for a king tucked into his pocket.',240,741,10);
+   paperText('BEST OF THREE',240,576,17);
+   paperText('Follow the queen. Win two hands.',240,597,11);
+   paperText('Double lifts, hand-offs, false drops. Trust the cards.',240,615,10);
+   paperText('Queen on the table? Pick it. In his pocket? Tap it.',240,633,10);
+   button(FIND_QUEEN_START_BTN,'DEAL THE CARDS');paperText('Do not fall for a king tucked into his pocket.',240,741,10);
   }else if(s.phase==='result'){
-   cut(25,551,430,96,'#342b24');T(s.pocketCaught?'“THAT WAS NOT SUPPOSED TO HAPPEN!”':s.caught?'CAUGHT RED-HANDED':s.won?'THE LADY IS YOURS':'A KING. NOT THE LADY.',240,577,17);
-   T(s.matchOver?(s.you===2?'YOU WIN THE MATCH.':'THE FOX TAKES THE MATCH.'):'YOU '+s.you+'  —  FOX '+s.dealer,240,602,12);
-   T(s.matchOver?'“Shall we make it another?”':'Next hand: quicker hands, same honest eyes.',240,624,10);
+   paperText(s.pocketCaught?'“THAT WAS NOT SUPPOSED TO HAPPEN!”':s.caught?'CAUGHT RED-HANDED':s.won?'THE LADY IS YOURS':'A KING. NOT THE LADY.',240,577,17);
+   paperText(s.matchOver?(s.you===2?'YOU WIN THE MATCH.':'THE FOX TAKES THE MATCH.'):'YOU '+s.you+'  —  FOX '+s.dealer,240,602,12);
+   paperText(s.matchOver?'“Shall we make it another?”':'Next hand: quicker hands, same honest eyes.',240,624,10);
    button(FIND_QUEEN_REPLAY_BTN,s.matchOver?'PLAY AGAIN':'NEXT HAND');
   }else{
-   cut(25,551,430,53,'#342b24');T(titles[s.phase]||'',240,574,15);T(s.notice||(s.phase==='choose'?'Tap a card · 1 / 2 / 3 · arrows + Enter':'Follow the edges, not the empty hand.'),240,594,9);
+   paperText(titles[s.phase]||'',240,574,15);paperText(s.notice||(s.phase==='choose'?'Tap a card · 1 / 2 / 3 · arrows + Enter':'Follow the edges, not the empty hand.'),240,594,9);
   }
  }finally{g.restore();}}
  window.KRRoyalShuffle={assetId:'royal-shuffle',drawCutscene,draw,world,actor,pose,materials,table,cards,card,cardState,pocketHit,camera,toScreen,toWorld};

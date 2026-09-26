@@ -118,7 +118,8 @@
   const t=s.phase==='result'?1.2:s.phaseT;
   const lift=clamp((t-.18)/.32),present=clamp((t-.50)/.40);
   const p=mix(mix([pocket.x,pocket.y,0],[211,289,0],lift),[237,302,0],present);
-  return{x:p[0],y:p[1],lift:0,angle:0,frontality:ease(present),layer:20,pocketAmount:1-ease(lift),widthScale:.4,heightScale:.68,turn:ease((t-.55)/.38),reach:clamp(t/.18)};
+  // Flatten the plane during the lift, before its printed face becomes visible.
+  return{x:p[0],y:p[1],lift:0,angle:0,frontality:ease(lift),layer:20,pocketAmount:1-ease(lift),widthScale:.4,heightScale:.68,turn:ease((t-.55)/.38),reach:clamp(t/.18)};
  }
  const heldGrip=p=>[p.x-3*p.widthScale/.4,p.y+24*p.heightScale/.68];
  function trajectory(s,c){
