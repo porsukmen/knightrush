@@ -74,6 +74,14 @@
     const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'royal-shuffle':Object.freeze({module:'assets/encounters/royal-shuffle.js',symbol:'KRRoyalShuffle',
+          assetId:'royal-shuffle',drawMethod:'drawCutscene',opaque:true}),
+        'tavern-chug':Object.freeze({module:'assets/encounters/tavern-chug.js',symbol:'KRTavernChug',
+          assetId:'tavern-chug',drawMethod:'drawCutscene',opaque:true}),
+        'tavern-arm':Object.freeze({module:'assets/encounters/tavern-arm.js',symbol:'KRTavernArm',
+          assetId:'tavern-arm',drawMethod:'drawCutscene',opaque:true}),
+        'duke-bluff':Object.freeze({module:'assets/encounters/duke-bluff.js',symbol:'KRDukeBluff',
+          assetId:'duke-bluff',drawMethod:'drawCutscene',opaque:true}),
         'tavern-slide':Object.freeze({module:'assets/encounters/tavern-slide.js',symbol:'KRTavernSlide',
           assetId:'tavern-slide',drawMethod:'drawCutscene',opaque:true}),
         'tavern-games':Object.freeze({module:'assets/encounters/tavern-games.js',symbol:'KRTavernGames',

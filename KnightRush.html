@@ -24,6 +24,11 @@
 <!-- invisible probe: measures the notch / dynamic-island inset so the HUD can dodge it -->
 <div id="safe" style="position:fixed;top:0;left:0;width:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden"></div>
 <script src="assets/encounters/tavern-slide-physics.js"></script>
+<script src="assets/encounters/duke-bluff-core.js"></script>
+<script src="assets/encounters/tavern-coin.js"></script>
+<script src="assets/encounters/tavern-arm-core.js"></script>
+<script src="assets/encounters/tavern-chug-core.js"></script>
+<script src="assets/encounters/royal-shuffle-core.js"></script>
 <script>
 "use strict";
 const BOOT_QUERY=new URLSearchParams(location.search),
@@ -52666,8 +52671,12 @@ const INN_GAMES=Object.freeze([
 ]);
 // Shared tavern presentation; game rules/input and event ownership stay native.
 function drawTavernPresentation(id){
+  if(id==='queen'&&window.KRRoyalShuffle){KRRoyalShuffle.draw();return true;}
+  if(id==='drink'&&window.KRTavernChug){KRTavernChug.draw();return true;}
+  if(id==='arm'&&window.KRTavernArm){KRTavernArm.draw();return true;}
+  if(id==='dice'&&window.KRDukeBluff){KRDukeBluff.draw();return true;}
   if(id==='slide'&&window.KRTavernSlide){KRTavernSlide.draw();return true;}
-  if(id!=='slide'&&window.KRTavernGames){KRTavernGames.draw(id);return true;}
+  if(id!=='slide'&&id!=='dice'&&id!=='arm'&&id!=='drink'&&id!=='queen'&&window.KRTavernGames){KRTavernGames.draw(id);return true;}
   g.fillStyle='#302820';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
   smithText('Opening the games room...',240,360,16,'#e8d6ab');
   g.fillStyle='#ded2a2';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
@@ -53668,7 +53677,7 @@ function setMode(m){
      !['boss','bossintro','miniboss','bosslabmoves'].includes(m))resetSquireCombat();
   if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
   mode=m;modeT=0;
-  if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':'tavern-games',true,'tavern-games');
+  if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':m==='diceguess'?'duke-bluff':m==='armwrestling'?'tavern-arm':m==='drinkingcontest'?'tavern-chug':m==='findqueen'?'royal-shuffle':'tavern-games',true,'tavern-games');
 }
 function speed(){
   /* All three pools in a cycle share one pace. Clearing the final pool advances
@@ -56991,232 +57000,44 @@ function drawSwordDuelGame(){
 }
 
 /* ---------- Find the Queen: one-round roadside card shuffle ---------- */
-const FIND_QUEEN_RULES=Object.freeze({cards:3,kings:2,queens:1,showTime:1.65,flipTime:.52,swaps:7,swapTime:.38});
-const FIND_QUEEN_START_BTN=Object.freeze({x:128,y:659,w:224,h:54});
-const FIND_QUEEN_REPLAY_BTN=Object.freeze({x:128,y:659,w:224,h:54});
-const FIND_QUEEN_CARD_RECTS=Object.freeze(Array.from({length:3},(_,slot)=>Object.freeze({
-  x:34+slot*151,y:350,w:110,h:156
-})));
-const FIND_QUEEN_DECK=Object.freeze([
-  Object.freeze({id:'black_king',rank:'K',role:'KING',red:false}),
-  Object.freeze({id:'red_queen',rank:'Q',role:'QUEEN',red:true}),
-  Object.freeze({id:'red_king',rank:'K',role:'KING',red:true})
-]);
-let findQueenGame=null;
-
-function newFindQueenCards(){return FIND_QUEEN_DECK.map((card,slot)=>Object.assign({slot},card));}
-function createFindQueenShuffle(){
-  const choices=[[0,1],[1,2],[0,2]],moves=[];
-  for(let i=0;i<FIND_QUEEN_RULES.swaps;i++){
-    let choice=choices[(Math.random()*choices.length)|0];
-    if(i&&choice[0]===moves[i-1][0]&&choice[1]===moves[i-1][1])
-      choice=choices[(choices.indexOf(choice)+1+((Math.random()*2)|0))%choices.length];
-    moves.push(choice.slice());
-  }
-  return moves;
-}
+const FIND_QUEEN_RULES=KRRoyalShuffleRules.rules;
+const FIND_QUEEN_DECK=KRRoyalShuffleRules.deck;
+const FIND_QUEEN_START_BTN=Object.freeze({x:128,y:667,w:224,h:54});
+const FIND_QUEEN_REPLAY_BTN=FIND_QUEEN_START_BTN;
+const FIND_QUEEN_CARD_RECTS=Object.freeze(Array.from({length:3},(_,i)=>Object.freeze({x:143+i*68,y:379,w:58,h:55})));
+let findQueenGame=null,queenPreviewImage=null;
 function startFindQueen(stageId=biome,returnMode='minigames'){
-  findQueenGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
-    phase:'intro',phaseT:0,cards:newFindQueenCards(),shuffleMoves:[],shuffleIndex:0,
-    cursorSlot:1,selectedSlot:-1,won:false,message:'KEEP YOUR EYES ON THE LADY.',seed:Math.random()*1000};
-  paused=false;pausePhotoMode=false;setMode('findqueen');SFX.relic();
+ findQueenGame=Object.assign(KRRoyalShuffleRules.create((Math.random()*4294967296)>>>0),{stageId,returnMode});
+ paused=false;pausePhotoMode=false;setMode('findqueen');SFX.relic();
 }
-function leaveFindQueen(){
-  const target=findQueenGame&&findQueenGame.returnMode||'minigames';
-  findQueenGame=null;setMode(target);SFX.duck();
-}
-function beginFindQueenRound(){
-  const q=findQueenGame;if(!q)return;
-  Object.assign(q,{phase:'memorize',phaseT:0,cards:newFindQueenCards(),shuffleMoves:createFindQueenShuffle(),
-    shuffleIndex:0,cursorSlot:1,selectedSlot:-1,won:false,message:'REMEMBER THE QUEEN.',seed:Math.random()*1000});
-  SFX.relic();
-}
-function findQueenCardAtSlot(slot){
-  return findQueenGame&&findQueenGame.cards.find(card=>card.slot===slot);
-}
-function chooseFindQueenSlot(slot){
-  const q=findQueenGame;if(!q||q.phase!=='choose'||!Number.isInteger(slot)||slot<0||slot>=3)return false;
-  const card=findQueenCardAtSlot(slot);q.selectedSlot=slot;q.cursorSlot=slot;q.won=card&&card.role==='QUEEN';
-  q.phase='result';q.phaseT=0;q.message=q.won?'YOU FOUND HER!':'A KING. REGAL, BUT WRONG.';
-  if(q.won){SFX.win();flash('#ffe36a',.18);shake(3,.18);}else{SFX.danceBad();flash('#ff5b68',.10);}
-  return true;
-}
-function moveFindQueenCursor(delta){
-  const q=findQueenGame;if(!q||q.phase!=='choose')return;
-  q.cursorSlot=(q.cursorSlot+delta+3)%3;SFX.swipe();
-}
+function leaveFindQueen(){const target=findQueenGame?.returnMode||'minigames';findQueenGame=null;setMode(target);SFX.duck();}
+function beginFindQueenRound(){if(findQueenGame&&KRRoyalShuffleRules.begin(findQueenGame))SFX.relic();}
+function findQueenCardAtSlot(slot){return findQueenGame?.cards.find(c=>c.slot===slot);}
+function findQueenCardPosition(card){return KRRoyalShuffleRules.trajectory(findQueenGame,card);}
+function chooseFindQueenSlot(slot){if(!findQueenGame)return false;const ok=KRRoyalShuffleRules.choose(findQueenGame,slot);if(ok)SFX.swipe();return ok;}
+function moveFindQueenCursor(delta){const s=findQueenGame;if(s?.phase==='choose'){s.cursorSlot=(s.cursorSlot+delta+3)%3;SFX.swipe();}}
 function findQueenTap(pt){
-  const q=findQueenGame;if(!q)return;
-  if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveFindQueen();return;}
-  if(q.phase==='intro'&&pointInRect(pt,FIND_QUEEN_START_BTN)){beginFindQueenRound();return;}
-  if(q.phase==='result'&&pointInRect(pt,FIND_QUEEN_REPLAY_BTN)){beginFindQueenRound();return;}
-  if(q.phase==='choose')for(let slot=0;slot<3;slot++)if(pointInRect(pt,FIND_QUEEN_CARD_RECTS[slot])){
-    chooseFindQueenSlot(slot);return;
-  }
+ const s=findQueenGame;if(!s||paused)return;
+ if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveFindQueen();return;}
+ if((s.phase==='intro'||s.phase==='result')&&pointInRect(pt,FIND_QUEEN_START_BTN)){beginFindQueenRound();return;}
+ if(window.KRRoyalShuffle?.pocketHit(pt)&&KRRoyalShuffleRules.catchPocket(s)){SFX.relic();return;}
+ if(s.phase==='choose'){
+  const cardPoint=window.KRRoyalShuffle.toWorld(pt);
+  for(let i=0;i<3;i++)if(pointInRect(cardPoint,FIND_QUEEN_CARD_RECTS[i])){chooseFindQueenSlot(i);return;}
+ }
 }
 function updateFindQueen(dt){
-  const q=findQueenGame;if(!q)return;
-  q.phaseT+=dt;
-  if(q.phase==='memorize'&&q.phaseT>=FIND_QUEEN_RULES.showTime){
-    q.phase='flip';q.phaseT=0;q.message='CARDS DOWN...';SFX.swipe();
-  }else if(q.phase==='flip'&&q.phaseT>=FIND_QUEEN_RULES.flipTime){
-    q.phase='shuffle';q.phaseT=0;q.message='WATCH CLOSELY.';SFX.slotStop(0);
-  }else if(q.phase==='shuffle'){
-    while(q.phaseT>=FIND_QUEEN_RULES.swapTime&&q.phase==='shuffle'){
-      q.phaseT-=FIND_QUEEN_RULES.swapTime;
-      const move=q.shuffleMoves[q.shuffleIndex],a=findQueenCardAtSlot(move[0]),b=findQueenCardAtSlot(move[1]);
-      if(a&&b){const slot=a.slot;a.slot=b.slot;b.slot=slot;}
-      q.shuffleIndex++;SFX.slotStop(q.shuffleIndex%3);
-      if(q.shuffleIndex>=q.shuffleMoves.length){q.phase='choose';q.phaseT=0;q.message='WHERE IS THE QUEEN?';}
-    }
-  }
-}
-function drawFindQueenArena(){
-  const q=findQueenGame,p=MINIGAME_ARENA_PALETTES[q&&q.stageId]||MINIGAME_ARENA_PALETTES.forest;
-  g.fillStyle=p.sky;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);g.fillStyle=p.skyBand;g.fillRect(0,104,VW,200);
-  g.fillStyle='#dce4d2';g.beginPath();g.arc(405,86,31,0,TAU);g.fill();g.fillStyle=p.sky;g.beginPath();g.arc(416,77,29,0,TAU);g.fill();
-  g.fillStyle=p.far;g.fillRect(0,258,VW,VH-258);
-  for(let i=0;i<12;i++){
-    const x=i*46-28,h=48+(i%4)*14;g.fillStyle=i%2?p.tree:p.treeLight;g.fillRect(x+18,268-h*.3,7,h);
-    g.beginPath();g.moveTo(x,282);g.lineTo(x+21,282-h);g.lineTo(x+44,282);g.fill();
-  }
-  g.fillStyle=p.ground;g.fillRect(0,304,VW,VH-304);
-  g.fillStyle='#4c301d';g.fillRect(0,310,VW,10);
-  for(let i=0;i<7;i++)drawDiscoCrowdMember(38+i*68,312,.58,i+121,q&&q.phase==='result'&&q.won);
-  /* Crooked striped awning belonging to a dealer who is definitely licensed. */
-  g.fillStyle='#4b291e';g.fillRect(65,179,10,190);g.fillRect(405,179,10,190);g.fillRect(58,174,364,12);
-  for(let i=0;i<8;i++){g.fillStyle=i%2?'#ead7a6':'#9e3542';g.beginPath();g.moveTo(58+i*46,186);g.lineTo(104+i*46,186);g.lineTo(94+i*46,230);g.lineTo(68+i*46,230);g.closePath();g.fill();}
-  g.fillStyle='#2a1713';g.fillRect(16,332,448,224);g.fillStyle='#6d4126';g.fillRect(10,329,460,24);
-  g.fillStyle='#244a3c';g.fillRect(20,353,440,188);g.strokeStyle='#d4b65e';g.lineWidth=3;g.strokeRect(23,356,434,181);
-  g.fillStyle='#4d2d1d';g.fillRect(45,541,18,180);g.fillRect(417,541,18,180);
-}
-function drawFindQueenDealer(){
-  const q=findQueenGame,shuffle=q&&(q.phase==='shuffle'||q.phase==='flip'),wiggle=shuffle?Math.sin(perfNow*18)*5:0;
-  g.save();g.translate(VW/2,326);
-  g.fillStyle='#351d37';g.beginPath();g.moveTo(-54,12);g.lineTo(54,12);g.lineTo(75,88);g.lineTo(-75,88);g.closePath();g.fill();
-  g.fillStyle='#a95b5d';g.fillRect(-45,24,90,15);g.fillStyle='#e5b78b';g.beginPath();g.arc(0,-13,31,0,TAU);g.fill();
-  g.fillStyle='#6b2b43';g.beginPath();g.arc(0,-20,34,Math.PI,TAU);g.fill();
-  g.fillStyle='#efe7d0';g.beginPath();g.arc(-11,-13,6,0,TAU);g.arc(11,-13,6,0,TAU);g.fill();
-  const eye=shuffle?Math.sin(perfNow*4)*2:0;g.fillStyle='#17131a';g.beginPath();g.arc(-11+eye,-12,2.5,0,TAU);g.arc(11+eye,-12,2.5,0,TAU);g.fill();
-  g.strokeStyle='#5b2d24';g.lineWidth=3;g.beginPath();g.arc(0,0,12,.15,Math.PI-.15);g.stroke();
-  /* Oversized jester hat, complete with suspicious card tucked in the band. */
-  g.fillStyle='#7f2946';g.beginPath();g.moveTo(-34,-36);g.lineTo(-18,-76);g.lineTo(0,-43);g.lineTo(25,-78);g.lineTo(34,-34);g.closePath();g.fill();
-  g.fillStyle='#ffe36a';g.beginPath();g.arc(-18,-76,5,0,TAU);g.arc(25,-78,5,0,TAU);g.fill();
-  g.fillStyle='#f2ead6';g.fillRect(7,-64,18,25);g.strokeStyle='#b83248';g.lineWidth=2;g.strokeRect(7,-64,18,25);g.fillStyle='#b83248';g.font='bold 13px serif';g.textAlign='center';g.fillText('Q',16,-47);
-  g.strokeStyle='#e5b78b';g.lineWidth=13;g.lineCap='round';g.beginPath();g.moveTo(-42,45);g.lineTo(-87+wiggle,85);g.moveTo(42,45);g.lineTo(87-wiggle,85);g.stroke();
-  g.restore();
-}
-function drawFindQueenCrown(x,y,size,col){
-  g.fillStyle=col;g.beginPath();g.moveTo(x-size,y+size*.55);g.lineTo(x-size*.8,y-size*.6);g.lineTo(x-size*.25,y);
-  g.lineTo(x,y-size);g.lineTo(x+size*.25,y);g.lineTo(x+size*.8,y-size*.6);g.lineTo(x+size,y+size*.55);g.closePath();g.fill();
-  g.fillStyle='#fff0a8';g.fillRect(x-size,y+size*.35,size*2,size*.25);
-}
-function drawFindQueenCard(cx,cy,w,h,card,faceUp,scaleX=1,lift=0,glow=0){
-  g.save();g.translate(cx,cy-lift);g.scale(Math.max(.035,scaleX),1);
-  if(glow){g.globalAlpha=.24+.18*Math.sin(perfNow*8);g.fillStyle=glow;g.fillRect(-w/2-9,-h/2-9,w+18,h+18);g.globalAlpha=1;}
-  g.fillStyle='#05070c88';g.fillRect(-w/2+6,-h/2+8,w,h);
-  g.fillStyle='#eee6d2';g.fillRect(-w/2,-h/2,w,h);g.strokeStyle='#251b22';g.lineWidth=3;g.strokeRect(-w/2+1,-h/2+1,w-2,h-2);
-  if(!faceUp){
-    g.fillStyle='#8f2944';g.fillRect(-w/2+8,-h/2+8,w-16,h-16);g.strokeStyle='#f0ca67';g.lineWidth=2;g.strokeRect(-w/2+13,-h/2+13,w-26,h-26);
-    g.fillStyle='#321f46';for(let yy=-h/2+20;yy<h/2-10;yy+=18)for(let xx=-w/2+20;xx<w/2-9;xx+=18){
-      g.save();g.translate(xx,yy);g.rotate(Math.PI/4);g.fillRect(-5,-5,10,10);g.restore();
-    }
-    drawFindQueenCrown(0,2,20,'#e8c35c');g.restore();return;
-  }
-  const ink=card.red?'#b83248':'#202736';g.fillStyle=ink;g.font='bold '+Math.round(w*.25)+'px serif';g.textAlign='center';g.fillText(card.rank,-w*.36,-h*.29);
-  g.save();g.rotate(Math.PI);g.fillText(card.rank,-w*.36,-h*.29);g.restore();
-  g.fillStyle=card.red?'#f0c2ae':'#c8d2df';g.beginPath();g.arc(0,-3,w*.22,0,TAU);g.fill();
-  if(card.role==='QUEEN'){
-    g.fillStyle='#8e3150';g.beginPath();g.arc(0,-5,w*.24,Math.PI,TAU);g.fill();drawFindQueenCrown(0,-w*.24,w*.18,'#e3b94d');
-    g.strokeStyle='#3b2732';g.lineWidth=2;g.beginPath();g.moveTo(-w*.10,-5);g.lineTo(-w*.04,-6);g.moveTo(w*.04,-6);g.lineTo(w*.10,-5);g.stroke();
-    g.fillStyle='#b83248';g.beginPath();g.moveTo(-w*.27,h*.30);g.lineTo(0,w*.06);g.lineTo(w*.27,h*.30);g.closePath();g.fill();
-  }else{
-    drawFindQueenCrown(0,-w*.23,w*.18,'#e3b94d');g.fillStyle=ink;g.fillRect(-w*.21,3,w*.42,5);
-    g.beginPath();g.moveTo(-w*.18,7);g.lineTo(0,w*.22);g.lineTo(w*.18,7);g.lineTo(w*.12,w*.28);g.lineTo(-w*.12,w*.28);g.closePath();g.fill();
-    g.fillStyle=card.red?'#425d8a':'#873d46';g.beginPath();g.moveTo(-w*.27,h*.30);g.lineTo(0,w*.08);g.lineTo(w*.27,h*.30);g.closePath();g.fill();
-  }
-  g.strokeStyle=ink;g.lineWidth=2;g.strokeRect(-w/2+8,-h/2+8,w-16,h-16);g.restore();
-}
-function findQueenCardPosition(card){
-  const q=findQueenGame,base=FIND_QUEEN_CARD_RECTS[card.slot],pos={x:base.x+base.w/2,y:base.y+base.h/2,lift:0};
-  if(q.phase!=='shuffle'||q.shuffleIndex>=q.shuffleMoves.length)return pos;
-  const move=q.shuffleMoves[q.shuffleIndex];if(card.slot!==move[0]&&card.slot!==move[1])return pos;
-  const other=card.slot===move[0]?move[1]:move[0],target=FIND_QUEEN_CARD_RECTS[other],k=easeInOut(clamp(q.phaseT/FIND_QUEEN_RULES.swapTime,0,1));
-  pos.x=lerp(pos.x,target.x+target.w/2,k);pos.y+=Math.sin(k*Math.PI)*(card.slot===move[0]?-46:46);return pos;
-}
-function drawFindQueenCards(){
-  const q=findQueenGame;if(!q)return;
-  let faceUp=q.phase==='intro'||q.phase==='memorize'||q.phase==='result',flipScale=1;
-  if(q.phase==='flip'){
-    const k=clamp(q.phaseT/FIND_QUEEN_RULES.flipTime,0,1);flipScale=Math.abs(Math.cos(k*Math.PI));faceUp=k<.5;
-  }
-  const ordered=q.cards.slice().sort((a,b)=>{
-    if(q.phase!=='shuffle')return a.slot-b.slot;const move=q.shuffleMoves[q.shuffleIndex]||[-1,-1];
-    return (move.includes(a.slot)?1:0)-(move.includes(b.slot)?1:0);
-  });
-  for(const card of ordered){
-    const pos=findQueenCardPosition(card);let cardScale=flipScale,lift=0,glow=0,showFace=faceUp;
-    if(q.phase==='result'){
-      const reveal=clamp((q.phaseT-card.slot*.07)/.28,0,1);cardScale=Math.abs(Math.cos(reveal*Math.PI));showFace=reveal>=.5;
-      if(q.phaseT>.22&&card.slot===q.selectedSlot)lift=10+Math.sin(Math.min(1,q.phaseT)*Math.PI)*10;
-      if(q.phaseT>.22&&card.role==='QUEEN')glow='#ffe36a';
-      else if(q.phaseT>.22&&card.slot===q.selectedSlot&&!q.won)glow='#ff5367';
-    }else if(q.phase==='choose'&&card.slot===q.cursorSlot){lift=6+Math.sin(perfNow*5)*3;glow='#dce9f5';}
-    drawFindQueenCard(pos.x,pos.y,110,156,card,showFace,cardScale,lift,glow);
-  }
-}
-function drawFindQueenCelebration(){
-  const q=findQueenGame;if(!q||q.phase!=='result'||q.phaseT<.18)return;
-  const queen=q.cards.find(card=>card.role==='QUEEN'),rect=FIND_QUEEN_CARD_RECTS[queen.slot],cx=rect.x+rect.w/2,cy=rect.y+rect.h/2;
-  g.save();for(let i=0;i<18;i++){
-    const a=sRnd(q.seed+i*8.1)*TAU,speed=34+90*sRnd(q.seed+i*3.7),t=Math.min(q.phaseT-.18,.9),x=cx+Math.cos(a)*speed*t,y=cy+Math.sin(a)*speed*t+t*t*36;
-    g.globalAlpha=1-clamp(t/.9,0,1);g.fillStyle=q.won?(i%2?'#ffe36a':'#ffffff'):(i%2?'#ff5367':'#dce9f5');
-    g.save();g.translate(x,y);g.rotate(a+t*4);g.fillRect(-2,-7,4,14);g.restore();
-  }g.restore();
+ const s=findQueenGame;if(!s||paused)return;const phase=s.phase,index=s.shuffleIndex;
+ KRRoyalShuffleRules.update(s,dt);
+ if(s.phase==='result'&&phase!=='result'){if(s.won)SFX.win();else SFX.danceBad();}
+ else if(s.shuffleIndex!==index)SFX.slotStop(s.shuffleIndex%3);
 }
 function drawFindQueenPreview(r){
-  g.fillStyle='#244a3c';g.fillRect(r.x+3,r.y+3,r.w-6,105);g.fillStyle='#6d4126';g.fillRect(r.x+3,r.y+92,r.w-6,13);
-  const mini=[FIND_QUEEN_DECK[0],FIND_QUEEN_DECK[1],FIND_QUEEN_DECK[2]];
-  for(let i=0;i<3;i++)drawFindQueenCard(r.x+48+i*53,r.y+54,42,64,mini[i],i===1,1,i===1?8:0,i===1?'#ffe36a':0);
+ if(!queenPreviewImage){queenPreviewImage=new Image();queenPreviewImage.src='assets/encounters/royal-shuffle-preview-v1.png';}
+ if(queenPreviewImage.complete&&queenPreviewImage.naturalWidth){g.drawImage(queenPreviewImage,r.x+3,r.y+3,r.w-6,108);return;}
+ g.fillStyle='#285748';g.fillRect(r.x+3,r.y+3,r.w-6,108);smithText('ROYAL SHUFFLE',r.x+r.w/2,r.y+61,13,'#e6cb90',r.w-12);
 }
-function drawFindQueenGame(){
-  if(findQueenGame&&drawTavernPresentation('queen'))return;
-  const q=findQueenGame;if(!q)return;
-  drawFindQueenArena();drawFindQueenDealer();
-  g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
-  g.fillStyle='#080a0edc';g.fillRect(54,105,372,66);g.strokeStyle='#e9c55b';g.lineWidth=2;g.strokeRect(54,105,372,66);
-  g.font='bold 21px monospace';g.fillStyle='#ffe36a';g.fillText('FIND THE QUEEN',VW/2,134);
-  g.font='10px monospace';g.fillStyle='#d9d2c1';g.fillText(q.phase==='intro'?'ONE ROUND. THREE CARDS. ONE VERY SMUG DEALER.':q.message,VW/2,156);
-  drawFindQueenCards();drawFindQueenCelebration();
-  if(q.phase==='intro'){
-    g.fillStyle='#080a0ee8';g.fillRect(52,538,376,92);g.strokeStyle='#e9c55b';g.strokeRect(52,538,376,92);
-    g.font='bold 13px monospace';g.fillStyle='#f0e8d5';g.fillText('WATCH THE QUEEN. FOLLOW THE SHUFFLE.',VW/2,569);
-    g.font='11px monospace';g.fillStyle='#aeb2c2';g.fillText('Then choose one card. That is the entire scam.',VW/2,595);
-    g.fillStyle='#402c1d';g.fillRect(FIND_QUEEN_START_BTN.x,FIND_QUEEN_START_BTN.y,FIND_QUEEN_START_BTN.w,FIND_QUEEN_START_BTN.h);
-    g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(FIND_QUEEN_START_BTN.x,FIND_QUEEN_START_BTN.y,FIND_QUEEN_START_BTN.w,FIND_QUEEN_START_BTN.h);
-    g.font='bold 17px monospace';g.fillStyle='#ffe36a';g.fillText('SHOW ME THE LADY',VW/2,694);return;
-  }
-  if(q.phase==='choose'){
-    g.fillStyle='#080a0edc';g.fillRect(63,548,354,72);g.strokeStyle='#dce9f5';g.lineWidth=2;g.strokeRect(63,548,354,72);
-    g.font='bold 17px monospace';g.fillStyle='#ffffff';g.fillText('CHOOSE A CARD',VW/2,577);
-    g.font='10px monospace';g.fillStyle='#aeb2c2';g.fillText('tap one  |  keyboard: arrows + Enter',VW/2,603);
-  }else if(q.phase==='result'){
-    g.fillStyle='#080a0eeb';g.fillRect(47,538,386,98);g.strokeStyle=q.won?'#ffe36a':'#ff5367';g.lineWidth=3;g.strokeRect(47,538,386,98);
-    g.font='bold 21px monospace';g.fillStyle=q.won?'#ffe36a':'#ff7180';g.fillText(q.message,VW/2,570);
-    g.font='11px monospace';g.fillStyle='#d9d2c1';g.fillText(q.won?'The dealer is furious. Perfect.':'The Queen was under the golden glow.',VW/2,598);
-    g.fillStyle='#402c1d';g.fillRect(FIND_QUEEN_REPLAY_BTN.x,FIND_QUEEN_REPLAY_BTN.y,FIND_QUEEN_REPLAY_BTN.w,FIND_QUEEN_REPLAY_BTN.h);
-    g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(FIND_QUEEN_REPLAY_BTN.x,FIND_QUEEN_REPLAY_BTN.y,FIND_QUEEN_REPLAY_BTN.w,FIND_QUEEN_REPLAY_BTN.h);
-    g.font='bold 17px monospace';g.fillStyle='#ffe36a';g.fillText('SHUFFLE AGAIN',VW/2,694);
-  }else{
-    g.fillStyle='#080a0ed0';g.fillRect(90,552,300,50);g.font='bold 13px monospace';g.fillStyle=q.phase==='memorize'?'#ffe36a':'#dce9f5';
-    g.fillText(q.message,VW/2,583);
-  }
-}
+function drawFindQueenGame(){if(findQueenGame)drawTavernPresentation('queen');}
 
 /* ---------- Chicken Derby: five-racer weighted-odds betting ---------- */
 const CHICKEN_RACE_RULES=Object.freeze({racers:5,startingCoins:10,minBet:1,countdown:3,raceTime:4.2,returnRate:.92});
@@ -57333,6 +57154,12 @@ function chickenRaceTap(pt){
   }
   if((c.phase==='result'||c.phase==='broke')&&pointInRect(pt,CHICKEN_RACE_NEXT_BTN)){nextChickenRace();return;}
 }
+// Derby owns this badge; it must not depend on the Queen game's renderer.
+function drawChickenChampionCrown(x,y,size,col){
+  g.fillStyle=col;g.beginPath();g.moveTo(x-size,y+size*.55);g.lineTo(x-size*.8,y-size*.6);g.lineTo(x-size*.25,y);
+  g.lineTo(x,y-size);g.lineTo(x+size*.25,y);g.lineTo(x+size*.8,y-size*.6);g.lineTo(x+size,y+size*.55);g.closePath();g.fill();
+  g.fillStyle='#fff0a8';g.fillRect(x-size,y+size*.35,size*2,size*.25);
+}
 function drawRaceChicken(x,y,scale,chicken,index,running=false,champion=false){
   const stride=running?Math.sin(perfNow*23+index*1.7):Math.sin(perfNow*3+index)*.25,bob=running?Math.abs(stride)*3:Math.sin(perfNow*2+index)*1.5;
   g.save();g.translate(x,y-bob);g.scale(scale,scale);
@@ -57346,7 +57173,7 @@ function drawRaceChicken(x,y,scale,chicken,index,running=false,champion=false){
   g.fillStyle=chicken.comb;g.beginPath();g.arc(15,-40,6,0,TAU);g.arc(23,-43,6,0,TAU);g.arc(30,-40,5,0,TAU);g.fill();
   g.fillStyle='#d94d4f';g.beginPath();g.arc(28,-14,6,0,TAU);g.fill();
   g.fillStyle=chicken.col;g.beginPath();g.moveTo(-29,-7);g.lineTo(-43,-18);g.lineTo(-36,1);g.lineTo(-46,8);g.lineTo(-25,10);g.closePath();g.fill();
-  if(champion){drawFindQueenCrown(4,-54,13,'#ffe36a');}
+  if(champion){drawChickenChampionCrown(4,-54,13,'#ffe36a');}
   g.restore();
 }
 function drawChickenRaceArena(){
@@ -57887,243 +57714,44 @@ function drawLockpickingGame(){
   }
 }
 
-/* ---------- Drinking Contest: trace strange one-stroke patterns before the rival drains ---------- */
-const DRINK_RULES=Object.freeze({rounds:3,winsNeeded:2,preview:1.05,resultTime:1.45,
-  checkpoints:Object.freeze([5,7,9]),corridors:Object.freeze([43,37,32]),
-  rivalTimes:Object.freeze([4.8,4.15,3.55]),startRadius:35,nodeRadius:24});
+/* ---------- Last Mug Standing: angle control and progressive drunkenness ---------- */
+const DRINK_RULES=KRChugRules.rules;
 const DRINK_START_BTN=Object.freeze({x:123,y:658,w:234,h:54});
-const DRINK_REPLAY_BTN=Object.freeze({x:123,y:658,w:234,h:54});
-const DRINK_PATTERN_TEMPLATES=Object.freeze([
-  Object.freeze({name:'CROOKED LIGHTNING',points:Object.freeze([[.05,.18],[.72,.08],[.34,.46],[.91,.39],[.48,.91]])}),
-  Object.freeze({name:'THE HOOK',points:Object.freeze([[.12,.08],[.12,.72],[.35,.94],[.70,.90],[.89,.66],[.78,.44],[.51,.46]])}),
-  Object.freeze({name:'WOBBLY CROWN',points:Object.freeze([[.04,.78],[.20,.18],[.42,.65],[.60,.10],[.78,.64],[.96,.20]])}),
-  Object.freeze({name:'DRUNKEN SNAKE',points:Object.freeze([[.06,.18],[.30,.08],[.53,.30],[.30,.51],[.54,.72],[.79,.51],[.94,.86]])}),
-  Object.freeze({name:'ROYAL MUSTACHE',points:Object.freeze([[.05,.50],[.22,.25],[.43,.54],[.50,.78],[.57,.54],[.78,.25],[.95,.50]])}),
-  Object.freeze({name:'THE SPIRALISH',points:Object.freeze([[.10,.17],[.86,.12],[.92,.84],[.20,.91],[.13,.36],[.69,.30],[.73,.68],[.37,.72],[.34,.49],[.58,.47]])}),
-  Object.freeze({name:'BROKEN GOBLET',points:Object.freeze([[.10,.12],[.24,.52],[.47,.70],[.49,.94],[.25,.94],[.75,.94],[.51,.94],[.53,.70],[.78,.52],[.91,.12]])}),
-  Object.freeze({name:'SIR SQUIGGLES',points:Object.freeze([[.08,.78],[.17,.20],[.38,.16],[.48,.78],[.62,.83],[.72,.24],[.91,.18],[.83,.82]])})
-]);
-let drinkGame=null;
-
-function resampleDrinkPattern(points,count){
-  const lengths=[],total=points.slice(1).reduce((sum,point,index)=>{
-    const previous=points[index],length=Math.hypot(point[0]-previous[0],point[1]-previous[1]);lengths.push(length);return sum+length;
-  },0),result=[];
-  for(let i=0;i<count;i++){
-    const target=total*i/(count-1);let walked=0,segment=0;
-    while(segment<lengths.length-1&&walked+lengths[segment]<target){walked+=lengths[segment];segment++;}
-    const a=points[segment],b=points[segment+1],t=lengths[segment]?clamp((target-walked)/lengths[segment],0,1):0;
-    result.push({x:lerp(a[0],b[0],t),y:lerp(a[1],b[1],t)});
-  }
-  return result;
-}
-function makeDrinkPattern(round,previousName=''){
-  let template=pick(DRINK_PATTERN_TEMPLATES);
-  if(DRINK_PATTERN_TEMPLATES.length>1)while(template.name===previousName)template=pick(DRINK_PATTERN_TEMPLATES);
-  const count=DRINK_RULES.checkpoints[round],raw=resampleDrinkPattern(template.points,count),
-    mirrorX=Math.random()<.5?-1:1,mirrorY=Math.random()<.28?-1:1,angle=(Math.random()-.5)*.30,
-    sx=286+(Math.random()-.5)*24,sy=218+(Math.random()-.5)*18,cos=Math.cos(angle),sin=Math.sin(angle);
-  const points=raw.map((point,index)=>{
-    let x=(point.x-.5)*mirrorX,y=(point.y-.5)*mirrorY,
-      px=240+(x*cos-y*sin)*sx,py=366+(x*sin+y*cos)*sy;
-    if(index>0&&index<raw.length-1){px+=(Math.random()-.5)*(6+round*3);py+=(Math.random()-.5)*(6+round*3);}
-    return {x:clamp(px,74,406),y:clamp(py,236,493)};
-  });
-  return {name:template.name,points};
-}
+const DRINK_REPLAY_BTN=DRINK_START_BTN;
+let drinkGame=null,drinkPreviewImage=null;
 function startDrinkingContest(stageId=biome,returnMode='minigames'){
-  drinkGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,phase:'intro',phaseT:0,
-    round:0,wins:0,rivalWins:0,pattern:null,previousPattern:'',elapsed:0,rivalTime:0,rivalProgress:0,
-    tracing:false,nextIndex:1,segmentProgress:0,lastPoint:null,tracePoints:[],spills:0,spillT:0,
-    message:'SIR CHUGS-A-LOT HAS NEVER MET RESPONSIBLE PORTION CONTROL.',roundWon:false};
+  drinkGame=Object.assign(KRChugRules.create(),{stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode});
   paused=false;pausePhotoMode=false;setMode('drinkingcontest');SFX.relic();
 }
-function leaveDrinkingContest(){
-  const target=drinkGame&&drinkGame.returnMode||'minigames';drinkGame=null;setMode(target);SFX.duck();
-}
-function beginDrinkingRound(round){
-  const d=drinkGame;if(!d)return;
-  const pattern=makeDrinkPattern(round,d.previousPattern);d.previousPattern=pattern.name;
-  Object.assign(d,{phase:'preview',phaseT:0,round,pattern,elapsed:0,
-    rivalTime:DRINK_RULES.rivalTimes[round]*(.94+Math.random()*.12),rivalProgress:0,tracing:false,
-    nextIndex:1,segmentProgress:0,lastPoint:null,tracePoints:[],spillT:0,
-    message:'MUG '+(round+1)+': '+pattern.name+' - GET YOUR THUMB READY.',roundWon:false});
-  SFX.danceBeat(true);
-}
-function beginDrinkingContest(){
-  const d=drinkGame;if(!d)return;d.wins=0;d.rivalWins=0;d.spills=0;d.previousPattern='';beginDrinkingRound(0);
-}
-function drinkingContestIsDecided(){
-  const d=drinkGame;return !!(d&&(d.wins>=DRINK_RULES.winsNeeded||d.rivalWins>=DRINK_RULES.winsNeeded||d.round>=DRINK_RULES.rounds-1));
-}
-function finishDrinkingRound(playerWon){
-  const d=drinkGame;if(!d||d.phase!=='tracing')return;
-  d.tracing=false;d.phase='roundResult';d.phaseT=0;d.roundWon=playerWon;
-  if(playerWon){d.wins++;d.message='MUG DRAINED! YOUR HELMET IS NOW SLIGHTLY SIDEWAYS.';SFX.win();flash('#ffe36a',.14);shake(3,.18);}
-  else{d.rivalWins++;d.message='SIR CHUGS-A-LOT FINISHES FIRST AND BURPS IN LATIN.';SFX.hiccup();shake(3,.16);}
-}
-function advanceDrinkingContest(){
-  const d=drinkGame;if(!d)return;
-  if(d.phase==='complete'){beginDrinkingContest();return;}
-  if(d.phase!=='roundResult')return;
-  if(drinkingContestIsDecided()){d.phase='complete';d.phaseT=0;d.message=d.wins>d.rivalWins?'TAVERN CHAMPION! PROBABLY!':'OUT-CHUGGED BY A PROFESSIONAL BAD DECISION.';}
-  else beginDrinkingRound(d.round+1);
-}
-function drinkSegmentMetrics(point,a,b){
-  const dx=b.x-a.x,dy=b.y-a.y,lengthSq=dx*dx+dy*dy,t=lengthSq?clamp(((point.x-a.x)*dx+(point.y-a.y)*dy)/lengthSq,0,1):0,
-    x=a.x+dx*t,y=a.y+dy*t;
-  return {t,distance:Math.hypot(point.x-x,point.y-y)};
-}
-function drinkDistanceToSegment(point,a,b){return drinkSegmentMetrics(point,a,b).distance;}
+function leaveDrinkingContest(){const target=drinkGame?.returnMode||'minigames';cancelDrinkTrace();drinkGame=null;setMode(target);SFX.duck();}
+function beginDrinkingContest(){if(drinkGame){KRChugRules.start(drinkGame);SFX.danceBeat(true);}}
 function beginDrinkTrace(pt){
-  const d=drinkGame;if(!d||d.phase!=='tracing'||!d.pattern)return false;
-  const start=d.pattern.points[0];if(Math.hypot(pt.x-start.x,pt.y-start.y)>DRINK_RULES.startRadius)return false;
-  d.tracing=true;d.nextIndex=1;d.segmentProgress=0;d.lastPoint={x:pt.x,y:pt.y};d.tracePoints=[{x:pt.x,y:pt.y}];
-  d.message='DO NOT LIFT. DO NOT ASK WHY THIS HELPS DRINKING.';SFX.gulp();return true;
+  const s=drinkGame;if(!s||s.phase!=='playing'||!pointInRect(pt,{x:25,y:420,w:430,h:326}))return false;
+  KRChugRules.hold(s,true);s.drag={y:pt.y,angle:s.aim};return true;
 }
-function beginDrinkPointerTrace(cx,cy){
-  if(mode!=='drinkingcontest'||paused||settingsOpen||!drinkGame||drinkGame.phase!=='tracing')return false;
-  const pt=toGame(cx,cy);
-  if(pointInRect(pt,MINIGAME_BACK_BTN)||(pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&
-     pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop))return false;
-  return beginDrinkTrace(pt);
-}
-function spillDrinkTrace(reason='SPILLED! START THE PATTERN AGAIN.'){
-  const d=drinkGame;if(!d||!d.tracing)return false;
-  d.tracing=false;d.nextIndex=1;d.segmentProgress=0;d.lastPoint=null;d.tracePoints=[];d.spills++;d.spillT=.58;
-  d.message=reason;SFX.spill();shake(3,.14);return true;
-}
-function moveDrinkTrace(pt){
-  const d=drinkGame;if(!d||d.phase!=='tracing'||!d.tracing)return false;
-  const points=d.pattern.points,previous=points[d.nextIndex-1],target=points[d.nextIndex],
-    metrics=drinkSegmentMetrics(pt,previous,target),corridor=DRINK_RULES.corridors[d.round];
-  if(metrics.distance>corridor)return spillDrinkTrace('ALE EVERYWHERE! RETURN TO THE GLOWING START.');
-  if(metrics.t+.20<d.segmentProgress)return spillDrinkTrace('BACKWARDS! THE MUG REJECTS COWARDICE.');
-  d.segmentProgress=Math.max(d.segmentProgress,metrics.t);
-  const last=d.lastPoint||pt;d.tracePoints.push({x:pt.x,y:pt.y});if(d.tracePoints.length>100)d.tracePoints.shift();
-  d.lastPoint={x:pt.x,y:pt.y};
-  if(Math.hypot(pt.x-target.x,pt.y-target.y)<=DRINK_RULES.nodeRadius||drinkDistanceToSegment(target,last,pt)<=DRINK_RULES.nodeRadius){
-    d.nextIndex++;d.segmentProgress=0;SFX.gulp();
-    if(d.nextIndex>=points.length){finishDrinkingRound(true);return true;}
-  }
-  return true;
-}
+function beginDrinkPointerTrace(cx,cy){if(mode!=='drinkingcontest'||paused||settingsOpen)return false;return beginDrinkTrace(toGame(cx,cy));}
+function moveDrinkTrace(pt){const s=drinkGame;if(!s?.drag||s.phase!=='playing')return false;KRChugRules.setAngle(s,s.drag.angle+(s.drag.y-pt.y)/210);return true;}
 function moveDrinkPointerTrace(cx,cy){return moveDrinkTrace(toGame(cx,cy));}
-function endDrinkTrace(){
-  const d=drinkGame;if(!d||!d.tracing)return false;
-  return spillDrinkTrace('FINGER LIFTED! THE ALE DEMANDS ONE CONTINUOUS SQUIGGLE.');
-}
-function cancelDrinkTrace(){
-  const d=drinkGame;if(!d||!d.tracing)return false;
-  d.tracing=false;d.nextIndex=1;d.segmentProgress=0;d.lastPoint=null;d.tracePoints=[];return true;
-}
+function endDrinkTrace(){const s=drinkGame;if(!s)return false;const had=!!s.drag;s.drag=null;KRChugRules.hold(s,false);return had;}
+function cancelDrinkTrace(){if(!drinkGame)return false;drinkGame.up=drinkGame.down=false;return endDrinkTrace();}
 function drinkingContestTap(pt){
-  const d=drinkGame;if(!d)return;
+  const s=drinkGame;if(!s)return;
   if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveDrinkingContest();return;}
-  if(d.phase==='intro'&&pointInRect(pt,DRINK_START_BTN)){beginDrinkingContest();return;}
-  if(d.phase==='complete'&&pointInRect(pt,DRINK_REPLAY_BTN)){beginDrinkingContest();return;}
-  if(d.phase==='roundResult'){advanceDrinkingContest();return;}
+  if((s.phase==='intro'||s.phase==='result')&&pointInRect(pt,DRINK_START_BTN))beginDrinkingContest();
 }
 function updateDrinkingContest(dt){
-  const d=drinkGame;if(!d)return;d.phaseT+=dt;d.spillT=Math.max(0,d.spillT-dt);
-  if(d.phase==='preview'&&d.phaseT>=DRINK_RULES.preview){d.phase='tracing';d.phaseT=0;d.message='START AT THE GREEN CIRCLE - SLIDE WITHOUT LIFTING.';SFX.danceBeat(true);}
-  else if(d.phase==='tracing'){
-    d.elapsed+=dt;d.rivalProgress=clamp(d.elapsed/d.rivalTime,0,1);
-    if(d.rivalProgress>=1)finishDrinkingRound(false);
-  }else if(d.phase==='roundResult'&&d.phaseT>=DRINK_RULES.resultTime)advanceDrinkingContest();
-}
-function drawDrinkingMug(x,y,scale,remaining=1,tilt=0){
-  g.save();g.translate(x,y);g.rotate(tilt);g.scale(scale,scale);
-  g.fillStyle='#d8c59a';g.fillRect(-18,-30,36,48);g.fillStyle='#6d4a24';g.fillRect(-13,-24,26,35);
-  g.fillStyle='#d9952f';g.fillRect(-13,-24+35*(1-remaining),26,35*remaining);
-  g.strokeStyle='#d8c59a';g.lineWidth=6;g.beginPath();g.arc(21,-8,13,-Math.PI/2,Math.PI/2);g.stroke();
-  g.fillStyle='#fff1c7';g.fillRect(-15,-29,30,7);for(let i=0;i<4;i++){g.beginPath();g.arc(-11+i*8,-31-(i%2)*3,5,0,TAU);g.fill();}
-  g.restore();
-}
-function drawDrinkContestant(x,y,rival=false){
-  const d=drinkGame,wobble=Math.sin(perfNow*(2.2+d.round*.7)+(rival?1.7:0))*(2+d.round*1.8),
-    progress=rival?d.rivalProgress:(d.pattern?clamp((d.nextIndex-1)/(d.pattern.points.length-1),0,1):0),
-    drinking=(d.phase==='tracing'||d.phase==='preview'),tilt=drinking?(rival?-.75:.75)*progress:0;
-  g.save();g.translate(x+wobble,y+Math.abs(wobble)*.25);if(rival)g.scale(-1,1);
-  g.fillStyle='#111015aa';g.beginPath();g.ellipse(0,46,52,13,0,0,TAU);g.fill();
-  g.fillStyle=rival?'#633521':'#394b72';g.fillRect(-34,-3,68,52);g.fillStyle=rival?'#9b5534':'#5678b3';g.fillRect(-29,4,58,15);
-  g.fillStyle='#d4a06c';g.fillRect(-23,-42,46,42);g.fillStyle='#e4b37c';g.fillRect(-18,-36,36,24);
-  g.fillStyle='#17151a';g.fillRect(-12,-27,6,5);g.fillRect(7,-27,6,5);
-  g.fillStyle=rival?'#efe0c6':'#c9d6e8';g.fillRect(-29,-52,58,13);g.fillStyle=rival?'#8b512e':playerChar.feather;g.fillRect(-22,-62,44,12);
-  if(rival){g.fillStyle='#ece4d3';g.beginPath();g.moveTo(-19,-4);g.lineTo(-4,24);g.lineTo(0,-2);g.lineTo(5,24);g.lineTo(20,-4);g.fill();}
-  else{g.fillStyle=playerChar.feather;g.fillRect(-4,-77,8,18);g.beginPath();g.moveTo(4,-76);g.lineTo(20,-69);g.lineTo(4,-65);g.fill();}
-  g.strokeStyle='#d4a06c';g.lineWidth=12;g.beginPath();g.moveTo(rival?-21:21,9);g.lineTo(rival?-40:40,-3-progress*22);g.stroke();
-  drawDrinkingMug(rival?-48:48,-8-progress*25,.78,1-progress,tilt);g.restore();
-}
-function drawDrinkingArena(){
-  const d=drinkGame,p=MINIGAME_ARENA_PALETTES[d&&d.stageId]||MINIGAME_ARENA_PALETTES.forest;
-  g.fillStyle=p.sky;g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);g.fillStyle=p.skyBand;g.fillRect(0,82,VW,180);
-  g.fillStyle=p.far;g.fillRect(0,253,VW,VH-253);
-  for(let i=0;i<9;i++){const x=22+i*56,bob=Math.sin(perfNow*3+i)*3;g.fillStyle=i%2?'#59402d':'#3c4c38';g.fillRect(x-13,180+bob,26,55);g.fillStyle='#d29a69';g.fillRect(x-10,158+bob,20,23);
-    g.fillStyle='#17151a';g.fillRect(x-6,166+bob,4,3);g.fillRect(x+3,166+bob,4,3);}
-  g.fillStyle='#351f16';g.fillRect(0,98,VW,24);g.fillStyle='#6b4127';for(let i=0;i<7;i++)g.fillRect(i*79-18,95,12,175);
-  g.fillStyle='#7b4a29';g.fillRect(0,516,VW,92);g.fillStyle='#a16a36';g.fillRect(0,516,VW,14);
-  drawDrinkContestant(72,181,false);drawDrinkContestant(408,181,true);
-}
-function drawDrinkScore(){
-  const d=drinkGame;g.textAlign='center';g.font='bold 12px monospace';g.fillStyle='#9fd8ff';g.fillText('YOU',104,105);g.fillStyle='#ff9a62';g.fillText('SIR CHUGS',376,105);
-  for(let i=0;i<2;i++){drawDrinkingMug(76+i*40,139,.42,i<d.wins?0:1,0);drawDrinkingMug(348+i*40,139,.42,i<d.rivalWins?0:1,0);}
-  if(d.phase==='tracing'||d.phase==='preview'){
-    g.fillStyle='#1c1310';g.fillRect(316,177,116,10);g.fillStyle='#ff9a62';g.fillRect(318,179,112*d.rivalProgress,6);
-    g.font='bold 8px monospace';g.fillStyle='#e5c7ae';g.fillText('RIVAL GULP',374,201);
-  }
-}
-function drawDrinkPattern(){
-  const d=drinkGame;if(!d.pattern)return;const points=d.pattern.points,corridor=DRINK_RULES.corridors[d.round];
-  g.fillStyle='#080a0edb';g.fillRect(47,214,386,306);g.strokeStyle='#9a713b';g.lineWidth=3;g.strokeRect(47,214,386,306);
-  g.strokeStyle='#30271e';g.lineWidth=corridor*2;g.lineCap='round';g.lineJoin='round';g.beginPath();g.moveTo(points[0].x,points[0].y);for(let i=1;i<points.length;i++)g.lineTo(points[i].x,points[i].y);g.stroke();
-  g.strokeStyle='#d6bd82';g.lineWidth=7;g.setLineDash([10,7]);g.beginPath();g.moveTo(points[0].x,points[0].y);for(let i=1;i<points.length;i++)g.lineTo(points[i].x,points[i].y);g.stroke();g.setLineDash([]);
-  if(d.nextIndex>1){g.strokeStyle='#62dca1';g.lineWidth=9;g.beginPath();g.moveTo(points[0].x,points[0].y);for(let i=1;i<Math.min(d.nextIndex,points.length);i++)g.lineTo(points[i].x,points[i].y);g.stroke();}
-  if(d.tracePoints.length>1){g.strokeStyle='#55d9ff';g.lineWidth=5;g.beginPath();g.moveTo(d.tracePoints[0].x,d.tracePoints[0].y);for(let i=1;i<d.tracePoints.length;i++)g.lineTo(d.tracePoints[i].x,d.tracePoints[i].y);g.stroke();}
-  for(let i=0;i<points.length;i++){
-    const point=points[i],done=i<d.nextIndex,current=i===d.nextIndex,pulse=1+Math.sin(perfNow*8)*.10;
-    g.fillStyle=i===0?'#62dca1':done?'#62dca1':current?'#ffe36a':'#6f6656';g.beginPath();g.arc(point.x,point.y,(current?14*pulse:11),0,TAU);g.fill();
-    g.strokeStyle='#fff0c2';g.lineWidth=2;g.stroke();g.font='bold 8px monospace';g.fillStyle='#11141d';g.textAlign='center';g.fillText(i===0?'GO':String(i),point.x,point.y+3);
-  }
-  g.font='bold 11px monospace';g.fillStyle='#e7cf96';g.fillText(d.pattern.name,VW/2,230);
+  const s=drinkGame;if(!s)return;
+  const before=s.phase,spills=s.player.spills;
+  KRChugRules.update(s,dt,Math.random);
+  if(s.player.spills>spills)SFX.spill();
+  if(s.phase==='result'&&before!=='result'){if(s.result.win)SFX.win();else SFX.hiccup();}
 }
 function drawDrinkingContestPreview(r){
-  g.fillStyle='#2a1b16';g.fillRect(r.x+3,r.y+3,r.w-6,105);g.fillStyle='#7b4a29';g.fillRect(r.x+3,r.y+88,r.w-6,17);
-  drawDrinkingMug(r.x+30,r.y+70,.48,.65,-.25);drawDrinkingMug(r.x+r.w-30,r.y+70,.48,.35,.25);
-  g.strokeStyle='#55d9ff';g.lineWidth=4;g.beginPath();g.moveTo(r.x+42,r.y+20);g.lineTo(r.x+r.w-48,r.y+32);g.lineTo(r.x+48,r.y+48);g.lineTo(r.x+r.w-42,r.y+57);g.stroke();
+  if(!drinkPreviewImage){drinkPreviewImage=new Image();drinkPreviewImage.src='assets/encounters/tavern-chug-preview-v1.png';}
+  g.fillStyle='#715331';g.fillRect(r.x+3,r.y+3,r.w-6,105);
+  if(drinkPreviewImage.complete&&drinkPreviewImage.naturalWidth)g.drawImage(drinkPreviewImage,r.x+3,r.y+3,r.w-6,105);
 }
-function drawDrinkingContestGame(){
-  if(drinkGame&&drawTavernPresentation('drink'))return;
-  const d=drinkGame;if(!d)return;drawDrinkingArena();drawDrinkScore();
-  if(d.phase!=='intro'&&d.phase!=='complete')drawDrinkPattern();
-  if(d.spillT>0){g.globalAlpha=d.spillT/.58;g.fillStyle='#d9952f55';for(let i=0;i<16;i++){const x=sRnd(i*31+d.spills)*VW,y=250+sRnd(i*47+d.spills)*300;g.beginPath();g.arc(x,y,4+sRnd(i*13)*9,0,TAU);g.fill();}g.globalAlpha=1;}
-  g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
-  g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
-  if(d.phase==='intro'){
-    g.fillStyle='#080a0eed';g.fillRect(35,552,410,90);g.strokeStyle='#d9952f';g.lineWidth=2;g.strokeRect(35,552,410,90);
-    g.font='bold 13px monospace';g.fillStyle='#ffe0a0';g.fillText('BEST OF THREE AGAINST SIR CHUGS-A-LOT',VW/2,579);
-    g.font='10px monospace';g.fillStyle='#c7cbd3';g.fillText('Hold GO, trace every node, and never lift early.',VW/2,604);g.fillText('Patterns and rival drinking speed change each contest.',VW/2,624);
-    g.fillStyle='#3d2817';g.fillRect(DRINK_START_BTN.x,DRINK_START_BTN.y,DRINK_START_BTN.w,DRINK_START_BTN.h);g.strokeStyle='#d9952f';g.lineWidth=3;g.strokeRect(DRINK_START_BTN.x,DRINK_START_BTN.y,DRINK_START_BTN.w,DRINK_START_BTN.h);
-    g.font='bold 17px monospace';g.fillStyle='#ffe0a0';g.fillText('RAISE THE MUGS',VW/2,693);
-  }else if(d.phase==='preview'||d.phase==='tracing'){
-    g.fillStyle='#080a0ee8';g.fillRect(40,548,400,94);g.strokeStyle=d.spillT>0?'#ff7a62':'#9a713b';g.lineWidth=2;g.strokeRect(40,548,400,94);
-    g.font='bold 11px monospace';g.fillStyle=d.spillT>0?'#ff8a70':'#ffe0a0';g.fillText(d.message,VW/2,575);
-    g.font='10px monospace';g.fillStyle='#c7cbd3';g.fillText('MUG '+(d.round+1)+'/3  |  NODE '+Math.min(d.nextIndex,d.pattern.points.length-1)+'/'+(d.pattern.points.length-1)+'  |  SPILLS '+d.spills,VW/2,601);
-    g.fillStyle='#8d8f98';g.fillText(d.phase==='preview'?'Pattern opens in '+Math.max(0,DRINK_RULES.preview-d.phaseT).toFixed(1)+' s':'Touch green GO and slide through the numbered route.',VW/2,624);
-  }else if(d.phase==='roundResult'){
-    g.fillStyle='#080a0eed';g.fillRect(45,558,390,75);g.strokeStyle=d.roundWon?'#7df078':'#ff7a62';g.lineWidth=3;g.strokeRect(45,558,390,75);
-    g.font='bold 14px monospace';g.fillStyle=d.roundWon?'#7df078':'#ff8a70';g.fillText(d.message,VW/2,588);
-    g.font='10px monospace';g.fillStyle='#d8d0c1';g.fillText('YOU '+d.wins+'  -  '+d.rivalWins+' SIR CHUGS  |  tap to continue',VW/2,614);
-  }else if(d.phase==='complete'){
-    const won=d.wins>d.rivalWins,col=won?'#ffe36a':'#ff7a62';g.fillStyle='#080a0eed';g.fillRect(39,551,402,93);g.strokeStyle=col;g.lineWidth=3;g.strokeRect(39,551,402,93);
-    g.font='bold 17px monospace';g.fillStyle=col;g.fillText(won?'TAVERN CHAMPION!':'OUT-CHUGGED!',VW/2,580);
-    g.font='10px monospace';g.fillStyle='#e2dacb';g.fillText('FINAL: YOU '+d.wins+'  -  '+d.rivalWins+' SIR CHUGS  |  '+d.spills+' SPILLS',VW/2,605);
-    g.fillStyle='#aeb2c2';g.fillText(won?'The crowd cheers. Your horse looks concerned.':'He burps in Latin. Nobody knows how.',VW/2,626);
-    g.fillStyle='#3d2817';g.fillRect(DRINK_REPLAY_BTN.x,DRINK_REPLAY_BTN.y,DRINK_REPLAY_BTN.w,DRINK_REPLAY_BTN.h);g.strokeStyle=col;g.lineWidth=3;g.strokeRect(DRINK_REPLAY_BTN.x,DRINK_REPLAY_BTN.y,DRINK_REPLAY_BTN.w,DRINK_REPLAY_BTN.h);
-    g.font='bold 17px monospace';g.fillStyle=col;g.fillText('ANOTHER ROUND',VW/2,693);
-  }
-}
+function drawDrinkingContestGame(){if(drinkGame)drawTavernPresentation('drink');}
 
 /* ---------- Wishing Well: variable direction, length, and release-speed coin toss ---------- */
 const WELL_RULES=Object.freeze({flightTime:.86,minSwipe:32,minDuration:.035,maxDuration:1.2,
@@ -58589,6 +58217,7 @@ function startArmWrestling(stageId=biome,returnMode='minigames'){
   armWrestleGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
     phase:'intro',phaseT:0,power:ARM_WRESTLE_RULES.start,combo:0,lastSwipe:-9,
     swipePulse:0,wrongT:0,gruntT:0,pinT:0,result:null,swipes:0};
+  if(returnMode!=='journeyroadresume')Object.assign(armWrestleGame,KRArmRules.create(),{barbarian:true,keyHeld:false,pointerHeld:false});
   paused=false;pausePhotoMode=false;setMode('armwrestling');SFX.relic();
 }
 function leaveArmWrestling(){
@@ -58597,6 +58226,7 @@ function leaveArmWrestling(){
 }
 function beginArmWrestlingMatch(){
   const a=armWrestleGame;if(!a)return;
+  if(a.barbarian&&!a.roadAttempt){if(!['intro','result'].includes(a.phase))return;KRArmRules.start(a);a.keyHeld=a.pointerHeld=false;SFX.armStrain();return;}
   if(a.roadAttempt&&a.phase==='result'){leaveArmWrestling();return;}
   Object.assign(a,{phase:'playing',phaseT:0,power:ARM_WRESTLE_RULES.start,combo:0,
     lastSwipe:perfNow,swipePulse:0,wrongT:0,gruntT:0,pinT:0,result:null,swipes:0});
@@ -58610,6 +58240,7 @@ function pinArmWrestling(playerWon){
 }
 function armWrestleSwipe(direction){
   const a=armWrestleGame;if(!a)return false;
+  if(a.barbarian&&!a.roadAttempt)return false;
   if(a.phase==='intro'){beginArmWrestlingMatch();}
   if(a.phase!=='playing')return false;
   if(direction!=='right'){
@@ -58628,7 +58259,25 @@ function armWrestlingTap(pt){
   if(a.phase==='intro'&&pointInRect(pt,ARM_WRESTLE_START_BTN)){beginArmWrestlingMatch();return;}
   if(a.phase==='result'&&pointInRect(pt,ARM_WRESTLE_REPLAY_BTN)){beginArmWrestlingMatch();return;}
 }
+function setArmPressure(on,source='keyHeld'){
+  const a=armWrestleGame;if(!a?.barbarian||a.roadAttempt)return false;
+  a[source]=!!on&&!paused&&!settingsOpen&&a.phase==='playing';
+  const before=a.counters,ok=KRArmRules.hold(a,a.keyHeld||a.pointerHeld);if(a.counters>before)SFX.armShove(4);return ok;
+}
+function endArmPressure(){const a=armWrestleGame;if(!a?.barbarian)return;a.keyHeld=a.pointerHeld=false;KRArmRules.hold(a,false);}
+function beginArmPointer(x,y){
+  const a=armWrestleGame;if(mode!=='armwrestling'||!a?.barbarian||a.roadAttempt||a.phase!=='playing'||!window.KRTavernArm)return false;
+  if(!pointInRect(toGame(x,y),KRTavernArm.holdRect))return false;
+  return setArmPressure(true,'pointerHeld');
+}
+function endArmPointer(){setArmPressure(false,'pointerHeld');}
 function updateArmWrestling(dt){
+  if(armWrestleGame?.barbarian&&!armWrestleGame.roadAttempt){
+    const a=armWrestleGame;if(paused||settingsOpen)return;const before=a.phase,oldCounters=a.counters;KRArmRules.update(a,dt,()=>rnd());
+    if(a.counters>oldCounters)SFX.armShove(4);
+    if(a.phase!==before){if(a.phase==='pinning'){endArmPressure();SFX.armPin(a.result.win);shake(5,.2);}else if(a.phase==='result'){if(a.result.win)SFX.win();else SFX.danceBad();}}
+    return;
+  }
   const a=armWrestleGame;if(!a)return;a.phaseT+=dt;a.swipePulse=Math.max(0,a.swipePulse-dt*4.8);a.wrongT=Math.max(0,a.wrongT-dt);
   if(a.phase==='pinning'){
     a.pinT+=dt;if(a.pinT>=ARM_WRESTLE_RULES.pinTime){a.phase='result';a.phaseT=0;if(a.result.win)SFX.win();else SFX.danceBad();}return;
@@ -58735,7 +58384,14 @@ function drawRoadsideArmMatch(){
   expPoly([[hand.x-8,hand.y-15],[hand.x+14,hand.y-20],[hand.x+21,hand.y-10],[hand.x-2,hand.y-5]],'#d4e0e3');
   for(let i=0;i<3;i++)expSegment(hand.x+i*7,hand.y+1,hand.x+3+i*7,hand.y+13,2,'#56646f');
 }
+let armPreviewImage=null;
 function drawArmWrestlingPreview(r){
+  if(!armPreviewImage){armPreviewImage=new Image();armPreviewImage.src='assets/encounters/tavern-arm-preview-v1.png';}
+  g.save();g.beginPath();g.rect(r.x+3,r.y+3,r.w-6,105);g.clip();
+  if(armPreviewImage.complete&&armPreviewImage.naturalWidth)g.drawImage(armPreviewImage,r.x+3,r.y+3,r.w-6,105);
+  else{g.fillStyle='#69482e';g.fillRect(r.x+3,r.y+3,r.w-6,105);smithText('OAKBREAKER',r.x+r.w/2,r.y+60,12,'#ead5a3');}g.restore();
+}
+function drawLegacyArmWrestlingPreview(r){
   g.fillStyle='#332219';g.fillRect(r.x+3,r.y+3,r.w-6,105);g.fillStyle='#765033';g.beginPath();g.moveTo(r.x+4,r.y+50);g.lineTo(r.x+r.w-4,r.y+50);g.lineTo(r.x+r.w+8,r.y+105);g.lineTo(r.x-8,r.y+105);g.closePath();g.fill();
   g.fillStyle='#d19a69';g.beginPath();g.arc(r.x+r.w/2,r.y+31,17,0,TAU);g.fill();g.fillStyle='#4a241d';g.fillRect(r.x+r.w/2-14,r.y+34,28,5);
   g.strokeStyle='#d19a69';g.lineWidth=12;g.lineCap='round';g.beginPath();g.moveTo(r.x+22,r.y+66);g.lineTo(r.x+r.w/2,r.y+58);g.stroke();g.strokeStyle='#aebbc5';g.lineWidth=16;g.beginPath();g.moveTo(r.x+r.w-12,r.y+100);g.lineTo(r.x+r.w/2,r.y+58);g.stroke();g.lineCap='butt';
@@ -58765,59 +58421,43 @@ function drawArmWrestlingGame(){
   }
 }
 
-/* ---------- First-person dice guess: one visible die each, then commit ---------- */
-const DICE_GUESS_RULES=Object.freeze({dicePerPlayer:2,sides:6,choices:2,rollTime:.9,revealTime:1.25});
+/* ---------- Duke's Bluff: private dice, public claims, three seals ---------- */
+const DICE_GUESS_RULES=KRDukeRules.rules;
 const DICE_LOWER_BTN=Object.freeze({x:48,y:660,w:176,h:52});
 const DICE_HIGHER_BTN=Object.freeze({x:256,y:660,w:176,h:52});
-const DICE_REPLAY_BTN=Object.freeze({x:140,y:660,w:200,h:52});
+const DICE_REPLAY_BTN=Object.freeze({x:130,y:690,w:220,h:49});
 let diceGame=null;
 function rollGuessDie(){return 1+Math.floor(rnd(DICE_GUESS_RULES.sides));}
 function makeDiceGuessRoll(){return Array.from({length:DICE_GUESS_RULES.dicePerPlayer},rollGuessDie);}
 function startDiceGuess(stageId=biome,returnMode='minigames'){
-  diceGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
-    phase:'intro',phaseT:0,playerDice:[1,1],rivalDice:[1,1],cursor:1,choice:null,
-    result:null,cupLift:0};
+  diceGame={...KRDukeRules.create(),stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode};
   paused=false;pausePhotoMode=false;setMode('diceguess');SFX.relic();
 }
 function leaveDiceGuess(){
   const target=diceGame&&diceGame.returnMode||'minigames';diceGame=null;setMode(target);SFX.duck();
 }
 function beginDiceGuessRound(){
-  const d=diceGame;if(!d)return;
-  Object.assign(d,{phase:'rolling',phaseT:0,playerDice:makeDiceGuessRoll(),rivalDice:makeDiceGuessRoll(),
-    cursor:1,choice:null,result:null,cupLift:0});SFX.diceRoll();
+  const d=diceGame;if(!d||!['intro','result'].includes(d.phase))return;
+  KRDukeRules.startRound(d,()=>rnd());if(d.phase==='coinToss')SFX.swipe();else SFX.diceRoll();
 }
-function resolveDiceGuess(choice){
-  const d=diceGame,playerTotal=d.playerDice[0]+d.playerDice[1],rivalTotal=d.rivalDice[0]+d.rivalDice[1],
-    relation=playerTotal>rivalTotal?'higher':playerTotal<rivalTotal?'lower':'tie';
-  return {choice,playerTotal,rivalTotal,relation,correct:relation==='tie'?null:choice===relation};
-}
-function chooseDicePrediction(choice){
-  const d=diceGame;if(!d||d.phase!=='choose'||(choice!=='higher'&&choice!=='lower'))return false;
-  d.choice=choice;d.result=resolveDiceGuess(choice);d.phase='revealing';d.phaseT=0;d.cupLift=0;SFX.diceReveal();return true;
-}
-function moveDiceGuessCursor(delta){
-  const d=diceGame;if(!d||d.phase!=='choose')return;d.cursor=clamp(d.cursor+delta,0,1);SFX.swipe();
+function submitDukeBid(){if(paused||!diceGame)return false;const ok=KRDukeRules.bid(diceGame,'player',diceGame.selected,()=>rnd());if(ok)SFX.swipe();return ok;}
+function callDukeBluff(){if(paused||!diceGame)return false;const ok=KRDukeRules.challenge(diceGame,'player');if(ok)SFX.diceReveal();return ok;}
+function moveDiceGuessCursor(delta,field='face'){
+  const d=diceGame;if(!d||paused||d.phase!=='turn'||d.turn!=='player')return;d.selected[field]=clamp(d.selected[field]+delta,1,6);SFX.swipe();
 }
 function chooseDiceGuessCursor(){
-  const d=diceGame;if(!d||d.phase!=='choose')return false;return chooseDicePrediction(d.cursor===0?'lower':'higher');
+  return submitDukeBid();
 }
 function diceGuessTap(pt){
+  if(paused)return;
+  if(window.KRDukeBluff){KRDukeBluff.tap(pt);return;}
   const d=diceGame;if(!d)return;
   if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveDiceGuess();return;}
   if((d.phase==='intro'||d.phase==='result')&&pointInRect(pt,DICE_REPLAY_BTN)){beginDiceGuessRound();return;}
-  if(d.phase==='choose'){
-    if(pointInRect(pt,DICE_LOWER_BTN)){d.cursor=0;chooseDicePrediction('lower');return;}
-    if(pointInRect(pt,DICE_HIGHER_BTN)){d.cursor=1;chooseDicePrediction('higher');return;}
-  }
 }
 function updateDiceGuess(dt){
-  const d=diceGame;if(!d)return;d.phaseT+=dt;
-  if(d.phase==='rolling'&&d.phaseT>=DICE_GUESS_RULES.rollTime){d.phase='choose';d.phaseT=0;SFX.diceReveal();return;}
-  if(d.phase==='revealing'){
-    d.cupLift=easeOut(clamp(d.phaseT/(DICE_GUESS_RULES.revealTime*.55),0,1));
-    if(d.phaseT>=DICE_GUESS_RULES.revealTime){d.phase='result';d.phaseT=0;SFX.diceResult(d.result.correct===true);if(d.result.correct)burst(240,430,'#ffe36a',20,180);}
-  }
+  const d=diceGame;if(!d||paused)return;const before=d.phase;KRDukeRules.update(d,dt,()=>rnd());
+  if(d.phase!==before){if(d.phase==='rolling')SFX.diceRoll();else if(d.phase==='revealing')SFX.diceReveal();else if(d.phase==='result')SFX.diceResult(d.result.loser==='duke');}
 }
 const DIE_PIPS=Object.freeze({
   1:[[.5,.5]],2:[[.28,.28],[.72,.72]],3:[[.28,.28],[.5,.5],[.72,.72]],
@@ -58884,10 +58524,13 @@ function drawDiceTotals(){
   g.fillStyle='#080a0edd';g.fillRect(124,98,232,48);g.strokeStyle=d.result.correct===true?'#7df078':d.result.correct===false?'#ff655c':'#ffe36a';g.lineWidth=2;g.strokeRect(124,98,232,48);
   g.font='bold 13px monospace';g.textAlign='center';g.fillStyle='#ffb184';g.fillText('DUKE '+d.result.rivalTotal,180,128);g.fillStyle='#9fd8ff';g.fillText('YOU '+d.result.playerTotal,300,128);
 }
+let dukePreviewImage=null;
 function drawDiceGuessPreview(r){
+  if(!dukePreviewImage){dukePreviewImage=new Image();dukePreviewImage.src='assets/encounters/duke-bluff-preview-v1.png';}
+  if(dukePreviewImage.complete&&dukePreviewImage.naturalWidth){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(dukePreviewImage,r.x+3,r.y+3,r.w-6,105);g.restore();return;}
   g.fillStyle='#283746';g.fillRect(r.x+3,r.y+3,r.w-6,105);g.fillStyle='#765033';g.beginPath();g.moveTo(r.x+4,r.y+45);g.lineTo(r.x+r.w-4,r.y+45);g.lineTo(r.x+r.w+8,r.y+105);g.lineTo(r.x-8,r.y+105);g.closePath();g.fill();
   drawGuessDie(r.x+32,r.y+66,24,5,-.12,'#e4e9ef');drawGuessDie(r.x+77,r.y+52,24,3,.10,'#f0ddc6');drawDiceCup(r.x+55,r.y+79,0,'#e9c55b');
-  g.fillStyle='#ffe36a';g.font='bold 9px monospace';g.textAlign='center';g.fillText('HIGHER?',r.x+r.w/2,r.y+102);
+  g.fillStyle='#ffe36a';g.font='bold 9px monospace';g.textAlign='center';g.fillText('BLUFF?',r.x+r.w/2,r.y+102);
 }
 function drawDiceGuessGame(){
   if(diceGame&&drawTavernPresentation('dice'))return;
@@ -60285,8 +59928,8 @@ MINIGAMES.register(new MinigameDefinition('three_blades',{
 }));
 MINIGAMES.register(new MinigameDefinition('find_the_queen',{
   name:'FIND THE QUEEN',tagline:'three cards · one choice · no refunds',col:'#e9c55b',
-  description:'Track the queen through a suspiciously enthusiastic roadside shuffle.',
-  cardTitle:Object.freeze(['FIND THE QUEEN','ROYAL SHUFFLE']),cardStat:'2 kings · 1 queen · 1 round',
+  description:'Follow the lady, catch a visible sleight of hand, and outplay the Velvet Fox.',
+  cardTitle:Object.freeze(['FIND THE QUEEN','ROYAL SHUFFLE']),cardStat:'Best of 3 · watch his hands',
   drawPreview:drawFindQueenPreview,
   start:()=>startFindQueen(biome,'minigames')
 }));
@@ -60312,9 +59955,9 @@ MINIGAMES.register(new MinigameDefinition('lockpick_chest',{
   start:()=>startLockpicking(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('drinking_contest',{
-  name:'SIR CHUGS-A-LOT',tagline:'random finger trails - three mugs - questionable glory',col:'#d9952f',
-  description:'Trace bizarre one-stroke drinking patterns before the tavern champion drains his mug.',
-  cardTitle:Object.freeze(['SIR CHUGS-A-LOT','DRINKING CONTEST']),cardStat:'random trails - best of 3',
+  name:'LAST MUG STANDING',tagline:'tilt - foam - increasingly unsteady hands',col:'#d9952f',
+  description:'Tilt your mug against Sir Chugs. Control the foam as your hand and the tavern begin to sway.',
+  cardTitle:Object.freeze(['LAST MUG STANDING','SIR CHUGS-A-LOT']),cardStat:'mug control - tipsy race',
   drawPreview:drawDrinkingContestPreview,
   start:()=>startDrinkingContest(biome,'minigames')
 }));
@@ -60333,16 +59976,16 @@ MINIGAMES.register(new MinigameDefinition('boulder_panic',{
   start:()=>startBouldering(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('royal_arm_wrestle',{
-  name:'THE ROYAL ELBOW DISPUTE',tagline:'first person - repeat right swipes - pin the Baron',col:'#ff9a62',
-  description:'Lock hands with Baron Beefwrist and repeatedly swipe right before he introduces your knuckles to oak.',
-  cardTitle:Object.freeze(['ROYAL ELBOW','DISPUTE']),cardStat:'first person - swipe right',
+  name:'OAKBREAKER',tagline:'hold - breathe - counter the barbarian',col:'#ffb86c',
+  description:'Outlast a boastful tavern barbarian. Hold to push, release to recover, and counter when his grip softens.',
+  cardTitle:Object.freeze(['OAKBREAKER','THE IRON GRIP']),cardStat:'stamina - timing - one button',
   drawPreview:drawArmWrestlingPreview,
   start:()=>startArmWrestling(biome,'minigames')
 }));
 MINIGAMES.register(new MinigameDefinition('duke_doubledown_dice',{
-  name:"DUKE DOUBLEDOWN'S HALF-TRUTH",tagline:'two dice each - one shown - call higher or lower',col:'#e9c55b',
-  description:'Read one die from each side, predict your final total, and make the Duke reveal what stayed under the cups.',
-  cardTitle:Object.freeze(['DUKE DOUBLEDOWN','HIGHER OR LOWER']),cardStat:'2 dice each - 1 hidden',
+  name:"DUKE'S BLUFF",tagline:'six dice - rising claims - three seals',col:'#e9c55b',
+  description:'Read your three dice, raise the claim or call the Duke a liar. Lose three seals and concede the table.',
+  cardTitle:Object.freeze(["DUKE'S BLUFF",'THE SIX BONES']),cardStat:'3 dice each - bluff or raise',
   drawPreview:drawDiceGuessPreview,
   start:()=>startDiceGuess(biome,'minigames')
 }));
@@ -60427,12 +60070,10 @@ const MINIGAME_SYSTEM_AUDIT=(()=>{
      LOCKPICK_BEHAVIORS.length!==LOCKPICK_RULES.pins||new Set(lockFixture.map(pin=>pin.behavior)).size!==5||
      lockFixture.some(pin=>pin.rise<=0||pin.apex<=0||pin.drop<=0||pin.window<8))
     throw new Error('Lockpicking must expose five randomized hold/release tumblers and three mobile-safe picks');
-  const drinkFixture=makeDrinkPattern(2);
-  if(DRINK_RULES.rounds!==3||DRINK_RULES.winsNeeded!==2||DRINK_RULES.checkpoints.join('-')!=='5-7-9'||
-     DRINK_RULES.corridors.some((width,index)=>index>0&&width>=DRINK_RULES.corridors[index-1])||
-     DRINK_PATTERN_TEMPLATES.length<6||drinkFixture.points.length!==9||
-     drinkFixture.points.some(point=>point.x<70||point.x>410||point.y<230||point.y>500))
-    throw new Error('Drinking Contest must expose three increasingly difficult mobile-safe random traces');
+  const drinkFixture=KRChugRules.create();
+  if(DRINK_RULES.step!==1/120||drinkFixture.player.done!==0||drinkFixture.rival.done!==0||
+     KRChugRules.ideal({done:1})<=KRChugRules.ideal({done:0}))
+    throw new Error('Drinking Contest must increase the pour angle with independently simulated mugs');
   const wellFixture=Array.from({length:12},makeWishingWellSetup);
   if(WELL_RULES.minSwipe<=0||WELL_RULES.flightTime<=0||WELL_RULES.windPixels<80||WELL_RULES.aimAssist<=0||
      WELL_RULES.powerCompression>=1||WELL_RULES.perfect>=WELL_RULES.great||
@@ -60451,10 +60092,10 @@ const MINIGAME_SYSTEM_AUDIT=(()=>{
      ARM_WRESTLE_RULES.rivalPush<=0||ARM_WRESTLE_RULES.wrongPenalty<=0||
      ARM_WRESTLE_RULES.momentumWindow<=0||ARM_WRESTLE_RULES.pinTime<=0)
     throw new Error('Arm Wrestling must start centered, reward repeated right swipes, resist idle play, and resolve a visible pin');
-  if(DICE_GUESS_RULES.dicePerPlayer!==2||DICE_GUESS_RULES.sides!==6||DICE_GUESS_RULES.choices!==2||
+  if(DICE_GUESS_RULES.dicePerPlayer!==3||DICE_GUESS_RULES.sides!==6||DICE_GUESS_RULES.seals!==3||
      DICE_GUESS_RULES.rollTime<=0||DICE_GUESS_RULES.revealTime<=0||
      !DIE_PIPS[1]||!DIE_PIPS[6]||Object.keys(DIE_PIPS).length!==6)
-    throw new Error('Dice Guess must roll two six-sided dice each, reveal partial information, and offer higher/lower choices');
+    throw new Error('Duke Bluff must own three six-sided dice each, hidden hands and three seals');
   const knifeFixture=knifeFlickLaunchFromGesture({startX:240,startY:420,startMs:0},{x:240,y:300},300),
     knifeHitboxFixture=knifeFlickHitbox({x:183,y:KNIFE_FLIP_RULES.tableY});
   if(KNIFE_FLIP_RULES.gravity<=0||KNIFE_FLIP_RULES.minUpward<=0||KNIFE_FLIP_RULES.minReleaseSpeed<=0||
@@ -60498,7 +60139,7 @@ const MINIGAME_SYSTEM_AUDIT=(()=>{
     joustSeconds:JOUST_RULES.roundTime,swordRounds:SWORD_DUEL_OPPONENTS.length,
     queenCards:FIND_QUEEN_RULES.cards,chickenRacers:CHICKEN_RACE_RULES.racers,
     balanceSeconds:LOG_BALANCE_RULES.duration,lockPins:LOCKPICK_RULES.pins,lockPicks:LOCKPICK_RULES.picks,
-    drinkRounds:DRINK_RULES.rounds,wellInputs:3,boulderRows:BOULDER_RULES.rows,armDirection:1,
+    drinkRounds:1,wellInputs:3,boulderRows:BOULDER_RULES.rows,armDirection:1,
     dicePerPlayer:DICE_GUESS_RULES.dicePerPlayer,knifeInputs:1,panSeconds:GOLD_PAN_RULES.duration,
     forgeHits:FORGE_RULES.hits,pickpocketCoins:PICKPOCKET_RULES.coins,tavernMugs:TAVERN_SLIDE_RULES.mugsEach});
 })();
@@ -60633,7 +60274,7 @@ function handleMinigameAction(a,pt){
   if(mode==='diceguess'){
     if(a==='tap'&&pt)diceGuessTap(pt);
     else if(a==='left'||a==='right')moveDiceGuessCursor(a==='left'?-1:1);
-    else if(a==='up')chooseDiceGuessCursor();
+    else if(a==='up'||a==='down')moveDiceGuessCursor(a==='up'?1:-1,'count');
     return true;
   }
   if(mode==='knifeflip'){
@@ -60731,9 +60372,12 @@ function handleMinigameKeyDown(e){
   }
   if(mode==='drinkingcontest'&&(e.key===' '||e.key==='Enter')){
     e.preventDefault();if(!e.repeat&&drinkGame){
-      if(drinkGame.phase==='intro'||drinkGame.phase==='complete')beginDrinkingContest();
-      else if(drinkGame.phase==='roundResult')advanceDrinkingContest();
+      if(drinkGame.phase==='intro'||drinkGame.phase==='result')beginDrinkingContest();
+      else cancelDrinkTrace();
     }return true;
+  }
+  if(mode==='drinkingcontest'&&(e.key==='ArrowUp'||e.key==='ArrowDown')){
+    e.preventDefault();if(drinkGame?.phase==='playing'){drinkGame[e.key==='ArrowUp'?'up':'down']=true;KRChugRules.hold(drinkGame,true);}return true;
   }
   if(mode==='wishingwell'&&(e.key===' '||e.key==='Enter')){
     e.preventDefault();if(!e.repeat&&wellGame&&(wellGame.phase==='intro'||wellGame.phase==='result'))beginWishingWellThrow();return true;
@@ -60745,14 +60389,16 @@ function handleMinigameKeyDown(e){
     }return true;
   }
   if(mode==='armwrestling'&&(e.key===' '||e.key==='Enter')){
+    if(armWrestleGame?.barbarian&&!armWrestleGame.roadAttempt){e.preventDefault();if(!e.repeat){if(['intro','result'].includes(armWrestleGame.phase))beginArmWrestlingMatch();else setArmPressure(true);}return true;}
     e.preventDefault();if(!e.repeat&&armWrestleGame&&
       (armWrestleGame.phase==='intro'||armWrestleGame.phase==='result'))beginArmWrestlingMatch();
     return true;
   }
+  if(mode==='diceguess'&&(e.key==='b'||e.key==='B')){e.preventDefault();if(!e.repeat)callDukeBluff();return true;}
   if(mode==='diceguess'&&(e.key===' '||e.key==='Enter')){
     e.preventDefault();if(!e.repeat&&diceGame){
       if(diceGame.phase==='intro'||diceGame.phase==='result')beginDiceGuessRound();
-      else if(diceGame.phase==='choose')chooseDicePrediction(diceGame.cursor===0?'lower':'higher');
+      else if(diceGame.phase==='turn')submitDukeBid();
     }return true;
   }
   if(mode==='goldpanning'&&(e.key===' '||e.key==='Enter')){
@@ -60808,6 +60454,7 @@ function handleMinigameKeyDown(e){
   return false;
 }
 const MINIGAME_POINTER_BINDINGS=[
+  ['armPressure',beginArmPointer,null,endArmPointer],
   ['minigameScroll',beginMinigamesMenuScroll,moveMinigamesMenuScroll,endMinigamesMenuScroll],
   ['forgeBellows',beginForgeBellowsHold,null,endForgeBellowsHold],
   ['mendHammer',beginMendPointer,null,releaseMendHold],
@@ -60841,6 +60488,7 @@ function endMinigamePointer(x,y){
   clearTapIntent(tStart);tStart=null;return true;
 }
 function cancelMinigameGestures(){
+  endArmPressure();
   endJoustHold();cancelLockpickHold();cancelDrinkTrace();cancelWellAim();
   cancelKnifeFlick();cancelGoldPanGesture();endForgeBellowsHold();cancelMendHold();
   endPickpocketHold();cancelTavernSlideAim();cancelMinigamesMenuScroll();
@@ -60850,6 +60498,8 @@ addEventListener('wheel',e=>{
   if(mode==='minigames'&&!paused&&!settingsOpen){e.preventDefault();scrollMinigamesMenu(e.deltaY*.85);}
 },{passive:false});
 addEventListener('keyup',e=>{
+  if(mode==='drinkingcontest'&&drinkGame&&(e.key==='ArrowUp'||e.key==='ArrowDown')){drinkGame[e.key==='ArrowUp'?'up':'down']=false;e.preventDefault();}
+  if(mode==='armwrestling'&&(e.key===' '||e.key==='Enter')){setArmPressure(false);e.preventDefault();}
   if(mode==='jousting'&&(e.key===' '||e.key==='Enter')){endJoustHold();e.preventDefault();}
   if(mode==='lockpicking'&&(e.key===' '||e.key==='Enter')){endLockpickHold();e.preventDefault();}
   if(mode==='blacksmithing'&&e.key===' '){endForgeBellowsHold();e.preventDefault();}
@@ -65618,13 +65268,36 @@ function update(dt){
 }
 
 /* ============================== render ============================== */
-const DRAW_QUEUE=[],DRAW_ITEM_POOL=[],FRONT_OBSTACLES=[],JOURNEY_FRONT_OBSTACLES=[];
+const DRAW_QUEUE=[],DRAW_ITEM_POOL=[],FRONT_OBSTACLES=[],JOURNEY_FRONT_OBSTACLES=[],FRONT_WORLD_ITEMS=[];
 let drawItemCount=0;
 function compareWorldDepthDescending(a,b){return b.z-a.z;}
-function queueWorldDraw(z,draw,ref=null){
+function queueWorldDraw(z,draw,ref=null,occludesRider=false){
   let item=DRAW_ITEM_POOL[drawItemCount];
   if(!item) item=DRAW_ITEM_POOL[drawItemCount]={z:0,draw:null,ref:null};
-  drawItemCount++; item.z=z; item.draw=draw; item.ref=ref; DRAW_QUEUE.push(item);
+  drawItemCount++; item.z=z; item.draw=draw; item.ref=ref;
+  item.occludesRider=occludesRider||((draw===drawJourneyTree||draw===drawRoadsideSceneryEntity||draw===drawForestJourneyTree)&&!ref?.gnd);
+  DRAW_QUEUE.push(item);
+}
+// Depth zero is the rider's ground plane (proj(0)); height/jumping does not
+// move a tree behind him. Reuse queue entries rather than drawing trees twice.
+function worldItemDrawsOverRider(item){return item.occludesRider&&item.z<0;}
+function drawWorldItemOrDefer(item,stage){
+  if(worldItemDrawsOverRider(item))FRONT_WORLD_ITEMS.push(item);
+  else drawGroundMaskedWorldItem(item.draw,item.ref,item.z,stage);
+}
+function drawForegroundWorld(stage){
+  // Three sorted streams: close scenery, native arches, turning-road arches.
+  // Merge in depth order so a root cannot overwrite a closer tree (or vice versa).
+  FRONT_OBSTACLES.sort(compareWorldDepthDescending);
+  JOURNEY_FRONT_OBSTACLES.sort((a,b)=>b.depth-a.depth);
+  let a=0,b=0,c=0;
+  while(a<FRONT_WORLD_ITEMS.length||b<FRONT_OBSTACLES.length||c<JOURNEY_FRONT_OBSTACLES.length){
+    const tree=FRONT_WORLD_ITEMS[a],root=FRONT_OBSTACLES[b],turnRoot=JOURNEY_FRONT_OBSTACLES[c],
+      z=tree?.z??-Infinity,r=root?.z??-Infinity,t=turnRoot?.depth??-Infinity;
+    if(tree&&z>=r&&z>=t){drawGroundMaskedWorldItem(tree.draw,tree.ref,z,stage);a++;}
+    else if(root&&r>=t){drawGroundMaskedWorldItem(drawObstacleEntity,root,r,stage);b++;}
+    else{drawGroundMaskedWorldItem(drawJourneyObstacle,turnRoot.item,t,stage);c++;}
+  }
 }
 function drawStageBeyond(z,stage){ stage.beyondDraw(z); }
 function drawStageMouth(z,stage){ stage.mouthDraw(z); }
@@ -67992,6 +67665,7 @@ function renderFrame(){
   const opaqueCutscene=!pausePhotoMode&&mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn)&&
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
   if(!['shop','merchant','town'].includes(mode)&&!opaqueCutscene){
+  FRONT_WORLD_ITEMS.length=0;
   const battleWorldCached=window.KRSunlitForest?.drawBattleWorld(stage,newForest);
   if(!battleWorldCached){
   if(newForest)drawForestWorld();
@@ -68001,9 +67675,8 @@ function renderFrame(){
   updateEffHorizon();
   buildWorldDrawQueue(stage,newForest);
   const dr=DRAW_QUEUE;
-  for(const d of dr)drawGroundMaskedWorldItem(d.draw,d.ref,d.z,stage);
+  for(const d of dr)drawWorldItemOrDefer(d,stage);
   }
-  const frontObs=FRONT_OBSTACLES,journeyFrontObs=JOURNEY_FRONT_OBSTACLES;
 
   drawTelegraphs();
   /* Shield Bash contact fire belongs behind Jonathan and the physical shield,
@@ -68017,10 +67690,7 @@ function renderFrame(){
   }
   drawCombatDebugGeometry();
   /* NOW the near arches: the knight visibly ducks UNDER them */
-  frontObs.sort(compareWorldDepthDescending);
-  for(const o of frontObs)drawGroundMaskedWorldItem(drawObstacleEntity,o,o.z,stage);
-  journeyFrontObs.sort((a,b)=>b.depth-a.depth);
-  for(const entry of journeyFrontObs)drawGroundMaskedWorldItem(drawJourneyObstacle,entry.item,entry.depth,stage);
+  drawForegroundWorld(stage);
   if(newForest)forestFlush(true);
   drawParticles();
   drawAmbient();
@@ -68101,6 +67771,10 @@ if(BOOT_QUERY.get('forgelab')==='1')startSwordMending('forest','minigames');
 if(BOOT_QUERY.get('forgeclassic')==='1')startBlacksmith('forest','minigames');
 if(BOOT_QUERY.get('discolab')==='1')startDiscoDance('forest','minigames');
 if(BOOT_QUERY.get('tavernslidelab')==='1')startTavernSlide('forest','minigames');
+if(BOOT_QUERY.get('dukelab')==='1')startDiceGuess('forest','minigames');
+if(BOOT_QUERY.get('armlab')==='1')startArmWrestling('forest','minigames');
+if(BOOT_QUERY.get('chuglab')==='1'||BOOT_QUERY.get('drinklab')==='1')startDrinkingContest('forest','minigames');
+if(BOOT_QUERY.get('queenlab')==='1')startFindQueen('forest','minigames');
 if(BOOT_QUERY.get('merchantlab')==='1')openMerchantLab();
 if(BOOT_QUERY.get('townlab')==='1')openTownLab();
 if(BOOT_QUERY.get('roadlab')==='1')openRoadLab();
@@ -68390,7 +68064,7 @@ if(BOOT_QUERY.get('backgroundplaytest')==='1'){
   artRegistry.onload=()=>{
     const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
     basalt.onload=()=>{const caravan=document.createElement('script');caravan.src='assets/forest/autumn-caravan.js';caravan.onload=()=>{
-      const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=()=>{const barry=document.createElement('script');barry.src='assets/encounters/tavern-slide.js';barry.onload=()=>{const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';document.body.appendChild(artLab);};document.body.appendChild(barry);};document.body.appendChild(inn);
+      const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=()=>{const barry=document.createElement('script');barry.src='assets/encounters/tavern-slide.js';barry.onload=()=>{const duke=document.createElement('script');duke.src='assets/encounters/duke-bluff.js';duke.onload=()=>{const arm=document.createElement('script');arm.src='assets/encounters/tavern-arm.js';arm.onload=()=>{const artLab=document.createElement('script');artLab.src='tools/art-lab-runtime.js';document.body.appendChild(artLab);};document.body.appendChild(arm);};document.body.appendChild(duke);};document.body.appendChild(barry);};document.body.appendChild(inn);
     };document.body.appendChild(caravan);};
     document.body.appendChild(basalt);
   };

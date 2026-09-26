@@ -399,7 +399,7 @@
    const entry=pool[count]||(pool[count]={});count++;
    entry.id=o.id;entry.x=p.x;entry.y=p.y;entry.width=width;entry.alpha=treeDistanceAlpha(o,item.c.depth);
    entry.clip=item.clip;entry.palette=item.palette;entry.occludedMask=0;
-   queueWorldDraw(item.c.depth,drawScenery,entry);
+   queueWorldDraw(item.c.depth,drawScenery,entry,true);
   }
   queueCurvedEndTrees();
  }
@@ -613,7 +613,7 @@
    if(!canvas){battleRejected=key;return false;} // No repeated failed allocations/queue builds.
    updateEffHorizon();buildWorldDrawQueue(stage,false);
    const allowed=d=>d===drawScenery||d===drawEndTree||d===drawJourneyBloodDecor||d===drawJourneyBloodLair;
-   const split=DRAW_QUEUE.findIndex(d=>!allowed(d.draw));
+   const split=DRAW_QUEUE.findIndex(d=>!allowed(d.draw)||worldItemDrawsOverRider(d));
    if(split<0){art.releaseSurface(canvas);battleRejected=key;return false;}
    // Unknown/new props, dancers, pickups and actors are live by default.
    // Only the explicitly static prefix is baked, not the rest of the queue.
@@ -628,7 +628,7 @@
   const c=battlePlate.canvas;
   g.drawImage(c,0,-PAD_TOP,c.width/viewScale,c.height/viewScale);
   updateEffHorizon();FRONT_OBSTACLES.length=0;JOURNEY_FRONT_OBSTACLES.length=0;
-  for(const d of battlePlate.tail)drawGroundMaskedWorldItem(d.draw,d.ref,d.z,stage);
+  for(const d of battlePlate.tail)drawWorldItemOrDefer(d,stage);
   battleHits++;return true;
  }
  function clear(){clearBattlePlate();art.clear();floors.clear();water.clear();items.length=0;itemPool.length=0;pool.length=0;owner=null;frameId=-1;endGroves=new WeakMap();floorBuilds=0;floorHits=0;waterBuilds=0;waterHits=0;occludedTrees=0;coveredTreePlanes=0;occlusionFrame=-1;}

@@ -19,6 +19,8 @@
   function drawModel(id,t,moving){
     const pulse=(1-Math.cos(t*Math.PI))/2;
     switch(id){
+      case 'oakbreaker':g.save();try{g.translate(ORIGIN-240,BASE-438);KRTavernArm.actor(false,'all',{power:moving?pulse:.5,phase:'playing',cue:moving?'surge':'rest'},t);}finally{g.restore();}return;
+      case 'duke':g.save();try{g.translate(ORIGIN-240,BASE-340);KRDukeBluff.actor(false,'all',{phase:moving?'revealing':'turn',phaseT:moving?pulse*.9:0,tell:0});}finally{g.restore();}return;
       case 'barry':g.save();try{g.translate(ORIGIN-240,BASE-353);KRTavernSlide.barry(false);}finally{g.restore();}return;
       case 'knight':return drawSerJonathanRider(ORIGIN,BASE,1.5,{gallop:moving?t*.55:0,lean:moving?Math.sin(t*1.4)*.12:0});
       case 'bear':return drawBearNatural(ORIGIN,BASE,1.5,moving?'tele_paw_right':'idle',moving?pulse:t,false);

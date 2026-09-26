@@ -37,6 +37,24 @@ cache, shader or per-frame image processing. Direct prototype entry:
 
 ## Limits
 
+Oakbreaker selects the separate candidate `tavern-arm` generated corner,
+standard 1086x1448 / mobile 576x768 (6,290,112 / 1,769,472 RGBA bytes).
+`?armlab=1` opens it; its live actor is only a candidate in Art Lab. The wooden
+table, joined grip, fixed-elbow arm rig and material lighting are native.
+`tavern-arm-core.js` owns fixed-step stamina, readable rival surges/recovery,
+hold/release counters and pin resolution. Input cancellation releases pressure.
+Roadside taxman continues to use the old swipe game, without this plate.
+Audit: `node tools/tavern-arm-audit.cjs`. The menu uses a lazy 480x260 preview,
+not a retained room plate. Shared `tavern-coin.js` draws both Slide and Duke coins.
+
+Duke's Bluff now owns `duke-bluff`, a separate generated alcove plate and native
+actor/table/cups/dice. Standard 1086x1448 (6,290,112 RGBA bytes), mobile 576x768
+(1,769,472 bytes). `?dukelab=1` opens the playable candidate; Art Lab lists its
+isolated actor as candidate, never an approved anchor. The pure rules module
+accepts explicit randomness and the AI receives only its own hand/public bids.
+Audit: `node tools/duke-bluff-audit.cjs`; the five-game audit covers inn return,
+image failure and cancellation. No gameplay rewards/economy were added.
+
 | Tier | Reserved RGBA budget | Maximum resident/loading plates |
 | --- | --- | --- |
 | Mobile (existing LOW_POWER hints) | 6 MiB | 2 |
@@ -147,3 +165,28 @@ The simplified candidate uses exactly the same standard/mobile decoded sizes
 as the approved crisp plate. Handler and adapter resolve the same ID; only
 one variant loads. Sharpness is in the source art, never a runtime filter.
 Background Lab defaults to the candidate and links to the protected reference.
+
+## Last Mug Standing candidate (2026-09-26)
+
+`drinkingcontest` now owns `tavern-chug` through the existing `tavern-games`
+session owner. The generated empty alcove is separate from Sir Chugs, the oak
+table, mugs and Jonathan's steel hand. Standard 1086x1448 / mobile 576x768,
+same bounded selected-tier loading as the other tavern duels. The world-only
+drunken roll draws the same plate once with overscan; HUD and input coordinates
+are fixed. No blur/postprocess, second animation loop or full-screen cache.
+`?chuglab=1` (alias `?drinklab=1`) launches the candidate. Art is not approved.
+Scene brief and generation prompt: `art-source/knight-rush-backgrounds/tavern-chug-v1/scene-brief.md`.
+Audit: `node tools/tavern-chug-audit.cjs`; full tavern ownership/return regression:
+`node tools/tavern-games-audit.cjs`.
+
+## Royal Shuffle candidate (2026-09-26)
+
+`findqueen` selects `royal-shuffle` via owner `tavern-games`. Generated alcove:
+1086x1448 standard / 576x768 mobile, the same bounded selected-tier payloads.
+Native Velvet Fox, oak/felt table, three cards, articulated hands and HUD stay
+separate. `royal-shuffle-core.js` owns seeded moves, first-to-two, visible optional
+cheat and accusation timing. The renderer only samples trajectories.
+`?queenlab=1`; audit `tools/royal-shuffle-audit.cjs`; source and full prompt in
+`art-source/knight-rush-backgrounds/royal-shuffle-v1/scene-brief.md`.
+No reference promotion; no additional economy rewards. Small menu thumbnail is
+lazy; normal entry never loads Art Lab or test instrumentation.

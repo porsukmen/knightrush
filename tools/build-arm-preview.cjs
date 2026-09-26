@@ -1,0 +1,6 @@
+const {chromium}=require('playwright'),path=require('node:path'),{pathToFileURL}=require('node:url');
+const root=path.resolve(__dirname,'..');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true});try{const p=await b.newPage();await p.addInitScript(()=>requestAnimationFrame=()=>0);await p.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?armlab=1');await p.waitForFunction(()=>window.KRTavernArm&&KREventVisuals.peek('tavern-arm'));
+ await p.evaluate(()=>{const c=document.createElement('canvas');c.width=480;c.height=260;const saved=g,time=perfNow;try{g=c.getContext('2d');perfNow=2;g.save();g.translate(0,-130);KRTavernArm.drawCutscene();g.restore();g.save();g.translate(56,-127);g.scale(.77,.77);const s={phase:'playing',power:.5,cue:'rest'};KRTavernArm.actor(true,'body',s,2);KRTavernArm.table();KRTavernArm.actor(true,'front',s,2);KRTavernArm.player(s);g.restore();c.id='arm-preview-export';c.style.cssText='position:fixed;top:0;left:0;width:480px;height:260px;z-index:2147483647';document.body.appendChild(c);}finally{g=saved;perfNow=time;}});
+ await p.locator('#arm-preview-export').screenshot({path:path.join(root,'assets/encounters/tavern-arm-preview-v1.png')});
+}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

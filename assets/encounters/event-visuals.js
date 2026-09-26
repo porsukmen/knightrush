@@ -5,6 +5,14 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'royal-shuffle':Object.freeze({standard:{src:'assets/encounters/royal-shuffle-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/royal-shuffle-v1-mobile.png',width:576,height:768}}),
+    'tavern-chug':Object.freeze({standard:{src:'assets/encounters/tavern-chug-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/tavern-chug-v1-mobile.png',width:576,height:768}}),
+    'tavern-arm':Object.freeze({standard:{src:'assets/encounters/tavern-arm-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/tavern-arm-v1-mobile.png',width:576,height:768}}),
+    'duke-bluff':Object.freeze({standard:{src:'assets/encounters/duke-bluff-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/duke-bluff-v1-mobile.png',width:576,height:768}}),
     'tavern-slide':Object.freeze({standard:{src:'assets/encounters/tavern-slide-v2.png',width:1086,height:1448},
       mobile:{src:'assets/encounters/tavern-slide-v2-mobile.png',width:576,height:768}}),
     'tavern-games':Object.freeze({standard:{src:'assets/encounters/tavern-games-v1.png',width:1086,height:1448},

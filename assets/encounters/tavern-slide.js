@@ -173,24 +173,7 @@
   return{x:floor.x,y:floor.y-height,groundY:floor.y,radius,height,tilt,angle,crown:face,settled:t>=rest+.26};
  }
  function coin(time,first){
-  const p=coinPose(time,first),rim=Array.from({length:16},(_,i)=>{const a=i*Math.PI/8;return[Math.cos(a),Math.sin(a)];});
-  const disc=(r,c,dy=0)=>P(rim.map(([x,y])=>[x*r,y*r+dy]),c);
-  g.save();g.translate(p.x+3,p.groundY+2);g.scale(p.radius*(1+p.height/170),p.radius*.32);g.globalAlpha=.28/(1+p.height/65);disc(1,'#36210e');g.restore();
-  g.save();g.translate(p.x,p.y);g.rotate(p.angle);g.scale(p.radius,p.radius);
-  // Thin reeded edge, a stepped raised rim, then one of two minted faces.
-  g.save();g.translate(0,.12);g.scale(1,p.tilt);disc(1,'#8f581f');g.restore();
-  g.scale(1,p.tilt);disc(1,'#e6b44c');disc(.91,'#ffe194');disc(.79,'#b98430');disc(.72,'#dba94a');
-  for(let i=0;i<16;i++){const a=i*Math.PI/8;L(Math.cos(a)*.86,Math.sin(a)*.86,Math.cos(a)*.95,Math.sin(a)*.95,.025,i>7?'#fff0b3':'#a57229');}
-  if(p.crown){
-   const crown=[[-.5,-.28],[-.29,-.06],[0,-.44],[.28,-.06],[.5,-.28],[.37,.27],[-.37,.27]];
-   P(crown.map(([x,y])=>[x,y+.065]),'#8d5a21');P(crown,'#ffe8a2');R(-.37,.31,.74,.10,'#f6d481');
-   for(const x of [-.23,0,.23])R(x-.035,.11,.07,.08,'#a97628');
-  }else{
-   P([[-.29,-.48],[.26,-.48],[.41,-.18],[.41,.24],[.26,.49],[-.29,.49],[-.42,.24],[-.42,-.18]],'#885820');
-   P([[-.23,-.46],[.22,-.46],[.34,-.17],[.34,.21],[.22,.43],[-.23,.43],[-.34,.21],[-.34,-.17]],'#f2d07a');
-   L(-.11,-.37,-.13,.36,.035,'#a7762e');L(.11,-.37,.13,.36,.035,'#a7762e');
-   L(-.34,-.22,.34,-.22,.10,'#a3742c');L(-.34,.22,.34,.22,.10,'#a3742c');
-  }g.restore();
+  KRTavernCoin.draw(g,coinPose(time,first));
  }
  function mugLayers(t){
   const layers=t.mugs.map(m=>({m,ghost:false})),owner=tavernCurrentOwner(t);

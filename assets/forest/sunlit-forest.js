@@ -909,7 +909,7 @@
           const item=sceneryPool[sceneryCount]||(sceneryPool[sceneryCount]={});sceneryCount++;
           item.id=o.id;item.x=p.x;item.y=p.y;item.width=width;item.clipBottom=clipBottom;
           item.alpha=treeDistanceAlpha(o,depth);
-          queueWorldDraw(depth,drawScenery,item);
+          queueWorldDraw(depth,drawScenery,item,true);
         }
       }
     }

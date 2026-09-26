@@ -123,11 +123,19 @@ Keep live characters live rather than baking them into scene images.
 ### Shoulder layering standard
 
 For front-facing character poses, default to drawing the torso first, then the
-shoulder caps and complete upper arms, then forearms/hands. This is the user's
+shoulder caps, then complete upper arms, then forearms/hands. This is the user's
 preferred construction: shoulders sit in front of the torso, and an arm reaching
 inward across the chest must not disappear beneath it. Move the connected upper
 arm with the shoulder pass, not just a detached shoulder patch. Keep the shoulder
 root attached and carry the same material/light planes through the elbow.
+
+The order is **torso → both shoulder caps → upper arms → forearms → hands**.
+An arm lifted across its shoulder must cover that shoulder, not be cut by a
+shoulder polygon painted afterward. Do not finish each entire arm and then paint
+the other shoulder over it: separate the passes when the limbs can cross. Mug
+raising and inward reaches are mandatory overlap checks, including their middle
+poses. This is painter order, not a request to lengthen bones, move the accepted
+pose, or repaint materials. Held props retain their correct palm/finger occlusion.
 
 Use a rear-arm pass only when the pose genuinely puts that limb behind the body
 (e.g. the far arm in a turned pose). Counter/prop masks must preserve the intended
@@ -154,6 +162,12 @@ example rather than prescribing his appearance to all characters:
 Static environments may reuse bounded screen-resolution drawing caches. Do not
 add a bitmap pipeline to code-native art without a reason. Rendering must not
 alter gameplay/RNG/economy. Lab instrumentation never runs in normal play.
+
+In the running world, scenery uses camera-space depth relative to the rider.
+Close trees/leaves crossing the camera must occlude the knight; distant trees
+must not. Preserve depth order with near duck obstacles and ground clipping.
+Do not fix foliage overlap by painting every tree over the player or drawing
+the same near tree twice; cached combat scenery must respect the same split.
 
 ## Review and handoff
 

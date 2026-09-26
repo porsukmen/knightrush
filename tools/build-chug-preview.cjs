@@ -1,0 +1,6 @@
+const {chromium}=require('playwright'),path=require('node:path'),{pathToFileURL}=require('node:url');
+const root=path.resolve(__dirname,'..');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true});try{const p=await b.newPage();await p.addInitScript(()=>requestAnimationFrame=()=>0);await p.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?chuglab=1');await p.waitForFunction(()=>window.KRTavernChug&&KREventVisuals.peek('tavern-chug'));
+ await p.evaluate(()=>{const c=document.createElement('canvas');c.width=480;c.height=260;const saved=g;try{g=c.getContext('2d');g.save();g.translate(0,-164);const s=KRChugRules.create();s.rival.lift=1;s.rival.actual=.38;s.player.actual=.35;s.phase='playing';KRTavernChug.drawCutscene();KRTavernChug.actor(true,'body',s);KRTavernChug.table();KRTavernChug.actor(true,'front',s);g.restore();c.id='chug-preview-export';c.style.cssText='position:fixed;top:0;left:0;width:480px;height:260px;z-index:2147483647';document.body.appendChild(c);}finally{g=saved;}});
+ await p.locator('#chug-preview-export').screenshot({path:path.join(root,'assets/encounters/tavern-chug-preview-v1.png')});
+}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
