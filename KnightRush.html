@@ -10012,9 +10012,8 @@ function journeyNormalChoices(context){
     chest:'Try the lock.',well:'Make a wish.',chickens:journeyChickenQuest?'I am still rounding them up.':'I will catch your five chickens.',
     traveler:'Buy bandages. [5 gold]',traveler_return:'Good to see you on your feet.',chicken_return:'All five. Feathers included.'};
   if(content==='taxman')return [
-    {id:'accept',label:'Arm-wrestle. Win: +15 gold. Lose: no cost.',rect:{x:30,y:634,w:420,h:42}},
-    {id:'pay',label:'Pay the "royal" tax. [5 gold]',rect:{x:30,y:684,w:420,h:42}},
-    {id:'decline',label:'Nice paper crown. Goodbye.',rect:{x:30,y:734,w:420,h:42}}];
+    {id:'pay',label:'Pay the "royal" tax. [5 gold]',rect:ROAD_ACCEPT},
+    {id:'accept',label:'Prove your authority. [Dodge the seal]',rect:ROAD_PASS}];
   return [{id:'accept',label:yes[content]||'Talk.',rect:ROAD_ACCEPT},
     {id:'decline',label:content==='mushrooms'?'Move along, peasant.':content==='traveler'?'Not my problem.':'Maybe another time.',rect:ROAD_PASS}];
 }
@@ -10027,7 +10026,7 @@ function journeyNormalLines(context){
     case 'chest':return ['An old chest rests between the roots.','Five pins. Three lockpicks. One attempt.','Open it to claim 20 gold.'];
     case 'well':return ['A copper coin waits on the stone rim.','One free throw. A good wish earns 6-20 gold.','The wind may have other plans.'];
     case 'chickens':return journeyChickenQuest?[`"You have caught ${journeyChickenQuest.count}/5 chickens."`,'"The little monsters are still out there!"']:['"My chickens escaped! All five of them!"','"Catch them along the road. I will pay 20 gold."','"Watch the last one. She knows things."'];
-    case 'taxman':return ['"Halt! Royal road tax. Five gold."','His crown is paper. His seal is a potato.','"Or beat me at arm-wrestling for 15 gold."'];
+    case 'taxman':return ['"Halt! Royal road tax. Five gold."','His crown is paper. His seal is a potato.','Challenge: 3 misses to win. 2 hits cost up to 5g.'];
     case 'traveler':return ['"Bandits took everything. Even my boots."','"Five gold would buy me some bandages."','"Help me and I will repay you down the road."'];
     case 'traveler_return':return ['"Knight! You helped me when I was hurt."','"I found honest work. Well... mostly honest."','"Here. Fifteen gold, as promised."'];
     case 'chicken_return':return ['"My flock! My beautiful little nightmares!"','"Twenty gold. And never speak of this."'];
@@ -10060,7 +10059,7 @@ function journeyNormalCanEnter(context){
 }
 function journeyRoadReward(context){
   const game=context.game;if(!game||game.phase!=='result')return 0;
-  if(context.content==='taxman')return game.result?.win?15:0;
+  if(context.content==='taxman')return 0;
   return context.content==='chest'?(game.won?20:0):
     ({MIRACULOUS:20,EXCELLENT:12,GOOD:6}[game.result?.tier]||0);
 }
@@ -10075,10 +10074,20 @@ const journeyNormalHandler={
     requestJourneyEventVisual(context.slot);
   },
   update(context,dt){
+    if(context.taxSeal){
+      const s=context.taxSeal,stamps=s.marks.length;KRTaxCollector.updateSeal(s,dt);
+      if(s.marks.length>stamps)SFX.thud();
+      if(s.result&&!s.settled){s.settled=true;s.cost=s.result.win?0:Math.min(gold,5);gold-=s.cost;}
+      return;
+    }
     if(context.dialogue){context.dialogueTime+=dt;return;}
     if(!context.game&&dist>Math.min(context.slot.expiresAt,context.slot.at+JOURNEY_ROAD_RULES.normalOfferTail))context.finish({status:'passed'});
   },
   action(context,action,point,input){
+    if(context.taxSeal){
+      if(KRTaxCollector.sealAction(context.taxSeal,action,point)==='leave')context.finish({status:'completed',content:'taxman',win:context.taxSeal.result.win,cost:context.taxSeal.cost});
+      return true;
+    }
     if(context.game)return false;
     if(mode==='run'){
       const direction=journeyNormalSide(context.slot)>0?'right':'left';
@@ -10100,10 +10109,14 @@ const journeyNormalHandler={
       return true;
     }
     if(choice?.id==='pay'){
-      if(gold<5){context.notice=['Your purse contains fewer than five gold.','Try your arm, or just walk away.'];return true;}
+      if(gold<5){context.notice=['Your purse contains fewer than five gold.','Challenge his potato seal to pass.','If you lose, he takes only what you have.'];return true;}
       gold-=5;journeyNormalReply(context,['"A pleasure doing royal business."','He stamps a leaf with his potato.'],{status:'completed',cost:5});return true;
     }
     if(!accept&&!decline)return true;
+    if(context.content==='taxman'&&accept){
+      if(!window.KRTaxCollector){requestJourneyEventVisual(context.slot,true);context.notice=['The collector is fetching his seal.','Try again in a moment.'];return true;}
+      context.taxSeal=KRTaxCollector.createSeal(context.seed);context.dialogue='seal';return true;
+    }
     if(decline){
       context.dialogue='response';context.dialogueTime=0;context.dialogueResult={status:'declined',content:context.content};
       context.reply=context.content==='mushrooms'?['"A fine suit of armor..."','"Shame about the manners."']:['You leave it untouched.','The road is still waiting.'];return true;
@@ -10140,8 +10153,8 @@ const journeyNormalHandler={
       journeyNormalReply(context,reward?[`"Here you are. ${reward} gold, and my thanks."`,'"Safe travels, knight."']:['"We have settled up already, friend."'],{reward});return true;
     }
     context.dialogue=null;
-    context.openMode(ret=>context.content==='chest'?startLockpicking('forest',ret):context.content==='taxman'?startArmWrestling('forest',ret):startWishingWell('forest',ret));
-    context.game=context.content==='chest'?lockpickGame:context.content==='taxman'?armWrestleGame:wellGame;
+    context.openMode(ret=>context.content==='chest'?startLockpicking('forest',ret):startWishingWell('forest',ret));
+    context.game=context.content==='chest'?lockpickGame:wellGame;
     context.game.roadAttempt=true;context.game.roadRandom=journeyRandom(context.seed);
     return true;
   },
@@ -10151,11 +10164,13 @@ const journeyNormalHandler={
     return {status:context.game?.phase==='result'?'completed':'skipped',content:context.content,reward};
   },
   dispose(context){
+    if(context.taxSeal){context.taxSeal.drag=null;context.taxSeal=null;}
     if(context.game&&lockpickGame===context.game)lockpickGame=null;
     if(context.game&&wellGame===context.game)wellGame=null;
     if(context.game&&armWrestleGame===context.game)armWrestleGame=null;
   },
   draw(context){
+    if(mode==='journeyevent'&&context.taxSeal){KRTaxCollector.drawSeal(context.taxSeal);return;}
     if(mode==='journeyevent'&&context.dialogue){drawJourneyNormalConversation(context);return;}
     if(mode!=='run'||context.game)return;
     const title=JOURNEY_NORMAL_TITLES[context.content];
@@ -10850,7 +10865,7 @@ function clearEventVisuals(){
 }
 // Bitmap-backed event registrations. Existing code-native encounters do not
 // allocate images. Add future scene adapters here and plates to the manager catalog.
-const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest'});
+const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest',taxman:'royal-tax-collector'});
 function journeyEventVisualKey(slot){
   if(slot.definition==='inn_stop')return 'mossy-inn';
   if(slot.definition==='merchant_stop')return 'autumn-caravan';
@@ -60587,6 +60602,7 @@ const MINIGAME_POINTER_BINDINGS=[
   ['joustHold',beginJoustPointerHold,null,endJoustHold]
 ];
 function beginMinigamePointer(x,y){
+  if(mode==='journeyevent'&&!paused&&!settingsOpen&&journeyRoadEventSession?.context.taxSeal&&KRTaxCollector.sealPointer(journeyRoadEventSession.context.taxSeal,'down',toGame(x,y))){tStart={x,y,done:true,minigameGesture:'taxSeal'};return true;}
   if(paused||settingsOpen||(!MINIGAME_MODES.has(mode)&&mode!=='minigames'))return false;
   for(const [flag,begin] of MINIGAME_POINTER_BINDINGS)if(begin(x,y)){
     tStart={x,y,done:true,minigameGesture:flag};return true;
@@ -60595,17 +60611,20 @@ function beginMinigamePointer(x,y){
 }
 function moveMinigamePointer(x,y){
   if(!tStart||!tStart.minigameGesture)return false;
+  if(tStart.minigameGesture==='taxSeal'){if(!paused&&!settingsOpen&&journeyRoadEventSession?.context.taxSeal)KRTaxCollector.sealPointer(journeyRoadEventSession.context.taxSeal,'move',toGame(x,y));return true;}
   const binding=MINIGAME_POINTER_BINDINGS.find(b=>b[0]===tStart.minigameGesture);
   if(binding&&binding[2]&&!paused&&!settingsOpen)binding[2](x,y);
   return true;
 }
 function endMinigamePointer(x,y){
   if(!tStart||!tStart.minigameGesture)return false;
+  if(tStart.minigameGesture==='taxSeal'){if(!paused&&!settingsOpen&&journeyRoadEventSession?.context.taxSeal)KRTaxCollector.sealPointer(journeyRoadEventSession.context.taxSeal,'up',toGame(x,y));tStart=null;return true;}
   const binding=MINIGAME_POINTER_BINDINGS.find(b=>b[0]===tStart.minigameGesture);
   if(binding&&binding[3]&&!paused&&!settingsOpen)binding[3](x,y);
   clearTapIntent(tStart);tStart=null;return true;
 }
 function cancelMinigameGestures(){
+  if(journeyRoadEventSession?.context.taxSeal)journeyRoadEventSession.context.taxSeal.drag=null;
   endArmPressure();
   endJoustHold();cancelLockpickHold();cancelDrinkTrace();cancelWellAim();
   cancelKnifeFlick();cancelGoldPanGesture();endForgeBellowsHold();cancelMendHold();
@@ -68164,6 +68183,15 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
         }else{
           const requested=BOOT_QUERY.get('roadcase');
           if(BOOT_QUERY.get('roadlab')==='1'&&requested)startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.theme===requested));
+          if(BOOT_QUERY.get('taxmanlab')==='1'){
+            roadLabState.entry=false;roadLabState.direction=0;
+            if(startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='taxman'))){
+              dist=roadLabState.slot.at-15;roadScroll=dist;runDistance=dist;
+              updateJourneyRoadEvents(0);
+              player.x=player.lane=journeyNormalSide(roadLabState.slot)>0?2:0;
+              handleAction(player.lane===2?'right':'left');
+            }
+          }
           requestAnimationFrame(frame);
         }
       };

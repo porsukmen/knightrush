@@ -74,6 +74,8 @@
     const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'royal-tax-collector':Object.freeze({module:'assets/encounters/royal-tax-collector.js',symbol:'KRTaxCollector',
+          assetId:'royal-tax-collector',drawMethod:'drawConversation',opaque:true}),
         'wolf-den-forest':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenForest',
           assetId:'wolf-den-forest',drawMethod:'drawCutscene',opaque:true}),
         'wolf-den-outside':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenOutside',
