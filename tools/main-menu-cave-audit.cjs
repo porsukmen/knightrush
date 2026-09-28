@@ -2,8 +2,8 @@ const{chromium}=require('playwright'),assert=require('node:assert/strict'),fs=re
 const{pathToFileURL}=require('node:url'),root=path.resolve(__dirname,'..'),out=path.join(root,'output/main-menu-cave');
 fs.mkdirSync(out,{recursive:true});
 (async()=>{const b=await chromium.launch({channel:'msedge',headless:true});try{
- for(const[device,width,height]of [['phone',390,844],['desktop',1200,900]]){
-  const p=await b.newPage({viewport:{width,height},hasTouch:device==='phone'}),errors=[];
+ for(const[device,width,height]of [['small-phone',320,568],['phone',390,844],['desktop',1200,900]]){
+  const p=await b.newPage({viewport:{width,height},hasTouch:device!=='desktop'}),errors=[];
   p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>requestAnimationFrame=()=>0);
   await p.goto(pathToFileURL(path.join(root,'KnightRush.html')).href);
   await p.waitForFunction(()=>document.querySelector('#game')?.dataset.bootReady==='1');
@@ -14,6 +14,18 @@ fs.mkdirSync(out,{recursive:true});
   assert.equal(await run('KRMenuMapPaper.report().builds'),paper.builds,'Static parchment must not rebuild every frame');
   assert(paper.bytes<2*1024*1024,'Parchment cache must stay below 2 MiB');
   await p.screenshot({path:path.join(out,device+'-menu.png')});
+  if(device==='desktop')assert.deepEqual(await run('Array.from(g.getImageData(8,Math.floor(cvs.height/2),1,1).data)'),[5,7,12,255],'No menu painting in desktop gutters');
+  const layout=await run(`(()=>{const top=menuSheetY(),h=menuSheetHeight();return {
+   share:h/(VH+PAD_TOT),inside:[MENU_PLAY_BTN,MENU_MINIGAMES_BTN,MENU_RELIC_BTN,MENU_SETTINGS_BTN,MENU_DEBUG_BTN].every(r=>
+    r.x>=18+20&&r.x+r.w<=462-20&&r.y>=top+28&&r.y+r.h+4<=top+h-28),
+   minGap:MENU_MINIGAMES_BTN.y-MENU_PLAY_BTN.y-MENU_PLAY_BTN.h};})()`);
+  assert(layout.inside,'All controls and shadows stay inside the parchment rules');
+  assert(layout.share>=.30&&layout.share<=.36,'Menu receives roughly one third of the cover');
+  assert(layout.minGap>=16,'Action rows must breathe');
+  const hit=await run('({x:(MENU_MINIGAMES_BTN.x+MENU_MINIGAMES_BTN.w/2)*viewScale/renderDpr()+viewX/renderDpr(),y:(MENU_MINIGAMES_BTN.y+MENU_MINIGAMES_BTN.h/2)*viewScale/renderDpr()+viewY/renderDpr()})');
+  if(device==='desktop')await p.mouse.click(hit.x,hit.y);else await p.touchscreen.tap(hit.x,hit.y);
+  assert.equal(await run('mode'),'minigames','Actual input follows the repositioned button');
+  await run('mode="menu";render()');
   const before=await run('JSON.stringify([player.x,player.lane,boss,env,biome,gold,dist])');
   await run('perfNow=.9;render()');await p.screenshot({path:path.join(out,device+'-breath.png')});
   const idle=await run(`(()=>{

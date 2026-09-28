@@ -25,11 +25,11 @@
  function segment(a,b,w,colors){expSegment(a[0],a[1],b[0],b[1],w,colors[2]);expSegment(a[0]-2,a[1]-1,b[0]-2,b[1]-1,w*.76,colors[1]);expSegment(a[0]-w*.25,a[1]-1,b[0]-w*.25,b[1]-1,w*.20,colors[0]);}
  function palm(w,skin,gold,hand){
   g.save();g.translate(w[0],w[1]);g.scale(hand===0?-1:1,1);
-  P([[-11,-7],[7,-8],[12,-2],[12,10],[7,15],[-8,14],[-12,8]],skin[1]);
-  P([[-11,-7],[7,-8],[9,-2],[5,4],[-10,3]],skin[0]);
-  P([[8,-2],[12,-2],[12,10],[7,15],[-8,14],[-8,10],[7,10]],skin[2]);
-  P([[-8,-2],[-16,1],[-17,8],[-12,10],[-7,4]],skin[1]);
-  for(const x of [-5,0,5])R(x,5,1,7,skin[2]);R(3,4,4,3,gold[1]);R(3,4,3,1,gold[0]);g.restore();
+  g.translate(0,11);g.scale(1.18,1.18);g.translate(0,-11);
+  P([[-9,-3],[7,-3],[10,1],[7,11],[-9,10]],skin[1]);
+  R(-8,-3,14,3,skin[0]);
+  P([[7,0],[10,1],[7,11],[5,10],[6,2]],skin[2]);
+  for(const x of [-5,-1,3])R(x,5,.8,4.5,skin[2]);R(2,2,4,3,gold[1]);R(2,2,3,1,gold[0]);g.restore();
  }
  function pinchAmount(s){
   const shown=KRRoyalShuffleRules.caughtDisplay(s);
@@ -38,12 +38,14 @@
  }
  function cardHoldPalm(w,skin,gold,t){
   g.save();g.translate(w[0],w[1]);
+  const contact=11-5*t;g.translate(0,contact);g.scale(1.18,1.18);g.translate(0,-contact);
   const blend=(a,b)=>a.map(([x,y],i)=>[x+(b[i][0]-x)*t,y+(b[i][1]-y)*t]);
   // Merchant-style compact palm: one block, top light and narrow side plane.
   // No separate thumb or gripping fingers over the face of the card.
-  P(blend([[11,-7],[-7,-8],[-12,-2],[-12,10],[-7,15],[8,14],[12,8]],[[9,-11],[-8,-11],[-11,-7],[-11,3],[-8,6],[7,6],[11,1]]),skin[1]);
-  P(blend([[11,-7],[-7,-8],[-9,-2],[-5,4],[10,3]],[[8,-10],[-8,-10],[-10,-7],[-7,-5],[9,-5]]),skin[0]);
-  P(blend([[-8,-2],[-12,-2],[-12,10],[-7,15],[8,14],[8,10],[-7,10]],[[8,-9],[11,-5],[11,1],[7,6],[-8,6],[-8,3],[7,3]]),skin[2]);
+  P(blend([[9,-3],[-7,-3],[-10,1],[-7,11],[9,10]],[[9,-8],[-7,-8],[-10,-4],[-7,6],[9,5]]),skin[1]);
+  R(-6,-3-5*t,14,3,skin[0]);
+  P(blend([[-7,0],[-10,1],[-7,11],[-5,10],[-6,2]],[[-7,-5],[-10,-4],[-7,6],[-5,5],[-6,-3]]),skin[2]);
+  for(const x of [-3,1,5])R(x,5-5*t,.8,4.5,skin[2]);
   R(-2,-2,4,3,gold[1]);R(-2,-2,3,1,gold[0]);
   g.restore();
  }
@@ -297,26 +299,25 @@
   R(0,-PAD_TOP,480,800+PAD_TOT,KRUI.theme('court').dark);world(s);
   if(pausePhotoMode)return;
   R(0,-PAD_TOP,480,80+PAD_TOP,KRUI.theme('court').dark);T('ROYAL SHUFFLE',240,27,22);T('TWO KINGS. ONE QUEEN. WATCH THE HANDS.',240,47,9,'#c9b488');
-  button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  button(MINIGAME_BACK_BTN,'< BACK');drawPauseButton();
   KRUI.panel(g,{x:146,y:96,w:188,h:29},'court');T(s.hand?'HAND '+s.hand+' / 3':'THE VELVET FOX',240,115,12);
   T('YOU  '+s.you,85,160,12);T('FOX  '+s.dealer,397,160,12);
   for(let i=0;i<2;i++){crown(72+i*24,179,7,i<s.you?'#e9c778':'#776347');crown(384+i*24,179,7,i<s.dealer?'#e9c778':'#776347');}
   const titles={restore:'BACK ON THE TABLE',coverup:'“JUST A KING. SHALL WE?”',pocketReveal:'“LOOKING FOR THIS KING?”',memorize:'REMEMBER THE RED QUEEN',flip:'FACE DOWN',shuffle:'FOLLOW THE LADY',settle:'YOUR CALL',surprise:'“HOW DID YOU SEE THAT?”',choose:'WHERE IS THE QUEEN?',reveal:s.caught?'CAUGHT RED-HANDED':'LET US SEE…'};
-  KRUI.sheet(g,{x:16,y:535,w:448,h:792+PAD_BOT-535});
+  const full=s.phase==='intro'||s.phase==='result';
+  KRUI.sheet(g,{x:16,y:full?568:604,w:448,h:full?220:108});
   const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   paperText('BEST OF THREE',240,576,17);
-   paperText('Follow the queen. Win two hands.',240,597,11);
-   paperText('Double lifts, hand-offs, false drops. Trust the cards.',240,615,10);
-   paperText('Queen on the table? Pick it. In his pocket? Tap it.',240,633,10);
-   button(FIND_QUEEN_START_BTN,'DEAL THE CARDS');paperText('Do not fall for a king tucked into his pocket.',240,741,10);
+   paperText('BEST OF THREE',240,608,17);
+   paperText('Follow the queen. Win two hands.',240,634,12);
+   paperText('Tap her card — or his pocket if he hides her.',240,654,12);
+   button(FIND_QUEEN_START_BTN,'DEAL THE CARDS');paperText('Watch out for a king in his pocket.',240,744,12);
   }else if(s.phase==='result'){
-   paperText(s.pocketCaught?'“THAT WAS NOT SUPPOSED TO HAPPEN!”':s.caught?'CAUGHT RED-HANDED':s.won?'THE LADY IS YOURS':'A KING. NOT THE LADY.',240,577,17);
-   paperText(s.matchOver?(s.you===2?'YOU WIN THE MATCH.':'THE FOX TAKES THE MATCH.'):'YOU '+s.you+'  —  FOX '+s.dealer,240,602,12);
-   paperText(s.matchOver?'“Shall we make it another?”':'Next hand: quicker hands, same honest eyes.',240,624,10);
+   paperText(s.pocketCaught?'“HOW DID YOU SEE THAT?!”':s.caught?'CAUGHT RED-HANDED':s.won?'THE LADY IS YOURS':'A KING. NOT THE LADY.',240,610,17);
+   paperText(s.matchOver?(s.you===2?'YOU WIN THE MATCH.':'THE FOX TAKES THE MATCH.'):'YOU '+s.you+'  —  FOX '+s.dealer,240,642,12);
    button(FIND_QUEEN_REPLAY_BTN,s.matchOver?'PLAY AGAIN':'NEXT HAND');
   }else{
-   paperText(titles[s.phase]||'',240,574,15);paperText(s.notice||(s.phase==='choose'?'Tap a card · 1 / 2 / 3 · arrows + Enter':'Follow the edges, not the empty hand.'),240,594,9);
+   paperText(titles[s.phase]||'',240,646,15);paperText(s.notice||(s.phase==='choose'?'Tap a card · 1 / 2 / 3 · arrows + Enter':'Follow the cards. Watch his hands.'),240,675,12);
   }
  }finally{g.restore();}}
  window.KRRoyalShuffle={assetId:'royal-shuffle',drawCutscene,draw,world,actor,pose,materials,table,cards,card,cardState,pocketHit,camera,toScreen,toWorld};

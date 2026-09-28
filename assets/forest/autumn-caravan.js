@@ -48,12 +48,12 @@
    g.drawImage(image,(image.width-sw)/2,image.height-sh,sw,sh,0,-PAD_TOP,480,height);return true;
   }finally{g.restore();}
  }
- function button(r,label,enabled=true){KRUI.button(g,r,label,'caravan',{enabled,size:13,variant:label==='BACK TO THE ROAD'?'secondary':undefined});}
- function price(r,prefix,amount,enabled=true){button(r,'',enabled);merchantGoldLabel(amount,r.x+r.w/2,r.y+r.h/2+5,13,enabled?'#503720':'#756853',prefix,r.w-16);}
+ function button(r,label,enabled=true,role='primary'){KRUI.button(g,r,label,'caravan',{enabled,size:13,variant:role==='secondary'?'secondary':undefined});}
+ function price(r,prefix,amount,enabled=true,role='primary'){const p=KRUI.theme();button(r,'',enabled,role);merchantGoldLabel(amount,r.x+r.w/2,r.y+r.h/2+5,13,enabled?(role==='secondary'?p.onDark:p.ink):p.mutedInk,prefix,r.w-16);}
  const UI={item:i=>({x:24+i*110,y:441,w:102,h:111}),
-  buy:{x:30,y:687,w:255,h:43},reroll:{x:297,y:687,w:153,h:43},
-  addGold:{x:30,y:740,w:200,h:24},reset:{x:250,y:740,w:200,h:24},
-  leave:lab=>({x:140,y:lab?775:750,w:200,h:lab?25:36})};
+  buy:{x:40,y:650,w:245,h:36},reroll:{x:297,y:650,w:143,h:36},
+  addGold:{x:40,y:698,w:192,h:22},reset:{x:248,y:698,w:192,h:22},
+  leave:lab=>({x:140,y:lab?734:714,w:200,h:lab?26:44})};
  function withRoadFacing(draw){
   // A mild yaw towards the road (screen left), not an in-plane lean. Front
   // details move around the rounded head/belly; their side planes stay broad.
@@ -352,26 +352,25 @@
    }
    const item=s.stock[s.selected],blocked=merchantBlock(item),active=s.phase==='handoff',rerolling=s.phase==='reroll';
    R(0,583,480,217+PAD_BOT,KRUI.theme('caravan').dark);
-   KRUI.panel(g,{x:30,y:592,w:420,h:83},'caravan',{light:true});L(42,625,438,625,1,KRUI.theme('caravan').edge);
+   KRUI.sheet(g,{x:24,y:568,w:432,h:228},'caravan');
    const reveal=item.sold&&s.last===item&&(!active||s.clock>=.864);
-   smithText(merchantName(item,reveal),240,619,16,'#523b24',390);
+   smithText(merchantName(item,reveal),240,604,15,'#523b24',390);
    const desc=item.kind==='heal'?'Restore up to two hearts. Not consumed at full health.':
     item.kind==='mystery'&&!reveal?'A sealed artifact from distant lands. Reroll to change the unopened parcel.':ARTIFACT_DEFS[item.id]?.desc||'No stock left.';
-   g.fillStyle='#705437';g.font='11px monospace';g.textAlign='left';drawWrappedTooltipText(desc,47,641,386,14);
-   smithText(s.message||blocked||'Select an item, then confirm your purchase.',240,671,9,s.message?'#914e31':'#795f3f',380);
+   g.fillStyle=s.message?'#914e31':'#705437';g.font='11px monospace';g.textAlign='left';drawWrappedTooltipText(s.message||blocked||desc,47,623,386,14);
    if(active){
     const t=clamp(s.clock/1.8,0,1),arc=Math.sin(t*Math.PI);
     drawCoin(267-t*34,489-t*87-arc*38,.4,.25);
     drawMerchantProp(s.last,230+t*10,400+t*105-arc*24,.65+t*.7,t>.48,true);
-    smithText(t<.48?'"A fine choice."':'"Pleasure doing business."',240,715,13,'#ffe1a3');
+    smithText(t<.48?'"A fine choice."':'"Pleasure doing business."',240,674,13,KRUI.theme().ink);
    }else{
     if(!rerolling&&!item.sold&&!blocked)price(UI.buy,'BUY ',item.price);
     else button(UI.buy,rerolling?'NEW STOCK...':item.sold?'SOLD':'CANNOT BUY',false);
     const available=s.stock.some(p=>!p.sold&&p.kind!=='heal');
-    price(UI.reroll,'REROLL ',merchantRerollCost(),!rerolling&&available&&gold>=merchantRerollCost());
+    price(UI.reroll,'REROLL ',merchantRerollCost(),!rerolling&&available&&gold>=merchantRerollCost(),'secondary');
    }
-   if(s.lab){price(UI.addGold,'TEST +',100);button(UI.reset,'RESET TEST');}
-   button(UI.leave(s.lab),s.lab?'BACK TO DEBUG':'BACK TO THE ROAD',!active&&!rerolling);
+   if(s.lab){price(UI.addGold,'TEST +',100,true,'secondary');button(UI.reset,'RESET TEST',true,'secondary');}
+   button(UI.leave(s.lab),s.lab?'BACK TO DEBUG':'BACK TO THE ROAD',!active&&!rerolling,'secondary');
   }finally{g.restore();}
  }
  const layouts=new WeakMap();

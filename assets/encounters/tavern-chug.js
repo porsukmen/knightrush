@@ -9,7 +9,7 @@
   neutral:{skin:['#e1bc8d','#c99e72','#986c53'],shirt:['#e6d6ad','#bcaa86','#807c68'],vest:['#8d6b48','#684934','#43362e'],hair:['#b57b42','#855132','#50362a'],metal:['#dfc88b','#ad915d','#6b6350']},
   scene:{skin:['#ffd39b','#e3a174','#a16955'],shirt:['#ffe3aa','#d8c29a','#819b9e'],vest:['#cf914b','#985b35','#594135'],hair:['#e2a149','#a86430','#633e2d'],metal:['#ffe2a0','#c3ac78','#738586']}
  };
- const controlRect=Object.freeze({x:35,y:622,w:410,h:124});
+ const controlRect=Object.freeze({x:35,y:689,w:410,h:99});
  const MUG_ELEVATION=.22;
  function mugPoint(x,y,z,pitch,anchor,roll=0){
   // Rigid rotation about the rear lip, then the same slightly elevated camera.
@@ -80,14 +80,17 @@
    for(const a of [p.shoulder,p.freeShoulder]){P([[a[0]-15,a[1]-14],[a[0]+10,a[1]-16],[a[0]+19,a[1]-4],[a[0]+14,a[1]+13],[a[0]-10,a[1]+16],[a[0]-20,a[1]+3]],m.shirt[1]);P([[a[0]-15,a[1]-14],[a[0]+10,a[1]-16],[a[0]+14,a[1]-8],[a[0]-8,a[1]-6],[a[0]-15,a[1]+2]],m.shirt[0]);}
    // Both shoulder caps belong behind the moving arms, including the raised grip.
    limb(p.shoulder,p.elbow,p.wrist,m);limb(p.freeShoulder,p.freeElbow,p.freeWrist,m);
-   cut(309,402,28,21,m.skin[1]);R(310,402,24,6,m.skin[0]);for(let i=0;i<3;i++)R(315+i*6,411,2,9,m.skin[2]);
+   g.save();g.translate(322,422);g.scale(1.18,1.18);g.translate(-322,-422);
+   P([[310,406],[331,406],[335,410],[332,422],[310,421]],m.skin[1]);R(311,406,19,3,m.skin[0]);
+   P([[331,409],[335,410],[332,422],[329,421]],m.skin[2]);for(let i=0;i<3;i++)R(315+i*5,414,1,6,m.skin[2]);g.restore();
    rivalTankard(p,s.rival);
-   // Palm behind curled fingers, with thumb hooked over the upper handle.
+   // Merchant-like single palm over the handle, without individual finger
+   // sausages or a hooked thumb. The existing mug/wrist transform is unchanged.
    g.save();g.translate(...p.wrist);g.rotate(p.angle);
-   P([[-10,-7],[-3,-12],[7,-10],[10,-3],[9,12],[-5,13],[-11,6]],m.skin[2]);
-   P([[-10,-7],[-3,-12],[4,-9],[4,10],[-5,13],[-11,6]],m.skin[1]);
-   for(let i=0;i<3;i++){const y=-5+i*6;P([[-4,y],[8,y-1],[10,y+2],[7,y+5],[-3,y+5]],m.skin[1]);L([-2,y],[7,y],2,m.skin[0]);}
-   P([[-8,-8],[-3,-15],[7,-15],[11,-10],[8,-5],[4,-9],[-2,-9],[-4,-3]],m.skin[1]);L([-2,-13],[6,-13],2,m.skin[0]);g.restore();
+   g.scale(-1.18,1.18);
+   P([[-10,-8],[8,-8],[11,-4],[8,10],[-10,9]],m.skin[1]);
+   R(-9,-8,16,3,m.skin[0]);P([[8,-5],[11,-4],[8,10],[5,9],[7,-3]],m.skin[2]);
+   for(const y of[-2,2,6])R(1,y,7,.9,m.skin[2]);g.restore();
   }
   g.restore();
  }
@@ -153,7 +156,7 @@
   P([[-35,0],[-23,-10],[22,-10],[35,0],[24,12],[-24,12]],'#d6cdab');P([[-28,0],[-19,-5],[18,-5],[28,0],[18,6],[-18,6]],'#493322');
   if(remaining>.015){const inset=(1-remaining)*5;P([[-25+inset,1],[-17,-3+inset*.25],[18,-3+inset*.25],[25-inset,1],[17,5],[-17,5]],'#d9a03a');L([-21+inset,1],[20-inset,1],3+foam*5,'#fff0c4');}
   if(spill>0){P([[23,-2],[32,1],[36,20],[31,29],[29,9],[22,5]],'#edba62');cut(34,39,5,10,'#edba62');cut(30,60,4,7,'#f9d389');}
-  if(knight){cut(44,25,24,30,'#98a9ad');P([[44,25],[62,25],[68,31],[51,33],[44,42]],'#e9d6b1');P([[64,32],[68,31],[68,49],[60,55],[59,37]],'#526b76');for(let i=0;i<3;i++)L([49,35+i*6],[64,34+i*6],2,'#536976');}
+  if(knight){const k=KRJonathan.materials('daylight');cut(44,25,24,30,k.steel);P([[44,25],[62,25],[68,31],[51,33],[44,42]],k.light);P([[64,32],[68,31],[68,49],[60,55],[59,37]],k.dark);for(let i=0;i<3;i++)L([49,35+i*6],[64,34+i*6],2,k.dark);}
  }
  function table(){P([[99,402],[378,402],[510,611],[-30,611]],'#624329');P([[99,402],[378,402],[500,591],[-20,591]],'#aa783e');for(let i=1;i<6;i++)L([99+i*279/6,403],[-20+i*520/6,591],2,'#7a542f');L([99,403],[378,403],3,'#dcb273');R(0,591,480,28,'#754d2c');R(0,591,480,4,'#d4a25b');L([103,458],[83,490],2,'#c8954f');L([362,508],[379,539],2,'#91602e');}
  function playerMugPoint(p,x,y,z){
@@ -166,21 +169,21 @@
   p.sinView=Math.sin(p.pitch-MUG_ELEVATION);p.cosView=Math.cos(p.pitch-MUG_ELEVATION);p.sinRoll=Math.sin(p.roll);p.cosRoll=Math.cos(p.roll);
   p.wrist=playerMugPoint(p,54,43,-26);p.shoulder=[465,620];p.elbow=solve(p.shoulder,p.wrist,105,120,1);return p;
  }
- function player(s){const p=playerPose(s),m=s.player;
+ function player(s){const p=playerPose(s),m=s.player,k=KRJonathan.materials('daylight');
   // Jonathan's existing arm renderer, now attached to the projected handle.
-  drawSerJonathanArm(...p.shoulder.map(x=>x/U),...p.elbow.map(x=>x/U),...p.wrist.map(x=>x/U),'#8d9fa8','#a9babf','#e4d8b9',false,1,5.7);
-  L([p.elbow[0]-7,p.elbow[1]-6],[p.wrist[0]-7,p.wrist[1]-4],9,'#e0d5b7');L([p.elbow[0]+8,p.elbow[1]+5],[p.wrist[0]+7,p.wrist[1]+5],6,'#526a79');
+  drawSerJonathanArm(...p.shoulder.map(x=>x/U),...p.elbow.map(x=>x/U),...p.wrist.map(x=>x/U),k.armor,k.steel,k.light,false,1,5.7);
+  L([p.elbow[0]-7,p.elbow[1]-6],[p.wrist[0]-7,p.wrist[1]-4],9,k.light);L([p.elbow[0]+8,p.elbow[1]+5],[p.wrist[0]+7,p.wrist[1]+5],6,k.dark);
   // Opposite viewing side to Sir Chugs: pouring toward us exposes the interior.
   g.save();g.translate(...p.anchor);g.rotate(p.roll);g.scale(-p.scale/.65,p.scale/.65);rivalTankard({pitch:p.pitch,anchor:[0,0],angle:0},m,true);g.restore();
   const face=(v,c)=>P(v.map(q=>playerMugPoint(p,...q)),c);
   // Volumetric steel palm, knuckle plate and curled thumb share the mug transform.
-  face([[48,30,-16],[69,30,-16],[69,55,-16],[48,55,-16]],'#a9babf');
-  face([[48,30,-35],[69,30,-35],[69,30,-16],[48,30,-16]],'#e4d8b9');
-  face([[69,30,-35],[69,55,-35],[69,55,-16],[69,30,-16]],'#536c79');
-  face([[48,55,-35],[69,55,-35],[69,55,-16],[48,55,-16]],'#6e8590');
-  for(let i=0;i<3;i++){const y=35+i*6;face([[49,y,-15.8],[67,y,-15.8],[67,y+2,-15.8],[49,y+2,-15.8]],'#506976');face([[49,y-1,-15.7],[65,y-1,-15.7],[65,y,-15.7],[49,y,-15.7]],'#ddd5b8');}
-  face([[42,26,-17],[51,26,-17],[54,38,-17],[45,41,-17],[40,36,-17]],'#b8c4c4');
-  face([[42,26,-29],[51,26,-29],[51,26,-17],[42,26,-17]],'#eddfbc');
+  face([[48,30,-16],[69,30,-16],[69,55,-16],[48,55,-16]],k.steel);
+  face([[48,30,-35],[69,30,-35],[69,30,-16],[48,30,-16]],k.light);
+  face([[69,30,-35],[69,55,-35],[69,55,-16],[69,30,-16]],k.dark);
+  face([[48,55,-35],[69,55,-35],[69,55,-16],[48,55,-16]],k.armor);
+  for(let i=0;i<3;i++){const y=35+i*6;face([[49,y,-15.8],[67,y,-15.8],[67,y+2,-15.8],[49,y+2,-15.8]],k.dark);face([[49,y-1,-15.7],[65,y-1,-15.7],[65,y,-15.7],[49,y,-15.7]],k.light);}
+  face([[42,26,-17],[51,26,-17],[54,38,-17],[45,41,-17],[40,36,-17]],k.steel);
+  face([[42,26,-29],[51,26,-29],[51,26,-17],[42,26,-17]],k.shine);
  }
  function camera(s){const d=s.player.done,t=s.elapsed;return{roll:d*(Math.sin(t*.92)*.024+Math.sin(t*1.61)*.006),x:Math.sin(t*.81)*d*5,y:Math.cos(t*1.23)*d*3};}
  function drawCutscene(){const im=window.KREventVisuals?.peek('tavern-chug');R(-30,50,540,740,'#795b3b');if(im){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(im,-24,52,528,704);g.restore();return true;}return false;}
@@ -190,25 +193,26 @@
  function draw(){const s=drinkGame;if(!s)return;g.save();try{
   R(0,-PAD_TOP,480,800+PAD_TOT,KRUI.theme('tavern').dark);world(s);
   if(pausePhotoMode)return;
-  R(0,-PAD_TOP,480,80+PAD_TOP,KRUI.theme('tavern').dark);T('LAST MUG STANDING',240,28,22);T('SIR CHUGS-A-LOT',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  R(0,-PAD_TOP,480,80+PAD_TOP,KRUI.theme('tavern').dark);T('LAST MUG STANDING',240,28,22);T('SIR CHUGS-A-LOT',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');drawPauseButton();
   KRUI.panel(g,{x:134,y:109,w:212,h:38},'tavern');meter(147,132,186,s.rival.done,'SIR CHUGS', '#d19a58');
-  KRUI.sheet(g,{x:16,y:516,w:448,h:792+PAD_BOT-516});
+  // The scene ends at 621: never put parchment over the player's mug.
+  KRUI.sheet(g,{x:16,y:622,w:448,h:174});
   const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   paperText('ONE MUG. NO STEADY HANDS.',240,551,17);
-   ['DRAG UP to tilt your mug. DOWN to ease off.','The emptier it gets, the steeper the angle.','Too steep? Foam builds, then you spill.','Drinking makes your hand — and the room — sway.'].forEach((t,i)=>paperText(t,240,575+i*17,10));button(DRINK_START_BTN,'RAISE THE MUGS');paperText('Keyboard: UP / DOWN tilt. SPACE lowers the mug.',240,752,10);
+   paperText('ONE MUG. NO STEADY HANDS.',240,660,17);
+   paperText('Drag up / down to tilt. Release to lower.',240,682,12);
+   paperText('Stay in the sweet spot; watch the foam.',240,703,12);button(DRINK_START_BTN,'RAISE THE MUGS');
   }else if(s.phase==='result'){
-   paperText(s.result.tie?'A VERY WOBBLY DRAW.':s.result.win?'LAST MUG STANDING!':'SIR CHUGS TAKES THE ROUND.',240,565,17);
-   paperText(s.result.win?'“Was the room always doing that?”':'“Another? After the floor stops moving.”',240,591,11);paperText(s.result.time.toFixed(1)+' SECONDS  /  '+s.result.spills+' SPILLS',240,616,11);button(DRINK_REPLAY_BTN,'ANOTHER ROUND');
+   paperText(s.result.tie?'A VERY WOBBLY DRAW.':s.result.win?'LAST MUG STANDING!':'SIR CHUGS TAKES THE ROUND.',240,665,17);
+   paperText(s.result.time.toFixed(1)+' SECONDS  /  '+s.result.spills+' SPILLS',240,696,12);button(DRINK_REPLAY_BTN,'ANOTHER ROUND');
   }else{
    // Fixed HUD/control plane: no transformed hitboxes or postprocessing.
-   meter(43,578,181,s.player.done,'YOU','#dfb658',true);meter(257,578,180,s.player.foam,'FOAM','#e58e58',true);
-   const drunk=s.player.done<.18?'STEADY':s.player.done<.48?'WARMING UP':s.player.done<.76?'WOBBLY':'ROOM IS SPINNING';paperText(drunk,240,604,10,'#eac68d');
-   cut(controlRect.x,controlRect.y,controlRect.w,controlRect.h,KRUI.theme().paper);R(50,633,380,2,'#94693b');
-   paperText(s.phase==='ready'?'MUGS UP...':s.player.spillT>0?'SPILLED! EASE OFF.':s.player.held?'ADJUST YOUR TILT':'DRAG HERE TO DRINK',240,651,15);
-   const x=66,w=348,target=KRChugRules.ideal(s.player);R(x,680,w,9,'#241f19');R(x+w*Math.max(0,target-.04),676,w*.105,17,'#a5ad76');
-   const px=x+w*s.player.actual;P([[px-6,670],[px+6,670],[px,678]],'#ffdf97');R(px-1,679,2,17,'#ffdf97');paperText('LOWER    <   MUG ANGLE   >    HIGHER',240,714,10);paperText('Drag up / down · release to lower',240,735,10);
-   paperText('UP / DOWN tilt  ·  SPACE rest',240,775,10,'#bda683');
+   meter(43,660,181,s.player.done,'YOU','#dfb658',true);meter(257,660,180,s.player.foam,'FOAM','#e58e58',true);
+   const drunk=s.player.done<.18?'STEADY':s.player.done<.48?'WARMING UP':s.player.done<.76?'WOBBLY':'ROOM IS SPINNING';paperText(drunk,240,684,11);
+   cut(controlRect.x,controlRect.y,controlRect.w,controlRect.h,KRUI.theme().paper);
+   paperText(s.phase==='ready'?'MUGS UP...':s.player.spillT>0?'SPILLED! EASE OFF.':s.player.held?'ADJUST YOUR TILT':'DRAG UP / DOWN TO DRINK',240,713,14);
+   const x=66,w=348,target=KRChugRules.ideal(s.player);R(x,743,w,9,'#241f19');R(x+w*Math.max(0,target-.04),739,w*.105,17,'#a5ad76');
+   const px=x+w*s.player.actual;P([[px-6,733],[px+6,733],[px,741]],'#ffdf97');R(px-1,742,2,17,'#ffdf97');
   }
  }finally{g.restore();}}
  window.KRTavernChug={assetId:'tavern-chug',drawCutscene,draw,world,actor,pose,materials,tankard,table,player,camera,controlRect,mugPoint,playerPose,playerMugPoint};

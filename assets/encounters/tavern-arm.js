@@ -6,7 +6,7 @@
  const L=(a,b,w,c)=>expSegment(a[0],a[1],b[0],b[1],w,c);
  const T=(s,x,y,size=12,c='#edd4a0',max=430)=>smithText(s,x,y,size,c,max);
  const cut=(x,y,w,h,c)=>P([[x+6,y],[x+w-6,y],[x+w,y+6],[x+w,y+h-6],[x+w-6,y+h],[x+6,y+h],[x,y+h-6],[x,y+6]],c);
- const holdRect=Object.freeze({x:72,y:654,w:336,h:71});
+ const holdRect=Object.freeze({x:72,y:690,w:336,h:64});
  const materials={
   neutral:{skin:['#e1bc8d','#c99e72','#986c53'],leather:['#a67448','#6c4935','#403733'],fur:['#c9c2a1','#a49e84','#777d75'],hair:['#775338','#4f382d','#302f2d'],steel:['#d6dad0','#8a9b9b','#4e666d']},
   scene:{skin:['#ffd19a','#df9d69','#986953'],leather:['#d49951','#87522f','#4a3831'],fur:['#f4d293','#c2b08b','#7c9395'],hair:['#9b6837','#603a28','#354044'],steel:['#f1dbab','#a2b9b5','#536f7b']}
@@ -81,8 +81,11 @@
     // Shoulders AND upper arms clear the far table edge; no amputated elbow.
     muscle(p.shoulder,p.rivalElbow,56,m.skin);muscle(p.freeShoulder,p.freeElbow,55,m.skin);
     L([p.shoulder[0]-7,p.shoulder[1]+19],[p.shoulder[0]+4,p.shoulder[1]+35],5,m.leather[2]);
-    muscle(p.freeElbow,p.freeWrist,36,m.skin);cut(382,398,25,23,m.skin[1]);R(382,398,21,6,m.skin[0]);
-    for(let i=0;i<3;i++)R(385+i*6,412,2,7,m.skin[2]);
+    muscle(p.freeElbow,p.freeWrist,36,m.skin);
+    g.save();g.translate(393,421);g.scale(1.18,1.18);g.translate(-393,-421);
+    P([[380,404],[402,404],[406,409],[402,421],[380,420]],m.skin[1]);R(381,404,20,3,m.skin[0]);
+    P([[402,408],[406,409],[402,421],[399,420]],m.skin[2]);
+    for(let i=0;i<3;i++)R(385+i*5,413,1,6,m.skin[2]);g.restore();
     cut(p.rivalElbow[0]-17,p.rivalElbow[1]-13,34,29,m.skin[1]);
     muscle(p.rivalElbow,p.grip,42,m.skin);
     const cuff=[p.rivalElbow[0]+(p.grip[0]-p.rivalElbow[0])*.70,p.rivalElbow[1]+(p.grip[1]-p.rivalElbow[1])*.70];
@@ -103,8 +106,7 @@
  }
  function knightMaterials(lit=true){
   // Jonathan's existing steel palette; only this room adds warm/cool reflected light.
-  const base={armor:'#919da7',dark:'#4b5966',light:'#c4ced5',steel:'#aebbc5',shine:'#edf4f7'};
-  return lit?{armor:mixCol(base.armor,'#e7b984',.14),dark:mixCol(base.dark,'#496c7b',.16),light:mixCol(base.light,'#ffdda1',.22),steel:mixCol(base.steel,'#e9bd86',.12),shine:mixCol(base.shine,'#ffe5b6',.20)}:base;
+  return KRJonathan.materials(lit?'daylight':'neutral');
  }
  function player(s,lit=true){
   const p=pose(s),m=lit?materials.scene:materials.neutral,k=knightMaterials(lit);
@@ -129,38 +131,45 @@
   for(let i=0;i<3;i++){L([87,496+i*6],[104,496+i*6],3,k.dark);L([87,494+i*6],[103,494+i*6],1.5,k.light);}
   // One interlocked grip. Both wrists terminate at this same attachment.
   g.save();g.translate(...p.grip);g.rotate(p.angle*.72);
-  P([[-20,-14],[-12,-24],[4,-23],[14,-10],[12,19],[-3,25],[-20,11]],m.skin[2]);
-  P([[-20,-14],[-12,-24],[-3,-23],[3,-9],[-2,15],[-17,12]],m.skin[1]);
-  P([[-3,-20],[11,-23],[23,-13],[24,5],[17,23],[6,27],[-6,14],[-7,-3]],k.steel);
-  P([[-3,-20],[11,-23],[23,-13],[17,-9],[6,-12],[-6,-3]],k.light);
-  P([[20,-10],[24,5],[17,23],[6,27],[7,19],[16,12]],k.dark);
-  for(let i=0;i<3;i++){L([8,-5+i*7],[18,-3+i*7],2,k.dark);L([8,-7+i*7],[18,-5+i*7],1.5,k.shine);}
-  // Opponent's fingers curl around the outside of our palm; thumb crosses above.
-  for(let i=0;i<3;i++){const y=-12+i*8;P([[-20,y],[-14,y-4],[-4,y-2],[1,y+3],[-3,y+6],[-15,y+5]],m.skin[1]);L([-16,y],[-6,y+1],2,m.skin[0]);}
-  P([[-6,-22],[0,-27],[8,-24],[14,-13],[11,-5],[5,-8],[1,-15],[-6,-17]],k.steel);
-  L([0,-23],[5,-20],3,k.light);L([6,-16],[10,-13],2,k.dark);g.restore();
+  g.scale(1.18,1.18);
+  // Two compact overlapping palm blocks at the shared grip. Finger marks stay
+  // inside their silhouette; no bulbous fingers or protruding thumb pieces.
+  // Mirror only the rival palm, not the shared grip/knight attachment.
+  g.save();g.translate(-13,0);g.scale(-1,1);
+  P([[-18,-16],[-2,-17],[5,-11],[4,16],[-3,20],[-18,16]],m.skin[2]);g.restore();
+  P([[-3,-15],[13,-15],[19,-9],[17,17],[11,21],[-4,16]],k.steel);
+  P([[-3,-15],[13,-15],[19,-9],[15,-6],[-3,-10]],k.light);
+  P([[15,-7],[19,-9],[17,17],[11,21],[11,16]],k.dark);
+  for(const y of[-3,4,11])R(9,y,7,1.2,k.dark);
+  g.save();g.translate(-15,0);g.scale(-1,1);
+  P([[-18,-14],[-3,-14],[3,-9],[1,15],[-4,19],[-18,16]],m.skin[1]);
+  R(-17,-14,13,3,m.skin[0]);
+  P([[0,-9],[3,-9],[1,15],[-4,19],[-5,15],[-1,12]],m.skin[2]);
+  for(const y of[-4,3,10])R(-9,y,9,1.2,m.skin[2]);g.restore();g.restore();
  }
  function drawCutscene(){R(0,-PAD_TOP,480,800+PAD_TOT,'#30231c');const im=window.KREventVisuals?.peek('tavern-arm');if(im){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(im,0,80,480,640);g.restore();return true;}R(0,80,480,640,'#75543a');return false;}
  function button(r,label,active=false){KRUI.button(g,r,label,'tavern',{selected:active,size:15,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
  function draw(){const s=armWrestleGame;if(!s)return;g.save();try{
   drawCutscene();actor(true,'body',s);table();actor(true,'front',s);player(s);
   if(pausePhotoMode)return;
-  R(0,-PAD_TOP,480,81+PAD_TOP,'#2d231c');T('OAKBREAKER',240,29,23);T('STRONG ARMS. LOUD MOUTH.',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  R(0,-PAD_TOP,480,81+PAD_TOP,'#2d231c');T('OAKBREAKER',240,29,23);T('STRONG ARMS. LOUD MOUTH.',240,49,10,'#cbb38b');button(MINIGAME_BACK_BTN,'< BACK');drawPauseButton();
   const text=s.phase==='intro'?'“Careful. I charge extra for splinters.”':s.phase==='result'?(s.result.win?'“Fine. That one counts.”':'“Other arm next time?”'):s.cue==='windup'?'HE SETS HIS SHOULDER...':s.cue==='surge'?'HOLD YOUR GROUND.':s.cue==='recover'?'HIS GRIP SOFTENS — PUSH!':'He sizes you up.';
   KRUI.panel(g,{x:47,y:112,w:386,h:31},'tavern');T(text,240,132,12,'#eed8ae');
-  KRUI.sheet(g,{x:16,y:516,w:448,h:792+PAD_BOT-516});
+  // Keep the near elbow and knight's forearm above the UI boundary.
+  KRUI.sheet(g,{x:16,y:622,w:448,h:174});
   const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   paperText('OUTLAST THE BRAGGART',240,554,18);
-   ['HOLD to push. RELEASE to catch your breath.','Watch his shoulder: a heavy surge is coming.','Push as he relaxes for a strong counter.','Constant pushing burns you out.'].forEach((t,i)=>paperText(t,240,579+i*17,10));button(ARM_WRESTLE_START_BTN,'LOCK HANDS');
+   paperText('OUTLAST THE BRAGGART',240,660,17);
+   paperText('Hold to push. Release to recover stamina.',240,682,12);
+   paperText('Rest through his surge; push as he relaxes.',240,703,12);button(ARM_WRESTLE_START_BTN,'LOCK HANDS');
   }else if(s.phase==='result'){
-   paperText(s.result.win?'YOU BROKE HIS STREAK.':'THE OAK STILL BELONGS TO HIM.',240,573,17);
-   paperText(Math.round(s.result.time)+' SECONDS  /  '+s.result.counters+' COUNTERS',240,604,12);button(ARM_WRESTLE_REPLAY_BTN,'REMATCH');
+   paperText(s.result.win?'YOU BROKE HIS STREAK.':'THE OAK STILL BELONGS TO HIM.',240,665,17);
+   paperText(Math.round(s.result.time)+' SECONDS  /  '+s.result.counters+' COUNTERS',240,696,12);button(ARM_WRESTLE_REPLAY_BTN,'REMATCH');
   }else{
-   paperText('YOUR STAMINA',240,608,10);KRUI.panel(g,{x:75,y:618,w:330,h:14},'tavern');
-   R(79,621,322*s.energy,8,s.energy<.22?'#d57f51':'#d8bd79');
-   const label=s.phase==='ready'?(s.phaseT<.7?'ELBOWS DOWN...':'READY...'):s.phase==='pinning'?'DOWN!':s.held?'PUSHING — RELEASE TO REST':'HOLD TO PUSH';
-   button(holdRect,label,s.held);paperText(s.counterT>0?'COUNTER!':s.energy<.22?'BREATHE. YOU ARE LOSING STRENGTH.':'Release during his surge. Catch his recovery.',240,754,11);
+   paperText('YOUR STAMINA',240,657,12);KRUI.panel(g,{x:75,y:666,w:330,h:14},'tavern');
+   R(79,669,322*s.energy,8,s.energy<.22?'#d57f51':'#d8bd79');
+   const label=s.phase==='ready'?(s.phaseT<.7?'ELBOWS DOWN...':'READY...'):s.phase==='pinning'?'DOWN!':s.counterT>0?'COUNTER!':s.energy<.22?'LOW STAMINA — RELEASE':s.held?'PUSHING — RELEASE TO REST':'HOLD / SPACE TO PUSH';
+   button(holdRect,label,s.held);
   }
  }finally{g.restore();}}
  window.KRTavernArm={assetId:'tavern-arm',drawCutscene,draw,actor,pose,materials,table,player,knightMaterials,holdRect};

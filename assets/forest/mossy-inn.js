@@ -314,13 +314,13 @@
     const ca=[e[0]-dx/len*5,e[1]-dy/len*5],cb=[e[0]+dx/len*3,e[1]+dy/len*3];
     S(ca,cb,22,shirt[1]);S(ca,cb,7,shirt[0],-6.5,-1);
     S([cb[0]-dx/len*1.6,cb[1]-dy/len*1.6],cb,22,shirt[2]);
-    g.save();g.translate(...w);
-    // Palm-down knuckle block and attached inward thumb; all follow the wrist.
-    P([[-8,-5],[6,-5],[9,-1],[10,6],[6,9],[-7,8],[-10,4]],skin[1]);
-    P([[-8,-5],[6,-5],[8,-1],[5,2],[-8,1]],skin[0]);
-    P([[-7,5],[7,5],[10,3],[10,6],[6,9],[-7,8]],skin[2]);
-    P([[-side*6,-3],[-side*11,-1],[-side*13,3],[-side*10,5],[-side*6,1]],skin[1]);
-    for(const fx of [-4,0,4])R(fx,2,1,4,skin[2]);
+    g.save();g.translate(...w);g.scale(side,1);
+    g.translate(0,9);g.scale(1.18,1.18);g.translate(0,-9);
+    // Same shallow palm as the merchant; fingers read without a thumb bulge.
+    P([[-8,-2],[6,-2],[9,2],[6,9],[-8,8]],skin[1]);
+    R(-7,-2,12,2.5,skin[0]);
+    P([[6,1],[9,2],[6,9],[4,8],[5,2]],skin[2]);
+    for(const fx of [-4.5,-1,2.5])R(fx,4,.8,4,skin[2]);
     g.restore();
    }
   };
@@ -411,8 +411,8 @@
   if(action==='tap'&&pt&&pointInRect(pt,UI.keeper))return 3;
   return roadServiceChoice(action,pt);
  }
- function button(r,label,price=null,enabled=true){
-  const p=KRUI.theme('tavern');KRUI.button(g,r,price===null?label:'','tavern',{enabled,size:13,variant:label==='BACK TO THE ROAD'?'secondary':undefined});
+ function button(r,label,price=null,enabled=true,role='primary'){
+  const p=KRUI.theme('tavern');KRUI.button(g,r,price===null?label:'','tavern',{enabled,size:13,variant:role==='secondary'?'secondary':undefined});
   if(price!==null){smithText(label,r.x+r.w/2,r.y+20,13,enabled?p.ink:p.mutedInk,r.w-20);merchantGoldLabel(price,r.x+r.w/2,r.y+39,11,enabled?p.ink:p.mutedInk,'',90);}
  }
  function drawScene(lit=true){
@@ -439,7 +439,7 @@
   button(ROAD_SERVICE_BUTTONS[0],context.inn.rested?'WELL RESTED':'A ROOM AND A HOT MEAL, PLEASE',18+loop*4,!context.inn.rested&&player.currentHealthUnits<player.maxHealthUnits&&gold>=18+loop*4);
   button(ROAD_SERVICE_BUTTONS[1],'ANY GAMES GOING?',5,gold>=5);
   smithText(context.notice||'"Beds are ready. The regulars need another player."',240,679,11,KRUI.theme().paperSoft,422);
-  button(ROAD_SERVICE_BUTTONS[2],'BACK TO THE ROAD');
+  button(ROAD_SERVICE_BUTTONS[2],'BACK TO THE ROAD',null,true,'secondary');
  }
  window.KRMossyInn={assetId:'mossy-inn',drawCutscene,drawScene,drawInterior,keeper,keeperPose,keeperMaterials,choice,site,layout,queueView,floorDetails,pavingColors,hazard,UI};
 })();

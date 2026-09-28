@@ -10,24 +10,34 @@
 <body><main>
 <div class="eyebrow">KNIGHT RUSH / UI REFERENCE</div><h1>UI Lab <span style="color:#c5aa79">· Treasure Chest</span></h1>
 <p>Bağımsız referans dosyası. Oyun motoru, kayıtlar, minigame ve arka planlar yüklenmez.</p>
-<nav aria-label="Referans görünümü"><button data-view="components" aria-pressed="true">Treasure · Onaylı</button><button data-view="lock" aria-pressed="false">Kilit</button><button data-view="loot" aria-pressed="false">Loot / Parşömen</button><button data-view="system" aria-pressed="false">Uyarlama</button><button data-view="states" aria-pressed="false">Durumlar</button></nav>
+<nav aria-label="Referans görünümü"><button data-view="system" aria-pressed="true">Güncel sistem · v3</button><button data-view="states" aria-pressed="false">Düğme durumları</button><button data-view="components" aria-pressed="false">Treasure · Orijinal</button><button data-view="lock" aria-pressed="false">Kilit · Orijinal</button><button data-view="loot" aria-pressed="false">Loot · Orijinal</button></nav>
 <div class="controls" id="theme-controls"><label>Tek UI paleti <select id="theme"><option value="treasure">Treasure · Klasik kahverengi</option></select></label><label><input type="checkbox" id="gray">Gri ton kontrolü</label></div>
 <div class="controls" id="lock-controls" hidden><label>Örnek durum <select id="lock-state"><option value="intro">Başlangıç</option><option value="playing">Oynarken</option><option value="broken">Başarısız</option></select></label><label>Zorluk <select id="difficulty"><option>EASY</option><option>NORMAL</option><option selected>HARD</option><option>MASTER</option></select></label></div>
 <div class="controls" id="loot-controls" hidden><label><input type="checkbox" id="claimed">Ödül alındı</label></div>
 <div class="layout"><section><div class="stage"><canvas id="reference" width="960" height="1080" role="img" aria-label="Treasure UI bileşenleri"></canvas></div><p class="caption" id="caption">Mevcut Treasure UI’den panel, başlık ve buton örnekleri.</p></section>
-<aside><h2>Treasure paleti</h2><div class="swatches" id="swatches"></div><h2 style="margin-top:24px">Referansın kapsamı</h2><p>Kesik köşeler, koyu taban gölgesi, ince üst ışık çizgisi; krem panel üzerine sıcak kahverengi monospace yazı.</p><p>Onaylı Treasure örneğinin kaynağı: <a href="assets/forest/treasure-road.js">treasure-road.js</a> içindeki <code>button</code>, <code>heading</code>, <code>sheet</code>, <code>drawGame</code> ve <code>drawLoot</code>.</p><p>Treasure sekmeleri onaylı örneği korur; Uyarlama sekmesi bu tek kaynaktan türetilen adayları gösterir. Lab oyundan bağımsızdır; sonraki oyun değişiklikleri bu referansı otomatik değiştirmez. Mekanik kilit, sandık, karakter ve cutscene resmi UI referansına dahil değildir.</p><button id="export">UI örneğini PNG kaydet</button></aside></div>
+<aside><h2>Treasure paleti</h2><div class="swatches" id="swatches"></div><h2 style="margin-top:24px">Güncel malzeme dili</h2><p>Saf beyaz değil sıcak krem. Kesik köşeler, ince üst ışık, açık kahverengi alt kenar ve normal düğmelerde bunun altında koyu taban gölgesi. Kalın kontur, gradyan veya mekâna göre renk değişimi yok.</p><p>Parşömenin üst ve alt kenarı simetrik: açık çizgi, ince kahverengi çizgi ve iki küçük baklava nokta. Yazılar ve düğmeler iki uçtan en az 28 birim içeride; düğmelerin gölgesi de kâğıdın içinde kalır.</p><p>Seçili düğme normal krem düğmeyle aynı alt kenarı kullanır. Seçilince yüzey 2 birim oturur, koyu taban gölgesi tamamen kaybolur ve yazının altında ortalanmış, açık kahverengi ince konturlu, içi boş küçük bir baklava belirir; dış seçim çerçevesi yoktur. Pasif düğmenin üst ışığı sönük açık tondur, alt kenarı kahverengi kalır.</p><button id="export">UI örneğini PNG kaydet</button></aside></div>
+<section aria-labelledby="button-rules"><h2 id="button-rules">Düğme renkleri ne anlatır?</h2>
+<dl>
+<dt><strong>Krem · ana eylem</strong></dt><dd>PLAY, CONTINUE, BUY, ödül toplama veya test başlatma. Eşdeğer seçeneklerin tamamı aynı renkte olabilir; renk seçeneklerden birinin daha doğru olduğunu söylemez.</dd>
+<dt><strong>Koyu kahverengi · yardımcı eylem</strong></dt><dd>BACK, SETTINGS, PAUSE, REROLL, menüye dönüş ve ek araçlar. Bir ekrandaki birincil ilerleme eylemi CONTINUE ise krem; geri dönmek için BACK yardımcıysa kahverengidir. Karar sadece yazıya değil işlevine göre verilir.</dd>
+<dt><strong>Seçenek / sekme grubu</strong></dt><dd>Seçilmemiş seçenek kahverengi; seçili seçenek krem, hafif basılı ve içi boş açık kahverengi baklava işaretlidir. Seçilmiş olmak ile klavye/gamepad odağı farklıdır (FOCUSED örneği): odak malzeme rengini değiştirmez, yalnızca açık dış çerçeve ekler.</dd>
+<dt><strong>Soluk kahverengi · kullanılamaz</strong></dt><dd>Yetersiz para, tamamlanmış veya kilitli işlem. Sebep metinle de anlaşılmalı. Seçim/odak işareti gösterilmez; tıklamayı kapatmak çizicinin değil çağıran ekranın sorumluluğudur.</dd>
+<dt><strong>Başarı / tehlike / uyarı</strong></dt><dd>Yeşil, kırmızı ve sarı yalnızca anlamlı durum metni veya işareti içindir. Mekâna göre tüm düğme paleti değişmez. Renk tek başına mesaj taşımaz.</dd>
+</dl><h2>Event durumlarına uygulama</h2><p>Kamp: dinlenmeden ayrılmak kahverengi, dinlenirken pasif, dinlenme sonrası yola devam krem. Loot: ödül bırakıp çıkmak kahverengi, toplama sonrası CONTINUE krem. Merchant: BUY krem; REROLL ve çıkış kahverengi. Inn: dinlenme ve oyun eşdeğer krem hizmetler, çıkış kahverengi. Forge: yükseltme / sonucu alma krem, çıkış kahverengi.</p><p>Tax Collector: ödeme ve meydan okuma eşdeğer krem seçenekler; konuşma veya mühür oyunu bitince tek devam eylemi krem. Wolf Den: takip / giriş / besleme krem, vazgeçme kahverengi; sonuç sonrası tek dönüş krem. Duke ve sandık zorluğu: seçili değer krem, diğer tıklanabilir değerler kahverengi; gri yalnızca gerçekten kullanılamayan seçenek.</p><p>Ana menüde PLAY krem; diğer araçlar kahverengi. Minigamelerde başlat / tekrar / sonraki el krem, geri / pause kahverengi. Pause menüsünde screenshot ve settings yardımcı araçlardır: sırf bir düğme öne çıksın diye krem yapılmaz. Eski, erişilmeyen prototip ekranları bu kontrolün kapsamı değildir.</p></section>
 <section aria-labelledby="approved-ui"><h2 id="approved-ui">Tek onaylı referans · Treasure Chest</h2>
 <p>Tek onaylı UI referansı Treasure Chest. Tavern ve minigame UI referans kapsamından çıkarıldı; karakter ve cutscene onayları değişmedi. Tüm mekânlarda aynı klasik kahverengi ve parşömen malzemesi kullanılır.</p>
-<p>Onaylı Treasure bileşenleri, kilit ve loot örnekleri korunur. Uyarlama sekmesi yeni kullanım örneğidir; otomatik onaylı değildir. Sabit örnek: <a href="art-source/knight-rush-ui/ui-specimen-treasure-v2.js">Treasure specimen v2</a>. <a href="assets/ui/knight-rush-ui.js">Üretim bileşenleri</a> · <a href="art-source/knight-rush-ui/migration.md">Kapsam</a>. Lab oyun çalıştırmaz ve üretim değişiklikleriyle otomatik güncellenmez.</p></section>
+<p>Güncel sistem sekmesi, kullanıcının yerleşmiş UI stilini belgeleme isteğiyle 28 Eylül 2026'da alınan <a href="art-source/knight-rush-ui/ui-specimen-classic-v3.js">bağımsız v3 örneğini</a> gösterir: simetrik alt süs, mevcut palet ve düzeltilmiş seçim kenarı. Seçim görünümü kullanıcının onayladığı basılı yüzey + baklava fikrine göre açıkça güncellendi; pasif üst ışık da düzeltildi. <a href="art-source/knight-rush-ui/ui-specimen-treasure-v2.js">Orijinal Treasure v2</a> değiştirilmeden ayrı sekmelerde korunur. <a href="assets/ui/knight-rush-ui.js">Üretim bileşenleri</a> · <a href="art-source/knight-rush-ui/migration.md">Kapsam</a>. Lab oyun çalıştırmaz; iki sabit örnek de üretim değişiklikleriyle otomatik güncellenmez.</p></section>
 <footer>Yalnızca referans · Kontroller örnek durumları değiştirir; oyun ekonomisine veya kayıtlarına erişmez.</footer>
 </main>
 <script src="art-source/knight-rush-ui/ui-specimen-treasure-v2.js"></script>
+<script src="art-source/knight-rush-ui/ui-specimen-classic-v3.js"></script>
 <script>
 // Standalone specimen of the existing Treasure UI. Deliberately no game imports,
 // iframe, network request, RAF, storage, or runtime coupling. Recheck the named
 // production helpers when explicitly updating this reference, not automatically.
 (()=>{'use strict';
- const canvas=document.getElementById('reference'),g=canvas.getContext('2d');let view='components';
+ const KRUI=globalThis.KRUIClassicSpecimen;
+ const canvas=document.getElementById('reference'),g=canvas.getContext('2d');let view='system';
  const colors=[['Panel','#ddc79b'],['Buton','#e8d6ab'],['Üst ışık','#fff0cd'],['Alt kenar','#a8824a'],['Yazı','#493323'],['Yardım metni','#725839'],['Pasif','#b2a185'],['Taban','#30241e'],['Gölge','#1f1713']];
  document.getElementById('swatches').innerHTML=colors.map(([name,color])=>`<div class="swatch"><i style="background:${color}"></i>${name}<code>${color}</code></div>`).join('');
  const P=(points,color)=>{g.fillStyle=color;g.beginPath();points.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();};
@@ -49,16 +59,20 @@
   document.getElementById('theme-controls').hidden=!modern;canvas.style.filter=document.getElementById('gray').checked?'grayscale(1)':'none';
   const height=modern?620:view==='components'?540:view==='loot'?540:510;canvas.width=960;canvas.height=height*2;g.scale(2,2);R(0,0,480,height,modern?p.dark:'#28201c');
   document.querySelector('aside h2').textContent=modern?p.label+' paleti':'Treasure paleti';
-  document.getElementById('swatches').innerHTML=(modern?['dark','panel','paper','ink','light','edge','accent','soft'].map(k=>[k,p[k]]):colors).map(([name,color])=>`<div class="swatch"><i style="background:${color}"></i>${name}<code>${color}</code></div>`).join('');
+  document.getElementById('swatches').innerHTML=(modern?['dark','panel','sheet','paper','ink','light','edge','shadow','onDark','paperSoft','muted','mutedInk'].map(k=>[k,p[k]]):colors).map(([name,color])=>`<div class="swatch"><i style="background:${color}"></i>${name}<code>${color}</code></div>`).join('');
   document.getElementById('lock-controls').hidden=view!=='lock';document.getElementById('loot-controls').hidden=view!=='loot';
   for(const b of document.querySelectorAll('[data-view]'))b.setAttribute('aria-pressed',String(b.dataset.view===view));
   if(modern){
    const tx=(s,y,size=13,col=p.onDark)=>KRUI.text(g,s,240,y,size,col,428),btn=(x,y,w,h,s,o={})=>KRUI.button(g,{x,y,w,h},s,id,o);
    KRUI.heading(g,{x:24,y:24,w:432,h:52},'KNIGHT RUSH / TREASURE',id,20);
    if(view==='system'){
-    tx('Tek referans · Klasik kahverengi / parşömen',109,12,p.soft);
-    KRUI.panel(g,{x:28,y:137,w:424,h:139},id,{light:true});tx('PANEL / TYPOGRAPHY',172,18,p.ink);tx('Ana işlem açık; yardımcı işlem koyu.',201,12,p.ink);tx('Sahne ve karakter paleti bu sistemden bağımsız.',230,10,p.ink);
-    btn(48,305,384,49,'CONTINUE');btn(48,373,384,49,'BACK TO THE ROAD',{variant:'secondary'});btn(48,441,384,49,'COLLECTED',{enabled:false});btn(48,509,384,49,'SELECTED',{selected:true});
+    tx('Klasik kahverengi / simetrik parşömen',109,12,p.soft);
+    KRUI.sheet(g,{x:28,y:137,w:424,h:454});tx('TEK MALZEME / NET ROLLER',183,18,p.ink);tx('Ana eylem krem; yardımcı eylem kahverengi.',205,11,p.paperSoft);
+    btn(48,229,384,46,'CONTINUE');
+    btn(48,300,184,44,'ROADS',{variant:'secondary'});btn(248,300,184,44,'ENEMIES',{variant:'secondary',selected:true});
+    btn(48,370,184,44,'BACK',{variant:'secondary'});btn(248,370,184,44,'SETTINGS',{variant:'secondary'});
+    btn(48,440,184,44,'UNAVAILABLE',{enabled:false});btn(248,440,184,44,'FOCUSED',{variant:'secondary',focus:true});
+    tx('Alt kenar seçilince de aynı malzemede kalır.',529,11,p.paperSoft);tx('Süs ve içerik arasında en az 28 birim.',549,10,p.paperSoft);
    }else{
     for(const [i,[name,color]] of Object.entries(KRUI.semantic).entries()){KRUI.panel(g,{x:28,y:104+i*70,w:424,h:55},id);tx(name.toUpperCase()+' / SABİT ANLAM',138+i*70,14,color);}
     btn(28,404,202,48,'AVAILABLE');btn(250,404,202,48,'UNAVAILABLE',{enabled:false});btn(28,478,202,48,'SELECTED',{selected:true});btn(250,478,202,48,'SECONDARY',{variant:'secondary'});tx('Renk tek başına durum anlatmaz: metin + kenarlık.',566,11,p.soft);
@@ -78,7 +92,7 @@
    // Textual amount, intentionally no new coin/icon design in this UI-only lab.
    text('80',108,297,21,'#674421');text(claimed?'Safely in your purse.':'Tap the reward to collect it.',240,355,11,'#725839');button(108,434,264,50,claimed?'CONTINUE':'LEAVE WITHOUT LOOT');text('1: TAKE  /  ENTER: CONTINUE',240,506,10,'#725839');
   }
-  const caption=modern?'Treasure uyarlaması · inceleme bekliyor. Tek referans: Treasure Chest; kahverengi ve parşömen.':view==='components'?'Onaylı Treasure UI bileşenleri.':'Onaylı Treasure örneği; sahne alanı bilerek boş.';document.getElementById('caption').textContent=caption;canvas.setAttribute('aria-label',modern?p.label+' '+view+' UI örneği':'Treasure '+view+' UI örneği');
+  const caption=modern?'Güncel klasik sistem · bağımsız v3 örneği. Seçim: basılı yüzey + baklava; odak: klavye/gamepad hedefi.':view==='components'?'Orijinal onaylı Treasure UI bileşenleri · v2 korunuyor.':'Orijinal onaylı Treasure örneği; sahne alanı bilerek boş.';document.getElementById('caption').textContent=caption;canvas.setAttribute('aria-label',modern?p.label+' '+view+' UI örneği':'Treasure '+view+' UI örneği');
  }
  for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{view=b.dataset.view;render();};
  for(const id of ['lock-state','difficulty','claimed','theme','gray'])document.getElementById(id).onchange=render;

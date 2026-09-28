@@ -74,7 +74,10 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
    assert.equal(await run('mode'),'journeyevent');await shot('victory-'+index);
    assert.deepEqual(await run('({gold,scrap})'),wallet,'no automatic payout');
    const materials=await run('journeyRoadEventSession.context.loot.entries[1].amount');
-   await tap(240,518);await tap(240,518);await tap(240,612);await tap(240,612);
+   for(let i=0;i<2;i++){
+    const r=await run(`journeyLootRewardRect(journeyRoadEventSession.context,${i})`);
+    await tap(r.x+r.w/2,r.y+r.h/2);await tap(r.x+r.w/2,r.y+r.h/2);
+   }
    assert.equal(await run('gold'),wallet.gold+12);assert.equal(await run('scrap'),wallet.scrap+materials);
    await tap(240,734);
    assert.equal(await run('mode'),'run');assert.equal(await run('hasCombatAlly()'),false);
@@ -108,7 +111,9 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await phoneRun('startRoadLabCase(8);dist=roadLabState.slot.at;updateJourneyRoadEvents(0);boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);update(.25);render();');
   await phone.screenshot({path:path.join(out,'fight-loot-phone-dpr2.png')});
   const phoneMaterial=await phoneRun('scrap+journeyRoadEventSession.context.loot.entries[1].amount');
-  await phoneTap(240,612);await phoneTap(240,612);assert.equal(await phoneRun('scrap'),phoneMaterial);
+  const materialRect=await phoneRun('journeyLootRewardRect(journeyRoadEventSession.context,1)');
+  await phoneTap(materialRect.x+materialRect.w/2,materialRect.y+materialRect.h/2);
+  await phoneTap(materialRect.x+materialRect.w/2,materialRect.y+materialRect.h/2);assert.equal(await phoneRun('scrap'),phoneMaterial);
   await phone.keyboard.press('1');assert.equal(await phoneRun('gold'),192);
   await phone.keyboard.press('Enter');assert.equal(await phoneRun('mode'),'run');
   await phoneRun('startRoadLabCase(0);dist=roadLabState.slot.at;updateJourneyRoadEvents(0);scrap=0;');

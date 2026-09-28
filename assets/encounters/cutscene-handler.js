@@ -74,6 +74,10 @@
     const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'rest-camp':Object.freeze({module:'assets/encounters/rest-camp.js',symbol:'KRRestCamp',
+          assetId:'rest-camp',drawMethod:'drawCutscene',opaque:true}),
+        'fight-loot':Object.freeze({module:'assets/encounters/fight-loot.js',symbol:'KRFightLoot',
+          assetId:'fight-loot',drawMethod:'drawCutscene',opaque:true}),
         'royal-tax-collector':Object.freeze({module:'assets/encounters/royal-tax-collector.js',symbol:'KRTaxCollector',
           assetId:'royal-tax-collector',drawMethod:'drawConversation',opaque:true}),
         'wolf-den-forest':Object.freeze({module:'assets/encounters/wolf-den.js',symbol:'KRWolfDenForest',

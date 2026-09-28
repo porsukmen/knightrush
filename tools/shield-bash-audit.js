@@ -116,7 +116,8 @@
   damagePlayer('INVULNERABLE AUDIT',false,2);godMode=priorGod;
   assert('invulnerabilityDoesNotSpend',player.shieldCharges===2&&player.currentHealthUnits===invulnHealth);
   fresh(2);godMode=false;damagePlayer('EXECUTION AUDIT',true,2);godMode=priorGod;
-  assert('executionStillBypassesShields',player.shieldCharges===2&&!player.alive);
+  assert('executionBypassesShieldsAndClearsBattleCharges',player.shieldCharges===0&&
+    player.volatileShieldCharges===0&&!player.alive);
   const savedLab=healthLabState;healthLabState={maxHearts:4,currentUnits:unit*4,
     shieldCharges:1,damageMultiplier:2};healthLabApplyHit();
   assert('healthLabMatchesCombat',healthLabState.shieldCharges===0&&healthLabState.currentUnits===unit*3);

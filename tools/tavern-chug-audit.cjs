@@ -10,11 +10,11 @@ for(const hz of [30,60,120,165]){const s=simulate('smart',19,hz);assert(s.result
   await p.addInitScript(phone=>{requestAnimationFrame=()=>0;Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>phone?4:8});Object.defineProperty(navigator,'deviceMemory',{get:()=>phone?4:8});},device==='phone');
   await p.goto(pathToFileURL(path.join(root,'KnightRush.html')).href+'?chuglab=1');await p.waitForFunction(()=>window.KRTavernChug&&KREventVisuals.peek('tavern-chug'));
   const run=code=>p.evaluate(code=>(0,eval)(code),code),shot=async name=>{await run('shakeT=0;render()');await p.screenshot({path:path.join(out,device+'-'+name+'.png')});};
-  const xy=(x,y)=>run(`({x:(${x}*viewScale+viewX)/renderDpr(),y:(${y}*viewScale+viewY)/renderDpr()})`);
+  const xy=(x,y)=>run(`({x:((${x})*viewScale+viewX)/renderDpr(),y:((${y})*viewScale+viewY)/renderDpr()})`);
   await run('SFX.setTestMuted(true)');await shot('intro');
-  const start=await xy(240,684);await p.touchscreen.tap(start.x,start.y);assert.equal(await run('drinkGame.phase'),'ready');await run('for(let i=0;i<90;i++)updateDrinkingContest(1/60)');assert.equal(await run('drinkGame.phase'),'playing');
+  const start=await xy('DRINK_START_BTN.x+DRINK_START_BTN.w/2','DRINK_START_BTN.y+DRINK_START_BTN.h/2');await p.touchscreen.tap(start.x,start.y);assert.equal(await run('drinkGame.phase'),'ready');await run('for(let i=0;i<90;i++)updateDrinkingContest(1/60)');assert.equal(await run('drinkGame.phase'),'playing');
   // Actual pointer path. Drag up, release, touch cancellation and pause cancellation.
-  const a=await xy(240,715),z=await xy(240,650);
+  const a=await xy(240,'KRTavernChug.controlRect.y+85'),z=await xy(240,'KRTavernChug.controlRect.y+20');
   await p.mouse.move(a.x,a.y);await p.mouse.down();await p.mouse.move(z.x,z.y,{steps:6});assert((await run('drinkGame.aim'))>.29);assert(await run('drinkGame.player.held'));await run('for(let i=0;i<100;i++)updateDrinkingContest(1/60)');assert((await run('drinkGame.player.done'))>0);await p.mouse.up();assert.equal(await run('drinkGame.player.held'),false);
   const cdp=await p.context().newCDPSession(p);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:a.x,y:a.y,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:z.x,y:z.y,id:1}]});assert(await run('drinkGame.player.held'));await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});assert.equal(await run('drinkGame.player.held'),false);
   await p.keyboard.down('ArrowUp');await run('for(let i=0;i<15;i++)updateDrinkingContest(1/60)');await p.keyboard.up('ArrowUp');assert.equal(await run('drinkGame.up'),false);assert(await run('drinkGame.player.held'));await p.keyboard.press(' ');assert.equal(await run('drinkGame.player.held'),false);

@@ -1,0 +1,61 @@
+const {chromium}=require('playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {createHash}=require('node:crypto');
+const {pathToFileURL}=require('node:url');
+const root=path.resolve(__dirname,'..'),out=path.join(root,'output/gatherer-native-trial');
+(async()=>{
+  fs.mkdirSync(out,{recursive:true});
+  const browser=await chromium.launch({channel:'msedge',headless:true}),errors=[],reports=[];
+  try{
+    for(const [name,width,height,dpr] of [['desktop',1000,1000,1],['phone',390,844,2]]){
+      const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:dpr}),images=[];
+      page.on('pageerror',e=>errors.push(e.message));
+      page.on('request',r=>{if(/\.(png|jpe?g|webp)(\?|$)/i.test(r.url()))images.push(r.url());});
+      await page.goto(pathToFileURL(path.join(root,'GathererNativePreview.html')).href);
+      await page.waitForFunction(()=>document.documentElement.dataset.gathererNativeReady==='1');
+      await page.evaluate(()=>KRGathererNativePreview.setOptions({motion:false,time:0}));
+      await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Horizontal overflow');
+      const bounds=await page.locator('#native-canvas').boundingBox();
+      assert(bounds.x>=0&&bounds.x+bounds.width<=width,'Canvas outside viewport');
+      const before=await page.evaluate(()=>({report:KRGathererNativePreview.report(),state:JSON.stringify([mode,gold,dist])}));
+      await page.evaluate(()=>{for(let i=0;i<50;i++)KRGathererNativePreview.draw(i*.1);});
+      const after=await page.evaluate(()=>({report:KRGathererNativePreview.report(),state:JSON.stringify([mode,gold,dist])}));
+      assert.equal(after.report.builds,before.report.builds,'Static background rebuilt each frame');
+      assert.equal(after.state,before.state,'Preview altered gameplay');
+      assert(after.report.cacheBytes<=7*1024*1024,'Unbounded cache');
+      assert.equal(after.report.geometry.method,'hand-authored-components');
+      assert.equal(after.report.geometry.autoTraced,false,'Do not load rejected automatic trace');
+      assert(after.report.geometry.shapes<1000,'Simplified whole-shape budget');
+      assert.deepEqual(images,[],'Preview must not load background images');
+      const source=await page.evaluate(()=>drawMushroomGatherer.toString());
+      const hash=createHash('sha256').update(source.replace(/\r\n/g,'\n')).digest('hex');
+      const baseline=JSON.parse(fs.readFileSync(path.join(root,'art-source/knight-rush-sharp-plane/reference-baseline.json'),'utf8'));
+      assert.equal(hash,baseline.fingerprints.drawMushroomGatherer,'Approved gatherer changed');
+      await page.evaluate(()=>KRGathererNativePreview.setOptions({time:0}));
+      await page.locator('#native-canvas').screenshot({path:path.join(out,name+'-composite.png')});
+      await page.locator('#native-actor').click();
+      assert.equal(await page.evaluate(()=>KRGathererNativePreview.report().actor),false);
+      await page.locator('#native-canvas').screenshot({path:path.join(out,name+'-background.png')});
+      await page.locator('#native-actor').click();await page.locator('#native-light').click();
+      await page.locator('#native-canvas').screenshot({path:path.join(out,name+'-neutral.png')});
+      await page.locator('#native-light').click();await page.locator('#native-gray').click();
+      await page.locator('#native-canvas').screenshot({path:path.join(out,name+'-gray.png')});
+      await page.locator('#native-gray').click();
+      await page.screenshot({path:path.join(out,name+'-page.png'),fullPage:true});
+      await page.locator('#native-compare').click();
+      await page.waitForFunction(()=>KRGathererNativePreview.report().comparing);
+      await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Comparison overflow');
+      assert.equal(images.length,1,'Only comparison may load a source image');
+      await page.locator('#native-panels').screenshot({path:path.join(out,name+'-comparison.png')});
+      await page.locator('#native-compare').click();
+      assert.equal(await page.evaluate(()=>KRGathererNativePreview.report().comparing),false);
+      reports.push({name,...after.report,backgroundImageRequests:0,comparisonImageRequests:images.length});
+      await page.close();
+    }
+    assert.deepEqual(errors,[]);
+    fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({reports,errors,status:'technical-pass; aesthetic candidate'},null,2));
+    console.log('GATHERER_NATIVE_PREVIEW_OK: no image requests; approved actor intact; no game-state mutation; bounded reusable cache; phone/desktop controls.');
+  }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -67,11 +67,12 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/autumn-carava
   await run('KRAutumnCaravan.drawShop(true);');
   const manager=await run('KREventVisuals.report()');assert.equal(manager.active,'autumn-caravan');assert.equal(manager.entries.length,1);assert.equal(manager.tier,device==='phone'?'mobile':'standard');
   const tap=async(x,y)=>{const p=await run(`({x:(${x}*viewScale+viewX)/renderDpr(),y:(${y}*viewScale+viewY)/renderDpr()})`);await page.touchscreen.tap(p.x,p.y);};
-  await tap(365,708);assert.equal(await run('gold'),140);await tap(365,708);assert.equal(await run('gold'),140);await run('updateMerchantShop(.5);');
+  const tapUI=async key=>{const r=await run('KRAutumnCaravan.UI.'+key);await tap(r.x+r.w/2,r.y+r.h/2);};
+  await tapUI('reroll');assert.equal(await run('gold'),140);await tapUI('reroll');assert.equal(await run('gold'),140);await run('updateMerchantShop(.5);');
   for(let i=0;i<4;i++){await tap(75+i*110,490);assert.equal(await run('merchantShop.selected'),i);}
-  await tap(150,708);assert.equal(await run('gold'),120);await tap(150,708);assert.equal(await run('gold'),120);
+  await tapUI('buy');assert.equal(await run('gold'),120);await tapUI('buy');assert.equal(await run('gold'),120);
   await run('updateMerchantShop(.9);');await shot('handoff');await run('updateMerchantShop(1);');await shot('sold');
-  await tap(240,762);assert.equal(await run('mode'),'run');assert.equal(await run('KREventVisuals.report().reservedBytes'),0);
+  await tapUI('leave(false)');assert.equal(await run('mode'),'run');assert.equal(await run('KREventVisuals.report().reservedBytes'),0);
   assert.equal(await run('journeyVenueVisible(roadLabState.slot.id)'),false);
   const retained=await run(`(()=>{const edge=journeyForestEdgeAt(roadLabState.slot.at),v=KRAutumnCaravan.venueLayout(edge),items=[],original=queueWorldDraw;
    try{queueWorldDraw=(d,fn,item)=>items.push(item.kind);
@@ -89,7 +90,7 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/autumn-carava
    await run('for(let i=0;i<240;i++)update(1/120);');assert.notEqual(await run('journey.phase'),'turning');
   }
   await run('openMerchantLab();');await page.waitForFunction(()=>KRCutscenes.report().state==='ready');await shot('lab');
-  await tap(240,787);assert.equal(await run('mode'),'debugcfg');assert.equal(await run('KREventVisuals.report().reservedBytes'),0);
+  await tapUI('leave(true)');assert.equal(await run('mode'),'debugcfg');assert.equal(await run('KREventVisuals.report().reservedBytes'),0);
   // Cancel while loading: no late image/adapter callback may re-open the plate.
   await run("openMerchantLab();setMode('menu');");await page.waitForTimeout(150);
   assert.equal(await run('KREventVisuals.report().reservedBytes'),0);

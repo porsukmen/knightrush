@@ -9,8 +9,12 @@
  const T=(s,x,y,size=12,c=C.ink,max=420)=>smithText(s,x,y,size,c,max);
  function bevel(x,y,w,h,c,cut=7){P([[x+cut,y],[x+w-cut,y],[x+w,y+cut],[x+w,y+h-cut],[x+w-cut,y+h],[x+cut,y+h],[x,y+h-cut],[x,y+cut]],c);}
  function button(r,label,on=true){KRUI.button(g,r,label,'tavern',{enabled:on,size:14,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
- function panel(y,h,title,lines=[],tone=C.ink){KRUI.panel(g,{x:28,y,w:424,h},'tavern',{light:true});T(title,240,y+27,16,tone,396);lines.forEach((s,i)=>T(s,240,y+50+i*19,11,KRUI.theme('tavern').ink,394));}
- function header(title){R(0,-PAD_TOP,480,102+PAD_TOP,C.dark);T('THE MOSSY OAK  /  '+title,240,31,15,C.paper,442);button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');L(122,77,358,77,1,'#866c43');}
+ function panel(y,h,title,lines=[],tone=C.ink){
+  h=Math.max(h,lines.length?86+(lines.length-1)*17:66);
+  KRUI.panel(g,{x:28,y,w:424,h},'tavern',{light:true});
+  T(title,240,y+36,16,tone,396);lines.forEach((s,i)=>T(s,240,y+56+i*17,11,KRUI.theme('tavern').ink,394));
+ }
+ function header(title){R(0,-PAD_TOP,480,102+PAD_TOP,C.dark);T('THE MOSSY OAK  /  '+title,240,31,15,C.paper,442);button(MINIGAME_BACK_BTN,'< BACK');drawPauseButton();L(122,77,358,77,1,'#866c43');}
  function drawCutscene(){
   R(0,-PAD_TOP,480,800+PAD_TOT,C.dark);const img=window.KREventVisuals?.peek('tavern-games');
   if(!img){T('Lighting the hearth...',240,210,14,C.paper);return false;}
@@ -33,11 +37,11 @@
   P([[x+nx,y+ny],[X+nx,Y+ny],[X+nx*.35,Y+ny*.35],[x+nx*.35,y+ny*.35]],lit);
   P([[x-nx*.7,y-ny*.7],[X-nx*.7,Y-ny*.7],[X-nx,Y-ny],[x-nx,y-ny]],shade);
  }
- function hand(x,y,s=1,steel=false){g.save();g.translate(x,y);g.scale(s,s);
-  P([[-13,-8],[-4,-13],[10,-11],[15,-3],[12,11],[-6,13],[-15,4]],steel?'#687d83':'#ac704b');
-  P([[-13,-8],[-4,-13],[9,-11],[10,1],[-5,4],[-12,0]],steel?'#c4ccbd':'#f0bd7e');
-  P([[-5,4],[10,1],[12,11],[-6,13]],steel?'#92a7a7':'#d6975f');
-  for(let i=0;i<3;i++)L(-4+i*5,4,-3+i*5,10,1.4,steel?'#526771':'#996243');g.restore();}
+ function hand(x,y,s=1,steel=false,side=1){g.save();g.translate(x,y);g.scale(s*side,s);g.translate(0,11);g.scale(1.18,1.18);g.translate(0,-11);
+  P([[-10,-3],[8,-3],[11,1],[8,11],[-10,10]],steel?'#92a7a7':'#d6975f');
+  R(-9,-3,16,3,steel?'#c4ccbd':'#f0bd7e');
+  P([[8,0],[11,1],[8,11],[6,10],[7,2]],steel?'#687d83':'#ac704b');
+  for(let i=0;i<3;i++)R(-6+i*4.5,5,1,4.5,steel?'#526771':'#996243');g.restore();}
  const clothes={barry:['#a35e35','#df9e56','#663c30'],duke:['#386576','#78a3a3','#303e53'],baron:['#943f44','#cf7861','#552e35'],dealer:['#724363','#bc7583','#403149'],chugs:['#658347','#adc173','#394b37']};
  function actor(x,y,s,kind='barry',lit=true,arms=true){
   const skin=lit?['#f3c88a','#d99d65','#a17055']:['#dfb08a','#bd8c64','#91684f'],cloth=clothes[kind]||clothes.barry;
@@ -78,7 +82,7 @@
   P([[-2,-129],[-10,-132],[-23,-124],[-19,-117],[-5,-121],[0,-126]],hair);P([[1,-127],[8,-130],[22,-123],[18,-117],[5,-120]],hair);
   L(-8,-115,8,-115,2,'#83543b');P([[-12,-111],[5,-109],[13,-112],[7,-106],[-7,-107]],skin[0]);
   if(kind==='chugs'){P([[-24,-123],[-16,-112],[-7,-116],[6,-115],[19,-124],[20,-103],[8,-88],[-8,-91],[-23,-108]],hair);P([[-23,-120],[-15,-112],[-6,-114],[-4,-97],[-13,-101]],'#cab27e');}
-  if(arms)for(const side of [-1,1]){segment(side*55,-76,side*79,-37,25,base,hi,dark);segment(side*79,-37,side*57,-7,18,skin[1],skin[0],skin[2]);hand(side*57,-6,.76);}
+  if(arms)for(const side of [-1,1]){segment(side*55,-76,side*79,-37,25,base,hi,dark);segment(side*79,-37,side*57,-7,18,skin[1],skin[0],skin[2]);hand(side*57,-6,.76,false,side);}
   g.restore();
  }
  function tankard(x,y,s=1,amount=1,angle=0,accent=C.blue){
@@ -152,7 +156,7 @@
   const shoulder={x:330,y:660},wrist={x:handPt.x+9,y:handPt.y+6},elbow=elbowFor(shoulder,wrist,166,185);
   segment(shoulder.x,shoulder.y,elbow.x,elbow.y,53,base,hi,dark);segment(elbow.x,elbow.y,wrist.x,wrist.y,44,base,hi,dark);
   if(!skin)for(const t of [.28,.54,.79]){const x=lerp(elbow.x,wrist.x,t),y=lerp(elbow.y,wrist.y,t);L(x-18,y+6,x+18,y-6,4,'#597580');L(x-18,y+3,x+18,y-9,2,'#d9d9b9');}
-  hand(handPt.x-6,handPt.y-.5,1.15);hand(handPt.x+10,handPt.y+5,1.12,!skin);
+  hand(handPt.x-6,handPt.y-.5,1.15,false,-1);hand(handPt.x+10,handPt.y+5,1.12,!skin);
   bevel(68,112,344,35,'#413529');R(79,126,322,7,'#974c43');R(240,126,161,7,'#598995');bevel(77+322*k,119,7,21,'#f3d480',2);
   T('BARON',104,167,10,'#f0d39e');T('YOU',383,167,10,'#dae6d6');
   if(a.phase==='intro'){panel(554,94,'THE ROYAL ELBOW DISPUTE',['Swipe RIGHT repeatedly to pin the Baron.','Hesitation loses ground. Left swipes help him.']);button(ARM_WRESTLE_START_BTN,'LOCK HANDS');}
@@ -176,15 +180,8 @@
   else {bevel(26,727,428,46,C.panel);T(t.feedback,240,747,11,C.ink,408);const left=3-t.mugs.filter(m=>m.owner==='player').length;T('MUGS LEFT '+left+'  /  '+(owner==='player'?'YOUR TURN':'BARRY'),240,764,10,C.ink);}
  }
  function knightBust(x,y){
-  const skin=playerChar?.caveman;if(skin){actor(x,y,.64,'barry',true,false);return;}
-  g.save();g.translate(x,y);
-  P([[-24,-62],[-43,-49],[-36,-3],[32,-3],[42,-49],[24,-62]],'#516b76');
-  P([[-24,-62],[-37,-48],[-26,-25],[-23,-3],[22,-3],[28,-30],[31,-52],[20,-62]],'#95a9a5');
-  P([[-24,-62],[-37,-48],[-26,-25],[-17,-34],[-15,-56]],'#e0dfbb');
-  P([[-28,-52],[25,-52],[25,-29],[0,-18],[-26,-29]],'#68828b');L(-20,-47,16,-47,3,'#b9c6b7');
-  g.save();g.translate(0,-83);drawSquireHelmet25D(0,0,.1,2.4,'#a4b3af','#516c77','#e5e2bf','#f0e7c9','#75848a');
-  const plume=playerChar?.feather||'#5185e9';P([[-3,-28],[-1,-45],[12,-57],[22,-49],[16,-43],[11,-46],[4,-34],[3,-26]],plume);g.restore();
-  R(-8,-3,17,5,'#c3a157');g.restore();
+  if(playerChar?.caveman){actor(x,y,.64,'barry',true,false);return;}
+  KRJonathan.draw(x,y+54,1.5,{facing:'front',clock:perfNow,bust:true});
  }
  function drink(){const d=drinkGame;knightBust(107,249);actor(375,249,.66,'chugs',true,false);table(247,729);
   // Each supported mug follows a real shoulder/elbow/wrist chain. Its handle
@@ -196,7 +193,7 @@
    segment(shoulder.x,shoulder.y,elbow.x,elbow.y,17,base,hi,dark);segment(elbow.x,elbow.y,wrist.x,wrist.y,14,base,hi,dark);
    tankard(x+38,230-lift,.65,1-progress,0,playerSide?C.blue:C.red);
    hand(wrist.x,wrist.y,.47,metal);
-   segment(x-34,198,x-43,232,17,base,hi,dark);hand(x-41,238,.45,metal);
+   segment(x-34,198,x-43,232,17,base,hi,dark);hand(x-41,238,.45,metal,-1);
   }
   T('YOU '+d.wins,95,118,11,C.light);T('SIR CHUGS '+d.rivalWins,365,118,11,C.light);
   if(d.pattern&&!['intro','complete'].includes(d.phase)){

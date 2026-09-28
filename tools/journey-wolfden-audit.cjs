@@ -7,7 +7,7 @@ function denFixture(){
 }
 function enterDen(){
  const side=journeyNormalSide(roadLabState.slot);player.lane=player.x=side+1;
- handleJourneyRoadEventAction(side>0?'right':'left');update(8.6);update(.3);
+ updateJourneyRoadEvents(0);update(8.6);update(.3);
 }
 function clearDenWolf(){boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);}
 `);

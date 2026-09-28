@@ -233,7 +233,7 @@
   // Feet meet the generated dais (source y~1015), not the step riser below it.
   chest(240,435,1.08,open,t);
  }
- function button(r,label,muted=false){KRUI.button(g,r,label,'treasure',{enabled:!muted,size:13,variant:label==='II'||label==='LEAVE WITHOUT LOOT'?'secondary':undefined});}
+ function button(r,label,muted=false,role='primary',selected=false){KRUI.button(g,r,label,'treasure',{enabled:!muted,selected,size:13,variant:role==='secondary'?'secondary':undefined});}
  function heading(title,sub){
   P([[83,112],[397,112],[405,123],[397,162],[83,162],[75,123]],'#30241e');
   L(96,115,384,115,1,'#b68b49');
@@ -242,14 +242,12 @@
  }
  function sheet(y=550){
   R(0,y+12,480,800+PAD_TOT-y,'#30241e');
-  P([[16,y+12],[28,y],[452,y],[464,y+12],[464,792+PAD_TOT],[16,792+PAD_TOT]],'#ddc79b');
-  R(24,y+12,432,3,'#f6e8c3');R(24,y+20,432,1,'#a78857');
-  for(const x of [34,446])P([[x,y+9],[x+4,y+13],[x,y+17],[x-4,y+13]],'#a07840');
+  KRUI.sheet(g,{x:16,y,w:448,h:792+PAD_TOT-y});
  }
  function drawLoot(context){
   const loot=context.loot,entry=loot.entries[0];scene(loot.won?1:0,perfNow);
   if(pausePhotoMode)return;
-  button({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II');
+  drawPauseButton();
   heading(loot.won?'A FORTUNE UNCOVERED':'THE LOCK HOLDS');sheet(486);
   smithText(loot.won?'YOUR SPOILS':'NO SPOILS',240,519,14,'#503921');
   if(entry){
@@ -257,8 +255,7 @@
    drawCoin(r.x+32,r.y+r.h/2,1.1,.25);smithText(String(entry.amount),r.x+72,r.y+r.h/2+7,21,'#674421');
    smithText(entry.claimed?'Safely in your purse.':'Tap the reward to collect it.',240,631,11,'#725839');
   }else smithText('Only the broken lockpicks remain.',240,573,12,'#725839');
-  button(CHEST_CONTINUE_RECT,entry&&!entry.claimed?'LEAVE WITHOUT LOOT':'CONTINUE');
-  smithText('1: TAKE  /  ENTER: CONTINUE',240,782,10,'#725839');
+  button(CHEST_CONTINUE_RECT,entry&&!entry.claimed?'LEAVE WITHOUT LOOT':'CONTINUE',false,entry&&!entry.claimed?'secondary':'primary');
  }
  function lockView(l){
   // Physical lock close-up on dark walnut, not a coloured minigame panel.
@@ -345,8 +342,8 @@
   g.restore();
  }
  function controls(){
-  button(MINIGAME_BACK_BTN,'< BACK');
-  button({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II');
+  button(MINIGAME_BACK_BTN,'< BACK',false,'secondary');
+  drawPauseButton();
  }
  function drawGame(){
   const l=lockpickGame;if(!l)return;
@@ -358,8 +355,7 @@
    smithText('A ROYAL SEAL',240,587,17,'#503921');
    smithText('Five pins. '+difficultyOf(l).picks+' picks. Choose your challenge.',240,611,11,'#725839');
    smithText('Tap twice or hold & release.  Arrows + Space.',240,633,10,'#725839');button(LOCKPICK_START_BTN,'EXAMINE THE LOCK');
-   Object.entries(difficulties).forEach(([key,d],i)=>{const r=difficultyRect(i);button(r,d.label,l.difficulty!==key);if(l.difficulty===key)L(r.x+8,r.y+r.h+4,r.x+r.w-8,r.y+r.h+4,3,'#8b4c28');});
-   smithText('Difficulty does not change loot yet.',240,790,10,'#725839');
+   Object.entries(difficulties).forEach(([key,d],i)=>{const r=difficultyRect(i);button(r,d.label,false,'secondary',l.difficulty===key);});
   }else if(l.phase==='playing'){
    const msg=l.nearT>0?l.nearText:l.message;
    sheet(592);smithText(msg,240,631,12,l.nearText==='SNAP'?'#a03d2b':'#503921');

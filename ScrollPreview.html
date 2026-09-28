@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Treasure parşömeni — eş üst ve alt kenar</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:28px 14px;background:#30241e;color:#e8d6ab;font:14px system-ui;text-align:center}
+main{max-width:720px;margin:auto}h1{font-size:20px;margin:0 0 8px}p{color:#c9b794;line-height:1.6;margin:0 0 20px}
+canvas{width:100%;height:auto;display:block}button{font:inherit;background:#493323;color:#e8d6ab;border:1px solid #a8824a;padding:10px 16px;cursor:pointer;margin:8px 4px}button:focus-visible{outline:2px solid #fff0cd;outline-offset:3px}
+</style>
+<main><h1>Treasure parşömeni — dengeli boşluklar</h1><p>Alt çizgiler ve motifler geri geldi; içerikle aralarında boşluk bırakıldı.<br>Yalnızca bağımsız önizleme; oyun değiştirilmedi.</p>
+<canvas id="scroll" width="1440" height="978" aria-label="Üst ve alt kenarı desenli, içerik alanı genişletilmiş Treasure parşömeni"></canvas>
+<button id="content" aria-pressed="true">Örnek içeriği gizle</button><button id="curl" aria-pressed="true">Eş alt kenar: açık</button>
+</main>
+<script src="art-source/knight-rush-ui/ui-specimen-treasure-v2.js"></script>
+<script>
+(()=>{'use strict';
+const canvas=document.getElementById('scroll'),g=canvas.getContext('2d');let content=true,curl=true;
+const sheet={x:16,y:40,w:448,h:240},height=326;
+function matchingSheet(){
+ // Keep the original type sizes; increase sheet height for a clear lower margin.
+ // Last button shadow ends at y=231; the lower rule starts at y=259.
+ const mirror=sheet.y*2+sheet.h,mid=mirror/2;
+ // Clip half sheets so neither the original square bottom nor an extra rim survives.
+ for(const bottom of [false,true]){
+  g.save();g.beginPath();g.rect(0,bottom?mid:0,480,bottom?height-mid:mid);g.clip();
+  if(bottom){g.translate(0,mirror);g.scale(1,-1);}
+  KRUI.sheet(g,sheet,'treasure');
+  g.restore();
+ }
+}
+function draw(){
+ g.setTransform(3,0,0,3,0,0);g.clearRect(0,0,480,height);
+ // Invoke the frozen approved Treasure helper itself: upper geometry unchanged.
+ if(curl)matchingSheet();else KRUI.sheet(g,sheet,'treasure');
+ if(content){
+  KRUI.text(g,'YOUR SPOILS',240,96,17,'#493323',352);
+  KRUI.button(g,{x:64,y:112,w:352,h:46},'80   TAKE COINS','treasure',{size:17});
+  KRUI.text(g,'Tap the reward to collect it.',240,183,12,'#725839',352);
+  KRUI.button(g,{x:130,y:194,w:220,h:33},'LEAVE WITHOUT LOOT','treasure',{size:12});
+ }
+}
+document.getElementById('content').onclick=e=>{content=!content;e.currentTarget.setAttribute('aria-pressed',String(content));e.currentTarget.textContent=content?'Örnek içeriği gizle':'Örnek içeriği göster';draw();};
+document.getElementById('curl').onclick=e=>{curl=!curl;e.currentTarget.setAttribute('aria-pressed',String(curl));e.currentTarget.textContent='Eş alt kenar: '+(curl?'açık':'kapalı (orijinal)');draw();};
+draw();
+})();
+</script></html>

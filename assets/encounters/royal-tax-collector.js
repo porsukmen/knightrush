@@ -292,13 +292,12 @@
    if(crush){for(let i=0;i<5;i++){const d=crush*(15+i*5);P([[wrist[0]+(i-2)*d,wrist[1]+17+i*2],[wrist[0]+(i-2)*d+6,wrist[1]+20+i*2],[wrist[0]+(i-2)*d+1,wrist[1]+26+i*2]],m.potato[i%3]);}}
    if(pausePhotoMode)return;
    KRUI.heading(g,{x:72,y:24,w:336,h:48},'THE ROYAL SEAL','treasure',23);
-   KRUI.button(g,{...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II','treasure',{size:20,variant:'secondary'});
-   KRUI.sheet(g,{x:24,y:658,w:432,h:126});
+   drawPauseButton();
+   KRUI.sheet(g,{x:24,y:658,w:432,h:134});
    g.textAlign='center';g.fillStyle='#493323';g.font='bold 14px monospace';
    if(s.phase==='intro'){
     g.fillText('Dodge 3 stamps. Two hits: up to 5 gold.',240,698,406);
     KRUI.button(g,GO,'TRY STAMPING THIS','treasure',{size:15});
-    g.font='11px monospace';g.fillText('Drag the near end, or use LEFT / RIGHT.',240,776);
    }else if(s.phase==='result'){
     g.fillText(s.result.win?'His royal authority... mashed.':s.cost?'Tax paid: '+s.cost+' gold.':'An empty purse. He gives up collecting.',240,698,406);
     KRUI.button(g,GO,s.result.win?'LEAVE HIM TO HIS POTATO':'BACK TO THE ROAD','treasure',{enabled:s.time>1.6,size:14});

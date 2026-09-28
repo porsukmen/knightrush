@@ -12,7 +12,7 @@
     if(!await prepareGathererEncounter())throw Error('Encounter scene failed to load');
     KRGathererScene.setLighting(BOOT_QUERY.get('lighting'));
     const side=journeyNormalSide(slot);player.x=player.lane=side>0?2:0;
-    handleAction(side>0?'right':'left');
+    dist=slot.at;runDistance=roadScroll=dist;updateJourneyRoadEvents(0);
     if(mode!=='journeyevent')throw Error('Real encounter entry did not open');
     // Real choice hitboxes, debounce, response and return-to-road behavior.
     update(.25);cvs.tabIndex=0;cvs.focus({preventScroll:true});

@@ -17,7 +17,7 @@ const {pathToFileURL}=require('node:url'),path=require('node:path'),fs=require('
   await run(`startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='wolfden'));
    dist=roadLabState.slot.at;roadScroll=dist;obstacles=[];pickups=[];updateJourneyRoadEvents(0);
    player.x=player.lane=journeyNormalSide(roadLabState.slot)+1;
-   handleJourneyRoadEventAction(player.lane===2?'right':'left');debugRun=false;`);
+   updateJourneyRoadEvents(0);debugRun=false;`);
   await ready();assert.equal(await run('KRCutscenes.report().scene'),'wolf-den-forest');
   assert.equal(await run('currentUITheme()'),'treasure');
   assert.deepEqual(await run('KRWolfDenPoses.names'),['front','diagonal','side','rearDiagonal','rearNear','back']);

@@ -151,7 +151,8 @@ Only the current scene may draw. Reset/scene changes invalidate late completions
 
 The gatherer compatibility helper remains for existing labs; production routing
 uses `prepareCutscene` and `JOURNEY_CUTSCENE_BINDINGS`. Preloading does NOT grant
-permission to show an NPC; the existing lane + fresh swipe checks still own entry.
+permission to enter an event; question stops use outer-lane ground contact,
+while merchant/inn keep their fresh outward-swipe checks.
 
 Audit: `node tools/cutscene-handler-audit.cjs` (also run by `cutscene-audit.cjs`).
 Browser coverage: gatherer-event, event-visuals, normal-events and background
@@ -190,3 +191,37 @@ cheat and accusation timing. The renderer only samples trajectories.
 `art-source/knight-rush-backgrounds/royal-shuffle-v1/scene-brief.md`.
 No reference promotion; no additional economy rewards. Small menu thumbnail is
 lazy; normal entry never loads Art Lab or test instrumentation.
+
+## Post-fight salvage candidate (2026-09-27)
+
+Roadside fights prefetch `fight-loot`, then activate the plate on actual victory.
+Native purse/coins and three steel salvage pieces remain separate from the
+background; direct taps and 1/2 use event-owned, claim-once rewards. Exit releases
+the scene through the existing journey owner. Standard 1086×1448 / mobile
+576×768, within existing manager budgets. Missing plates keep reward controls
+functional. No old-forest renderer in this screen, no reference promotion.
+
+Preview: `KnightRush.html?fightlootlab=1`. Brief/prompt/source:
+`art-source/knight-rush-backgrounds/fight-loot-v1/scene-brief.md`.
+Audits: `tools/fight-loot-audit.cjs`, `tools/journey-scrap-audit.cjs`,
+`tools/cutscene-audit.cjs`. Gameplay logic and reward quantities are unchanged.
+
+## Rest camp candidate (2026-09-27)
+
+`rest-camp` uses a generated daytime forest plate, standard 1086x1448 / mobile
+576x768. Native Jonathan, log, pack and animated fire remain separate. Fire tap
+starts a three-second sit/rest: heal up to two hearts once at two seconds;
+embers remain and the leave button unlocks after the animation. Pausing freezes
+recovery. Full-health players can rest without overhealing. Camp exit/reset
+uses the same scene owner/release lifecycle; missing plates keep actions usable.
+
+Small tax/gatherer/wolf/camp drawing modules load before the first game frame
+so road actors never begin with an old identity and swap on approach. They do
+not allocate background images; only the selected event tier loads on approach.
+Road art uses the event's native actor and its daylight material adapter.
+`?camplab=1`, `tools/rest-camp-audit.cjs`; source/prompt in
+`art-source/knight-rush-backgrounds/rest-camp-v2/scene-brief.md`. Candidate only.
+V2 removes the distant tent and places the native camp deeper in the clearing.
+The 2026-09-28 composition puts the front-facing seated knight behind a centered
+foreground fire. Bark and a cut end distinguish the native log from a box;
+the shield rests beside it. The generated daytime plate and budgets are unchanged.

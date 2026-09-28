@@ -430,9 +430,9 @@
   P([[392,287],[400,282],[428,278],[440,284],[431,289],[403,294]],'#2c4c5b');
   L(387,305,446,298,4,'#25343f');L(396,328,446,319,4,'#25343f');
  }
- const UI={confirm:{x:28,y:677,w:278,h:47},leave:{x:320,y:677,w:132,h:47}};
+ const UI={confirm:{x:36,y:677,w:270,h:47},leave:{x:320,y:677,w:124,h:47}};
  const card=i=>({x:28+i%2*217,y:399+Math.floor(i/2)*91,w:207,h:80});
- function button(r,label,enabled=true){KRUI.button(g,r,label,'forge',{enabled,size:12,variant:label==='RIDE ON'?'secondary':undefined});}
+ function button(r,label,enabled=true,role='primary'){KRUI.button(g,r,label,'forge',{enabled,size:12,variant:role==='secondary'?'secondary':undefined});}
  function drawUI(shop){
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
   R(0,-PAD_TOP,VW,VH+PAD_TOT,KRUI.theme('forge').dark);
@@ -468,10 +468,9 @@
     drawScrapIcon(r.x+137,r.y+61,.37);smithText(q.maxed?'APEX':String(q.scrapCost),r.x+167,r.y+65,11,'#b6c7ce');
    }
    const q=shop.cards[shop.selected],skill=runSkills[shop.selected];
-   KRUI.sheet(g,{x:20,y:568,w:440,h:96});
+   KRUI.sheet(g,{x:20,y:568,w:440,h:224});
    smithText(skill.evolutionName||skill.name,240,602,15,KRUI.theme().ink,419);
-   smithText(q.maxed?'APEX REACHED':q.fail?Math.round(q.fail*100)+'% FAIL · HALF COINS REFUNDED':'FIRST UPGRADE GUARANTEED',240,624,11,KRUI.theme().paperSoft,419);
-   smithText(shop.message||'Choose your craft. I will wake the steel.',240,651,11,shop.message?'#914e31':KRUI.theme().paperSoft,424);
+   smithText(shop.message||(q.maxed?'APEX REACHED':q.fail?Math.round(q.fail*100)+'% FAIL · HALF COINS REFUNDED':'FIRST UPGRADE GUARANTEED'),240,629,11,shop.message?'#914e31':KRUI.theme().paperSoft,419);
    button(UI.confirm,q.maxed?'APEX COMPLETE':'FORGE UPGRADE',!q.maxed&&gold>=q.price&&scrap>=q.scrapCost);
   }else{
    const reveal=t>=SMITH_RULES.reveal,quality=t>=SMITH_RULES.rarity,o=shop.order,
@@ -482,10 +481,11 @@
    smithText(reveal?(o.success?o.command.evolutionName||o.command.name:'The metal would not hold.'):'Heating · shaping · tempering',240,548,15,c,352);
    if(quality){smithText(o.success?o.rarity:'RETURNED: '+o.refund+' COINS',240,579,13,c);
     smithText(o.success?'Your new upgrade is ready.':'Scrap was consumed in the attempt.',240,607,11,'#b4c4c9');}
+   KRUI.sheet(g,{x:20,y:642,w:440,h:150});
    button(UI.confirm,shop.phase==='result'?'TAKE IT':'FORGING...',shop.phase==='result');
   }
-  button(UI.leave,'RIDE ON',shop.phase==='browse');
-  smithText('Gold + scrap · Upgrades last for this journey',240,754,10,'#8d9fa8');g.restore();
+  button(UI.leave,'RIDE ON',shop.phase==='browse','secondary');
+  smithText('Gold + scrap · Upgrades last for this journey',240,754,10,KRUI.theme().paperSoft);g.restore();
  }
  function tap(pt){
   const shop=blacksmithShop;if(!shop?.roadToken)return false;

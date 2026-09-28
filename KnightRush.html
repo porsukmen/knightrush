@@ -31,6 +31,14 @@
 <script src="assets/encounters/tavern-arm-core.js"></script>
 <script src="assets/encounters/tavern-chug-core.js"></script>
 <script src="assets/encounters/royal-shuffle-core.js"></script>
+<!-- Small native actors must exist before even an incoming branch is visible.
+     These modules do not load plates; the event manager still owns lazy images. -->
+<script src="assets/encounters/royal-tax-collector.js"></script>
+<script src="assets/encounters/gatherer-scene.js"></script>
+<script src="assets/encounters/wolf-den-poses.js"></script>
+<script src="assets/encounters/wolf-den.js"></script>
+<script src="assets/encounters/jonathan-model.js"></script>
+<script src="assets/encounters/rest-camp.js"></script>
 <script>
 "use strict";
 const BOOT_QUERY=new URLSearchParams(location.search),
@@ -660,12 +668,21 @@ const SFX=(()=>{
 /* action() receives 'left' | 'right' | 'up' | 'down' | 'tap' (tap carries a point) */
 /* pause button hit-area (drawn in the HUD, top-right under the weapon pool) */
 const PAUSE_BTN={x:VW-52,y:100,w:38,h:38};
-function menuSheetY(){return VH+PAD_BOT-246;}
-const MENU_RELIC_BTN=Object.freeze({x:246,get y(){return menuSheetY()+102;},w:158,h:44});
-const MENU_MINIGAMES_BTN=Object.freeze({x:76,get y(){return menuSheetY()+102;},w:158,h:44});
-const MENU_PLAY_BTN=Object.freeze({x:76,get y(){return menuSheetY()+34;},w:328,h:54});
-const MENU_SETTINGS_BTN=Object.freeze({x:76,get y(){return menuSheetY()+160;},w:158,h:42});
-const MENU_DEBUG_BTN=Object.freeze({x:246,get y(){return menuSheetY()+160;},w:158,h:42});
+function drawPauseButton(offsetY=uiTop){
+  const r={...PAUSE_BTN,y:PAUSE_BTN.y+offsetY};
+  g.save();
+  KRUI.button(g,r,'','treasure',{variant:'secondary'});
+  g.fillStyle=KRUI.theme().onDark;
+  g.fillRect(r.x+11,r.y+9,5,20);g.fillRect(r.x+22,r.y+9,5,20);
+  g.restore();
+}
+function menuSheetHeight(){return clamp((VH+PAD_TOT)*.32,282,350);}
+function menuSheetY(){return VH+PAD_BOT-menuSheetHeight()-16;}
+const MENU_RELIC_BTN=Object.freeze({x:246,get y(){return menuSheetY()+102+(menuSheetHeight()-246)/2;},w:190,h:52});
+const MENU_MINIGAMES_BTN=Object.freeze({x:44,get y(){return MENU_RELIC_BTN.y;},w:190,h:52});
+const MENU_PLAY_BTN=Object.freeze({x:44,get y(){return menuSheetY()+40;},w:392,h:62});
+const MENU_SETTINGS_BTN=Object.freeze({x:44,get y(){return menuSheetY()+menuSheetHeight()-90;},w:190,h:50});
+const MENU_DEBUG_BTN=Object.freeze({x:246,get y(){return MENU_SETTINGS_BTN.y;},w:190,h:50});
 const MENU_OLD_FOREST_BTN=Object.freeze({x:245,y:404,w:160,h:50});
 // Presentation only: both entries retain Journey rules, maps and progression.
 // Keep the choice across restarts/seed replays; ordinary PLAY restores sunlit.
@@ -2316,6 +2333,12 @@ function drawSerJonathanRider(x,y,scale,o){
   g.save();g.translate(x,y);g.scale(scale,scale);
   g.rotate(air>0?0:(o.lean||0)*.13);g.translate(-9*U,-30*U);
 
+  const headLift=(air>0?(-1.35*Math.sin(Math.PI*clamp(air/.55,0,1))+
+    .85*easeInOut(clamp((air-.68)/.32,0,1))):Math.sin(gal*2+.35)*.14)-shieldLunge*.35;
+  // Event models use this exact upper rig without a horse or mounted legs.
+  // Default mounted calls take the unchanged drawing path.
+  if(!o.eventUpper){
+
   /* Hoof contact stains sit exactly on the local baseline; unlike the former
      floating oval, these remain underneath the planted feet. */
   if(air<=0){g.globalAlpha=.18;px(2.5,30,4.1,.65,'#000');px(11.4,30,4.1,.65,'#000');g.globalAlpha=1;}
@@ -2326,6 +2349,14 @@ function drawSerJonathanRider(x,y,scale,o){
     horseLowerCoat(1));
   drawSerJonathanHorseLeg(10.85,1,Math.PI,true,horseD,gal,air,bob,horseD,mane,
     horseLowerCoat(2));
+  // The neck/head are farther from the rear camera than the whole rider,
+  // including his thighs. Draw them here, never over the mounted legs.
+  rigQuad(6.7,13+bob,7.25,5.2+bob+headLift,10.75,5.2+bob+headLift,11.3,13+bob,horseD);
+  rigQuad(7.15,6.1+bob+headLift,7.65,3.5+bob+headLift,
+    10.35,3.5+bob+headLift,10.85,6.1+bob+headLift,horse);
+  rigTriangle(7.2,4+bob+headLift,7.45,1.8+bob+headLift,8.35,4+bob+headLift,horseD);
+  rigTriangle(9.65,4+bob+headLift,10.55,1.8+bob+headLift,10.8,4+bob+headLift,horseD);
+  px(8.45,4.1+bob+headLift,1.1,4.1,mane);
   /* Rider legs are farther than the rump from this camera. Draw them now so
      both haunches mask the inner thighs; only the portions beside the horse survive. */
   g.save();applySerJonathanRiderFall(riderFall,hipY);
@@ -2475,20 +2506,11 @@ function drawSerJonathanRider(x,y,scale,o){
   rigSegment(9+tail*.48,25.7+bob,9+tail,29.2+bob,2.5,mane);
   rigSegment(8.65,15.2+bob,8.8+tail*.38,25.6+bob,.65,tailL);
   px(7.8+tail,27.5+bob,2.5,2.15,mane);
-  const headLift=(air>0?(-1.35*Math.sin(Math.PI*clamp(air/.55,0,1))+
-    .85*easeInOut(clamp((air-.68)/.32,0,1))):Math.sin(gal*2+.35)*.14)-shieldLunge*.35;
-  /* Only the narrow BACK of the neck, crown and ears survive above the saddle.
-     A broad head here resembles a forward-facing muzzle at this resolution. */
-  rigQuad(6.7,13+bob,7.25,5.2+bob+headLift,10.75,5.2+bob+headLift,11.3,13+bob,horseD);
-  rigQuad(7.15,6.1+bob+headLift,7.65,3.5+bob+headLift,
-    10.35,3.5+bob+headLift,10.85,6.1+bob+headLift,horse);
-  rigTriangle(7.2,4+bob+headLift,7.45,1.8+bob+headLift,8.35,4+bob+headLift,horseD);
-  rigTriangle(9.65,4+bob+headLift,10.55,1.8+bob+headLift,10.8,4+bob+headLift,horseD);
-  px(8.45,4.1+bob+headLift,1.1,4.1,mane);
   rigQuad(3.1,12.1+bob,14.9,12.1+bob,13.8,14.3+bob,4.2,14.3+bob,'#39251d');
 
   /* Rider and equipment share the mounted-death transform. */
   if(o.horseOnly){g.restore();return;}
+  }
   g.save();applySerJonathanRiderFall(riderFall,hipY);
   /* Guard Squire upgrades grow only the rider's upper-body plane. His legs and
      horse were already rendered outside this transform, preserving the comic
@@ -2508,6 +2530,10 @@ function drawSerJonathanRider(x,y,scale,o){
     duckPose.head=serJonathanProjectWorldPoint(duckPose.headWorld,duckPose.hipY);
     duckPose.shoulderY=duckPose.shoulder.y;duckPose.headY=duckPose.head.y;
   }
+  // Optional event-only gaze; the helmet, visor and plume share this head frame.
+  if(o.eventUpper){
+    duckPose.headPitch+=o.eventUpper.headPitch||0;
+  }
   const duckFold=duckPose.fold,
     depthScale=duckPose.farScale,farDepthScale=duckPose.armScale,
     poseDriveY=shieldLunge*1.45+shieldBodyDrive*1.05+(swordAction?.bodyDrive||0)*.72,
@@ -2516,8 +2542,8 @@ function drawSerJonathanRider(x,y,scale,o){
        as a prop sliding independently over a rigid rider. */
     shoulderX=duckPose.shoulder.x-swordTurn*.25-shieldBodyDrive*.34,
     shoulderY=duckPose.shoulderY-poseDriveY,
-    headX=duckPose.head.x-swordTurn*.2-shieldBodyDrive*.12,
-    projectedHeadY=duckPose.headY-poseDriveY-shieldBodyDrive*.18,
+    headX=duckPose.head.x-swordTurn*.2-shieldBodyDrive*.12+(o.eventUpper?.headX||0),
+    projectedHeadY=duckPose.headY-poseDriveY-shieldBodyDrive*.18+(o.eventUpper?.headY||0),
     /* The capstone's deliberately huge upper-body transform also magnifies the
        neck. Pull only the Squire's head root toward his shoulders so he remains
        massive without acquiring a stretched giraffe-like neck. */
@@ -2526,7 +2552,7 @@ function drawSerJonathanRider(x,y,scale,o){
        This opposing line is the missing whole-body effort from the stiff pass. */
     torsoTurn=swordTurn-shieldBodyDrive*1.18;
 
-  const leftShoulderX=shoulderX-3.7*depthScale-shieldSweep*.48,
+  let leftShoulderX=shoulderX-3.7*depthScale-shieldSweep*.48,
     leftShoulderY=shoulderY+.8+torsoTurn*.35-shieldSweep*.22,
     rightShoulderX=shoulderX+3.7*depthScale+swordTurn*.8+shieldBodyDrive*.28,
     rightShoulderY=shoulderY+.8-torsoTurn*.35;
@@ -2537,6 +2563,19 @@ function drawSerJonathanRider(x,y,scale,o){
       rightElbowY=lerp(shoulderY+3.5,6.15+riderBob,duckFold),
       rightHandX=lerp(11.1,10.85,duckFold),rightHandY=lerp(6.3+headLift,3.65+headLift,duckFold),
       swordTipX=0,swordTipY=0,swordReveal=0,swordReturnK=0,swordForeshorten=1;
+  if(o.eventUpper){
+    const a=o.eventUpper.arms;
+    if(a){
+      leftShoulderX=9+a[0].sx;leftShoulderY=hipY+a[0].sy;
+      leftElbowX=9+a[0].ex;leftElbowY=hipY+a[0].ey;leftHandX=9+a[0].hx;leftHandY=hipY+a[0].hy;
+      rightShoulderX=9+a[1].sx;rightShoulderY=hipY+a[1].sy;
+      rightElbowX=9+a[1].ex;rightElbowY=hipY+a[1].ey;rightHandX=9+a[1].hx;rightHandY=hipY+a[1].hy;
+    }else{
+      leftElbowX=leftShoulderX-.25;rightElbowX=rightShoulderX+.25;
+      leftElbowY=rightElbowY=shoulderY+5.2;
+      leftHandX=leftElbowX;rightHandX=rightElbowX;leftHandY=rightHandY=hipY+.3;
+    }
+  }
   const restingLeftElbowX=leftElbowX,restingLeftElbowY=leftElbowY,
     restingLeftHandX=leftHandX,restingLeftHandY=leftHandY,
     restingRightElbowX=rightElbowX,restingRightElbowY=rightElbowY,
@@ -3196,12 +3235,13 @@ function drawSerJonathanRider(x,y,scale,o){
      are ahead of the torso and should almost disappear, never form a chest X. */
   /* A parry releases the rein completely; drawing it to the shield hand created
      the stray black diagonal seen across the plate. */
-  if(!bowActive&&!shieldActive)
+  if(!bowActive&&!shieldActive&&!o.eventUpper)
     rigSegment(leftHandX,leftHandY,7.6,5.2+bob+headLift,.38,'#241915');
+  if(!o.eventUpper?.front){
   drawSerJonathanArm(leftShoulderX,leftShoulderY,leftElbowX,leftElbowY,
     leftHandX,leftHandY,armorD,armorL,steel,true,farDepthScale,1+squireBulk*.34);
   if(!rightActive){
-    rigSegment(rightHandX,rightHandY,10.4,5.2+bob+headLift,.38,'#241915');
+    if(!o.eventUpper)rigSegment(rightHandX,rightHandY,10.4,5.2+bob+headLift,.38,'#241915');
     drawSerJonathanArm(rightShoulderX,rightShoulderY,rightElbowX,rightElbowY,rightHandX,rightHandY,
       armorD,armorL,steel,true,farDepthScale,1+squireBulk*.34);
   }
@@ -3209,6 +3249,7 @@ function drawSerJonathanRider(x,y,scale,o){
      below masks their central run, leaving only the external silhouette visible. */
   if(rightActive)drawSerJonathanArm(rightShoulderX,rightShoulderY,rightElbowX,rightElbowY,
     rightHandX,rightHandY,armorD,armorL,steel,true,farDepthScale,1+squireBulk*.34);
+  }
   if(callSignal>.12&&!swordActive&&!bowActive){
     g.globalAlpha=smoothStep(clamp((callSignal-.12)/.34,0,1));
     rigSegment(rightHandX,rightHandY,rightHandX+.08,rightHandY-1.85,
@@ -3429,6 +3470,12 @@ function drawSerJonathanRider(x,y,scale,o){
     armor,armorD,armorL,steelL,appearance?.helmetBand);
   else drawSerJonathanHelmet25D(headX,headY,duckPose.headPitch,duckPose.headScale,
     armor,armorD,armorL,steelL);
+  if(o.eventUpper?.front){
+    const h=helmetProjection,sy=h.planeY+1.5;
+    px(headX-3,sy,2.45,.8,'#233747');px(headX+.55,sy,2.45,.8,'#233747');
+    rigSegment(headX,sy-.3,headX,h.bottomY-.8,.65,armorL);
+    for(const side of [-1,1])for(let i=0;i<2;i++)px(headX+side*(1.3+i*.85)-.2,h.bottomY-1.65,.4,.65,armorD);
+  }
   /* The plume is parented to the helmet frame. Like the shield, it advances into
      depth and descends in projection rather than receiving hand-authored Y offsets. */
   const plumeSway=Math.sin(gal+2.2)*.7+(mountedIdle?.plumeSway||0),
@@ -3522,17 +3569,41 @@ function drawSerJonathanRider(x,y,scale,o){
       planeR.x,planeR.y,planeL.x,planeL.y,armorL);
     g.globalAlpha=1;
   }
-  px(6.25,hipY-1.3,5.5,1.35,'#3a281f');
+  // Jonathan's sword is back-mounted; only the separate Squire keeps a belt.
+  if(squireVariant&&!o.eventUpper)px(6.25,hipY-1.3,5.5,1.35,'#3a281f');
+  // Front event armour: upper arm beneath the pauldron, forearm in front.
+  // Keep this opt-in so mounted Jonathan and his attack poses stay untouched.
+  if(o.eventUpper?.front){
+    for(const a of [[leftShoulderX,leftShoulderY,leftElbowX,leftElbowY],[rightShoulderX,rightShoulderY,rightElbowX,rightElbowY]]){
+      rigSegment(a[0],a[1],a[2],a[3],2.05*farDepthScale,armor);
+      rigSegment(a[0]-.35,a[1],a[2]-.35,a[3],.38*farDepthScale,armorL);
+    }
+  }
   /* Pauldrons belong to the articulated shoulder joints, not the torso's idle
      centre. The old anchors left two square caps floating when either arm
      raised for Call, sword draw or shield work. */
   rigJoint(leftShoulderX,leftShoulderY,(squireHunter?2.1:3.05)*farDepthScale,armorL);
   rigJoint(rightShoulderX,rightShoulderY,(squireHunter?2.1:3.05)*farDepthScale,armorL);
+  if(o.eventUpper?.front){
+    const limbs=[[leftElbowX,leftElbowY,leftHandX,leftHandY],[rightElbowX,rightElbowY,rightHandX,rightHandY]];
+    for(const a of limbs){
+      rigSegment(a[0],a[1],a[2],a[3],1.65*farDepthScale,steel);
+      rigSegment(a[0]-.35,a[1],a[2]-.35,a[3],.32*farDepthScale,armorL);
+      rigJoint(a[0],a[1],1.6*farDepthScale,armorD);
+      rigJoint(a[0]-.18,a[1]-.18,.85*farDepthScale,armor);
+    }
+    for(const a of limbs){
+      const dx=a[2]-a[0],dy=a[3]-a[1],d=Math.max(.01,Math.hypot(dx,dy));
+      rigSegment(a[2]-dx/d*.85,a[3]-dy/d*.85,a[2],a[3],1.65*farDepthScale,armorD);
+      rigJoint(a[2],a[3],1.65*farDepthScale,armor);
+      px(a[2]-.82,a[3]-.82,1.65,.38,armorL);
+    }
+  }
   /* Rear view keeps most limbs behind the cuirass, but these tiny outer elbow
      caps stop the arms from disappearing without exposing them across the back. */
   g.globalAlpha=1-duckFold*.72;
-  if(leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
-  if(rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
+  if(!o.eventUpper?.front&&leftElbowX<shoulderX-4.15)rigJoint(leftElbowX,leftElbowY,1.35*farDepthScale,armorL);
+  if(!o.eventUpper?.front&&rightElbowX>shoulderX+4.15)rigJoint(rightElbowX,rightElbowY,1.35*farDepthScale,armorL);
   g.globalAlpha=1;
 
   /* Stable back-equipment layering, from far to near:
@@ -3541,7 +3612,7 @@ function drawSerJonathanRider(x,y,scale,o){
      top of it. Its exposed length comes only from translation, never scaling. */
   // Rear equipment: compact belt quiver and diagonal bow, beneath the shield.
   // Active draw/stow uses the very same prop, not a second spawning bow.
-  if(!squireVariant||squireHunter||bowActive){
+  if((!squireVariant||squireHunter||bowActive)&&!o.eventUpper?.front){
     const qx=shoulderX+4.15,qy=hipY-2.1;
     const bowPalette=squireHunter?appearance?.bow:null;
     if(squireHunter)rigSegment(leftShoulderX+.8,leftShoulderY+.8,qx,qy,.58,
@@ -3558,12 +3629,12 @@ function drawSerJonathanRider(x,y,scale,o){
       drawSpatialBowProp(spatialBow,bow.spatialTime,bowPoint,bow.recipe?.glowColor||'#afcfff',bowPalette);
   }
   if(heldSwordOnBackPlane)drawHeldSword();
-  drawMountedBackSword();
+  if(!o.eventUpper?.front)drawMountedBackSword();
 
   /* Mounted: only the royal outer face is visible and the grip is trapped
      between plate and shield. During the clip the shield turns edge-on before
      its inner face and gripping hand are allowed onto the foreground layer. */
-  if(!shieldInnerLayer)
+  if(!shieldInnerLayer&&!o.eventUpper?.front&&o.eventUpper?.shield!==false)
     drawCurrentShield();
 
   /* In the deep crouch the forearms become the visible support plane beneath the
@@ -9053,7 +9124,7 @@ function updateMagmaChamberFx(dt){
 /* v9.8 — rebuilt from scratch. One vast rock throat around a single opening:
    through it, the full moon, stars and treeline of the forest you rode in from.
    Every detail GROWS from a surface — ceiling, walls or floor. Nothing floats. */
-function drawCave(project=proj){
+function drawCave(project=proj,details=true,lightPools=true){
   const mx2=VW*0.5, mw2=152, mtop=HORIZON_Y-118, mbot=HORIZON_Y+40;
   /* flat dark rock — no gradient halo hazing around the entrance */
   g.fillStyle='#0f0c0a'; g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
@@ -9143,12 +9214,15 @@ function drawCave(project=proj){
   const fl=g.createLinearGradient(0,HORIZON_Y,0,VH);
   fl.addColorStop(0,'#16151a'); fl.addColorStop(.45,'#1a191f'); fl.addColorStop(1,'#0b0b0f');
   g.fillStyle=fl; g.fillRect(0,HORIZON_Y,VW,VH-HORIZON_Y+PAD_BOT);
+  if(!details)return;
   /* pools of moonlight where the spill lands */
+  if(lightPools){
   g.globalAlpha=0.10; g.fillStyle='#aebde4';
   g.beginPath(); g.ellipse(mx2,HORIZON_Y+96,200,44,0,0,TAU); g.fill();
   g.globalAlpha=0.05;
   g.beginPath(); g.ellipse(mx2,PLAYER_Y-60,230,50,0,0,TAU); g.fill();
   g.globalAlpha=1;
+  }
   /* cracked slab floor: stepped pixel cracks + scattered rubble */
   for(let i=0;i<24;i++){
     const z=sRnd(i*17+1)*CFG.Z_FAR*0.9, pz=project(z);
@@ -9965,7 +10039,7 @@ function journeyNormalContent(slot){
   if(slot.definition==='roadside_camp')return 'camp';
   if(slot.definition==='roadside_fight')return 'fight';
   if(slot.definition==='roadside_wolfden')return 'wolfden';
-  const pool=slot.definition==='roadside_quest'?['mushrooms','traveler']:['well','taxman'];
+  const pool=slot.definition==='roadside_quest'?['mushrooms']:['taxman'];
   return pool[journeyKeySeed(journeyRoute.seed,'content:'+slot.id)%pool.length];
 }
 function journeyFollowupPending(content){
@@ -9976,7 +10050,7 @@ function journeyFollowupPending(content){
 function scheduleJourneyFollowups(){
   if(!journeyRoute||mode!=='run')return;
   const prepared=journeyRoute.followupPrepared??={};
-  for(const content of ['mushrooms','chicken_return','traveler_return']){
+  for(const content of ['mushrooms','chicken_return']){
     if(!journeyFollowupPending(content))continue;
     const quest=content==='mushrooms'?journeyMushroomQuest:content==='chicken_return'?journeyChickenQuest:journeyTravelerFavor;
     if(prepared[content]===quest)continue;
@@ -10041,6 +10115,8 @@ function journeyNormalSlotEnabled(slot){
   // horizon. A visible prop and its clearing must never disagree or disappear
   // because another event updates normalSeen while we approach.
   const route=journeyRoute;if(!route)return false;
+  // Retain the retired encounters' code, but never offer them on a run.
+  if(slot.content==='well'||slot.content==='traveler'||slot.content==='traveler_return')return false;
   if(slot.definition==='roadside_camp'||slot.definition==='roadside_fight'||slot.definition==='forge_stop')return true;
   const plans=route.normalPlans??={};
   if(Object.prototype.hasOwnProperty.call(plans,slot.id))return plans[slot.id];
@@ -10051,11 +10127,17 @@ function journeyNormalSlotEnabled(slot){
 }
 const ROAD_ACCEPT={x:30,y:646,w:420,h:48},ROAD_PASS={x:30,y:706,w:420,h:48};
 function journeyNormalSide(slot){return journeyKeySeed(journeyRoute.seed,slot.id)%2?1:-1;}
-function journeyNormalCanEnter(context){
+function journeyNormalOffset(slot){return journeyNormalSide(slot)*(JOURNEY_LANE_WORLD+.45);}
+function journeyNormalCanEnter(context,previousDistance=dist){
   const lane=journeyNormalSide(context.slot)>0?2:0;
-  return mode==='run'&&!['turning','settling'].includes(journey?.phase)&&
+  return mode==='run'&&!paused&&!settingsOpen&&!['turning','settling'].includes(journey?.phase)&&
     player.lane===lane&&Math.abs(player.x-lane)<.34&&
-    dist>=context.slot.at-24&&dist<=context.slot.at+16&&journeyNode(journeyRoute.next).at-dist>36;
+    dist>=context.slot.at-1.2&&previousDistance<=context.slot.at+1.2&&journeyNode(journeyRoute.next).at-dist>36;
+}
+function tryJourneyNormalContact(session,previousDistance){
+  if(!session||session!==journeyRoadEventSession||session.blocking||!session.handler.enter||
+     !journeyNormalCanEnter(session.context,previousDistance))return false;
+  session.handler.enter(session.context);return true;
 }
 function journeyRoadReward(context){
   const game=context.game;if(!game||game.phase!=='result')return 0;
@@ -10064,6 +10146,11 @@ function journeyRoadReward(context){
     ({MIRACULOUS:20,EXCELLENT:12,GOOD:6}[game.result?.tier]||0);
 }
 const journeyNormalHandler={
+  enter(context){
+    journeyRoadEventSession.blocking=true;context.dialogue='choice';context.dialogueTime=0;
+    requestJourneyEventVisual(context.slot,true);
+    setMode('journeyevent');SFX.swipe();
+  },
   start(context){
     context.content=journeyNormalContent(context.slot);
     const route=journeyRoute;route.normalSeen??={};
@@ -10089,16 +10176,7 @@ const journeyNormalHandler={
       return true;
     }
     if(context.game)return false;
-    if(mode==='run'){
-      const direction=journeyNormalSide(context.slot)>0?'right':'left';
-      if(action!==direction||!journeyNormalCanEnter(context))return false;
-      // Only a new gesture that began for THIS encounter may enter it. A held
-      // direction key or pointer started during the previous event is not consent.
-      if(input&&(!input.fresh||input.roadToken!==context.token||input.mode!=='run'))return false;
-      journeyRoadEventSession.blocking=true;context.dialogue='choice';context.dialogueTime=0;
-      requestJourneyEventVisual(context.slot,true);
-      setMode('journeyevent');SFX.swipe();return true;
-    }
+    if(mode==='run')return false; // Lane movement stays free; ground contact opens the stop.
     if(mode!=='journeyevent'||!context.dialogue)return false;
     // A swipe's release must not also choose the response under that finger.
     if(context.dialogueTime<.2)return true;
@@ -10172,12 +10250,7 @@ const journeyNormalHandler={
   draw(context){
     if(mode==='journeyevent'&&context.taxSeal){KRTaxCollector.drawSeal(context.taxSeal);return;}
     if(mode==='journeyevent'&&context.dialogue){drawJourneyNormalConversation(context);return;}
-    if(mode!=='run'||context.game)return;
-    const title=JOURNEY_NORMAL_TITLES[context.content];
-    const ready=journeyNormalCanEnter(context),side=journeyNormalSide(context.slot)>0?'RIGHT >':'< LEFT';
-    g.fillStyle='#090c16';g.fillRect(50,169,380,55);g.textAlign='center';g.fillStyle='#fff0a2';g.font='bold 14px monospace';g.fillText('?  '+title,VW/2,190);
-    g.fillStyle=ready?'#c0f79a':'#aeb2c2';g.font='12px monospace';
-    g.fillText(ready?'SWIPE '+side+' TO STOP':'USE THE '+(journeyNormalSide(context.slot)>0?'RIGHT':'LEFT')+' LANE, THEN SWIPE OUT',VW/2,213);
+    // Approach is communicated by the roadside actor/prop itself, without a banner.
   }
 };
 function drawJourneyNormalConversation(context){
@@ -10193,7 +10266,7 @@ function drawJourneyNormalConversationPanel(context){
   for(const {rect,label,id} of journeyNormalChoices(context)){
     KRUI.button(g,rect,label,'treasure',{variant:id==='decline'?'secondary':undefined,size:14});
   }
-  KRUI.button(g,{...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II','treasure',{size:20,variant:'secondary'});
+  drawPauseButton();
 }
 journeyRoadEventHandlers.set('roadside_quest',journeyNormalHandler);
 journeyRoadEventHandlers.set('roadside_cache',journeyNormalHandler);
@@ -10258,7 +10331,7 @@ function queueJourneyNormalProps(){
       if(JOURNEY_ROAD_EVENTS[slot.definition].kind!=='normal'||slot.definition==='roadside_fight')continue;
       const record=journeyRoute.eventRecords[slot.id];if(record&&record.status!=='active')continue;
       const content=journeyNormalContent(slot);
-      const side=journeyNormalSide(slot),point=view.point(slot.at,side*7.5),cam=journeyCameraPoint(point.x,point.z);
+      const point=view.point(slot.at,journeyNormalOffset(slot)),cam=journeyCameraPoint(point.x,point.z);
       if(cam.depth>-6&&cam.depth<SPAWN_FAR&&journeyNormalSlotEnabled(slot))queueWorldDraw(cam.depth,drawJourneyNormalProp,{...point,content});
     }
   }
@@ -10267,20 +10340,26 @@ function drawJourneyNormalProp(item){
   const p=journeyDecorProjection(item);if(!p)return;
   g.save();g.globalAlpha=p.alpha;g.translate(p.x,p.y);g.scale(p.scale*1.5,p.scale*1.5);
   drawJourneyNormalPropArt(item.content);
-  const markerY=['well','chest','camp','wolfden'].includes(item.content)?-83:-108;
-  g.fillStyle='#fff0a2';g.font='bold 18px monospace';g.textAlign='center';g.fillText('?',0,markerY);g.restore();
+  g.restore();
 }
 function drawJourneyNormalPropArt(content,portrait=false){
   if(content==='wolfden'){drawDenWolf(0,0,.8,'sit',perfNow);return;}
+  if(content==='camp'&&window.KRRestCamp){KRRestCamp.road(perfNow);return;}
   if(content==='camp'){drawRoadCampArt();return;}
+  if(content==='taxman'&&window.KRTaxCollector){
+    g.save();g.scale(.46,.46);
+    expPoly([[-37,1],[29,-3],[59,9],[31,15],[-34,5]],'rgba(42,62,32,.24)');
+    KRTaxCollector.actor(perfNow,true);g.restore();return;
+  }
+  if(content==='mushrooms'&&window.KRGathererLighting){g.save();g.scale(.58,.58);KRGathererLighting.draw(perfNow);g.restore();return;}
   if(content==='well'){g.save();g.scale(.55,.55);drawRoadsideWell();g.restore();return;}
   if(content==='chest'){drawRoadsideOldChest();return;}
   g.save();g.scale(.58,.58);drawRoadsidePerson(content,perfNow,portrait);g.restore();
 }
 /* Roadside Sharp Plane cast. Native canvas geometry, shared by the distant
    roadside actor and the conversation. No upscaled portrait/sprite cache. */
-function drawRoadsideHand(x,y,angle=0){
-  g.save();g.translate(x,y);g.rotate(angle);
+function drawRoadsideHand(x,y,angle=0,side=1){
+  g.save();g.translate(x,y);g.rotate(angle);g.scale(side,1);
   expPoly([[-5,-5],[4,-5],[7,-1],[6,7],[-3,8],[-6,3]],'#c89a71');
   expPoly([[-5,-5],[3,-5],[3,3],[-4,4]],'#e3bb8a');
   expRect(0,3,1,4,'#986c51');expRect(3,2,1,4,'#986c51');g.restore();
@@ -10288,7 +10367,7 @@ function drawRoadsideHand(x,y,angle=0){
 function drawRoadsideArm(sx,sy,ex,ey,hx,hy,color,shade,light){
   expSegment(sx,sy,ex,ey,13,shade);expSegment(sx-2,sy,ex-2,ey,9,color);
   expSegment(ex,ey,hx,hy,10,color);expSegment(ex-2,ey,hx-2,hy-3,3,light);
-  drawRoadsideHand(hx,hy,Math.atan2(hy-ey,hx-ex)-Math.PI/2);
+  drawRoadsideHand(hx,hy,Math.atan2(hy-ey,hx-ex)-Math.PI/2,sx<0?-1:1);
 }
 function drawRoadsideBasket(x,y,s=1,full=false){
   g.save();g.translate(x,y);g.scale(s,s);
@@ -10370,9 +10449,10 @@ function drawMushroomGatherer(t=0){
   R(-50,-88,15,14,coat);R(-50,-87,5,12,coatL);
   L(-42,-82,lx,ly,15,coat);L(-45,-82,lx-3,ly,4,coatL);
   R(lx-8,ly-6,17,6,'#c6b38a');R(lx-8,ly-6,16,2,'#ece0b8');
+  g.save();g.translate(lx,ly);g.scale(-1,1);g.translate(-lx,-ly);
   P([[lx-7,ly-1],[lx+6,ly-1],[lx+9,ly+3],[lx+6,ly+9],[lx-7,ly+9]],skin);
   R(lx-7,ly,11,3,skinL);R(lx+5,ly+3,3,5,skinD);
-  R(lx-4,ly+5,1,3,'#a27752');R(lx-1,ly+5,1,3,'#a27752');
+  R(lx-4,ly+5,1,3,'#a27752');R(lx-1,ly+5,1,3,'#a27752');g.restore();
   // Neck and head: frontal plane + narrow shadow cheek, stepped beard silhouette.
   R(-10,-122,23,14,skinD);R(-10,-122,12,12,skin);
   g.save();g.translate(Math.sin(t*.65)*.6,0);
@@ -10442,7 +10522,7 @@ function drawRoadsidePerson(content,t=0,portrait=false,wrestling=false){
     expPoly([[-29,-85],[-19,-100],[3,-96],[26,-87],[18,-72],[-5,-82],[-26,-73]],'#b3b092');
     expPoly([[-19,-100],[-9,-103],[3,-96],[-5,-82]],'#d4c7a0');
     expPoly([[-7,-80],[4,-82],[17,-39],[-12,-36]],'#52613d');
-    expSegment(-24,-62,-39,-46,11,cloth);expSegment(-39,-46,-32,-35,9,light);drawRoadsideHand(-30,-33);
+    expSegment(-24,-62,-39,-46,11,cloth);expSegment(-39,-46,-32,-35,9,light);drawRoadsideHand(-30,-33,0,-1);
     // Basket is attached to the hand; both gently sway together.
     drawRoadsideArm(22,-81,31,-64,32,-37+gesture,cloth,shade,light);
     drawRoadsideBasket(38,-8+gesture,.74,false);
@@ -10865,8 +10945,9 @@ function clearEventVisuals(){
 }
 // Bitmap-backed event registrations. Existing code-native encounters do not
 // allocate images. Add future scene adapters here and plates to the manager catalog.
-const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest',taxman:'royal-tax-collector'});
+const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest',taxman:'royal-tax-collector',camp:'rest-camp'});
 function journeyEventVisualKey(slot){
+  if(slot.definition==='roadside_fight')return 'fight-loot';
   if(slot.definition==='inn_stop')return 'mossy-inn';
   if(slot.definition==='merchant_stop')return 'autumn-caravan';
   if(slot.definition==='chest_stop')return 'treasure-grove';
@@ -11649,12 +11730,14 @@ function journeyRoadEventTriggerAt(slot){
   }
   return slot.at;
 }
-function updateJourneyRoadEvents(dt){
+function updateJourneyRoadEvents(dt,previousDistance=dist){
   const route=journeyRoute;if(!route)return;
   updateJourneyEventVisuals();
   let session=journeyRoadEventSession;
   if(session){
     if(session.route!==route){cancelJourneyRoadEvent('abandoned');return;}
+    // Swept contact runs before expiration, so a fast frame cannot skip a stop.
+    if(tryJourneyNormalContact(session,previousDistance))return;
     if(!session.blocking&&(session.slot.expiresAt<=dist||mode!=='run'))
       completeJourneyRoadEvent(session.token,{status:'expired'});
     else if(session.handler.update){
@@ -11676,6 +11759,7 @@ function updateJourneyRoadEvents(dt){
     if((JOURNEY_ROAD_EVENTS[slot.definition].blocking?journeyRoadEventTriggerAt(slot):slot.at-JOURNEY_ROAD_RULES.normalOfferLead)>dist||route.eventRecords[slot.id])continue;
     if(slot.expiresAt<dist){route.eventRecords[slot.id]={status:'missed'};continue;}
     startJourneyRoadEvent(slot);
+    tryJourneyNormalContact(journeyRoadEventSession,previousDistance);
     if(journeyRoadEventSession)break;
   }
 }
@@ -12335,10 +12419,8 @@ const PLAYER_HEALTH_CONTRACT=Object.freeze({
   rule:'INTEGER_FIXED_POINT_HEALTH_ONE_UNIT_PER_VISIBLE_HEART_CELL',
   shieldRule:'TEMPORARY_SHIELDS_BEFORE_DEATH_SAVE_ARTIFACTS'
 });
-/* Hearts belong to encounters, not navigation. Road obstacles retain the
-   original one-hit runner contract; miniboss wounds persist through the road
-   and into the stage boss because the same player pool is never reset there. */
-function playerHeartHealthEnabled(){return activeSkillLabCombat()||!!boss||!!minibossFight;}
+/* One persistent health pool for road, events and combat. */
+function playerHeartHealthEnabled(){return true;}
 const player={
   lane:1, x:1,                 // logical lane + eased visual lane position
   jumpT:-1, duckT:-1,          // -1 = inactive, else 0..duration
@@ -12682,10 +12764,18 @@ function syncPlayerVitals(fullHeal=false){
   if(fullHeal)player.heartFlashStartedAt=-Infinity;
 }
 function restorePlayerHealthAfterBoss(){
+  const before=player.currentHealthUnits;
   syncPlayerVitals(false);player.currentHealthUnits=player.maxHealthUnits;
-  player.heartFlashStartedAt=-Infinity;
+  beginPlayerHeartFlash(before,player.currentHealthUnits);
 }
 const HEART_HIT_FLASH_DURATION=.5;
+function displayedHeartUnits(currentUnits,state,time=perfNow){
+  if(!state||state.toUnits<=state.fromUnits)return currentUnits;
+  const age=time-state.startedAt,duration=Math.min(1.5,.65+
+    (state.toUnits-state.fromUnits)/PLAYER_HEALTH_CONTRACT.unitsPerHeart*.2);
+  if(age<0||age>=duration)return currentUnits;
+  return Math.round(lerp(state.fromUnits,state.toUnits,smoothStep(age/duration)));
+}
 function beginPlayerHeartFlash(fromUnits,toUnits){
   player.heartFlashFromUnits=fromUnits;player.heartFlashToUnits=toUnits;
   player.heartFlashStartedAt=perfNow;
@@ -13026,7 +13116,7 @@ function updateRunCollisions(){
           else if(hasRelic('oak')&&!oakUsed){                      // OAKEN CHARM: one crash forgiven per loop
             oakUsed=true; floater(laneX(player.x,1),PLAYER_Y-70,'OAKEN CHARM SHATTERS THE BLOW!','#ffe37a',16);
             burst(laneX(player.x,1),PLAYER_Y-30,14,['#c9a86a','#ffe37a'],180,100,3,.6); SFX.thud(); shake(3,.15); }
-          else damagePlayer(o.roadTheme==='disco'?DISCO_OBSTACLE_REASONS[o.kind]:o.roadTheme==='bloodwood'?BLOOD_OBSTACLE_REASONS[o.kind]:REASON[o.kind]); }
+          else damagePlayer(o.roadTheme==='disco'?DISCO_OBSTACLE_REASONS[o.kind]:o.roadTheme==='bloodwood'?BLOOD_OBSTACLE_REASONS[o.kind]:REASON[o.kind],false,1,'obstacle'); }
         else if(!hit){ o.resolved=true; }
       } else if(o.z<0.2||crossed(o,.2)) o.resolved=true;
     }
@@ -13083,7 +13173,7 @@ function playerDamageLabel(units){
   const hearts=units/PLAYER_HEALTH_CONTRACT.unitsPerHeart;
   return (Number.isInteger(hearts)?hearts:hearts.toFixed(2).replace(/0+$/,'').replace(/\.$/,''))+' HEART';
 }
-function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
+function damagePlayer(reason,unstoppable=false,baseHeartDamage=1,source='attack'){
   const chargedDefense=boss&&boss.pendingChargeRelease;
   const labFight=activeSkillLabCombat(),healthEnabled=playerHeartHealthEnabled();
   if(godMode){ resetDetonationDefenseFuseStreak(); flash('#9ecbff',.15); floater(laneX(player.x,1),PLAYER_Y-90,'GOD MODE','#9ecbff',14);
@@ -13092,12 +13182,14 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   if(!unstoppable&&resolveSquireCoveringShot())return;
   if(chargedDefense&&chargedDefense.status==='DEFENDING')chargedDefense.streakBroken=true;
   resetDetonationDefenseFuseStreak();
-  let damageUnits=unstoppable?player.currentHealthUnits:incomingPlayerDamageUnits(baseHeartDamage);
+  const roadObstacle=source==='obstacle';
+  let damageUnits=unstoppable?player.currentHealthUnits:roadObstacle?
+    PLAYER_HEALTH_CONTRACT.unitsPerHeart:incomingPlayerDamageUnits(baseHeartDamage);
   if(!unstoppable&&damageUnits<=0)return;
   /* Living Bastion's prepared parry is an explicit Squire action and therefore
      meets the incoming attack before stored Knight shields are considered. */
   if(!unstoppable&&resolvePreparedSquireParry(reason))return;
-  const shieldAbsorption=!unstoppable?absorbPlayerShieldDamage(damageUnits):null;
+  const shieldAbsorption=!unstoppable&&!roadObstacle?absorbPlayerShieldDamage(damageUnits):null;
   if(shieldAbsorption)damageUnits=shieldAbsorption.remaining;
   const wouldBeLethal=!healthEnabled||damageUnits>=player.currentHealthUnits,
     relicBlocked=!unstoppable&&damageUnits>0&&consumeLethalShieldRelic(wouldBeLethal);
@@ -13129,9 +13221,7 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1){
   }
   player.alive=false; deathReason=reason;
   keyboardParryHeld=false;player.parryShield=null;
-  /* Boss-arena deaths keep the rider on screen long enough to perform the same
-     mounted fall, ground impact, and particle breakup used by the Squire. Run
-     obstacles deliberately retain their immediate one-hit death presentation. */
+  /* The final heart triggers the existing mounted death presentation. */
   beginPlayerMountedDeath();
   SFX.hit(); SFX.dead(); flash('#ff4d3a',.8); shake(14,.5); stopTime(.22);
   burst(laneX(player.x,1),PLAYER_Y-40,30,['#ff4d3a','#8f9bb0','#3f7bff'],260,240,4,1);
@@ -49038,6 +49128,7 @@ function bossAttackCount(stage=loop){
   return Math.max(dodgeAttackCount(stage),guaranteeCount);
 }
 function startBoss(definitionId=null,roadContext=null){
+  clearBattleShields();
   if(!roadContext)interruptJourneyAtBoss();
   /* the bear stalks in from the treeline; pond bosses RISE from the water */
   resetSquireCombat();
@@ -49420,6 +49511,7 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
    multi-hit action may survive the transition into the authored death state. */
 function defeatBoss(){
   if(!boss||boss.hp>0||boss.state==='dying')return false;
+  clearBattleShields();
   /* Skill Lab uses the real lethal path and death presentation, but deliberately
      bypasses run score, relics and reward routing when that presentation ends. */
   if(boss.skillLabDummy){
@@ -50822,6 +50914,7 @@ function cueMiniMove(){
 let minibossTreeTravel=0;
 function spawnMinibossTreeRow(z){ spawnMinibossSceneryRow(z); }
 function prepareMiniMoveLab(definitionId){
+  clearBattleShields();
   // Model/pattern sandbox only. The former run gate and tame/recruit loop are retired.
   minibossFight=new EncounterActor({
     encounterId:definitionId,z:10, x:1, xTarget:1,
@@ -52389,6 +52482,9 @@ function syncArtifactCache(){
   for(const r of relics) if(r) equippedArtifactTypes.add(r.type);
 }
 function hasRelic(t){ return equippedArtifactTypes.has(t); }
+function clearBattleShields(){
+  player.shieldCharges=0;player.volatileShieldCharges=0;player.volatileShieldPosture=0;
+}
 function grantPlayerShields(count,volatilePosture=0){
   const gained=Math.max(0,Math.floor(Number(count)||0));if(!gained)return 0;
   player.shieldCharges+=gained;
@@ -52672,8 +52768,12 @@ const ROAD_SERVICE_BUTTONS=Object.freeze([
 ]);
 const CHEST_REWARD_RECT=Object.freeze({x:42,y:526,w:396,h:80});
 const CHEST_CONTINUE_RECT=Object.freeze({x:108,y:710,w:264,h:50});
+const FIGHT_LOOT_ITEMS=Object.freeze([
+  Object.freeze({x:139,y:404,rect:Object.freeze({x:53,y:325,w:174,h:191}),labelY:493}),
+  Object.freeze({x:331,y:450,rect:Object.freeze({x:245,y:370,w:187,h:182}),labelY:530})
+]);
 function journeyLootRewardRect(context,index){
-  return context.loot.fight?{x:42,y:478+index*94,w:396,h:80}:CHEST_REWARD_RECT;
+  return context.loot.fight?FIGHT_LOOT_ITEMS[index].rect:CHEST_REWARD_RECT;
 }
 function prepareJourneyFightLoot(context){
   const session=journeyRoadEventSession;
@@ -52688,7 +52788,8 @@ function prepareJourneyFightLoot(context){
   // Release combat now, but keep the road session suspended until loot is left.
   // The same disposer is safe to call again when the encounter is completed.
   journeyRoadEventHandlers.get('elite_finale').dispose(context);
-  session.ownedMode='journeyevent';setMode('journeyevent');SFX.relic();return true;
+  session.ownedMode='journeyevent';setMode('journeyevent');
+  requestJourneyEventVisual(context.slot,true);SFX.relic();return true;
 }
 function prepareJourneyChestLoot(context){
   const session=journeyRoadEventSession,game=context.game;
@@ -52715,7 +52816,7 @@ function claimJourneyLootReward(context,id){
   if(!entry||entry.claimed||!['gold','scrap'].includes(entry.kind)||
      !Number.isSafeInteger(entry.amount)||entry.amount<=0)return false;
   // Claim first: repeated taps, Enter and late callbacks cannot pay twice.
-  entry.claimed=true;
+  entry.claimed=true;entry.claimedAt=context.lootTime;
   if(entry.kind==='scrap')awardScrap(entry.amount);else awardGold(entry.amount);
   SFX.coin();return true;
 }
@@ -52805,22 +52906,31 @@ journeyRoadEventHandlers.set('inn_stop',{
   },draw(context){if(mode==='journeyevent')drawJourneyInn(context);},dispose:disposeInnGame
 });
 journeyRoadEventHandlers.set('roadside_camp',{
-  start(context){context.content='camp';context.time=0;context.rested=false;},
-  update(context,dt){context.time+=dt;if(!context.dialogue&&dist>context.slot.at+20)context.finish({status:'passed'});},
+  start(context){context.content='camp';context.time=0;context.rested=false;context.restT=0;requestJourneyEventVisual(context.slot);},
+  enter(context){journeyRoadEventSession.blocking=true;context.dialogue=true;context.time=0;requestJourneyEventVisual(context.slot,true);setMode('journeyevent');},
+  update(context,dt){
+    if(paused)return;context.time+=dt;
+    if(!context.dialogue&&dist>context.slot.at+20){context.finish({status:'passed'});return;}
+    if(context.resting){
+      context.restT+=dt;
+      if(context.restT>=2&&!context.rested){
+        const before=player.currentHealthUnits;
+        player.currentHealthUnits=Math.min(player.maxHealthUnits,before+2*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
+        beginPlayerHeartFlash(before,player.currentHealthUnits);
+        context.recovered=player.currentHealthUnits-before;context.rested=true;SFX.relic();
+      }
+      if(context.restT>=3)context.resting=false;
+    }
+  },
   action(context,action,pt,input){
-    if(mode==='run'){
-      if(action!==(journeyNormalSide(context.slot)>0?'right':'left')||!journeyNormalCanEnter(context))return false;
-      if(input&&(!input.fresh||input.roadToken!==context.token||input.mode!=='run'))return false;
-      journeyRoadEventSession.blocking=true;context.dialogue=true;context.time=0;setMode('journeyevent');return true;
-    }
+    if(mode==='run')return false;
     if(mode!=='journeyevent'||context.time<.22)return false;
-    const choice=roadServiceChoice(action,pt);
-    if(choice===0&&!context.rested){
-      if(player.currentHealthUnits>=player.maxHealthUnits){context.notice='Your hearts are already full.';return true;}
-      player.currentHealthUnits=Math.min(player.maxHealthUnits,player.currentHealthUnits+2*PLAYER_HEALTH_CONTRACT.unitsPerHeart);
-      context.rested=true;context.notice='Two hearts recovered. The fire burns low.';SFX.relic();return true;
+    const fire=action==='choice1'||action==='tap'&&pt&&pointInRect(pt,KRRestCamp.fireRect);
+    if(fire&&!context.rested&&!context.resting){
+      context.resting=true;context.restT=0;return true;
     }
-    if(choice===2){context.finish({status:'completed',rested:context.rested});return true;}
+    const leave=action==='continue'||action==='choice3'||action==='tap'&&pt&&pointInRect(pt,KRRestCamp.leaveRect);
+    if(leave&&!context.resting){context.finish({status:'completed',rested:context.rested});return true;}
     return false;
   },draw(context){
     if(mode==='run'){journeyNormalHandler.draw(context);return;}
@@ -52894,17 +53004,67 @@ function drawRoadCacheMarker(x,y,index=0){
   expPoly([[-15,0],[-12,-15],[-4,-18],[-6,-9],[2,-6],[0,0]],'#4e643c');
   if(index%2)expRect(-11,-13,6,3,'#87a264');g.restore();
 }
-// Bent steel, a snapped blade and a rivet: a readable native-art currency mark.
-function drawScrapIcon(x,y,scale=1){
-  g.save();g.translate(x,y);g.scale(scale,scale);
-  expPoly([[-14,6],[-8,-4],[2,-7],[10,-1],[7,11],[-5,13]],'#25313d');
-  expPoly([[-12,5],[-7,-3],[2,-5],[8,0],[5,9],[-4,10]],'#82939e');
-  expPoly([[-12,5],[-4,3],[2,-5],[-7,-3]],'#c7d2d3');
-  expPoly([[-4,3],[8,0],[5,9],[-4,10]],'#526775');
-  expPoly([[-3,-2],[2,-14],[7,-12],[6,-8],[10,-8],[3,5]],'#384652');
-  expPoly([[-1,-2],[3,-12],[6,-11],[4,-7],[8,-7],[2,3]],'#dce0d7');
-  expPoly([[2,3],[8,-7],[4,-7],[0,1]],'#90a6b0');
-  expRect(-7,3,4,4,'#c1a571');expRect(-7,3,2,2,'#f0dba6');g.restore();
+// Broad steel planes shared by the tiny currency mark and the physical salvage.
+// Actual broken edges, bends and rivets; no random facets or baked drop shadows.
+const SCRAP_MATERIALS=Object.freeze({
+  // Keep steel blue and brass golden even in warm daylight; no beige/grey wash.
+  neutral:Object.freeze({light:'#cce6ef',face:'#6cabc8',shade:'#376b91',edge:'#254761',brass:'#d49a2e',shine:'#ffe18b'}),
+  sun:Object.freeze({light:'#d7ebdf',face:'#79b4c9',shade:'#407b9b',edge:'#2c526a',brass:'#e0a22f',shine:'#ffe399'})
+});
+function drawSalvageSteel(x,y,scale=1,scene=false){
+  const m=SCRAP_MATERIALS[scene?'sun':'neutral'];
+  g.save();try{g.translate(x,y);g.scale(scale,scale);
+    // A bent armour corner: upright folded lip, broad sloping face and thickness.
+    expPoly([[-48,-13],[-24,-31],[9,-20],[17,6],[-4,23],[-41,13]],m.edge);
+    expPoly([[-47,-17],[-25,-35],[8,-24],[16,1],[-5,18],[-40,8]],m.face);
+    expPoly([[-47,-17],[-25,-35],[8,-24],[4,-15],[-23,-26],[-41,-11]],m.light);
+    expPoly([[4,-15],[8,-24],[16,1],[-5,18],[-9,10]],m.shade);
+    expPoly([[-41,-11],[-23,-26],[-21,-22],[-38,-8]],m.light);
+    for(const [rx,ry] of [[-29,-14],[-24,3]]){
+      expPoly([[rx-3,ry-2],[rx+2,ry-3],[rx+4,ry],[rx+1,ry+3],[rx-3,ry+2]],m.edge);
+      expRect(rx-2,ry-2,4,3,m.light);
+    }
+    // Detached sword shard rests across the plate. A torn end is not a point.
+    expPoly([[-17,15],[15,-42],[25,-48],[24,-36],[32,-38],[29,-27],[37,-29],[0,28]],m.edge);
+    expPoly([[-17,11],[14,-45],[24,-51],[22,-38],[30,-41],[27,-30],[35,-33],[-1,23]],m.face);
+    expPoly([[-17,11],[14,-45],[24,-51],[22,-38],[-9,17]],m.light);
+    expPoly([[-9,17],[22,-38],[30,-41],[27,-30],[35,-33],[-1,23]],m.shade);
+    expPoly([[-9,17],[22,-38],[20,-31],[-5,21]],m.face);
+    expPoly([[-26,9],[-21,3],[8,19],[4,26]],m.edge);
+    expPoly([[-26,6],[-21,1],[8,17],[4,22]],m.brass);
+    expSegment(-24,5,5,20,2,m.shine);
+    expPoly([[-22,9],[-12,15],[-22,32],[-29,27]],'#77513b');
+    expSegment(-25,18,-17,22,2,'#bc8b55');
+    // Open buckle sits separately on the ground. Its hollow centre stays clear.
+    g.save();g.translate(38,15);g.rotate(-.22);
+    for(const [a,b] of [[[-10,-9],[10,-9]],[[10,-9],[12,8]],[[12,8],[-10,8]],[[-10,8],[-10,0]]]){
+      expSegment(a[0]+1,a[1]+2,b[0]+1,b[1]+2,5,m.edge);
+      expSegment(...a,...b,4,m.brass);
+      expSegment(a[0],a[1]-1,b[0],b[1]-1,1,m.shine);
+    }
+    expSegment(0,-9,2,5,3,m.shade);g.restore();
+  }finally{g.restore();}
+}
+function drawScrapIcon(x,y,scale=1){drawSalvageSteel(x,y+2*scale,scale*.28);}
+function drawLootPurse(x,y,scale=1){
+  g.save();try{g.translate(x,y);g.scale(scale,scale);
+    expPoly([[-40,7],[-42,-13],[-26,-39],[10,-41],[34,-21],[41,5],[24,19],[-15,22]],'#694330');
+    expPoly([[-42,-13],[-26,-39],[-13,-38],[-21,6],[-15,22],[-35,12]],'#b57b42');
+    expPoly([[-13,-38],[10,-41],[29,-23],[27,10],[11,18],[-15,22],[-21,6]],'#916035');
+    expPoly([[10,-41],[34,-21],[41,5],[24,19],[11,18],[27,10],[29,-23]],'#523c2c');
+    expPoly([[-26,-39],[-30,-52],[-16,-48],[-10,-57],[0,-48],[13,-54],[10,-41],[-6,-36]],'#c49151');
+    expPoly([[-26,-39],[-10,-44],[10,-41],[-6,-36]],'#4e3728');
+    expSegment(-25,-35,10,-37,4,'#d9b574');
+    expSegment(4,-37,17,-25,2,'#d9b574');expSegment(4,-37,8,-19,2,'#d9b574');
+    // Coins lie on the earth plane (flattened face, visible lower rim), not upright.
+    for(const [cx,cy,angle,s] of [[-37,26,-.25,1],[7,32,.1,.85],[42,17,-.3,1],[27,33,.3,.8]]){
+      g.save();g.translate(cx,cy);g.rotate(angle);g.scale(s,s*.55);
+      const coin=[[-11,-5],[-5,-10],[5,-10],[11,-5],[11,5],[5,10],[-5,10],[-11,5]];
+      expPoly(coin.map(([px,py])=>[px,py+4]),'#997032');expPoly(coin,'#ddb64f');
+      expSegment(-8,-6,-4,-8,2,'#ffe4a0');expRect(-5,-2,10,5,'#a87932');
+      expRect(-5,-5,2,4,'#f8db80');expRect(-1,-6,2,4,'#f8db80');expRect(3,-5,2,4,'#f8db80');g.restore();
+    }
+  }finally{g.restore();}
 }
 function drawJourneyLootRow(entry,r){
   const claimed=entry.claimed,isScrap=entry.kind==='scrap',mid=r.y+r.h/2;
@@ -52915,29 +53075,45 @@ function drawJourneyLootRow(entry,r){
   smithText(claimed?'COLLECTED':isScrap?'TAKE SCRAP':'TAKE COINS',r.x+r.w-95,mid+5,13,claimed?p.mutedInk:p.ink);
 }
 function drawJourneyFightLoot(context){
-  const loot=context.loot;
-  drawRoadServiceForest();
-  smithText('VICTORY',240,89,30,'#ecd08b');
-  smithText(loot.enemy,240,118,14,'#b7c7b4');
-  drawCoin(309,155,.8,.25);smithText(String(gold),345,160,14,'#edd8a2');
-  drawScrapIcon(395,155,.7);smithText(String(scrap),433,160,14,'#ccdae0');
-  // Solid salvage on the forest floor, not a second treasure-chest encounter.
-  g.save();g.translate(240,356);
-  expPoly([[-105,17],[-48,-4],[64,-3],[102,19],[63,33],[-61,32]],'#142322');
-  expPoly([[-64,0],[-49,-60],[-12,-79],[36,-57],[59,5],[22,21],[-43,15]],'#674a30');
-  expPoly([[-49,-60],[-12,-79],[11,-53],[-8,12],[-43,15]],'#a27a4d');
-  expPoly([[-12,-79],[36,-57],[59,5],[22,21],[-8,12],[11,-53]],'#7f5c37');
-  expSegment(-44,-53,29,-48,5,'#c0a272');
-  g.save();g.rotate(-.32);drawScrapIcon(-16,-37,3.5);g.restore();
-  drawScrapIcon(59,4,1.3);drawCoin(-67,7,1.05,.25);drawCoin(-44,20,.8,.25);
-  g.restore();
-  KRUI.sheet(g,{x:16,y:382,w:448,h:414});
-  smithText('SALVAGE FROM THE ROAD',240,416,17,KRUI.theme().ink);
-  smithText('Scrap pays for blacksmith skill upgrades.',240,443,12,KRUI.theme().paperSoft);
-  loot.entries.forEach((entry,i)=>drawJourneyLootRow(entry,journeyLootRewardRect(context,i)));
-  smithText('Select each reward to collect it.',240,681,11,KRUI.theme().paperSoft);
-  drawSmithButton(CHEST_CONTINUE_RECT,loot.entries.some(e=>!e.claimed)?'LEAVE LOOT':'CONTINUE','#e3c78c');
-  smithText('1: COINS  /  2: SCRAP  /  ENTER: CONTINUE',240,786,10,KRUI.theme().paperSoft);
+  const loot=context.loot,t=context.lootTime,p=KRUI.theme();
+  // Asset failure must not block rewards, and must never expose the old forest.
+  expRect(0,-PAD_TOP,480,800+PAD_TOT,p.dark);
+  if(!window.KRCutscenes?.draw('fight-loot',t)){
+    expRect(0,0,480,640,'#b88a4e');
+    expPoly([[0,0],[480,0],[480,225],[333,180],[165,235],[0,167]],'#546346');
+  }
+  loot.entries.forEach((entry,i)=>{
+    const at=FIGHT_LOOT_ITEMS[i],q=entry.claimed?clamp((t-(entry.claimedAt??0))/.44,0,1):0;
+    if(q<1){g.save();try{
+      g.globalAlpha*=1-q;
+      g.save();g.translate(at.x,at.y);
+      expPoly([[-64,15],[-41,2],[33,3],[76,27],[40,42],[-28,33]],'rgba(58,52,30,.18)');
+      expPoly([[-43,10],[-20,2],[32,7],[49,20],[17,29],[-34,25]],'rgba(61,49,29,.22)');g.restore();
+      const lift=q*q*44;
+      if(i===0)drawLootPurse(at.x,at.y-lift,1.28*(1-q*.13));
+      else drawSalvageSteel(at.x,at.y-lift,1.38*(1-q*.13),true);
+      const spark=Math.max(0,Math.sin(t*2.1-i*1.8)-.87)/.13;
+      if(!entry.claimed&&spark>0){g.globalAlpha*=spark;
+        const sx=at.x+(i?16:-30),sy=at.y-(i?43:39);
+        expPoly([[sx,sy-6],[sx+2,sy-1],[sx+6,sy],[sx+2,sy+1],[sx,sy+6],[sx-1,sy+1],[sx-6,sy],[sx-1,sy-1]],'#fff1bc');
+      }
+    }finally{g.restore();}}
+    if(!pausePhotoMode&&!entry.claimed){
+      KRUI.panel(g,{x:at.x-70,y:at.labelY-19,w:140,h:30});
+      smithText(`${entry.amount} ${i?'SCRAP':'GOLD'}`,at.x,at.labelY,13,p.onDark);
+    }
+  });
+  if(pausePhotoMode)return;
+  KRUI.heading(g,{x:106,y:31,w:268,h:49},'VICTORY','treasure',25);
+  KRUI.panel(g,{x:100,y:89,w:280,h:31});smithText(loot.enemy,240,110,12,p.onDark);
+  KRUI.panel(g,{x:298,y:137,w:159,h:35});
+  drawCoin(317,157,.58,.25);smithText(String(gold),348,160,12,p.onDark);
+  drawScrapIcon(394,153,.63);smithText(String(scrap),427,160,12,p.onDark);
+  KRUI.sheet(g,{x:24,y:630,w:432,h:166});
+  const remaining=loot.entries.some(e=>!e.claimed);
+  smithText(remaining?'CLAIM YOUR SPOILS':'PACKED AND READY',240,675,18,p.ink);
+  smithText(remaining?'Tap the gold and scrap on the ground.':'The road is waiting.',240,696,12,p.paperSoft);
+  KRUI.button(g,CHEST_CONTINUE_RECT,remaining?'LEAVE LOOT':'CONTINUE','treasure',{size:15,variant:remaining?'secondary':undefined});
 }
 function drawJourneyChestLoot(context){
   const loot=context.loot,entry=loot.entries[0],claimed=!!entry?.claimed;
@@ -52952,8 +53128,7 @@ function drawJourneyChestLoot(context){
     drawJourneyLootRow(entry,CHEST_REWARD_RECT);
     smithText(claimed?'Added to your purse.':'Select the reward to collect it.',240,630,11,KRUI.theme().paperSoft);
   }else smithText('Nothing taken. Nothing lost but the picks.',240,568,12,KRUI.theme().paperSoft);
-  drawSmithButton(CHEST_CONTINUE_RECT,entry&&!claimed?'LEAVE LOOT':'CONTINUE','#e3c78c');
-  smithText('1: TAKE REWARD  /  ENTER: CONTINUE',240,786,10,KRUI.theme().paperSoft);
+  drawSmithButton(CHEST_CONTINUE_RECT,entry&&!claimed?'LEAVE LOOT':'CONTINUE','#e3c78c',true,entry&&!claimed?'secondary':'primary');
 }
 function drawRoadLantern(x,y,scale=1){
   g.save();g.translate(x,y);g.scale(scale,scale);
@@ -53140,17 +53315,21 @@ function drawRoadInnkeeper(x,y,s){
   expRect(23,-54,17,20,'#ad8f55');expRect(25,-55,14,4,'#e8dab6');expRect(39,-49,4,10,'#c4a16b');g.restore();
 }
 function drawJourneyCamp(context){
-  drawRoadsideScene('camp');g.save();g.translate(227,411);g.scale(2.65,2.65);drawRoadCampArt();g.restore();
-  KRUI.sheet(g,{x:18,y:463,w:444,h:316});smithText('A QUIET CAMP',240,497,23,KRUI.theme().ink);
-  smithText('Warm your hands. Let the road wait.',240,522,12,KRUI.theme().paperSoft);
-  drawSmithButton(ROAD_SERVICE_BUTTONS[0],context.rested?'FIRE SPENT':'REST — RECOVER TWO HEARTS','#b9d794',!context.rested);
-  smithText(context.notice||'One free rest at this campsite.',240,633,12,KRUI.theme().paperSoft);
-  drawSmithButton(ROAD_SERVICE_BUTTONS[2],'PACK UP AND RIDE ON','#e3d3b2');
+  if(!window.KRCutscenes?.draw('rest-camp',perfNow))drawRoadsideScene('camp');
+  KRRestCamp.drawProps(context,perfNow);
+  if(paused&&pausePhotoMode)return;
+  const p=KRUI.theme();KRUI.sheet(g,{x:26,y:619,w:428,h:170});
+  KRUI.text(g,'A QUIET CAMP',240,656,22,p.ink,396);
+  KRUI.text(g,context.resting?'Let the road wait...':context.rested?
+    'You feel rested.':
+    'Touch the fire to rest. Recover up to 2 hearts.',240,684,12,p.paperSoft,396);
+  KRUI.button(g,KRRestCamp.leaveRect,'BACK TO THE ROAD','treasure',{enabled:!context.resting,variant:context.rested?undefined:'secondary'});
+  drawPauseButton();
 }
 function drawRoadServiceGold(){smithText(''+gold,419,490,15,'#f6d37c',70);drawCoin(447,485,.65,perfNow);}
 function roadPricedButton(rect,title,price,enabled){
-  drawSmithButton(rect,title,'#e1c791',enabled&&gold>=price);
-  smithText(''+price,rect.x+rect.w-44,rect.y+rect.h-8,10,'#efd081',36);drawCoin(rect.x+rect.w-22,rect.y+rect.h-12,.5,perfNow);
+  drawSmithButton(rect,title,'#e1c791',enabled&&gold>=price,'primary');
+  smithText(''+price,rect.x+rect.w-44,rect.y+rect.h-8,10,enabled&&gold>=price?KRUI.theme().ink:KRUI.theme().mutedInk,36);drawCoin(rect.x+rect.w-22,rect.y+rect.h-12,.5,perfNow);
 }
 function drawRoadEnemy(enemy,x,y,s,anim='idle',t=0,hurt=false){
   if(enemy.kind==='wolf'){drawWolf(x,y,s,anim,t,hurt);return;}
@@ -53509,7 +53688,7 @@ function drawWolfDenAdventure(context){
    share one event receipt, never pass through stage rewards, and never heal. */
 let journeyMeat=0,wolfPup=null;
 const WOLF_DEN_MEAT_RECT=Object.freeze({x:52,y:426,w:82,h:94});
-const WOLF_DEN_BUTTONS=Object.freeze([{x:80,y:695,w:320,h:40},{x:80,y:747,w:320,h:38}]);
+const WOLF_DEN_BUTTONS=Object.freeze([{x:80,y:687,w:320,h:36},{x:80,y:733,w:320,h:36}]);
 for(let i=0;i<4;i++)ENCOUNTERS.register(new EncounterDefinition('den_wolf_'+i,'boss',{
   name:'DEN WOLF',hitText:'The pack caught you',finisherHit:'Lost in the wolf den',
   arenaLine:'THE DEN PACK',roadEnemy:true,roadOnly:true,roadHp:[24,28,32,38][i],
@@ -53566,6 +53745,11 @@ function finishWolfDenFight(context){
 }
 journeyRoadEventHandlers.set('roadside_wolfden',{
   start:context=>journeyNormalHandler.start(context),
+  enter(context){
+    journeyNormalHandler.enter(context);
+    context.den={slide:'flee',t:0,kills:0,meatTaken:false,searched:false};
+    wolfDenSlide(context,'flee');journeyRoadEventSession.ownedMode='journeyevent';
+  },
   update(context,dt){
     if(!context.den){journeyNormalHandler.update(context,dt);return;}
     if(paused)return;
@@ -53576,15 +53760,7 @@ journeyRoadEventHandlers.set('roadside_wolfden',{
   },
   action(context,action,pt,input){
     if(paused)return false;
-    if(!context.den){
-      const entered=journeyNormalHandler.action(context,action,pt,input);
-      if(entered&&mode==='journeyevent'){
-        context.den={slide:'flee',t:0,kills:0,meatTaken:false,searched:false};
-        wolfDenSlide(context,'flee');
-        journeyRoadEventSession.ownedMode='journeyevent';
-      }
-      return entered;
-    }
+    if(!context.den)return false;
     if(mode!=='journeyevent')return false;
     const d=context.den;if(d.t<.25||d.visualPending)return true;
     const scenePt=pt?{x:pt.x,y:(pt.y+PAD_TOP)/((800+PAD_TOT)/800)}:null;
@@ -53679,8 +53855,6 @@ const ROAD_LAB_CASES=Object.freeze([
   {id:'mushrooms',label:'? MUSHROOM GATHERER',definition:'roadside_quest',content:'mushrooms'},
   {id:'chest',label:'TREASURE CACHE',theme:'chest'},
   ...ROAD_ENEMIES.map(e=>({id:e.id,label:e.name,definition:'roadside_fight',enemyId:e.id})),
-  {id:'well',label:'? WISHING WELL',definition:'roadside_cache',content:'well'},
-  {id:'traveler',label:'? WOUNDED TRAVELER',definition:'roadside_quest',content:'traveler'},
   {id:'taxman',label:'? ROYAL TAX COLLECTOR',definition:'roadside_cache',content:'taxman'},
   {id:'wolfden',label:'? WOLF DEN',definition:'roadside_wolfden',content:'wolfden'}
 ]);
@@ -53715,7 +53889,7 @@ function startRoadLabCase(index){
   const slot={id:edge.id+':lab-event',definition:spec.definition||JOURNEY_ROAD_THEMES[theme].finale,
     at,expiresAt:end-25,theme,pieceId:piece.id,content:spec.content,enemyId:spec.enemyId};
   edge.events=[slot];roadLabState.active=true;roadLabState.index=index;roadLabState.slot=slot;roadLabState.fixture=fixture;
-  debugRun=true;godMode=true;gold=180;scrap=12;player.currentHealthUnits=Math.max(1,player.maxHealthUnits-4);
+  debugRun=true;godMode=true;gold=180;scrap=12;player.currentHealthUnits=player.maxHealthUnits;
   if(roadLabState.entry){
     journeyRoute.from=parent.id;journeyRoute.next=node.id;journeyRoute.activeEdge=parent.out.find(e=>e.to===node.id).id;
     journeyActiveEdge().events=[];dist=node.at-62;
@@ -53726,35 +53900,53 @@ function startRoadLabCase(index){
   obstacles=[];pickups=[];roadsideScenery=[];nextTreeAt=dist-5;nextSpawnAt=dist+35;spawnLoopEntities();
   player.x=player.lane=1;setMode('run');return true;
 }
+// Shared draw/hit geometry keeps every control inside the ornamented paper.
+const ROAD_LAB_UI=Object.freeze({
+  sheet:{x:16,y:20,w:448,h:760},
+  direction:i=>({x:32+i*140,y:116,w:136,h:40}),
+  entry:{x:32,y:168,w:416,h:44},
+  category:i=>({x:32+i*140,y:252,w:136,h:40}),
+  test:i=>({x:32+(i%2)*214,y:312+Math.floor(i/2)*72,w:202,h:60}),
+  creator:{x:32,y:602,w:416,h:44},
+  seed:{x:32,y:706,w:202,h:40},
+  back:{x:246,y:706,w:202,h:40}
+});
 function drawRoadLab(){
-  expRect(0,-PAD_TOP,480,800+PAD_TOT,'#102526');smithText('ROADS & ENCOUNTERS',240,54,24,'#f1d6a2');
-  smithText('Special roads, services, fights and roadside swipes',240,81,11,'#b6c9b9');
-  const names=['LEFT','STRAIGHT','RIGHT'];
-  for(let i=0;i<3;i++)drawSmithButton({x:18+i*150,y:100,w:144,h:36},names[i],roadLabState.direction===i-1?'#f1d189':'#75988c');
-  drawSmithButton({x:18,y:145,w:444,h:36},roadLabState.entry?'START: BEFORE THE TURN':'START: FULL ROAD / CLOSE TO ?','#b6d4c5');
-  ['SPECIAL ROADS','ROADSIDE ?','ENEMIES'].forEach((label,i)=>
-    drawSmithButton({x:18+i*150,y:200,w:144,h:36},label,roadLabState.category===i?'#f1d189':'#75988c'));
-  roadLabVisibleCases().forEach(({entry},i)=>{
-    const rect={x:18+(i%2)*228,y:260+Math.floor(i/2)*72,w:216,h:58};
-    drawSmithButton(rect,entry.label,entry.theme?JOURNEY_ROAD_THEMES[entry.theme].color:'#c9c8a8');
+  const p=KRUI.theme(),ui=ROAD_LAB_UI;
+  expRect(0,-PAD_TOP,480,800+PAD_TOT,p.dark);
+  KRUI.sheet(g,ui.sheet);
+  const text=(label,y,size=12)=>KRUI.text(g,label,240,y,size,p.paperSoft,412);
+  KRUI.text(g,'ROADS & ENCOUNTERS',240,68,24,p.ink,412);
+  text('ROAD LAB / F10',90);
+  ['LEFT','STRAIGHT','RIGHT'].forEach((label,i)=>{
+    const selected=roadLabState.direction===i-1;
+    KRUI.button(g,ui.direction(i),label,'treasure',{selected,variant:selected?undefined:'secondary'});
   });
-  smithText(['Production road lengths / F10: change test','Optional: outer lane, then a fresh outward swipe.','Roadblocks: normal HP / skills / dodge / parry.'][roadLabState.category],240,617,11,'#d6c6aa');
-  smithText('TEST: 180 coins / 12 scrap / God mode / hurt hearts',240,661,11,'#a9bfae');
-  smithText('Roadside ?: move to its OUTER lane, then swipe OUT.',240,683,11,'#eed496');
-  drawSmithButton({x:18,y:706,w:216,h:40},'NEW SEED','#abd3c9');
-  drawSmithButton({x:246,y:706,w:216,h:40},'MAIN MENU','#d6c6aa');
-  drawSmithButton({x:100,y:623,w:280,h:28},'APPROVED ROAD CREATOR LAB','#e4bd7d');
-  smithText('SEED '+roadLabState.seed+'   /   F10: RETURN TO LAB',240,775,11,'#8baaa0');
+  KRUI.button(g,ui.entry,roadLabState.entry?'START: BEFORE THE TURN':'START: FULL ROAD / CLOSE TO ?','treasure',{variant:'secondary'});
+  text('CHOOSE A TEST',238);
+  ['SPECIAL ROADS','ROADSIDE ?','ENEMIES'].forEach((label,i)=>{
+    const selected=roadLabState.category===i;
+    KRUI.button(g,ui.category(i),label,'treasure',{selected,variant:selected?undefined:'secondary',size:12});
+  });
+  roadLabVisibleCases().forEach(({entry},i)=>KRUI.button(g,ui.test(i),entry.label,'treasure',{size:13}));
+  text(['Full production road lengths.', 'Ride into the ? in its LEFT or RIGHT lane.', 'Normal HP / skills / dodge / parry.'][roadLabState.category],548);
+  text('180 coins / 12 scrap / God mode / full health',574,11);
+  KRUI.button(g,ui.creator,'APPROVED ROAD CREATOR LAB','treasure',{variant:'secondary'});
+  text('SEED '+roadLabState.seed,674);
+  text('F10: RETURN TO LAB',694,11);
+  KRUI.button(g,ui.seed,'NEW SEED','treasure',{variant:'secondary'});
+  KRUI.button(g,ui.back,'MAIN MENU','treasure',{variant:'secondary'});
 }
 function roadLabTap(pt){
-  if(pointInRect(pt,{x:100,y:623,w:280,h:28})){location.href='RoadCreatorLab.html';return;}
-  for(let i=0;i<3;i++)if(pointInRect(pt,{x:18+i*150,y:100,w:144,h:36})){roadLabState.direction=i-1;return;}
-  if(pointInRect(pt,{x:18,y:145,w:444,h:36})){roadLabState.entry=!roadLabState.entry;return;}
-  for(let i=0;i<3;i++)if(pointInRect(pt,{x:18+i*150,y:200,w:144,h:36})){roadLabState.category=i;return;}
+  const ui=ROAD_LAB_UI;
+  if(pointInRect(pt,ui.creator)){location.href='RoadCreatorLab.html';return;}
+  for(let i=0;i<3;i++)if(pointInRect(pt,ui.direction(i))){roadLabState.direction=i-1;return;}
+  if(pointInRect(pt,ui.entry)){roadLabState.entry=!roadLabState.entry;return;}
+  for(let i=0;i<3;i++)if(pointInRect(pt,ui.category(i))){roadLabState.category=i;return;}
   const visible=roadLabVisibleCases();
-  for(let i=0;i<visible.length;i++)if(pointInRect(pt,{x:18+(i%2)*228,y:260+Math.floor(i/2)*72,w:216,h:58})){startRoadLabCase(visible[i].index);return;}
-  if(pointInRect(pt,{x:18,y:706,w:216,h:40})){roadLabState.seed=newJourneySeed();return;}
-  if(pointInRect(pt,{x:246,y:706,w:216,h:40})){resetRun();debugRun=false;godMode=false;setMode('menu');}
+  for(let i=0;i<visible.length;i++)if(pointInRect(pt,ui.test(i))){startRoadLabCase(visible[i].index);return;}
+  if(pointInRect(pt,ui.seed)){roadLabState.seed=newJourneySeed();return;}
+  if(pointInRect(pt,ui.back)){resetRun();debugRun=false;godMode=false;setMode('menu');}
 }
 bootCheckpoint('combat-and-world-complete');
 /* ============================== 12. GAME STATE / HUD / MENUS ============================== */
@@ -53806,6 +53998,7 @@ function setMode(m){
   if(['boss','bossintro','miniboss'].includes(mode)&&
      !['boss','bossintro','miniboss','bosslabmoves'].includes(m))resetSquireCombat();
   if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
+  if(!['boss','bossintro','miniboss','bosslabmoves'].includes(m))clearBattleShields();
   mode=m;modeT=0;
   if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':m==='diceguess'?'duke-bluff':m==='armwrestling'?'tavern-arm':m==='drinkingcontest'?'tavern-chug':m==='findqueen'?'royal-shuffle':'tavern-games',true,'tavern-games');
 }
@@ -54158,18 +54351,19 @@ function hudRasterGrid(x,y,scale=1){
     y:Math.round(matrix.b*x+matrix.d*y+matrix.f)};
 }
 function drawHeartHealth(x,y,currentUnits,maxHearts,scale=1,perRow=4,flashState=null){
+  const shownUnits=displayedHeartUnits(currentUnits,flashState);
   const grid=hudRasterGrid(x,y,scale),cell=grid.cellPx,
     stepX=(HEART_SPRITE_W+1)*cell,stepY=(HEART_SPRITE_H+1)*cell;
   g.save();g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;
   for(let i=0;i<maxHearts;i++){
-    const fill=clamp(Math.round(currentUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
+    const fill=clamp(Math.round(shownUnits-i*PLAYER_HEALTH_CONTRACT.unitsPerHeart),0,
         PLAYER_HEALTH_CONTRACT.unitsPerHeart),drawX=grid.x+(i%perRow)*stepX,
       drawY=grid.y+Math.floor(i/perRow)*stepY;
     g.drawImage(HEART_EMPTY_SPRITE,drawX,drawY,HEART_SPRITE_W*cell,HEART_SPRITE_H*cell);
     g.drawImage(HEART_SPRITES[fill],drawX,drawY,HEART_SPRITE_W*cell,HEART_SPRITE_H*cell);
   }
   const flashAge=flashState?perfNow-flashState.startedAt:Infinity;
-  if(flashAge>=0&&flashAge<HEART_HIT_FLASH_DURATION){
+  if(flashAge>=0&&flashAge<HEART_HIT_FLASH_DURATION&&flashState.toUnits<flashState.fromUnits){
     const progress=flashAge/HEART_HIT_FLASH_DURATION,
       flashAlpha=progress<.55?1:Math.pow(1-(progress-.55)/.45,.72),
       fromUnits=flashState.fromUnits,toUnits=flashState.toUnits;
@@ -54235,6 +54429,18 @@ function drawPlayerVitalsHUD(){
       toUnits:player.heartFlashToUnits});
   drawShieldCharges(14,shieldY-1,player.shieldCharges,1,player.volatileShieldCharges);
   return {x:14,y:shieldY-1};
+}
+function drawEventVitalsHUD(){
+  if(pausePhotoMode||!player.alive)return;
+  const eventScreen=mode==='journeyevent'||['merchant','shop','town'].includes(mode)||
+    (journeyRoadEventSession?.blocking&&!['run','boss','bossintro','miniboss'].includes(mode));
+  if(!eventScreen)return;
+  const hearts=Math.max(1,Math.round(player.maxHealthUnits/PLAYER_HEALTH_CONTRACT.unitsPerHeart)),
+    perRow=Math.min(8,hearts),x=20,y=uiTop+115;
+  g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
+  drawHeartHealth(x,y,player.currentHealthUnits,hearts,1,perRow,{
+    startedAt:player.heartFlashStartedAt,fromUnits:player.heartFlashFromUnits,toUnits:player.heartFlashToUnits});
+  g.restore();
 }
 const HUD_SHIELD_SHATTER_CHARGE=.36,HUD_SHIELD_SHATTER_LIFE=1.08,
   hudShieldShatters=[];
@@ -54448,9 +54654,7 @@ function drawHUD(){
   drawSquireCombatHUD();
   /* pause button (top-right, under the weapon counts) */
   if(GAMEPLAY_MODES.includes(mode)){
-    KRUI.button(g,PAUSE_BTN,'','treasure',{variant:'secondary'});
-    g.fillStyle=KRUI.theme().onDark;
-    g.fillRect(PAUSE_BTN.x+11,PAUSE_BTN.y+9,5,20); g.fillRect(PAUSE_BTN.x+22,PAUSE_BTN.y+9,5,20);
+    drawPauseButton(0); // drawHUD already applied the safe-area offset.
   }
   /* boss HP bar with fight-phase status */
   if(boss){
@@ -56050,57 +56254,18 @@ function discoPlayerLegPose(direction,amount,side,clock){
     hipHeight,hipDepth,kneeHeight,kneeDepth,legLength};
 }
 function drawDiscoPlayer(x,y,scale,direction,amount,clock){
-  // Rear-view Jonathan on foot. Reuse his real helmet and heraldic shield;
-  // feet, knees, shoulders and wrists form a continuous dance rig, not a horse.
-  const p=discoBodyPose(direction,amount),P=rigPolygon,
-    armor='#919da7',dark='#4b5966',light='#c4ced5',steel='#edf4f7',
-    bodyY=discoPlayerLegPose(direction,amount,1,clock).bodyY;
-  g.save();g.translate(x,y);g.scale(scale,scale);
-  townInk([[-30,2],[-20,-4],[21,-4],[31,2],[20,7],[-20,7]],'#171923');
-  for(const side of [-1,1]){
-    const leg=discoPlayerLegPose(direction,amount,side,clock),
-      {hipX:hx,hipY:hy,kneeX:kx,kneeY:ky,footX:fx,footY:fy,kneeScale:ks}=leg;
-    // Shins are behind the near thighs; the pelvis then occludes the tucked
-    // knees during the deep bend. No bright front-facing kneecaps on his back.
-    rigSegment(kx,ky,fx,fy,2.5*ks,armor);
-    rigSegment(kx-.55*ks,ky,fx-.55,fy,.65,light);
-    rigJoint(kx,ky,2.6*ks,dark);
-    rigSegment(hx,hy,kx,ky,3,dark);
-    rigSegment(hx-.4,hy,kx-.4*ks,ky,1.7,armor);
-    P([[fx-1.5,-2],[fx+1.3,-2],[fx+1.8,.8],[fx-1.8,.8]],dark);
-    px(fx-1.7,.2,3.4,.6,light);
-  }
-  g.save();g.translate(p.x*U,bodyY*U);g.rotate(p.lean);
-  P([[-5.8,-25],[5.8,-25],[4,-13],[-4,-13]],dark);
-  P([[-4.8,-24.5],[4.6,-24.5],[3.2,-13.5],[-3.2,-13.5]],armor);
-  px(-.6,-24,1.2,9,light);
-  // Two overlapping steel waist bands continue the backplate into the hips.
-  // No blue cloth flap, split skirt or shorts silhouette over the leg armour.
-  P([[-4,-15.3],[4,-15.3],[4.35,-13.3],[-4.35,-13.3]],dark);
-  P([[-3.85,-15.2],[3.8,-15.2],[4.1,-13.8],[-4.1,-13.8]],armor);
-  px(-3.8,-15.2,7.6,.45,light);
-  P([[-4.15,-13.5],[4.15,-13.5],[4.4,-11.8],[-4.4,-11.8]],dark);
-  P([[-4,-13.45],[3.9,-13.45],[4.1,-12.3],[-4.2,-12.3]],armor);
-  px(-3.95,-13.45,7.8,.4,light);
-  for(const side of [-1,1]){
-    const target=side<0?p.left:p.right,sx=side*6,sy=-23.5,
-      hx=lerp(side*8,target[0]*.8,p.k),hy=lerp(-13,target[1],p.k),
-      ex=lerp(side*8.5,(sx+hx)*.5+side,p.k),ey=lerp(-18,(sy+hy)*.5+1,p.k);
-    rigSegment(sx,sy,ex,ey,3.2,dark);rigSegment(sx-.45,sy,ex-.45,ey,1.8,armor);
-    rigJoint(ex,ey,2.8,light);rigSegment(ex,ey,hx,hy,2.5,armor);
-    rigSegment(ex-.5,ey,hx-.5,hy,.6,light);rigJoint(hx,hy,3,dark);
-    px(hx-1.2,hy-1.4,2.4,1.6,light);
-    P([[sx-2,-25.7],[sx+2,-25.7],[sx+2.3,-22],[sx-2.3,-22]],armor);
-    px(sx-1.8,-25.5,3.6,.8,steel);
-  }
-  drawSerJonathanShield(0,-20,0,0,1.18);
-  rigSegment(-2.5,-26,2.5,-26,1.5,dark);
-  const helmet=drawSerJonathanHelmet25D(0,-29.5,.2+(direction==='down'?amount*.24:0),1.05,
-    armor,dark,light,steel),feather=playerChar?.feather||'#5878eb',sway=Math.sin(clock*2)*.45;
-  rigSegment(0,helmet.crownY,.2,helmet.crownY-3,1.35,feather);
-  rigSegment(.2,helmet.crownY-3,2.8+sway,helmet.crownY-5.4,1.8,shade(feather,15));
-  rigSegment(2.8+sway,helmet.crownY-5.4,4.6+sway,helmet.crownY-4.2,1.3,feather);
-  g.restore();g.restore();
+  const p=discoBodyPose(direction,amount),bodyY=discoPlayerLegPose(direction,amount,1,clock).bodyY;
+  const legs=[-1,1].map(side=>{
+    const l=discoPlayerLegPose(direction,amount,side,clock);
+    return {hx:l.hipX,hy:l.hipY,kx:l.kneeX,ky:l.kneeY,fx:l.footX,fy:l.footY};
+  });
+  const arms=[-1,1].map(side=>{
+    const target=side<0?p.left:p.right,sx=side*5.4,sy=-10.4,
+      hx=lerp(side*8,target[0]*.8,p.k),hy=lerp(-1,target[1]+12,p.k);
+    return {sx,sy,hx,hy,ex:lerp(side*8.5,(sx+hx)*.5+side,p.k),ey:lerp(-6,(sy+hy)*.5+1,p.k)};
+  });
+  KRJonathan.draw(x,y,scale,{facing:'back',clock,legs,arms,
+    body:{x:p.x,y:bodyY,lean:p.lean},headPitch:.2+(direction==='down'?amount*.24:0),breath:false,shadow:true});
 }
 function discoKingMoveAmount(d){
   if(d.phase==='show'&&d.showCue>=0){
@@ -56123,16 +56288,16 @@ function drawDiscoDance(){
   drawDiscoPlayer(240,719,1.22,d.playerPose,discoPlayerMoveAmount(d.playerPoseT),d.sceneT);
   if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
-  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
+  drawPauseButton();
   if(d.phase==='intro'){
     smithText('DISCO KING',240,102,27,'#eed29a');
     smithText('Watch all five moves. Remember their order.',240,552,13,'#eee1c1',430);
     smithText('Then repeat the sequence with swipes. Up = reach, down = crouch.',240,572,10,'#b8caca',450);
-    drawSmithButton(DISCO_START_BTN,'LET US DANCE','#edc58a');
+    drawSmithButton(DISCO_START_BTN,'LET US DANCE','#edc58a',true,'primary');
   }else if(d.phase==='complete'){
     smithText(d.message,240,112,18,'#ead298',440);
     smithText(d.wins+' / 3 rounds matched',240,137,14,'#e1d4bd');
-    drawSmithButton(DISCO_REPLAY_BTN,'DANCE AGAIN','#b5d8ac');
+    drawSmithButton(DISCO_REPLAY_BTN,'DANCE AGAIN','#b5d8ac',true,'primary');
     drawSmithButton(DISCO_EXIT_BTN,'LEAVE','#e5b6c8');
   }else{
     smithText(d.phase==='rise'?'"Watch closely."':d.phase==='show'?'Remember the moves.':d.phase==='ready'?'Your turn!':d.phase==='input'?'Repeat the whole sequence.':d.phase==='roundResult'?d.message:d.judgeText,
@@ -56360,9 +56525,7 @@ function drawSlotMachineGame(){
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   g.fillStyle='#19140cdd';g.fillRect(129,118,222,46);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(129,118,222,46);
   drawCoin(157,148,.62,perfNow*.7);g.font='bold 25px monospace';g.fillStyle='#ffe36a';
   g.fillText(s.coins+' COINS',251,150);
@@ -56518,9 +56681,7 @@ function drawPunchBagGame(){
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   g.fillStyle='#11141de8';g.fillRect(119,100,242,74);g.strokeStyle='#ff8a4a';g.lineWidth=3;g.strokeRect(119,100,242,74);
   g.font='bold 12px monospace';g.fillStyle='#b8bbc5';g.fillText('TIME',180,123);g.fillText('POINTS',300,123);
   g.font='bold 31px monospace';g.fillStyle=p.remaining<=1&&p.phase==='playing'?'#ff5b68':'#ffe36a';
@@ -56703,6 +56864,7 @@ function drawSideJoustHorse(x,y,scale,facing,col,gallop=0){
 function drawSideJoustKnight(x,y,scale,facing,opts,fall=0,knockDir=0){
   const arc=Math.sin(Math.PI*clamp(fall,0,1)),chubby=opts.chubby===true,bodyW=chubby?29:23;
   g.save();g.translate(x+knockDir*fall*104,y-arc*92+fall*46);g.rotate(knockDir*fall*1.85);g.scale(facing*scale,scale);
+  if(opts.rigId==='ser_jonathan'){KRJonathan.side(0,0,1,{mounted:true});g.restore();return;}
   /* boots grip the saddle until impact; the whole articulated knight then leaves it */
   g.strokeStyle='#2a2423';g.lineWidth=8;g.beginPath();g.moveTo(-8,-38);g.lineTo(-18,-17);g.moveTo(7,-38);g.lineTo(20,-18);g.stroke();
   g.fillStyle='#8e949f';g.fillRect(-bodyW/2,-78,bodyW,42);g.fillStyle='#c7d0db';g.fillRect(-bodyW/2+3,-75,bodyW-6,7);
@@ -56727,7 +56889,7 @@ function drawJoustRiders(){
     playerX=18+170*approach+(complete?(j.won?110:42)*result:0),
     rivalX=462-170*approach-(complete?(j.won?42:110)*result:0),y=468,
     gallop=j.phase==='ready'?0:(perfNow*3.15)%1,wobble=j.phase==='playing'?(j.balance-j.target)*18:0,
-    playerOpts={feather:playerChar.feather,horse:playerChar.horse,chubby:playerChar.chubby,caveman:playerChar.caveman},
+    playerOpts={rigId:playerChar.rigId,feather:playerChar.feather,horse:playerChar.horse,chubby:playerChar.chubby,caveman:playerChar.caveman},
     rivalOpts={feather:'#e6535d',horse:'#9296a2',chubby:true};
   drawSideJoustHorse(playerX,y,.58,1,playerChar.horse,gallop);
   drawSideJoustHorse(rivalX,y,.58,-1,'#9296a2',(gallop+.42)%1);
@@ -56784,9 +56946,7 @@ function drawJoustGame(){
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(j.phase==='ready'){
     g.fillStyle='#080a0ef0';g.fillRect(26,510,428,225);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(26,510,428,225);
     g.font='bold 23px monospace';g.fillStyle='#ffe36a';g.fillText('THE WOBBLY LANCE',VW/2,548);
@@ -56942,6 +57102,12 @@ function drawSwordFighter(x,y,scale,facing,colors,pose='wait',fall=0){
   const reach=pose==='cue'?1:0,crouch=pose==='cue'?5:0,arc=Math.sin(Math.PI*clamp(fall,0,1));
   g.save();g.translate(x-facing*fall*78,y-arc*64+fall*34);g.rotate(-facing*fall*1.55);g.scale(facing*scale,scale);
   g.fillStyle='#00000066';g.beginPath();g.ellipse(0,4,27,7,0,0,TAU);g.fill();
+  if(colors.rigId==='ser_jonathan'){
+    KRJonathan.side(0,0,1);
+    if(pose==='draw')drawDuelSword(21,-42,66,-Math.PI/2+.22,colors.blade||'#e5edf4');
+    else {expSegment(-12,-31,-29,16,7,'#523423');expSegment(-23,-37,1,-37,5,'#d6ad4e');}
+    g.restore();return;
+  }
   g.fillStyle='#292425';g.fillRect(-17,-8,13,12);g.fillRect(5,-8,13,12);
   g.fillStyle='#858e9c';g.fillRect(-20,-63+crouch,40,57-crouch);g.fillStyle=colors.col;g.fillRect(-18,-53+crouch,36,9);
   g.fillStyle='#bac4cf';g.fillRect(-16,-59+crouch,32,8);g.fillStyle='#555e6b';g.fillRect(-25,-56+crouch,13,31);
@@ -57033,7 +57199,7 @@ function drawSwordResolutionEffect(){
 }
 function drawSwordDuelFighters(){
   const s=swordGame,opponent=SWORD_DUEL_OPPONENTS[Math.min(s.round,SWORD_DUEL_OPPONENTS.length-1)],
-    playerColors={col:playerChar.feather,blade:'#dce9f5'},rivalColors={col:opponent.col,blade:'#f1e4d2'};
+    playerColors={rigId:playerChar.rigId,col:playerChar.feather,blade:'#dce9f5'},rivalColors={col:opponent.col,blade:'#f1e4d2'};
   if(s.phase!=='resolution'){
     drawSwordFighter(128,492,.92,1,playerColors,'wait');
     drawSwordFighter(352,492,.92,-1,rivalColors,s.phase==='cue'?'cue':'wait');
@@ -57075,9 +57241,7 @@ function drawSwordDuelGame(){
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(s.phase==='intro'){
     g.fillStyle='#080a0ef0';g.fillRect(25,322,430,420);g.strokeStyle='#dce9f5';g.lineWidth=3;g.strokeRect(25,322,430,420);
     g.font='bold 25px monospace';g.fillStyle='#dce9f5';g.fillText('THREE BLADES',VW/2,360);
@@ -57350,8 +57514,7 @@ function drawChickenRaceChrome(){
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);
-  g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
 }
 function drawChickenRaceGame(){
   const c=chickenRaceGame;if(!c)return;drawChickenRaceArena();
@@ -57572,7 +57735,7 @@ function drawLogBalanceGame(){
   for(const popup of b.popups){g.globalAlpha=1-popup.t/.8;g.fillStyle=popup.col;g.font='bold 17px monospace';g.textAlign='center';g.fillText(popup.text,popup.x,popup.y-popup.t*45);g.globalAlpha=1;}
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(b.phase==='intro'){
     g.fillStyle='#080a0eea';g.fillRect(42,557,396,80);g.strokeStyle='#e8d6aa';g.lineWidth=2;g.strokeRect(42,557,396,80);
     g.font='bold 12px monospace';g.fillStyle='#e8d6aa';g.fillText('CATCH LEFT/RIGHT WEIGHTS. KEEP THE NEEDLE GREEN.',VW/2,584);
@@ -57812,7 +57975,7 @@ function drawLockpickingGame(){
   if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(l.phase==='intro'){
     g.fillStyle='#080a0eed';g.fillRect(35,557,410,82);g.strokeStyle='#d5a750';g.lineWidth=2;g.strokeRect(35,557,410,82);
     g.font='bold 12px monospace';g.fillStyle='#f1d592';g.fillText('FIVE RANDOM SPRINGS. THREE LOCKPICKS.',VW/2,583);
@@ -57846,7 +58009,7 @@ function drawLockpickingGame(){
 
 /* ---------- Last Mug Standing: angle control and progressive drunkenness ---------- */
 const DRINK_RULES=KRChugRules.rules;
-const DRINK_START_BTN=Object.freeze({x:123,y:658,w:234,h:54});
+const DRINK_START_BTN=Object.freeze({x:123,y:715,w:234,h:46});
 const DRINK_REPLAY_BTN=DRINK_START_BTN;
 let drinkGame=null,drinkPreviewImage=null;
 function startDrinkingContest(stageId=biome,returnMode='minigames'){
@@ -57856,7 +58019,8 @@ function startDrinkingContest(stageId=biome,returnMode='minigames'){
 function leaveDrinkingContest(){const target=drinkGame?.returnMode||'minigames';cancelDrinkTrace();drinkGame=null;setMode(target);SFX.duck();}
 function beginDrinkingContest(){if(drinkGame){KRChugRules.start(drinkGame);SFX.danceBeat(true);}}
 function beginDrinkTrace(pt){
-  const s=drinkGame;if(!s||s.phase!=='playing'||!pointInRect(pt,{x:25,y:420,w:430,h:326}))return false;
+  const s=drinkGame,r=window.KRTavernChug?.controlRect;
+  if(!s||s.phase!=='playing'||(!pointInRect(pt,{x:25,y:420,w:430,h:326})&&!(r&&pointInRect(pt,r))))return false;
   KRChugRules.hold(s,true);s.drag={y:pt.y,angle:s.aim};return true;
 }
 function beginDrinkPointerTrace(cx,cy){if(mode!=='drinkingcontest'||paused||settingsOpen)return false;return beginDrinkTrace(toGame(cx,cy));}
@@ -58061,7 +58225,7 @@ function drawWishingWellGame(){
   if(pausePhotoMode)return;
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(w.phase==='intro'){
     g.fillStyle='#080a0eed';g.fillRect(46,556,388,82);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(46,556,388,82);
     g.font='bold 15px monospace';g.fillStyle='#ffe36a';g.fillText('FLICK THE COIN INTO THE WELL',VW/2,584);
@@ -58221,6 +58385,17 @@ function drawBoulderRock(rock,active=false,cursor=false){
   g.restore();
 }
 function drawClimbingKnightRig(x,y,scale,character,pose={}){
+  if((character||CHARS[0]).rigId==='ser_jonathan'){
+    const k=clamp(pose.moveK||0,0,1),direction=Math.sign(pose.direction||0),reach=Math.sin(k*Math.PI),
+      lift=reach*2.2+(pose.danger?Math.sin(perfNow*13)*.7:0),origin=17.4,
+      arms=[-1,1].map(side=>({sx:side*5.4,sy:-10.4,ex:side*6.2-direction*reach,ey:-12.7,
+        hx:side*(2.8+direction*reach*2),hy:-17.8-reach*(direction===side?2.2:.5)})),
+      legs=[-1,1].map(side=>({hx:side*2.5,hy:5.4-origin,kx:side*5.4,ky:11.2-origin,
+        fx:side*6.7-direction*reach*1.4,fy:16.8-origin+(side<0?-lift:lift*.35)}));
+    g.save();g.translate(x,y);g.rotate(pose.rotation||0);
+    KRJonathan.draw(0,origin*U*scale,scale,{facing:'back',clock:perfNow,arms,legs,armsBehind:true,breath:false});
+    g.restore();return;
+  }
   const c=character||CHARS[0],jonathan=c.rigId==='ser_jonathan',caveman=c.caveman===true,
     chubby=c.chubby===true,armor=caveman?'#c98e5a':jonathan?'#919da7':'#8f9bb0',
     armorD=caveman?'#8a5c3a':jonathan?'#4b5966':shade(armor,-30),
@@ -58321,7 +58496,7 @@ function drawBoulderingGame(){
   drawBoulderStamina();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(b.phase==='intro'){
     g.fillStyle='#080a0eee';g.fillRect(42,574,396,75);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(42,574,396,75);
     g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('THREE HOLDS. ONE OF THEM LIES.',VW/2,599);
@@ -58342,8 +58517,8 @@ function drawBoulderingGame(){
 /* ---------- First-person arm wrestling: repeat one committed swipe direction ---------- */
 const ARM_WRESTLE_RULES=Object.freeze({start:.5,swipeGain:.058,rivalPush:.085,
   wrongPenalty:.045,momentumWindow:.34,pinTime:.58});
-const ARM_WRESTLE_START_BTN=Object.freeze({x:140,y:660,w:200,h:52});
-const ARM_WRESTLE_REPLAY_BTN=Object.freeze({x:140,y:660,w:200,h:52});
+const ARM_WRESTLE_START_BTN=Object.freeze({x:140,y:715,w:200,h:46});
+const ARM_WRESTLE_REPLAY_BTN=ARM_WRESTLE_START_BTN;
 let armWrestleGame=null;
 function startArmWrestling(stageId=biome,returnMode='minigames'){
   armWrestleGame={stageId:MINIGAME_ARENA_PALETTES[stageId]?stageId:'forest',returnMode,
@@ -58511,7 +58686,7 @@ function drawRoadsideArmMatch(){
     expPoly([[x-23,y-8],[x+19,y-19],[x+24,y-9],[x-21,y+5]],'#687782');
     expSegment(x-23,y-8,x+19,y-19,2,'#b9c8cf');
   }
-  g.save();g.translate(hand.x-7,hand.y-8);g.scale(3,3);drawRoadsideHand(0,0,-.25);g.restore();
+  g.save();g.translate(hand.x-7,hand.y-8);g.scale(3,3);drawRoadsideHand(0,0,-.25,-1);g.restore();
   expPoly([[hand.x-8,hand.y-15],[hand.x+14,hand.y-20],[hand.x+29,hand.y-2],[hand.x+20,hand.y+25],[hand.x-4,hand.y+19]],'#9eacb5');
   expPoly([[hand.x-8,hand.y-15],[hand.x+14,hand.y-20],[hand.x+21,hand.y-10],[hand.x-2,hand.y-5]],'#d4e0e3');
   for(let i=0;i<3;i++)expSegment(hand.x+i*7,hand.y+1,hand.x+3+i*7,hand.y+13,2,'#56646f');
@@ -58534,12 +58709,12 @@ function drawArmWrestlingGame(){
   const a=armWrestleGame;if(!a)return;drawArmWrestlingArena();drawArmOpponent(a.power);drawFirstPersonArmWrestle();drawArmWrestleMeter();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(a.phase==='intro'){
     g.fillStyle='#080a0ef0';g.fillRect(40,554,400,94);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(40,554,400,94);
     g.font='bold 18px monospace';g.fillStyle='#ffe36a';g.fillText('THE ROYAL ELBOW DISPUTE',VW/2,581);
     g.font='10px monospace';g.fillStyle='#d2d5dc';g.fillText('Repeatedly swipe RIGHT. Hesitation gives ground.',VW/2,607);g.fillText('Wrong-direction swipes help the Baron.',VW/2,629);
-    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_START_BTN.x,ARM_WRESTLE_START_BTN.y,ARM_WRESTLE_START_BTN.w,ARM_WRESTLE_START_BTN.h);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_START_BTN.x,ARM_WRESTLE_START_BTN.y,ARM_WRESTLE_START_BTN.w,ARM_WRESTLE_START_BTN.h);g.font='bold 17px monospace';g.fillStyle='#ffe36a';g.fillText('LOCK HANDS',VW/2,693);
+    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_START_BTN.x,ARM_WRESTLE_START_BTN.y,ARM_WRESTLE_START_BTN.w,ARM_WRESTLE_START_BTN.h);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_START_BTN.x,ARM_WRESTLE_START_BTN.y,ARM_WRESTLE_START_BTN.w,ARM_WRESTLE_START_BTN.h);g.font='bold 17px monospace';g.fillStyle='#ffe36a';g.fillText('LOCK HANDS',VW/2,ARM_WRESTLE_START_BTN.y+33);
   }else if(a.phase==='playing'||a.phase==='pinning'){
     g.fillStyle='#080a0ee9';g.fillRect(72,650,336,46);g.strokeStyle=a.wrongT>0?'#ff655c':'#7dcfff';g.lineWidth=2;g.strokeRect(72,650,336,46);
     g.font='bold 15px monospace';g.fillStyle=a.wrongT>0?'#ff655c':'#ffe36a';
@@ -58549,7 +58724,7 @@ function drawArmWrestlingGame(){
     g.font='bold 21px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText(win?'BARON: DE-WRISTED':'TABLE: UNDEFEATED',VW/2,581);
     g.font='10px monospace';g.fillStyle='#e1d9ca';g.fillText(win?'A clean pin. His crown has requested a transfer.':'Beefwrist offers you his beginner elbow cushion.',VW/2,607);g.fillStyle='#ffe36a';g.fillText('RIGHT SWIPES: '+(a.result?a.result.swipes:0),VW/2,631);
     if(a.roadAttempt){g.fillStyle='#ffe37a';g.font='12px monospace';g.fillText(win?'+15 GOLD WHEN YOU RETURN':'NO GOLD LOST. NO TAX PAID.',VW/2,650);}
-    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.strokeStyle=win?'#7df078':'#ff655c';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText(a.roadAttempt?'BACK TO ROAD':'REMATCH',VW/2,693);
+    g.fillStyle='#30251a';g.fillRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.strokeStyle=win?'#7df078':'#ff655c';g.lineWidth=3;g.strokeRect(ARM_WRESTLE_REPLAY_BTN.x,ARM_WRESTLE_REPLAY_BTN.y,ARM_WRESTLE_REPLAY_BTN.w,ARM_WRESTLE_REPLAY_BTN.h);g.font='bold 17px monospace';g.fillStyle=win?'#7df078':'#ff655c';g.fillText(a.roadAttempt?'BACK TO ROAD':'REMATCH',VW/2,ARM_WRESTLE_REPLAY_BTN.y+33);
   }
 }
 
@@ -58669,7 +58844,7 @@ function drawDiceGuessGame(){
   const d=diceGame;if(!d)return;drawDiceGuessArena();drawDiceOpponent();drawFirstPersonDiceTable();drawDiceTotals();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(d.phase==='intro'){
     g.fillStyle='#080a0ef0';g.fillRect(42,548,396,100);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(42,548,396,100);
     g.font='bold 18px monospace';g.fillStyle='#ffe36a';g.fillText("DUKE DOUBLEDOWN'S HALF-TRUTH",VW/2,576);
@@ -58840,7 +59015,7 @@ function drawKnifeFlipGame(){
   g.font='9px monospace';g.textAlign='right';g.fillStyle='#d7d1c5';g.fillText('BEST '+k.best,322,148);
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);
   g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(k.phase==='intro'){
     g.fillStyle='#080a0ef0';g.fillRect(39,548,402,100);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(39,548,402,100);
     g.font='bold 19px monospace';g.fillStyle='#ffe36a';g.fillText('SIR FLIPS-A-BLADE',VW/2,570);
@@ -58999,7 +59174,7 @@ function drawGoldPanningGame(){
   g.fillStyle='#080a0edb';g.fillRect(145,88,190,66);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(145,88,190,66);g.textAlign='center';g.font='bold 11px monospace';g.fillStyle='#d5c7a1';g.fillText('STOLEN GOLD',240,111);g.font='bold 29px monospace';g.fillStyle='#ffe36a';g.fillText(String(k.score),240,145);
   const approach=clamp(k.elapsed/GOLD_PAN_RULES.duration,0,1);g.fillStyle='#171a20';g.fillRect(112,164,256,13);g.fillStyle='#ff655c';g.fillRect(112,164,256*approach,13);g.strokeStyle='#111';g.strokeRect(112,164,256,13);g.font='bold 8px monospace';g.fillStyle='#e8e2d0';g.fillText('PROSPECTOR APPROACH',240,174);
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(k.phase==='intro'){
     g.fillStyle='#080a0ef0';g.fillRect(36,536,408,112);g.strokeStyle='#ffe36a';g.lineWidth=2;g.strokeRect(36,536,408,112);g.font='bold 18px monospace';g.fillStyle='#ffe36a';g.fillText("THE PROSPECTOR LOOKED AWAY",240,565);g.font='10px monospace';g.fillStyle='#d8d2c6';g.fillText('Swipe the pan UP and DOWN with controlled force.',240,594);g.fillText('Too soft keeps dirt. Too hard or too fast spills gold.',240,618);
     g.fillStyle='#30251a';g.fillRect(GOLD_PAN_START_BTN.x,GOLD_PAN_START_BTN.y,GOLD_PAN_START_BTN.w,GOLD_PAN_START_BTN.h);g.strokeStyle='#ffe36a';g.lineWidth=3;g.strokeRect(GOLD_PAN_START_BTN.x,GOLD_PAN_START_BTN.y,GOLD_PAN_START_BTN.w,GOLD_PAN_START_BTN.h);g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('BORROW HIS PAN',240,693);
@@ -59331,7 +59506,7 @@ function drawSwordMending(){
   drawMendAnvil();drawMendTongs(pose);drawMendBlade();drawMendHammer(pose);
   if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8c8a7');
-  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8c8a7');
+  drawPauseButton();
   smithText('CROOKED STEEL',240,110,25,'#ecd19a',326);
   smithText('THE LITTLE HAMMER  ·  REPAIRS, MOSTLY',240,130,9,'#aebfc0');
   // A small paper work order rests below the anvil, not over the character.
@@ -59341,7 +59516,7 @@ function drawSwordMending(){
     smithText(MEND_JOBS[m.job].title,240,666,14,'#e7cb92');
     smithText(MEND_JOBS[m.job].line,240,684,11,'#c9ccc1',390);
     smithText('Hold a bend. Release to hammer. Turn it over to fix the other side.',240,706,9,'#afc5c6',382);
-    drawSmithButton(MEND_START_BTN,'TAKE THE JOB','#e8bc7c');
+    drawSmithButton(MEND_START_BTN,'TAKE THE JOB','#e8bc7c',true,'primary');
   }else if(m.phase==='work'){
     const quality=mendQuality(m);
     smithText(m.feedback||'MAKE IT STRAIGHT. NOT FLAT.',240,668,11,'#e1c896',388);
@@ -59349,7 +59524,7 @@ function drawSwordMending(){
       quality>=92?'LOOKING GOOD. HAND IT BACK WHEN YOU ARE READY.':'Raised bend: hammer down. Low bend: turn the sword over.',240,688,10,'#b6cbcc',388);
     smithText('STRAIGHTNESS '+quality+'%   ·   '+m.strikes+' BLOWS',240,708,10,quality>=92?'#b4d5a2':'#d0c5a7');
     drawSmithButton(MEND_FLIP_BTN,'TURN OVER','#a3c9d0');
-    drawSmithButton(MEND_DONE_BTN,'HAND IT BACK',quality>=92?'#d3df9f':'#e4c899');
+    drawSmithButton(MEND_DONE_BTN,'HAND IT BACK',quality>=92?'#d3df9f':'#e4c899',true,'primary');
     smithText('← → AIM    HOLD SPACE: HAMMER    F: TURN    ENTER: FINISH',240,795,8,'#9aaea8',440);
   }else if(m.phase==='inspect'){
     smithText('LET US HAVE A LOOK...',240,679,15,'#e4c797');
@@ -59358,7 +59533,7 @@ function drawSwordMending(){
     smithText(m.outcome,240,668,18,m.quality>=82?'#e9d39a':'#dfa38b',388);
     smithText(m.quote,240,689,11,'#c3d1cc',388);
     smithText(m.quality+'% STRAIGHT  ·  '+m.strikes+' BLOWS  ·  BEST '+m.best+'%',240,708,10,'#bcbdad');
-    drawSmithButton(MEND_START_BTN,'NEXT REPAIR','#e8bc7c');
+    drawSmithButton(MEND_START_BTN,'NEXT REPAIR','#e8bc7c',true,'primary');
   }
 }
 /* ---------- Blacksmith: heat control, precision shaping, and a decisive quench ---------- */
@@ -59700,7 +59875,7 @@ function drawBlacksmithGame(){
   drawForgeHeatMeter();
   if(pausePhotoMode)return;
   drawSmithButton(MINIGAME_BACK_BTN,'BACK','#d8ceb1');
-  drawSmithButton({x:PAUSE_BTN.x,y:PAUSE_BTN.y+uiTop,w:PAUSE_BTN.w,h:PAUSE_BTN.h},'II','#d8ceb1');
+  drawPauseButton();
   smithText('THE LITTLE HAMMER',240,110,23,'#ecd29c',325);
   smithText('SHAPED '+f.hits+' / '+FORGE_RULES.hits+'   ·   FLAWS '+Math.ceil(f.flaws),240,131,10,'#aec1c0');
   townInk([[20,667],[460,667],[455,725],[25,725]],'#222e31');
@@ -59708,12 +59883,12 @@ function drawBlacksmithGame(){
   if(f.phase==='intro'){
     smithText('Heat the steel. Strike the mark. Quench the blade.',240,690,12,'#e3c995',432);
     smithText('Hold the bellows · tap the steel · tap the water',240,712,10,'#b2c6c6',430);
-    drawSmithButton(FORGE_START_BTN,'LIGHT THE FORGE','#e8bd7b');
+    drawSmithButton(FORGE_START_BTN,'LIGHT THE FORGE','#e8bd7b',true,'primary');
   }else if(f.phase==='result'){
     const col=f.outcome==='MASTERWORK'?'#ecd29c':f.outcome==='BURNT SLAG'?'#df9b82':'#a5cdd3';
     smithText(f.outcome+'  ·  '+f.score+' / 100',240,689,19,col,430);
     smithText('CLEAN '+f.idealHits+'/'+FORGE_RULES.hits+'   ·   BEST '+f.best+'   ·   '+(f.outcome==='MASTERWORK'?'"Fine steel."':'"We can try again."'),240,712,10,'#c6beaa',430);
-    drawSmithButton(FORGE_START_BTN,'FORGE AGAIN','#e8bd7b');
+    drawSmithButton(FORGE_START_BTN,'FORGE AGAIN','#e8bd7b',true,'primary');
   }else{
     const hint=f.phase==='quenching'?'STEEL INTO WATER.':f.bellowsHeld?'RELEASE THE BELLOWS TO BRING IT BACK.':
       f.hearthMix>.08&&f.stage!=='heating'?'BRINGING THE STEEL TO THE ANVIL...':
@@ -59843,9 +60018,19 @@ function drawPickpocketNoble(){
 }
 function drawPickpocketHands(){
   const p=pickpocketGame,c=playerChar||CHARS[0],caveman=c.caveman===true,armor=caveman?'#b9784e':c.rigId==='ser_jonathan'?'#87939d':'#707d8d',skin=caveman?'#c98e5a':'#bd825a',reach=p.handReach,purse=pickpocketPurseCenter(p),endX=lerp(374,purse.x,reach),endY=lerp(733,purse.y+18,reach);
+  if(c.rigId==='ser_jonathan'){
+    const m=KRJonathan.materials();
+    expSegment(104,770,118,690,23,m.armor);expSegment(98,770,112,690,4,m.light);
+    KRJonathan.hand(120,683,5,-1);
+    expSegment(386,778,365,695,29,m.armor);expSegment(380,778,359,695,4,m.light);
+    expSegment(365,695,endX,endY,25,m.steel);expSegment(359,695,endX-6,endY,4,m.light);
+    expPoly([[354,685],[375,685],[375,704],[354,704]],m.dark);
+    KRJonathan.hand(endX,endY-5,6,1);
+  }else{
   g.strokeStyle='#10121699';g.lineWidth=32;g.lineCap='round';g.beginPath();g.moveTo(104,770);g.lineTo(118,690);g.stroke();g.strokeStyle=armor;g.lineWidth=23;g.beginPath();g.moveTo(104,770);g.lineTo(118,690);g.stroke();g.fillStyle=skin;g.beginPath();g.arc(120,683,14,0,TAU);g.fill();
   g.strokeStyle='#101216aa';g.lineWidth=39;g.beginPath();g.moveTo(386,778);g.lineTo(365,695);g.lineTo(endX,endY);g.stroke();g.strokeStyle=armor;g.lineWidth=29;g.beginPath();g.moveTo(386,778);g.lineTo(365,695);g.lineTo(endX,endY);g.stroke();
   g.fillStyle=skin;g.beginPath();g.ellipse(endX,endY,18,15,-.25,0,TAU);g.fill();g.strokeStyle=skin;g.lineWidth=7;for(let i=0;i<3;i++){g.beginPath();g.moveTo(endX-8+i*7,endY-8);g.lineTo(endX-11+i*8,endY-25-reach*4);g.stroke();}
+  }
   if(p.coinAnim>0){const t=1-p.coinAnim,x=lerp(purse.x,endX,t),y=lerp(purse.y,endY-25,t)-Math.sin(t*Math.PI)*40;g.globalAlpha=p.coinAnim;g.fillStyle='#ffe36a';g.beginPath();g.arc(x,y,10,0,TAU);g.fill();g.strokeStyle='#aa7221';g.lineWidth=2;g.stroke();g.globalAlpha=1;}
 }
 function drawPickpocketMeters(){
@@ -59860,7 +60045,7 @@ function drawPickpocketPreview(r){
 function drawPickpocketGame(){
   const p=pickpocketGame;if(!p)return;drawPickpocketMarket();drawPickpocketNoble();drawPickpocketHands();if(pausePhotoMode)return;drawPickpocketMeters();
   g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);
-  g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawPauseButton();
   if(p.phase==='intro'){
     g.fillStyle='#080a0ef2';g.fillRect(28,465,424,185);g.strokeStyle='#d9bd74';g.lineWidth=3;g.strokeRect(28,465,424,185);g.font='bold 26px monospace';g.fillStyle='#ffe36a';g.fillText('SILKEN FINGERS',240,501);g.font='10px monospace';g.fillStyle='#e8e2d0';g.fillText('Hold directly on the purse to lift a coin.',240,535);g.fillText('Release when his shoulders twitch. Your hand must retreat.',240,559);g.fillStyle='#ffb184';g.fillText('Some turns are fake-outs. Greed raises suspicion.',240,586);g.fillStyle='#9fd8ff';g.fillText('Steal three coins before the noble catches you.',240,612);
     g.fillStyle='#30281f';g.fillRect(PICKPOCKET_START_BTN.x,PICKPOCKET_START_BTN.y,PICKPOCKET_START_BTN.w,PICKPOCKET_START_BTN.h);g.strokeStyle='#ffe36a';g.strokeRect(PICKPOCKET_START_BTN.x,PICKPOCKET_START_BTN.y,PICKPOCKET_START_BTN.w,PICKPOCKET_START_BTN.h);g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('BEGIN THE LIFT',240,696);
@@ -60014,7 +60199,7 @@ function drawTavernSlideGame(){
   if(tavernSlideGame&&drawTavernPresentation('slide'))return;
   const t=tavernSlideGame;if(!t)return;drawTavernSlideBackground();drawTavernRival();drawTavernTable();const sorted=t.mugs.slice().sort((a,b)=>a.y-b.y);for(const mug of sorted)drawTavernMug(mug);if(t.phase==='playing'&&!t.shotActive){const owner=tavernCurrentOwner(t);drawTavernMug({owner,x:tavernLaunchPoint(owner).x,y:tavernLaunchPoint(owner).y,angle:0,alpha:1},true);}drawTavernHands();drawTavernAimGuide();
   if(t.impactT>0){const a=t.impactT/.28;g.globalAlpha=a;g.strokeStyle='#fff0b0';g.lineWidth=4;for(let i=0;i<8;i++){const ang=i/8*TAU,len=(1-a)*34+12;g.beginPath();g.moveTo(t.impactX+Math.cos(ang)*8,t.impactY+Math.sin(ang)*5);g.lineTo(t.impactX+Math.cos(ang)*len,t.impactY+Math.sin(ang)*len*.65);g.stroke();}g.globalAlpha=1;}
-  drawTavernHud();g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);g.fillStyle='#05070ccc';g.fillRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.strokeStyle='#8b8fa0';g.strokeRect(PAUSE_BTN.x,PAUSE_BTN.y+uiTop,PAUSE_BTN.w,PAUSE_BTN.h);g.fillStyle='#e8e2d0';g.font='bold 15px monospace';g.fillText('II',PAUSE_BTN.x+19,PAUSE_BTN.y+uiTop+25);
+  drawTavernHud();g.fillStyle='#05070ccc';g.fillRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.strokeStyle='#8b8fa0';g.lineWidth=2;g.strokeRect(MINIGAME_BACK_BTN.x,MINIGAME_BACK_BTN.y,MINIGAME_BACK_BTN.w,MINIGAME_BACK_BTN.h);g.font='bold 14px monospace';g.fillStyle='#e8e2d0';g.textAlign='center';g.fillText('< BACK',62,77);drawPauseButton();
   if(t.phase==='intro'){g.fillStyle='#080a0ef1';g.fillRect(34,488,412,169);g.strokeStyle='#d8a955';g.lineWidth=3;g.strokeRect(34,488,412,169);g.font='bold 24px monospace';g.fillStyle='#ffe36a';g.fillText('TAVERN TABLE SLIDE',240,524);g.font='10px monospace';g.fillStyle='#e8e2d0';g.fillText('A coin toss decides who slides first.',240,554);g.fillText('Three mugs each. Inner rings score 3 / 2 / 1.',240,578);g.fillStyle='#ffb184';g.fillText("Knock Barry's mugs away. Keep yours on the oak.",240,604);g.fillStyle='#9fd8ff';g.fillText('Touch your mug, pull back toward you, then release.',240,630);g.fillStyle='#30251a';g.fillRect(TAVERN_SLIDE_START_BTN.x,TAVERN_SLIDE_START_BTN.y,TAVERN_SLIDE_START_BTN.w,TAVERN_SLIDE_START_BTN.h);g.strokeStyle='#ffe36a';g.strokeRect(TAVERN_SLIDE_START_BTN.x,TAVERN_SLIDE_START_BTN.y,TAVERN_SLIDE_START_BTN.w,TAVERN_SLIDE_START_BTN.h);g.font='bold 16px monospace';g.fillStyle='#ffe36a';g.fillText('TOSS THE COIN',240,701);}
   else if(t.phase==='coinToss')drawTavernCoinToss();
   else if(t.phase==='playing'){g.fillStyle='#080a0edf';g.fillRect(70,722,340,34);g.strokeStyle=t.feedbackCol;g.strokeRect(70,722,340,34);g.font='bold 9px monospace';g.fillStyle=t.feedbackCol;g.fillText(t.feedback,240,744);}
@@ -60686,37 +60871,86 @@ function menuKnightIdlePose(t){
     plumeSway:Math.sin(t*1.7)*.28+Math.sin(t*2.9+.7)*.09,
     plumeTip:Math.sin(t*1.7-.45)*.12};
 }
-function drawMenuEncounter(){
-  const height=menuSheetY()+PAD_TOP,zoom=height/560,backdropZoom=Math.max(1.16,zoom);
-  // One continuous cave fills the viewport behind the floating menu sheet.
-  g.save();g.translate(VW/2+32,-PAD_TOP);g.scale(backdropZoom,backdropZoom);g.translate(-VW/2,-125);
-  drawCave(menuCaveProjection);
+// Original cut-letter wordmark: filled chisel serifs, not the previous font/strokes.
+const MENU_CREST_LETTERS=Object.freeze({
+ K:[[[0,0],[10,0],[8,4],[8,14],[19,0],[27,0],[13,17],[27,34],[18,34],[8,21],[8,30],[10,34],[0,34],[2,30],[2,4]]],
+ N:[[[0,0],[8,0],[20,23],[20,4],[18,0],[28,0],[26,4],[26,34],[20,34],[8,11],[8,30],[10,34],[0,34],[2,30],[2,4]]],
+ I:[[[3,0],[25,0],[23,5],[18,5],[18,29],[23,29],[25,34],[3,34],[5,29],[10,29],[10,5],[5,5]]],
+ G:[[[26,0],[24,7],[11,6],[7,10],[7,25],[11,28],[20,28],[20,22],[15,22],[15,17],[27,17],[27,31],[22,34],[6,34],[0,28],[0,6],[6,0]]],
+ H:[[[0,0],[10,0],[8,4],[8,14],[20,14],[20,4],[18,0],[28,0],[26,4],[26,30],[28,34],[18,34],[20,30],[20,20],[8,20],[8,30],[10,34],[0,34],[2,30],[2,4]]],
+ T:[[[0,0],[28,0],[27,8],[22,6],[18,6],[18,29],[21,34],[7,34],[10,29],[10,6],[6,6],[1,8]]],
+ R:[[[0,0],[22,0],[28,6],[28,15],[22,21],[16,21],[29,34],[19,34],[8,21],[8,30],[10,34],[0,34],[2,30],[2,4]],[[8,6],[8,15],[19,15],[21,13],[21,8],[19,6]]],
+ U:[[[0,0],[10,0],[8,4],[8,25],[12,28],[18,28],[21,25],[21,4],[19,0],[29,0],[27,4],[27,28],[21,34],[8,34],[2,28],[2,4]]],
+ S:[[[27,0],[25,7],[10,6],[7,9],[7,12],[24,17],[28,22],[28,28],[22,34],[0,34],[2,27],[18,28],[21,25],[21,23],[4,18],[0,13],[0,6],[6,0]]]
+});
+function drawMenuLogo(){
+  // Quiet unframed wordmark; the live bear closes the composition beneath it.
+  g.save();g.translate(240,-PAD_TOP+25);
+  const row=(word,y,scale,face,light,depth)=>{
+    const width=[...word].reduce((n,c)=>n+(c===' '?12:34),-6);
+    g.save();g.translate(-width*scale/2,y);g.scale(scale,scale);
+    for(const [dy,color]of [[2,depth],[0,face]]){
+      let cursor=0;g.fillStyle=color;
+      for(const letter of word){
+        if(letter===' '){cursor+=12;continue;}
+        g.beginPath();for(const contour of MENU_CREST_LETTERS[letter]){
+          contour.forEach(([x,y],i)=>i?g.lineTo(cursor+x,y+dy):g.moveTo(cursor+x,y+dy));g.closePath();
+        }g.fill('evenodd');
+        if(dy===0){
+          g.save();g.clip('evenodd');g.fillStyle=light;
+          g.fillRect(cursor,0,29,2);g.restore();
+        }
+        cursor+=34;
+      }
+    }
+    g.restore();
+  };
+  row('KNIGHT RUSH',0,1.12,'#eedbb3','#fff0cd','#493323');
   g.restore();
-  drawBearNatural(302,-PAD_TOP+height*.51,1.32*zoom,'idle',0,false);
+}
+function menuCoverLayout(){
+  const top=-PAD_TOP+108,bottom=menuSheetY()+10,height=bottom-top;
+  return {top,bottom,height,zoom:clamp(height/470,.87,1.24)};
+}
+function drawMenuEncounter(){
+  const {top,bottom,height,zoom}=menuCoverLayout(),backdropZoom=Math.max(1.05,zoom),
+    sceneLift=100*zoom,bearY=top+height*.66-sceneLift,riderY=bottom+65-84*zoom;
+  g.fillStyle='#0f0c0a';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
+  // The same cave and actors, fitted as one cover vignette below the title.
+  g.save();g.beginPath();g.rect(0,-PAD_TOP+65,VW,bottom+40+PAD_TOP-65);g.clip();
+  g.save();g.translate(VW/2+12,top-sceneLift);g.scale(backdropZoom,backdropZoom);g.translate(-VW/2,-125);
+  // Restore the original floor cracks, rubble, bones and wall-base fungi.
+  // The cover positions its own light pools under the moved actors below.
+  drawCave(menuCaveProjection,true,false);g.restore();
+  g.fillStyle='rgba(174,189,228,.07)';g.beginPath();
+  g.ellipse(287,bearY-2*zoom,105*zoom,20*zoom,0,0,TAU);g.fill();
+  g.beginPath();g.ellipse(174,riderY,92*zoom,18*zoom,0,0,TAU);g.fill();
+  drawBearNatural(287,bearY,1.30*zoom,'idle',0,false);
   // Hold the real second-cut follow-through; no attack loop or detached prop.
   const swordAction=backSwordPoseAt(2,{}),swordFx={};
   // Seated chest breathing, planted horse breathing and a slow tail swish.
-  drawSerJonathanRider(148,-PAD_TOP+height*1.05,2.25*zoom,{gallop:0,lean:0,duck:0,
+  drawSerJonathanRider(174,riderY,1.85*zoom,{gallop:0,lean:0,duck:0,
     feather:'#268ee8',horse:'#6f4327',swordAction,swordFxTarget:swordFx,
     mountedIdle:menuKnightIdlePose(perfNow)});
-  drawMenuSwordMotes(swordFx.swordFxPose,perfNow);
+  drawMenuSwordMotes(swordFx.swordFxPose,perfNow);g.restore();
+  // Quiet foreground joins the vignette to the parchment; no extra UI frame.
+  g.fillStyle='#151116';g.beginPath();g.moveTo(0,bottom-25);g.lineTo(70,bottom-12);
+  g.lineTo(160,bottom+9);g.lineTo(330,bottom+6);g.lineTo(415,bottom-15);
+  g.lineTo(480,bottom-30);g.lineTo(480,bottom+40);g.lineTo(0,bottom+40);g.closePath();g.fill();
 }
 function drawMenu(){
   const p=KRUI.theme('treasure'),sheetY=menuSheetY();
   drawMenuEncounter();
   if(pausePhotoMode)return;
-  // Title belongs to the encounter, not to a settings-like panel header.
-  g.save();g.textAlign='left';g.font='bold 38px monospace';
-  g.fillStyle='#100d12';g.fillText('KNIGHT',27,-PAD_TOP+68);g.fillText('RUSH',27,-PAD_TOP+110);
-  g.fillStyle='#efe4cb';g.fillText('KNIGHT',24,-PAD_TOP+65);
-  g.fillStyle='#7199df';g.fillText('RUSH',24,-PAD_TOP+107);g.restore();
-  KRMenuMapPaper.draw(g,sheetY-8);
+  drawMenuLogo();
+  // Clean matching-edge Treasure parchment. Keep the map experiment in code.
+  KRUI.sheet(g,{x:18,y:sheetY,w:444,h:menuSheetHeight()});
   const b=(r,label,primary=false,size=14)=>KRUI.button(g,r,label,'treasure',{variant:primary?undefined:'secondary',size});
   b(MENU_PLAY_BTN,'▶ PLAY',true,20);
   b(MENU_RELIC_BTN,'RELIC CODEX');b(MENU_MINIGAMES_BTN,'MINIGAMES');
   b(MENU_SETTINGS_BTN,'SETTINGS');b(MENU_DEBUG_BTN,'DEBUG RUN',false,13);
-  if(menuMsg&&perfNow<menuMsgT)KRUI.text(g,menuMsg,VW/2,sheetY+220,10,p.paperSoft,360);
-  else if(bestScore>0)KRUI.text(g,'BEST SCORE · '+bestScore,VW/2,sheetY+220,10,p.paperSoft);
+  if(menuMsg&&perfNow<menuMsgT)KRUI.text(g,menuMsg,VW/2,sheetY+27,10,p.ink,360);
+  else if(bestScore>0)KRUI.text(g,'BEST SCORE · '+bestScore,VW/2,sheetY+27,10,p.paperSoft);
 }
 /* ---------- settings sheet: floats over the menu or the pause screen ---------- */
 function currentUITheme(){
@@ -60725,7 +60959,7 @@ function currentUITheme(){
 function drawSettings(){
   const showDebugOptions=debugRun||debugMoveLabActive(),showRunAutoParry=debugRun&&!debugMoveLabActive(),id=currentUITheme(),p=KRUI.theme(id);
   g.fillStyle=p.dark+'f2';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  KRUI.sheet(g,{x:44,y:VH/2-246,w:392,h:(showRunAutoParry?272:showDebugOptions?226:44)+306});
+  KRUI.sheet(g,{x:44,y:VH/2-246,w:392,h:(showRunAutoParry?272:showDebugOptions?226:44)+326});
   const b=(x,y,w,h,label,selected=false,size=13)=>KRUI.button(g,{x,y,w,h},label,id,{variant:'secondary',selected,size});
   KRUI.text(g,'SETTINGS',VW/2,VH/2-200,26,p.ink);
   b(VW/2-160,VH/2-178,320,38,'PERFORMANCE: '+(journeyPerf.enabled?'ON':'OFF')+'  (F9)',journeyPerf.enabled);
@@ -60902,7 +61136,7 @@ function drawChangelog(){
   /* version tabs */
   for(let i=0;i<CHANGELOGS.length;i++){
     const x=20+i*92, sel=clSel===i;
-    KRUI.button(g,{x,y:64,w:84,h:32},CHANGELOGS[i].v,'treasure',{selected:sel,size:13});
+    KRUI.button(g,{x,y:64,w:84,h:32},CHANGELOGS[i].v,'treasure',{selected:sel,variant:'secondary',size:13});
   }
   KRUI.sheet(g,{x:14,y:100,w:452,h:VH-184});g.textAlign='left';
   let y=137;
@@ -60915,7 +61149,7 @@ function drawChangelog(){
     g.fillText(line,26,y); y+=head?23:19;
   }
   g.textAlign='center';
-  KRUI.button(g,{x:VW/2-70,y:VH-72,w:140,h:44},'◄ BACK','treasure',{size:16});
+  KRUI.button(g,{x:VW/2-70,y:VH-72,w:140,h:44},'◄ BACK','treasure',{size:16,variant:'secondary'});
 }
 function bossHomeStage(definitionId){
   return STAGES.list.find(stage=>stage.bossIds.includes(definitionId))||STAGES.list[0];
@@ -63453,7 +63687,7 @@ function drawRelicDex(){
   }
   g.textAlign='center';
   const by=96+Math.ceil(keys.length/2)*52+12;      // the back button sits BELOW the last card
-  KRUI.button(g,{x:VW/2-70,y:by,w:140,h:42},'◄ BACK','treasure',{size:16});
+  KRUI.button(g,{x:VW/2-70,y:by,w:140,h:42},'◄ BACK','treasure',{size:16,variant:'secondary'});
 }
 function drawBossIntro(){
   letterbox(modeT);
@@ -63529,11 +63763,10 @@ function smithText(text,x,y,size=12,col='#efe7d0',maxWidth=420){
   while(size>8&&g.measureText(text).width>maxWidth)g.font='bold '+(--size)+'px monospace';
   g.fillText(text,x,y);
 }
-function drawSmithButton(rect,label,color,enabled=true){
+function drawSmithButton(rect,label,color,enabled=true,role='secondary'){
   const id=currentUITheme(),p=KRUI.theme(id);
-  KRUI.button(g,rect,'',id,{enabled,variant:'secondary'});
-  // Legacy callers use this colour for selected lab options and item rarity.
-  KRUI.text(g,label,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?(color||p.onDark):p.mutedInk,rect.w-16);
+  KRUI.button(g,rect,label,id,{enabled,variant:role==='secondary'?'secondary':undefined,size:14});
+  // Legacy color is retained in the signature, not used as action hierarchy.
 }
 function drawSmithItem(kind,x,y,scale=1,neutral=false){
   g.save();g.translate(x,y);g.scale(scale,scale);
@@ -63726,6 +63959,7 @@ function drawSmithGuardArm(arm,near=false,openGrip=0,layer='all'){
     const x=lerp(ex,hx,k),y=lerp(ey,hy,k);
     rigSegment(x+nx*2.6,y+ny*2.6,x-nx*2.6,y-ny*2.6,.8,'#775338');
   }
+  g.save();g.translate(hx*U,hy*U);g.scale(sx<0?-1:1,1);g.translate(-hx*U,-hy*U);
   rigJoint(hx,hy,5.4,'#536371');rigJoint(hx-.3,hy-.6,4.6,'#b4c1c8');
   px(hx-2.5,hy-2.9,4.5,.75,'#e0e5e4');
   for(let i=0;i<3;i++)px(hx-1.8+i*1.35,hy-1.2,.7,2.6,'#718391');
@@ -63735,6 +63969,7 @@ function drawSmithGuardArm(arm,near=false,openGrip=0,layer='all'){
     rigSegment(hx+.4,hy+.2,hx+1.4,hy+1.4,1,'#b4c1c8');
     for(let i=0;i<2;i++)rigSegment(hx+1+i,hy-.5,hx+2.5+i,hy-1.8-openGrip,.7,'#c4ced5');
   }
+  g.restore();
 }
 function drawSmithPauldron(side,sy){
   g.save();g.translate(side*16*U,sy*U);g.scale(side*.78,.90);
@@ -63965,9 +64200,9 @@ function drawShop(){
     }
     smithText(shop.message||'Choose a card. Let the little hammer decide.',240,652,10,shop.message?'#ffd2bc':'#f0d9b1');
     const affordable=!q.maxed&&gold>=q.price&&scrap>=q.scrapCost;
-    drawSmithButton(SMITH_UI.confirm,q.maxed?'APEX COMPLETE':'','#f2d394',affordable);
+    drawSmithButton(SMITH_UI.confirm,q.maxed?'APEX COMPLETE':'','#f2d394',affordable,'primary');
     if(!q.maxed){
-      const col=affordable?'#f2d394':'#8a8171';
+      const col=affordable?KRUI.theme().ink:KRUI.theme().mutedInk;
       smithText('UPGRADE',151,694,15,col);drawCoin(233,688,.65,.25);
       smithText(String(q.price),263,694,15,col);smithText('+',296,694,13,col);
       drawScrapIcon(322,688,.6);smithText(String(q.scrapCost),350,694,15,col);
@@ -64017,7 +64252,7 @@ function drawShop(){
       g.save();g.beginPath();g.rect(r.x,r.y,r.w,r.h);g.clip();g.globalAlpha=.23*(1-sweep);
       smithPoly([[x,r.y],[x+34,r.y],[x+118,r.y+r.h],[x+84,r.y+r.h]],'#fff8dc',null);g.restore();
     }
-    if(shop.phase==='result')drawSmithButton(SMITH_UI.confirm,'BACK TO THE FORGE',color);
+    if(shop.phase==='result')drawSmithButton(SMITH_UI.confirm,'BACK TO THE FORGE',color,true,'primary');
     else smithText(quality?'LET IT SHINE.':'PLEASE DO NOT DISTRACT THE PROFESSIONAL.',240,691,10,'#929bab');
   }
   g.restore();
@@ -64505,7 +64740,7 @@ function drawTown(){
   merchantGoldLabel(gold,424,100,13,'#f3dfaa','',88);
   smithText('THE MARKET SQUARE',240,649,11,'#323f39');
   smithText('Tap their buildings to step inside.',240,667,10,'#455047');
-  drawSmithButton(TOWN_DEPART,'CONTINUE JOURNEY','#ead6a5');
+  drawSmithButton(TOWN_DEPART,'CONTINUE JOURNEY','#ead6a5',true,'primary');
   if(v.lab){
     drawSmithButton({x:15,y:744,w:140,h:34},'BACK TO DEBUG','#d2dcb7');
     drawSmithButton({x:325,y:744,w:140,h:34},'NEXT TOWN','#d2dcb7');
@@ -64515,7 +64750,7 @@ function drawTown(){
     smithText('THE ROAD AHEAD',240,609,20,'#f1dca9');
     smithText('Leave town and begin stage '+(loop+1)+'?',240,642,12,'#d7dbc6',382);
     smithText('Finish your shopping before you set off.',240,663,11,'#b8c5ad',382);
-    drawSmithButton({x:48,y:687,w:384,h:45},'CONTINUE JOURNEY','#e5d2a2');
+    drawSmithButton({x:48,y:687,w:384,h:45},'CONTINUE JOURNEY','#e5d2a2',true,'primary');
     drawSmithButton({x:140,y:747,w:200,h:32},'STAY IN TOWN','#bbceb2');
   }
   g.restore();
@@ -64662,12 +64897,12 @@ function merchantGoldLabel(amount,x,y,size=12,color='#ffe09b',prefix='',maxWidth
   // Same still frame as the gameplay HUD; never substitute an emoji or new icon.
   drawCoin(left+textWidth+gap+icon/2,y-1,icon/25,.25);g.restore();
 }
-function merchantPriceButton(rect,prefix,amount,color,enabled=true){
-  drawMerchantButton(rect,'',color,enabled);const p=KRUI.theme(merchantShop?.townId?'forest':'caravan');
-  merchantGoldLabel(amount,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?p.ink:p.mutedInk,prefix,rect.w-24);
+function merchantPriceButton(rect,prefix,amount,color,enabled=true,role='primary'){
+  drawMerchantButton(rect,'',color,enabled,role);const p=KRUI.theme(merchantShop?.townId?'forest':'caravan');
+  merchantGoldLabel(amount,rect.x+rect.w/2,rect.y+rect.h/2+5,14,enabled?(role==='secondary'?p.onDark:p.ink):p.mutedInk,prefix,rect.w-24);
 }
-function drawMerchantButton(rect,label,color,enabled=true){
-  KRUI.button(g,rect,label,merchantShop?.townId?'forest':'caravan',{enabled,size:13});
+function drawMerchantButton(rect,label,color,enabled=true,role='primary'){
+  KRUI.button(g,rect,label,merchantShop?.townId?'forest':'caravan',{enabled,size:13,variant:role==='secondary'?'secondary':undefined});
 }
 function openMerchantShop(visitId='stage:'+loop,environment=biome){
   const returnMode=mode==='merchant'?'run':mode;
@@ -65096,10 +65331,12 @@ function drawWanderingMerchant(s,foreground=false){
     rigSegment(ex-1.9,ey-.1,hx-1.9,hy-.1,.65,'#c88174');
     rigJoint(hx,hy-1.2,6.2,'#d1b588');px(hx-3,hy-3.5,5.6,.8,'#eee0b4');
     px(hx+1.6,hy-2.5,1,2,'#a89672');
-    rigPolygon([[hx-2.5,hy-.5],[hx+2,hy-.5],[hx+3,hy+1],[hx+1.7,hy+2.9],[hx-2.4,hy+2.4]],'#cba173');
-    px(hx-2.1,hy-.5,3.7,.75,'#ecd0a0');px(hx+1.7,hy+.3,1,2,'#986c51');
-    for(let i=0;i<3;i++)px(hx-1.5+i*1.1,hy+.7,.22,1.5,'#8c654d');
-    px(hx+.2,hy+.4,1.2,1,'#dfba61');px(hx+.5,hy+.45,.6,.45,'#94beb0');
+    // Mirror in rig coordinates BEFORE the caravan's road-facing projection.
+    const handRect=(x,y,w,h,c)=>px(hx+(side<0?-x-w:x),hy+y,w,h,c);
+    rigPolygon([[-2.5,-.5],[2,-.5],[3,1],[1.7,2.9],[-2.4,2.4]].map(([x,y])=>[hx+x*side,hy+y]),'#cba173');
+    handRect(-2.1,-.5,3.7,.75,'#ecd0a0');handRect(1.7,.3,1,2,'#986c51');
+    for(let i=0;i<3;i++)handRect(-1.5+i*1.1,.7,.22,1.5,'#8c654d');
+    handRect(.2,.4,1.2,1,'#dfba61');handRect(.5,.45,.6,.45,'#94beb0');
   };
   if(foreground){arm(-1);arm(1);g.restore();return;}
   // A prosperous merchant, not another warrior: a full belly under a tailored
@@ -65229,10 +65466,10 @@ function drawMerchantShop(){
     if(!rerolling&&!item.sold&&!blocked)merchantPriceButton(MERCHANT_BUY,'BUY — ',item.price,'#f3d59e');
     else drawMerchantButton(MERCHANT_BUY,rerolling?'NEW STOCK...':item.sold?'SOLD':'CANNOT BUY','#f3d59e',false);
     const available=s.stock.some(p=>!p.sold&&p.kind!=='heal');
-    merchantPriceButton(MERCHANT_REROLL,'REROLL ',merchantRerollCost(),'#d6c2e1',!rerolling&&available&&gold>=merchantRerollCost());
+    merchantPriceButton(MERCHANT_REROLL,'REROLL ',merchantRerollCost(),'#d6c2e1',!rerolling&&available&&gold>=merchantRerollCost(),'secondary');
   }
-  if(s.lab){merchantPriceButton({x:30,y:702,w:200,h:32},'TEST +',100,'#afc998');drawMerchantButton({x:250,y:702,w:200,h:32},'RESET TEST','#afc998');}
-  drawMerchantButton(MERCHANT_EXIT,s.lab?'BACK TO DEBUG':s.townId?'BACK TO TOWN':'BACK TO THE ROAD','#baccb0',!active&&!rerolling);
+  if(s.lab){merchantPriceButton({x:30,y:702,w:200,h:32},'TEST +',100,'#afc998',true,'secondary');drawMerchantButton({x:250,y:702,w:200,h:32},'RESET TEST','#afc998',true,'secondary');}
+  drawMerchantButton(MERCHANT_EXIT,s.lab?'BACK TO DEBUG':s.townId?'BACK TO TOWN':'BACK TO THE ROAD','#baccb0',!active&&!rerolling,'secondary');
   g.restore();
 }
 function drawScore(){
@@ -65332,7 +65569,7 @@ function update(dt){
       else policy.afterRoute(loop);
     }
     // Boss distance always wins over a roadside event on the same frame.
-    if(mode==='run')updateJourneyRoadEvents(dt);
+    if(mode==='run')updateJourneyRoadEvents(dt,dist-mv);
     if(mode==='run')updateJourneyRoute();
     /* Cull only after swept collision checks; at extreme speeds an entity may
        already be behind the camera on the same frame it crosses the rider. */
@@ -67663,11 +67900,11 @@ function buildWorldDrawQueue(stage,newForest){
 function drawModeScreen(){
   // Photo mode keeps the CURRENT screen. Never substitute the world underneath.
   const drawScreen=FULLSCREEN_RENDERERS.get(mode);
-  if(drawScreen){drawScreen();if(!pausePhotoMode)drawJourneyEventControls();drawJourneyRoadEvent();return;}
+  if(drawScreen){drawScreen();if(!pausePhotoMode)drawJourneyEventControls();drawJourneyRoadEvent();drawEventVitalsHUD();return;}
   if(pausePhotoMode){if(mode==='journeyevent')drawJourneyRoadEvent();return;}
   // HUD coordinates never inherit world shake or sprite rounding.
   g.save();g.setTransform(viewScale,0,0,viewScale,viewX,viewY);
-  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyQuestHUD();drawJourneyRoadEvent();
+  drawHUD();drawBearTurntableMouthButton();drawSkillLabCombatOverlay();drawJourneyQuestHUD();drawJourneyRoadEvent();drawEventVitalsHUD();
   if(forestCorridor)drawForestTestStatus();
   if(mode==='bossintro')drawBossIntro();
   if(mode==='evolution')drawSkillEvolutionScreen();
@@ -67764,9 +68001,10 @@ function renderFrame(){
     worldFxShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(worldFxShakeX,worldFxShakeY);
   }
-  const cutsceneId=journeyRoadEventSession?.context.den?wolfDenScene(journeyRoadEventSession.context):
+  const cutsceneId=journeyRoadEventSession?.context.loot?.fight?'fight-loot':
+    journeyRoadEventSession?.context.den?wolfDenScene(journeyRoadEventSession.context):
     journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
-  const opaqueCutscene=mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn)&&
+  const opaqueCutscene=mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn||journeyRoadEventSession?.context.loot?.fight)&&
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
   if(!FULLSCREEN_RENDERERS.has(mode)&&!opaqueCutscene){
   FRONT_WORLD_ITEMS.length=0;
@@ -67810,12 +68048,12 @@ function renderFrame(){
   if(skillLabTooltipMutationId&&!pausePhotoMode)drawSkillLabMutationTooltip();
   if(paused&&!pausePhotoMode){
     const id=currentUITheme(),p=KRUI.theme(id);g.fillStyle=p.dark+'dd';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-    KRUI.sheet(g,{x:14,y:VH/2-88,w:452,h:journeyRoute?336:283});
+    KRUI.sheet(g,{x:14,y:VH/2-88,w:452,h:journeyRoute?362:311});
     KRUI.text(g,'PAUSED',VW/2,VH/2-49,23,p.ink);
     if(debugMoveLabActive())drawMoveLabPauseControls();
     KRUI.text(g,'tap outside buttons or press P to resume',VW/2,VH/2-22,13,p.paperSoft,426);
     const b=(y,label,primary=false,h=46)=>KRUI.button(g,{x:VW/2-90,y,w:180,h},label,id,{size:15,variant:primary?undefined:'secondary'});
-    b(VH/2+20,'▣ SCREENSHOT',true);b(VH/2+78,'⚙ SETTINGS');b(VH/2+136,'MAIN MENU');
+    b(VH/2+20,'▣ SCREENSHOT');b(VH/2+78,'⚙ SETTINGS');b(VH/2+136,'MAIN MENU');
     if(journeyRoute)b(VH/2+194,'ROUTE MAP',false,40);
   }
   if(settingsOpen&&!pausePhotoMode) drawSettings(); // screenshot hides overlays, not its scene
@@ -68151,7 +68389,13 @@ cvs.dataset.skillTreeSpreadAudit=SKILL_TREE_DESIGN_AUDIT.formSpread.toFixed(2)+'
   SKILL_TREE_DESIGN_AUDIT.spectrum.fromOrigin.join('.');
 }
 // Authoring instrumentation is loaded only in Art Lab, never during a run.
-if(BOOT_QUERY.get('backgroundplaytest')==='1'){
+if(BOOT_QUERY.get('knightmodellab')==='1'){
+  const preview=document.createElement('script');preview.src='tools/jonathan-model-lab.js';
+  document.body.appendChild(preview);
+}else if(BOOT_QUERY.get('gatherernativelab')==='1'){
+  const preview=document.createElement('script');preview.src='tools/gatherer-native-preview.js';
+  document.body.appendChild(preview);
+}else if(BOOT_QUERY.get('backgroundplaytest')==='1'){
   const preview=document.createElement('script');preview.src='tools/background-playtest.js';
   document.body.appendChild(preview);
 }else if(BOOT_QUERY.get('backgroundlab')==='1'){
@@ -68183,14 +68427,28 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
         }else{
           const requested=BOOT_QUERY.get('roadcase');
           if(BOOT_QUERY.get('roadlab')==='1'&&requested)startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.theme===requested));
+          if(BOOT_QUERY.get('fightlootlab')==='1'){
+            roadLabState.entry=false;
+            startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='road_cutpurse'));
+            // Same combat/death/reward path as a real roadside victory.
+            if(!roadLabState.slot||roadLabState.slot.definition!=='roadside_fight')startRoadLabCase(8);
+            dist=roadLabState.slot.at;roadScroll=dist;obstacles=[];pickups=[];
+            updateJourneyRoadEvents(0);
+            if(boss){boss.hp=0;defeatBoss();boss.stateT=2.6;updateBoss(.016);}
+          }
           if(BOOT_QUERY.get('taxmanlab')==='1'){
             roadLabState.entry=false;roadLabState.direction=0;
             if(startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='taxman'))){
-              dist=roadLabState.slot.at-15;roadScroll=dist;runDistance=dist;
-              updateJourneyRoadEvents(0);
+              dist=roadLabState.slot.at;roadScroll=dist;runDistance=dist;
               player.x=player.lane=journeyNormalSide(roadLabState.slot)>0?2:0;
-              handleAction(player.lane===2?'right':'left');
+              updateJourneyRoadEvents(0);
             }
+          }
+          if(BOOT_QUERY.get('camplab')==='1'){
+            roadLabState.entry=false;roadLabState.direction=0;
+            startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='camp'));
+            dist=roadLabState.slot.at;roadScroll=dist;runDistance=dist;
+            player.x=player.lane=journeyNormalSide(roadLabState.slot)+1;updateJourneyRoadEvents(0);
           }
           requestAnimationFrame(frame);
         }
@@ -68216,7 +68474,7 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
   forestRenderer.onerror=()=>{console.error('Sunlit forest renderer could not load');requestAnimationFrame(frame);};
   document.body.appendChild(forestRenderer);
 }
-if(BOOT_QUERY.get('artlab')!=='1'&&BOOT_QUERY.get('backgroundlab')!=='1'&&BOOT_QUERY.get('roadcreatorlab')!=='1'&&typeof Image!=='undefined'&&!forestTreeGalleryMode){
+if(BOOT_QUERY.get('knightmodellab')!=='1'&&BOOT_QUERY.get('gatherernativelab')!=='1'&&BOOT_QUERY.get('artlab')!=='1'&&BOOT_QUERY.get('backgroundlab')!=='1'&&BOOT_QUERY.get('roadcreatorlab')!=='1'&&typeof Image!=='undefined'&&!forestTreeGalleryMode){
   setInterval(()=>{if(forestCorridor&&!forestPreparing)prepareForestBaked();},750);
 }
 bootCheckpoint('script-complete');

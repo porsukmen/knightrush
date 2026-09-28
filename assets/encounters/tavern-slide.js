@@ -11,7 +11,7 @@
  function WL(x,y,X,Y,w,c){const a=surface(x,y),b=surface(X,Y);L(a.x,a.y,b.x,b.y,w,c);}
  function bevel(x,y,w,h,c){P([[x+7,y],[x+w-7,y],[x+w,y+7],[x+w,y+h-7],[x+w-7,y+h],[x+7,y+h],[x,y+h-7],[x,y+7]],c);}
  function button(r,s){KRUI.button(g,r,s,'tavern',{size:14,variant:s==='< BACK'||s==='II'?'secondary':undefined});}
- function panel(y,h,title,lines){KRUI.panel(g,{x:35,y,w:410,h},'tavern',{light:true});const p=KRUI.theme('tavern');T(title,240,y+26,17,p.ink,385);lines.forEach((s,i)=>T(s,240,y+51+i*19,11,p.ink,385));}
+ function panel(y,h,title,lines){KRUI.panel(g,{x:35,y,w:410,h},'tavern',{light:true});const p=KRUI.theme('tavern');T(title,240,y+40,17,p.ink,385);lines.forEach((s,i)=>T(s,240,y+64+i*19,12,p.ink,385));}
  function drawCutscene(){
   R(0,-PAD_TOP,480,800+PAD_TOT,'#30231c');const img=window.KREventVisuals?.peek('tavern-slide');
   if(img){g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(img,0,90,480,640);g.restore();return true;}
@@ -48,14 +48,13 @@
     const cuffA=[e[0]-dx/len*5,e[1]-dy/len*5],cuffB=[e[0]+dx/len*4,e[1]+dy/len*4];
     plane(cuffA,cuffB,25,shirt[1]);plane(cuffA,cuffB,8,shirt[0],-8,-1);
     plane([cuffB[0]-dx/len*2,cuffB[1]-dy/len*2],cuffB,25,shirt[2]);
-    // Palm rests on the far table edge. Inward thumb is rooted at the wrist.
-    g.save();g.translate(...w);
-    const side=w[0]<0?-1:1;
-    P([[-9,-5],[7,-5],[10,0],[10,7],[6,10],[-8,9],[-11,5]],skin[1]);
-    P([[-9,-5],[7,-5],[8,-1],[5,3],[-9,2]],skin[0]);
-    P([[-8,6],[7,6],[10,4],[10,7],[6,10],[-8,9]],skin[2]);
-    P([[-side*6,-3],[-side*12,-1],[-side*14,4],[-side*10,6],[-side*6,2]],skin[1]);
-    for(const x of [-5,0,5])R(x,3,1,4,skin[2]);
+    // Merchant/Gatherer hand: shallow squared palm, no thumb silhouette.
+    g.save();g.translate(...w);g.scale(a===p.left?-1:1,1);
+    g.translate(0,9);g.scale(1.18,1.18);g.translate(0,-9);
+    P([[-9,-2],[7,-2],[10,2],[7,9],[-9,8]],skin[1]);
+    R(-8,-2,14,2.5,skin[0]);
+    P([[7,1],[10,2],[7,9],[5,8],[6,2]],skin[2]);
+    for(const x of [-5,-1,3])R(x,4,.8,4,skin[2]);
     g.restore();
    }
   };
@@ -195,18 +194,18 @@
     }
    }
   }
-  R(0,-PAD_TOP,480,102+PAD_TOP,'#30231c');T('THE MOSSY OAK / TANKARD DUEL',240,28,14);button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  R(0,-PAD_TOP,480,102+PAD_TOP,'#30231c');T('THE MOSSY OAK / TANKARD DUEL',240,28,14);button(MINIGAME_BACK_BTN,'< BACK');drawPauseButton();
   bevel(83,108,314,34,'#38281ee8');T('YOU '+score.player+'   :   '+score.ai+' BARRY',240,130,15,'#f2d398');
   T('BARREL BARRY',240,170,10,'#e8c292');
   for(const [side,x,col] of [['player',33,'#7ac0cd'],['ai',403,'#dd8666']])for(let i=0;i<3;i++)R(x+i*16,152,10,6,i<t.mugs.filter(m=>m.owner===side).length?'#624b37':col);
   if(t.phase==='intro'){
-   panel(500,147,'PLAY THE TABLE, NOT JUST THE TARGET',['Three mugs each. Alternate shots.','Pull your mug back, release to slide.','Use the side cushions to bank around guards.','Hit his mugs away, or push yours into a ring.','Final positions score 3 / 2 / 1.']);button(TAVERN_SLIDE_START_BTN,'TOSS THE COIN');
+   panel(540,220,'THREE MUGS. ONE TABLE.',['Pull back, release. Bank off the sides.','Knock mugs away. Rings score 3 / 2 / 1.']);button(TAVERN_SLIDE_START_BTN,'TOSS THE COIN');
   }else if(t.phase==='coinToss'){
    coin(t.phaseT,t.first);const settled=coinPose(t.phaseT,t.first).settled;
    bevel(65,734,350,49,'#35251de8');T(settled?(t.first==='player'?'CROWN — YOU THROW FIRST':'BARREL — BARRY THROWS FIRST'):'CROWN FOR YOU / BARREL FOR BARRY',240,756,12);
    T(settled?'LET THE DUEL BEGIN':'THE COIN DECIDES...',240,774,9,'#c6b18b');
   }else if(t.phase==='result'){
-   panel(530,111,t.result.winner==='player'?'THE TABLE IS YOURS':t.result.winner==='ai'?'BARRY WINS THIS ONE':'A DRAW — BUY ANOTHER ROUND?',['YOU '+t.result.player+'   :   '+t.result.ai+' BARRY','Cups are scored only after the last shot.']);button(TAVERN_SLIDE_START_BTN,'REMATCH');
+   panel(558,202,t.result.winner==='player'?'THE TABLE IS YOURS':t.result.winner==='ai'?'BARRY WINS THIS ONE':'A DRAW — ANOTHER ROUND?',['YOU '+t.result.player+'   :   '+t.result.ai+' BARRY']);button(TAVERN_SLIDE_START_BTN,'REMATCH');
   }else{
    bevel(18,731,444,57,'#35251de8');T(t.phase==='resolving'?'LAST CALL — COUNTING':t.feedback,240,750,11,'#f1d39b');
    T(owner==='player'&&!t.shotActive?'DRAG MUG  /  ARROWS: AIM & POWER  /  SPACE: THROW':t.shotActive?'LET THE MUGS SETTLE':"BARRY IS READING THE TABLE",240,773,9,'#c6b18b');

@@ -16,12 +16,37 @@ links; consult them only for an explicitly requested historical comparison.
 
 ## Start from the approved live Lab models
 
-Before designing, open `ArtTest.html` / `KnightRush.html?artlab=1` and inspect
-the relevant approved models rendered by the game. The Lab is the **starting
-visual reference**, not merely a final audit. Read the matching entries in
-`art-source/knight-rush-sharp-plane/art-references.js` to identify approved vs
-candidate renderers, then inspect those renderer functions. Do not promote the
-latest code or an image in `output/` to approved status by assumption.
+### Mandatory character reference gates — before AND after design
+
+For EVERY new character design or redesign, complete both visual gates below.
+These are explicit user requirements, not optional checks for unfamiliar models.
+
+1. **Before drawing or editing character geometry:** open `ArtTest.html` /
+   `KnightRush.html?artlab=1`. Check `art-references.js` for current approvals,
+   inspect the approved live-model overview, then closely inspect the applicable
+   isolated anchors. Include knight/boss block massing and relevant approved NPCs;
+   do not reduce the style to one convenient bartender, merchant or Duke face.
+   Compare head-to-body proportions, jaw/neck, torso volume, shoulder/elbow/hand
+   construction, silhouette, material planes and light direction. Read the chosen
+   renderer/pose code after looking at the actual models. State the concrete
+   construction lessons before beginning the design.
+2. **During final quality review:** reopen the same approved live Lab references
+   and visually compare the new character beside them, not from memory. Inspect
+   close-up and small/game scale, color and silhouette/value structure, and any
+   relevant animation extremes and in-between poses. Then inspect the lit actor
+   in the actual desktop/phone scene. Name and fix visible proportion, volume,
+   hand, joint, layering or lighting mismatches before calling the design ready.
+
+Keep the chosen reference IDs and concrete comparison findings in the task's
+existing art brief/review evidence. Opening a Lab page without inspecting its
+rendered models, reading source alone, checking an old screenshot, or a passing
+automated audit does NOT satisfy either gate. Never claim these visual checks
+were completed if only code or test output was examined.
+
+If the live Lab cannot run, disclose the blocker and pause the affected character
+design/review until it works or the user explicitly authorizes an alternative.
+Independent background or other authorized work may continue. Never promote
+the latest code, rejected candidate or arbitrary `output/` image to a reference.
 
 - Knight, bear, wolf and toad: compact squared masses, silhouette and volume.
 - Approved merchant, Duke and Royal Shuffle dealer: purposeful NPC detail, expression,
@@ -53,9 +78,9 @@ latest code or an image in `output/` to approved status by assumption.
 
 Use isolated character/model views as character references. **Never import their
 backgrounds, UI or full-scene layout as a style reference.** Do not open every
-archived PNG on each task. If the Lab cannot run, use only a task-relevant,
-explicitly registered approved isolated reference and disclose the limitation;
-an old scene screenshot is not an equivalent substitute.
+archived PNG on each task. Registered approved isolated images may supplement
+the live Lab, but do not replace its mandatory before/after gates without the
+user's explicit authorization; an old scene screenshot is not an equivalent.
 
 For cutscene/event backgrounds and scene-matched actor lighting, also use
 `tools/skills/knight-rush-cutscene/SKILL.md` and its approved Background Lab
@@ -97,6 +122,16 @@ does not change any independent character or background approvals.
 
 ## Colour, lighting and depth
 
+- User preference: Knight Rush artwork should use vibrant, clearly saturated
+  material colours, not pale, bleached, dusty or washed-out palettes. This applies
+  generally to characters, items and scenery, not just the scrap revision.
+  Preserve hue and saturation through scene lighting: warm light must not turn
+  every surface beige, and shadows must not reduce everything to muddy grey.
+  Keep material identity and readable light/dark planes; vibrant does not mean
+  neon, uniformly bright, or indiscriminately boosting the whole scene. Check
+  colour vitality in the actual game view as part of final visual review.
+  This preference does not authorize repainting unrelated approved assets or
+  changing the separately approved brown/parchment UI palette.
 - Usually three values: main material, broad shadow, narrow light plane. Reuse
   the relevant live renderer's palette; there is no mandatory universal palette.
 - Separate skin, steel, cloth, wood, leather and gold by value/hue. Steel has a
@@ -112,6 +147,25 @@ does not change any independent character or background approvals.
   Keep interactive objects and silhouettes readable in the phone viewport.
 
 ## Native implementation and motion
+
+### Approved Jonathan model — reuse, do not redraw
+
+User-approved on 2026-09-28: whenever Jonathan is needed, reuse the current
+models shown in `KnightModelLab.html` / `KnightRush.html?knightmodellab=1`.
+Use `KRJonathan.draw` in `assets/encounters/jonathan-model.js` for front/back
+standing and seated poses, `KRJonathan.side` for profiles, and its `hand` /
+`materials` for first-person adaptations. Mounted scenes keep the actual
+`drawSerJonathanRider`. Extend these shared rigs for new actions rather than
+copying their geometry or inventing another event-specific knight.
+
+Keep the approved square helmet, blue plume, cool silver armour, thumb-free
+hands, straight standing legs and fixed-length seated limbs. Jonathan has no
+brown waist belt. For his front-facing armour, shoulder caps cover upper arms;
+forearms/hands remain in front when reaching. This model-specific order
+overrides the general NPC shoulder default below. Preserve back equipment and
+pose-dependent occlusion. New poses still require visual checks, not a redesign
+of his identity. This rule concerns Jonathan, not the Squire or other knights.
+See `art-source/knight-rush-sharp-plane/jonathan-event-models.md` for integration.
 
 Use existing renderers through their actual code/Lab adapters, not redrawn copies:
 

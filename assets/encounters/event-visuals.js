@@ -5,6 +5,10 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'rest-camp':Object.freeze({standard:{src:'assets/encounters/rest-camp-v2.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/rest-camp-v2-mobile.png',width:576,height:768}}),
+    'fight-loot':Object.freeze({standard:{src:'assets/encounters/fight-loot-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/fight-loot-v1-mobile.png',width:576,height:768}}),
     'royal-tax-collector':Object.freeze({standard:{src:'assets/encounters/royal-tax-collector-v1.png',width:1215,height:1296},
       mobile:{src:'assets/encounters/royal-tax-collector-v1-mobile.png',width:768,height:819}}),
     'wolf-den-forest':Object.freeze({standard:{src:'assets/encounters/wolf-den-forest-v1.png',width:1086,height:1448},

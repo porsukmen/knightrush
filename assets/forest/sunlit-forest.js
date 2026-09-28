@@ -23,11 +23,12 @@
   // Local authored material-lighting profile, NOT a tint over the screen.
   // The existing rider rig receives its supported appearance values unchanged
   // in shape/animation. Cache the palette; no per-pixel work or extra canvases.
+  const knightDaylight=KRJonathan.materials('daylight');
   const morningRiderLight=Object.freeze({
-    armor:'#a3b2ad',armorDark:'#536e76',armorLight:'#e8e3bf',
-    steel:'#bccbc5',steelLight:'#fff0cc',
-    shield:Object.freeze({face:'#2c6490',rim:'#e9e7ca',rimDark:'#70898b',emblem:'#d05249',boss:'#e5b85a'}),
-    sword:Object.freeze({grip:'#485fa4',guard:'#839dc1',blade:'#e8eee0',edge:'#fff4d6',sheath:'#244d71'})
+    armor:knightDaylight.armor,armorDark:knightDaylight.dark,armorLight:knightDaylight.light,
+    steel:knightDaylight.steel,steelLight:knightDaylight.shine,
+    shield:Object.freeze({face:'#2c6490',rim:knightDaylight.light,rimDark:knightDaylight.dark,emblem:'#d05249',boss:'#e5b85a'}),
+    sword:Object.freeze({grip:'#485fa4',guard:'#839dc1',blade:knightDaylight.shine,edge:'#ffffff',sheath:'#244d71'})
   });
   let riderLightCache=null,insideMorningPlayer=false;
   function morningRiderAppearance(o){

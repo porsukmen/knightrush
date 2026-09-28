@@ -5,7 +5,7 @@
  const L=(x,y,X,Y,w,c)=>{g.strokeStyle=c;g.lineWidth=w;g.lineCap='butt';g.beginPath();g.moveTo(x,y);g.lineTo(X,Y);g.stroke();};
  const T=(s,x,y,size=12,c='#f2dab0',max=440)=>smithText(s,x,y,size,c,max);
  const cut=(x,y,w,h,c)=>P([[x+6,y],[x+w-6,y],[x+w,y+6],[x+w,y+h-6],[x+w-6,y+h],[x+6,y+h],[x,y+h-6],[x,y+6]],c);
- const rects={count:Array.from({length:6},(_,i)=>({x:33+i*70,y:573,w:64,h:44})),face:Array.from({length:6},(_,i)=>({x:33+i*70,y:631,w:64,h:44})),raise:{x:32,y:690,w:200,h:49},call:{x:248,y:690,w:200,h:49}};
+ const rects={count:Array.from({length:6},(_,i)=>({x:33+i*70,y:574,w:64,h:44})),face:Array.from({length:6},(_,i)=>({x:33+i*70,y:648,w:64,h:44})),raise:{x:32,y:706,w:200,h:49},call:{x:248,y:706,w:200,h:49}};
  const materials={
   neutral:{skin:['#e1bc8d','#c99e72','#986c53'],coat:['#467f80','#265760','#193f4b'],linen:['#e6d6ad','#bcaa86','#807c68'],hair:['#87725b','#534738','#343331'],gold:['#efd18b','#cfa960','#947345']},
   scene:{skin:['#f8cc96','#dfa476','#9b7765'],coat:['#659b91','#386e70','#284e60'],linen:['#ffe3ae','#d6c29a','#889694'],hair:['#b2986d','#6c5741','#3b4547'],gold:['#ffe7a4','#d7af63','#838876']}
@@ -22,8 +22,10 @@
   const seg=(a,b,w,c,dx=0)=>expSegment(a[0]+dx,a[1],b[0]+dx,b[1],w,c);
   const forearm=a=>{seg(a.elbow,a.wrist,19,m.coat[2]);seg(a.elbow,a.wrist,14,m.coat[1],-2);seg(a.elbow,a.wrist,4,m.coat[0],-7);
    const [x,y]=a.wrist;cut(x-12,y-11,23,12,m.linen[1]);R(x-11,y-11,20,3,m.linen[0]);
-   P([[x-10,y-1],[x+8,y-1],[x+12,y+4],[x+9,y+10],[x-8,y+10],[x-12,y+5]],m.skin[1]);R(x-9,y,16,3,m.skin[0]);R(x+6,y+3,4,6,m.skin[2]);
-   for(let i=0;i<3;i++)R(x-6+i*5,y+6,1,3,m.skin[2]);if(a===p.right){R(x,y+3,5,5,m.gold[1]);R(x+1,y+3,3,2,'#9fd0c7');}};
+   g.save();g.translate(x,y+10);g.scale(a===p.left?-1.18:1.18,1.18);g.translate(-x,-y-10);
+   P([[x-9,y-1],[x+7,y-1],[x+10,y+3],[x+7,y+10],[x-9,y+9]],m.skin[1]);R(x-8,y-1,14,2.5,m.skin[0]);
+   P([[x+7,y+2],[x+10,y+3],[x+7,y+10],[x+5,y+9],[x+6,y+3]],m.skin[2]);
+   for(let i=0;i<3;i++)R(x-5+i*4,y+5,.8,4,m.skin[2]);if(a===p.right){R(x,y+3,4,3,m.gold[1]);R(x+1,y+3,2,1,'#9fd0c7');}g.restore();};
   g.save();try{g.translate(240,315);
    if(pass==='front'){forearm(p.left);forearm(p.right);return;}
    g.save();g.translate(0,p.breath);
@@ -97,7 +99,7 @@
  function coin(t,starter){
   KRTavernCoin.draw(g,coinPose(t,starter));
  }
- function button(r,label,enabled=true,selected=false){KRUI.button(g,r,label,'court',{enabled,selected,size:14,variant:label==='< BACK'||label==='II'?'secondary':undefined});}
+ function button(r,label,enabled=true,selected=false,role='primary'){KRUI.button(g,r,label,'court',{enabled,selected,size:14,variant:role==='secondary'?'secondary':undefined});}
  function canPlay(s){return s.phase==='turn'&&s.turn==='player';}
  function draw(){const s=diceGame;if(!s)return;g.save();try{
   drawCutscene();actor(true,'body',s);table();
@@ -115,13 +117,13 @@
   else if(s.phase!=='intro'&&s.phase!=='coinToss')T('OPEN WITH AN HONEST CLAIM... OR NOT.',240,429,10,'#ecd0a0');
   if(s.phase==='coinToss')coin(s.phaseT,s.starter);
   R(0,-PAD_TOP,480,82+PAD_TOP,KRUI.theme('court').dark);T("DUKE'S BLUFF",240,29,22);T('SIX DICE. THREE SEALS. NO WILD ONES.',240,48,9,'#cbb38c');
-  button(MINIGAME_BACK_BTN,'< BACK');button({...PAUSE_BTN,y:PAUSE_BTN.y+uiTop},'II');
+  button(MINIGAME_BACK_BTN,'< BACK',true,false,'secondary');drawPauseButton();
   if(s.round)T('HAND '+s.round,240,95,10,'#e8c895');
-  KRUI.sheet(g,{x:16,y:510,w:448,h:792+PAD_BOT-510});
+  KRUI.sheet(g,{x:16,y:524,w:448,h:268});
   const paperText=(s,x,y,size=12,color,max=420)=>T(s,x,y,size,KRUI.theme().ink,max);
   if(s.phase==='intro'){
-   paperText('OUTBID HIM. OR CALL HIS BLUFF.',240,548,17);
-   ['You see your 3 dice. His 3 stay hidden.','Claim how many dice share one face, across BOTH hands.','Raise the count — or the face at the same count.','Call BLUFF to open both cups. Wrong side loses a seal.','Lose all 3 seals and the match is over.'].forEach((t,i)=>paperText(t,240,571+i*19,10,'#dfc8a1'));
+   paperText('OUTBID HIM. OR CALL HIS BLUFF.',240,562,17);
+   ['Your 3 dice + his hidden 3: claim across both.','Raise the count, or the face at the same count.','Call BLUFF to reveal. Wrong side loses a seal.','Lose all 3 seals and the match is over.'].forEach((t,i)=>paperText(t,240,588+i*21,12));
    button(DICE_REPLAY_BTN,'FLIP FOR FIRST');
   }else if(s.phase==='coinToss'){
    const settled=coinPose(s.phaseT,s.starter).settled;
@@ -133,11 +135,11 @@
    if(s.phase==='revealing'){paperText(s.result.caller==='player'?'YOU CALLED BLUFF!':'DUKE CALLS YOUR BLUFF!',240,559,18);paperText('THE CUPS TELL THE TRUTH.',240,585,12);}
    else{paperText(s.matchWinner?(s.matchWinner==='player'?'THE DUKE CONCEDES.':'THE DUKE KEEPS HIS TITLE.'):s.result.loser==='duke'?'THE DUKE LOSES A SEAL.':'YOU LOSE A SEAL.',240,556,17);paperText('CLAIM: '+s.bid.count+' × '+s.bid.face+'     FOUND: '+s.result.count,240,583,14);paperText(s.result.truth?'The claim was true. The caller pays.':'Not enough dice. The bidder pays.',240,607,11,'#d7c3a1');paperText('YOU '+(3-s.losses.player)+' SEALS     DUKE '+(3-s.losses.duke)+' SEALS',240,641,12);button(DICE_REPLAY_BTN,s.matchWinner?'REMATCH':'NEXT HAND');}
   }else{
-   const texts=['He studies your claim.','He gives you a measuring look.','He pauses with his hand on the cup.','He looks entirely too comfortable.'];paperText(rolling?'SHAKING THE BONES...':s.turn==='duke'?'DUKE IS CONSIDERING...':s.bid?texts[s.tell]:'YOUR OPENING CLAIM',240,548,12);
-   const playable=canPlay(s);paperText('HOW MANY DICE?',240,570,9);paperText('WHICH FACE?',240,628,9);
-   for(let i=0;i<6;i++){button(rects.count[i],String(i+1),playable,s.selected.count===i+1);const r=rects.face[i];button(r,'',playable,s.selected.face===i+1);die(r.x+r.w/2,r.y+21,i+1,25);}
+   const playable=canPlay(s),minimum=KRDukeRules.next(s.bid);
+   const prompt=playable&&!KRDukeRules.valid(s.selected,s.bid)?minimum?'MINIMUM: '+minimum.count+' × '+minimum.face+' — OR CALL BLUFF':'NO HIGHER CLAIM. CALL BLUFF.':'HOW MANY DICE?';
+   paperText(rolling?'SHAKING THE BONES...':s.turn==='duke'?'DUKE IS CONSIDERING...':prompt,240,560,12);paperText('WHICH FACE?',240,638,12);
+   for(let i=0;i<6;i++){button(rects.count[i],String(i+1),playable,s.selected.count===i+1,'secondary');const r=rects.face[i];button(r,'',playable,s.selected.face===i+1,'secondary');die(r.x+r.w/2,r.y+21,i+1,25);}
    button(rects.raise,s.bid?'RAISE CLAIM':'MAKE CLAIM',playable&&KRDukeRules.valid(s.selected,s.bid));button(rects.call,'BLUFF!',playable&&!!s.bid);
-   const minimum=KRDukeRules.next(s.bid);paperText(playable&&!KRDukeRules.valid(s.selected,s.bid)?minimum?'Raise to at least '+minimum.count+' × '+minimum.face+', or call BLUFF.':'No higher claim. Call BLUFF.':'Your claim counts ALL SIX dice. Ones are ordinary.',240,764,10,'#cdb58b');
   }
  }finally{g.restore();}}
  function tap(pt){const s=diceGame;if(!s)return;if(pointInRect(pt,MINIGAME_BACK_BTN)){leaveDiceGuess();return;}
