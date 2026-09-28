@@ -15,13 +15,18 @@ fs.mkdirSync(out,{recursive:true});
   assert(paper.bytes<2*1024*1024,'Parchment cache must stay below 2 MiB');
   await p.screenshot({path:path.join(out,device+'-menu.png')});
   if(device==='desktop')assert.deepEqual(await run('Array.from(g.getImageData(8,Math.floor(cvs.height/2),1,1).data)'),[5,7,12,255],'No menu painting in desktop gutters');
-  const layout=await run(`(()=>{const top=menuSheetY(),h=menuSheetHeight();return {
+  const layout=await run(`(()=>{const top=menuSheetY()-8,h=menuSheetHeight();return {
    share:h/(VH+PAD_TOT),inside:[MENU_PLAY_BTN,MENU_MINIGAMES_BTN,MENU_RELIC_BTN,MENU_SETTINGS_BTN,MENU_DEBUG_BTN].every(r=>
-    r.x>=18+20&&r.x+r.w<=462-20&&r.y>=top+28&&r.y+r.h+4<=top+h-28),
+    r.x>=28+20&&r.x+r.w<=452-20&&r.y>=top+28&&r.y+r.h+4<=top+h-28),
    minGap:MENU_MINIGAMES_BTN.y-MENU_PLAY_BTN.y-MENU_PLAY_BTN.h};})()`);
   assert(layout.inside,'All controls and shadows stay inside the parchment rules');
-  assert(layout.share>=.30&&layout.share<=.36,'Menu receives roughly one third of the cover');
-  assert(layout.minGap>=16,'Action rows must breathe');
+  assert(layout.share>=.20&&layout.share<=.32,'Restored compact bottom menu');
+  assert(layout.minGap>=14,'Action rows must breathe');
+  const layers=await run(`(()=>{const calls=[],title=drawMenuLogo,bear=drawBearNatural;
+   try{drawMenuLogo=(...a)=>{calls.push('title');return title(...a)};
+    drawBearNatural=(...a)=>{calls.push('bear');return bear(...a)};render();return calls;
+   }finally{drawMenuLogo=title;drawBearNatural=bear;}})()`);
+  assert.deepEqual(layers,['title','bear'],'Bear must render in front of the title');
   const hit=await run('({x:(MENU_MINIGAMES_BTN.x+MENU_MINIGAMES_BTN.w/2)*viewScale/renderDpr()+viewX/renderDpr(),y:(MENU_MINIGAMES_BTN.y+MENU_MINIGAMES_BTN.h/2)*viewScale/renderDpr()+viewY/renderDpr()})');
   if(device==='desktop')await p.mouse.click(hit.x,hit.y);else await p.touchscreen.tap(hit.x,hit.y);
   assert.equal(await run('mode'),'minigames','Actual input follows the repositioned button');

@@ -315,3 +315,11 @@ Actor and UI coordinates unchanged; phone/desktop menu audit passes.
 Pre-push follow-up: restored original cave floor cracks, rubble, bones and
 wall-base fungi in the title scene. Default cave rendering remains unchanged;
 the menu skips only the old light pools, keeping its actor-aligned pools.
+
+User-requested close-camera restoration: restored the pre-cover cave transform,
+bear/rider scale and anchors from ea92a0d, including original ground details and
+moonlight pools. Restored compact bottom-menu dimensions and hit rectangles,
+retaining the current Treasure parchment material and plain ivory wordmark.
+Layer order is cave -> title -> live bear -> rider -> menu. Photo mode omits
+the title. Small/large phone and desktop menu audit passes, including real
+input and an explicit title-before-bear assertion. Other UI/model fixes remain.

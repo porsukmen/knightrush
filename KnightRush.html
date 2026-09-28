@@ -676,13 +676,13 @@ function drawPauseButton(offsetY=uiTop){
   g.fillRect(r.x+11,r.y+9,5,20);g.fillRect(r.x+22,r.y+9,5,20);
   g.restore();
 }
-function menuSheetHeight(){return clamp((VH+PAD_TOT)*.32,282,350);}
-function menuSheetY(){return VH+PAD_BOT-menuSheetHeight()-16;}
-const MENU_RELIC_BTN=Object.freeze({x:246,get y(){return menuSheetY()+102+(menuSheetHeight()-246)/2;},w:190,h:52});
-const MENU_MINIGAMES_BTN=Object.freeze({x:44,get y(){return MENU_RELIC_BTN.y;},w:190,h:52});
-const MENU_PLAY_BTN=Object.freeze({x:44,get y(){return menuSheetY()+40;},w:392,h:62});
-const MENU_SETTINGS_BTN=Object.freeze({x:44,get y(){return menuSheetY()+menuSheetHeight()-90;},w:190,h:50});
-const MENU_DEBUG_BTN=Object.freeze({x:246,get y(){return MENU_SETTINGS_BTN.y;},w:190,h:50});
+function menuSheetHeight(){return 250;}
+function menuSheetY(){return VH+PAD_BOT-246;}
+const MENU_RELIC_BTN=Object.freeze({x:246,get y(){return menuSheetY()+102;},w:158,h:44});
+const MENU_MINIGAMES_BTN=Object.freeze({x:76,get y(){return menuSheetY()+102;},w:158,h:44});
+const MENU_PLAY_BTN=Object.freeze({x:76,get y(){return menuSheetY()+34;},w:328,h:54});
+const MENU_SETTINGS_BTN=Object.freeze({x:76,get y(){return menuSheetY()+160;},w:158,h:42});
+const MENU_DEBUG_BTN=Object.freeze({x:246,get y(){return menuSheetY()+160;},w:158,h:42});
 const MENU_OLD_FOREST_BTN=Object.freeze({x:245,y:404,w:160,h:50});
 // Presentation only: both entries retain Journey rules, maps and progression.
 // Keep the choice across restarts/seed replays; ordinary PLAY restores sunlit.
@@ -60908,49 +60908,34 @@ function drawMenuLogo(){
   row('KNIGHT RUSH',0,1.12,'#eedbb3','#fff0cd','#493323');
   g.restore();
 }
-function menuCoverLayout(){
-  const top=-PAD_TOP+108,bottom=menuSheetY()+10,height=bottom-top;
-  return {top,bottom,height,zoom:clamp(height/470,.87,1.24)};
-}
 function drawMenuEncounter(){
-  const {top,bottom,height,zoom}=menuCoverLayout(),backdropZoom=Math.max(1.05,zoom),
-    sceneLift=100*zoom,bearY=top+height*.66-sceneLift,riderY=bottom+65-84*zoom;
-  g.fillStyle='#0f0c0a';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
-  // The same cave and actors, fitted as one cover vignette below the title.
-  g.save();g.beginPath();g.rect(0,-PAD_TOP+65,VW,bottom+40+PAD_TOP-65);g.clip();
-  g.save();g.translate(VW/2+12,top-sceneLift);g.scale(backdropZoom,backdropZoom);g.translate(-VW/2,-125);
-  // Restore the original floor cracks, rubble, bones and wall-base fungi.
-  // The cover positions its own light pools under the moved actors below.
-  drawCave(menuCaveProjection,true,false);g.restore();
-  g.fillStyle='rgba(174,189,228,.07)';g.beginPath();
-  g.ellipse(287,bearY-2*zoom,105*zoom,20*zoom,0,0,TAU);g.fill();
-  g.beginPath();g.ellipse(174,riderY,92*zoom,18*zoom,0,0,TAU);g.fill();
-  drawBearNatural(287,bearY,1.30*zoom,'idle',0,false);
+  const height=menuSheetY()+PAD_TOP,zoom=height/560,backdropZoom=Math.max(1.16,zoom);
+  // Restore the original close cave camera and actor positions as one scene.
+  g.save();g.translate(VW/2+32,-PAD_TOP);g.scale(backdropZoom,backdropZoom);g.translate(-VW/2,-125);
+  drawCave(menuCaveProjection);g.restore();
+  // The title is behind the live actors, not an overlay on the bear's head.
+  if(!pausePhotoMode)drawMenuLogo();
+  drawBearNatural(302,-PAD_TOP+height*.51,1.32*zoom,'idle',0,false);
   // Hold the real second-cut follow-through; no attack loop or detached prop.
   const swordAction=backSwordPoseAt(2,{}),swordFx={};
   // Seated chest breathing, planted horse breathing and a slow tail swish.
-  drawSerJonathanRider(174,riderY,1.85*zoom,{gallop:0,lean:0,duck:0,
+  drawSerJonathanRider(148,-PAD_TOP+height*1.05,2.25*zoom,{gallop:0,lean:0,duck:0,
     feather:'#268ee8',horse:'#6f4327',swordAction,swordFxTarget:swordFx,
     mountedIdle:menuKnightIdlePose(perfNow)});
-  drawMenuSwordMotes(swordFx.swordFxPose,perfNow);g.restore();
-  // Quiet foreground joins the vignette to the parchment; no extra UI frame.
-  g.fillStyle='#151116';g.beginPath();g.moveTo(0,bottom-25);g.lineTo(70,bottom-12);
-  g.lineTo(160,bottom+9);g.lineTo(330,bottom+6);g.lineTo(415,bottom-15);
-  g.lineTo(480,bottom-30);g.lineTo(480,bottom+40);g.lineTo(0,bottom+40);g.closePath();g.fill();
+  drawMenuSwordMotes(swordFx.swordFxPose,perfNow);
 }
 function drawMenu(){
   const p=KRUI.theme('treasure'),sheetY=menuSheetY();
   drawMenuEncounter();
   if(pausePhotoMode)return;
-  drawMenuLogo();
   // Clean matching-edge Treasure parchment. Keep the map experiment in code.
-  KRUI.sheet(g,{x:18,y:sheetY,w:444,h:menuSheetHeight()});
+  KRUI.sheet(g,{x:28,y:sheetY-8,w:424,h:menuSheetHeight()});
   const b=(r,label,primary=false,size=14)=>KRUI.button(g,r,label,'treasure',{variant:primary?undefined:'secondary',size});
   b(MENU_PLAY_BTN,'▶ PLAY',true,20);
   b(MENU_RELIC_BTN,'RELIC CODEX');b(MENU_MINIGAMES_BTN,'MINIGAMES');
   b(MENU_SETTINGS_BTN,'SETTINGS');b(MENU_DEBUG_BTN,'DEBUG RUN',false,13);
-  if(menuMsg&&perfNow<menuMsgT)KRUI.text(g,menuMsg,VW/2,sheetY+27,10,p.ink,360);
-  else if(bestScore>0)KRUI.text(g,'BEST SCORE · '+bestScore,VW/2,sheetY+27,10,p.paperSoft);
+  if(menuMsg&&perfNow<menuMsgT)KRUI.text(g,menuMsg,VW/2,sheetY-21,10,p.onDark,360);
+  else if(bestScore>0)KRUI.text(g,'BEST SCORE · '+bestScore,VW/2,sheetY-21,10,p.onDark);
 }
 /* ---------- settings sheet: floats over the menu or the pause screen ---------- */
 function currentUITheme(){
