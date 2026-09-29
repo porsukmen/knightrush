@@ -5,6 +5,8 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'sword-clearing':Object.freeze({standard:{src:'assets/encounters/sword-clearing-v4.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/sword-clearing-v4-mobile.png',width:576,height:768}}),
     'rest-camp':Object.freeze({standard:{src:'assets/encounters/rest-camp-v2.png',width:1086,height:1448},
       mobile:{src:'assets/encounters/rest-camp-v2-mobile.png',width:576,height:768}}),
     'fight-loot':Object.freeze({standard:{src:'assets/encounters/fight-loot-v1.png',width:1086,height:1448},

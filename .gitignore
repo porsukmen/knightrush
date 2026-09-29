@@ -21,3 +21,9 @@ $RECYCLE.BIN/
 
 # GitHub Actions generates this publish entry from KnightRush.html.
 index.html
+
+# Local-only Godot experiments; never include in the web game repository.
+/classic-godot/
+/knight-rush-godot/
+/native-godot/
+/pixel-reborn/

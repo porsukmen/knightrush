@@ -65,7 +65,7 @@
   return plan.records;
  }
  function reserveObstacle(o,at){
-  if(!active()||o.kind!=='root'||o.roadTheme==='disco'||o.roadTheme==='inn')return true;
+  if(!active()||o.kind!=='root'||o.roadTheme==='disco'||o.roadTheme==='inn'||o.roadTheme==='oath')return true;
   ensurePlacementOwner();rootSpawnChecks++;
   const edge=journeySpawnRoadAt(at)?.edge??journeyActiveEdge(),
    offset=journeyActiveRoad()?journey.curvedSideOrigin-journeyNode(journeyRoute.from).at:curvedGroundDistance-dist,
@@ -82,7 +82,15 @@
  }
  // Material targets, not a translucent screen overlay. Three broad values
  // remain distinct on the exact same foliage, bark and soil geometry.
- const materialTargets={inn:{
+ const materialTargets={oath:{
+  '#528b41':'#397846','#67984b':'#65a247','#4b8341':'#326440',
+  '#95b951':'#94b942','#b2c85f':'#bfce61','#91b44b':'#83ad38',
+  '#285d40':'#234f39','#376643':'#366b42','#23583c':'#214631',
+  '#50713f':'#476d37','#d6b16f':'#b9a367','#dfbb7c':'#d2bc80',
+  '#dcb776':'#c3ad72','#c8a369':'#9a8957','#cfaa6d':'#aa935c',
+  '#a2af50':'#85a73d','#8da641':'#719637','#526f39':'#436433',
+  '#b39664':'#84744c','#b4ad86':'#cdc394','#b7a66a':'#958852','#c3ac6d':'#b2a16a'
+ },inn:{
   '#528b41':'#50894b','#67984b':'#73a258','#4b8341':'#3e7542',
   '#95b951':'#a8c568','#b2c85f':'#c9d985','#91b44b':'#97ba5a',
   '#285d40':'#2f6245','#376643':'#417852','#23583c':'#28513e',
@@ -209,7 +217,7 @@
    journeyForkDistance(),coordinateKey(curvedGroundDistance-dist)].join(':');
   if(key===decorPlanKey)return;decorPlanKey=key;decorPlanBuilds++;
   decorClearances.length=0;
-  for(const theme of ['disco','bloodwood','forge','chest','caravan','inn'])for(const view of journeyDiscoRoadViews(theme)){
+  for(const theme of ['disco','bloodwood','forge','chest','caravan','inn','oath'])for(const view of journeyDiscoRoadViews(theme)){
    if(view.spill){decorClearances.push(view.point(view.begin+42.5,view.onlySide*7));continue;}
    if(theme==='caravan'&&window.KRAutumnCaravan){
     const venue=KRAutumnCaravan.venueLayout(view.edge);
@@ -217,6 +225,9 @@
    }
    if(theme==='inn'&&window.KRMossyInn){
     const venue=KRMossyInn.site(view.edge);if(venue)for(const anchor of venue.clearances)decorClearances.push(view.point(anchor.at,anchor.offset));
+   }
+   if(theme==='oath'&&window.KROathRoad){
+    const s=KROathRoad.site(view.edge);if(s)for(const anchor of s.clearances)decorClearances.push(view.point(anchor.at,anchor.offset));
    }
    // Keep the existing seeded prop layout. Reserve its ground footprint in
    // the NEW planting system, rather than moving or hiding the old props.
@@ -239,6 +250,7 @@
    else if(theme==='forge')target=[r*1.04+g*.07,g*.78,b*.78];
    else if(theme==='caravan')target=[r*1.06+g*.06,g*.87,b*.73];
    else if(theme==='inn')target=[r*.94,g*1.02,b*.94];
+   else if(theme==='oath')target=[r,g,b];
    else target=[r*1.05,g*.96,b*.83];
    const hex=materialTargets[theme]?.[color]||'#'+target.map(v=>Math.round(clamp(v,0,255)).toString(16).padStart(2,'0')).join('');
    const result=mixCol(color,hex,step/16);colors.set(color,result);return result;
@@ -412,6 +424,8 @@
       shapes.push(...KRAutumnCaravan.floorDetails(local,row,a+view.offset,b+view.offset,edge,view.at(a)));
      if(edge?.preview.theme==='inn'&&window.KRMossyInn)
       shapes.push(...KRMossyInn.floorDetails(local,row,a+view.offset,b+view.offset,edge,view.at(a)));
+     if(edge?.preview.theme==='oath'&&window.KROathRoad)
+      shapes.push(...KROathRoad.floorDetails(local,row,a+view.offset,b+view.offset,edge,view.at(a)));
      // The opaque laid surface replaces buried soil instead of overpainting
      // a second road-sized layer. Retain soil on the two boundary rows only.
      if(shapes.some(shape=>shape.innBase&&shape.coversSoil))shapes=shapes.filter(shape=>shape.color!=='#d6b16f');
@@ -515,6 +529,7 @@
   if(o.roadTheme==='chest'&&window.KRTreasureRoad?.hazard(o,point)){g.restore();return;}
   if(o.roadTheme==='caravan'&&window.KRAutumnCaravan?.hazard(o,point)){g.restore();return;}
   if(o.roadTheme==='inn'&&window.KRMossyInn?.hazard(o,point)){g.restore();return;}
+  if(o.roadTheme==='oath'&&window.KROathRoad?.hazard(o,point)){g.restore();return;}
   const pal=o.roadTheme==='bloodwood'?palette('bloodwood',o.bloodAmount||1):
     o.roadTheme==='forge'?palette('forge',1):o.roadTheme==='chest'?palette('chest',1):o.roadTheme==='caravan'?palette('caravan',1):o.roadTheme==='inn'?palette('inn',1):null;
   art.withPalette(pal,()=>{

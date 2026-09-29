@@ -38,6 +38,7 @@
 <script src="assets/encounters/wolf-den-poses.js"></script>
 <script src="assets/encounters/wolf-den.js"></script>
 <script src="assets/encounters/jonathan-model.js"></script>
+<script src="assets/encounters/oath-sword-art.js"></script>
 <script src="assets/encounters/rest-camp.js"></script>
 <script>
 "use strict";
@@ -9973,10 +9974,12 @@ const JOURNEY_ROAD_THEMES=Object.freeze({
   forge:Object.freeze({id:'forge',kind:'special',color:'#eda965',label:'CINDER FORGE',finale:'forge_stop'}),
   caravan:Object.freeze({id:'caravan',kind:'special',color:'#ce8141',label:'CARAVAN',finale:'merchant_stop'}),
   inn:Object.freeze({id:'inn',kind:'special',color:'#b8ca83',label:'MOSSY OAK INN',finale:'inn_stop'}),
+  oath:Object.freeze({id:'oath',kind:'special',color:'#aabc64',label:'FORGOTTEN OATH',finale:'sword_clearing'}),
   chest:Object.freeze({id:'chest',kind:'special',color:'#dfb64f',label:'TREASURE CACHE',finale:'chest_stop'})
 });
-const JOURNEY_SPECIAL_THEMES=Object.freeze(['disco','bloodwood','forge','caravan','inn','chest']);
-const JOURNEY_SERVICE_THEMES=Object.freeze(['forge','caravan','inn','chest']);
+const JOURNEY_SPECIAL_THEMES=Object.freeze(['disco','bloodwood','forge','caravan','inn','chest','oath']);
+// Forgotten Oath now uses the shared GPU Jonathan and authored sword animation.
+const JOURNEY_SERVICE_THEMES=Object.freeze(['forge','caravan','inn','chest','oath']);
 const JOURNEY_ROAD_EVENTS=Object.freeze({
   roadside_quest:Object.freeze({id:'roadside_quest',kind:'normal',blocking:false}),
   roadside_cache:Object.freeze({id:'roadside_cache',kind:'normal',blocking:false}),
@@ -9986,6 +9989,7 @@ const JOURNEY_ROAD_EVENTS=Object.freeze({
   merchant_stop:Object.freeze({id:'merchant_stop',kind:'special',blocking:true,roadside:true}),
   inn_stop:Object.freeze({id:'inn_stop',kind:'special',blocking:true,roadside:true}),
   chest_stop:Object.freeze({id:'chest_stop',kind:'special',blocking:true}),
+  sword_clearing:Object.freeze({id:'sword_clearing',kind:'special',blocking:true}),
   roadside_fight:Object.freeze({id:'roadside_fight',kind:'normal',blocking:true}),
   roadside_wolfden:Object.freeze({id:'roadside_wolfden',kind:'normal',blocking:false}),
   roadside_camp:Object.freeze({id:'roadside_camp',kind:'normal',blocking:false})
@@ -10017,7 +10021,8 @@ journeyRoadEventHandlers.set('elite_finale',{
 });
 function finishJourneyRoadFight(){
   const s=journeyRoadEventSession;
-  if(!s||!['elite_finale','roadside_fight','roadside_wolfden'].includes(s.definition.id)||s.context.game!==boss||boss?.state!=='dying')return false;
+  if(!s||!['elite_finale','roadside_fight','roadside_wolfden','sword_clearing'].includes(s.definition.id)||s.context.game!==boss||boss?.state!=='dying')return false;
+  if(s.definition.id==='sword_clearing')return KRSwordEvent.victory(s.context);
   if(s.definition.id==='roadside_wolfden')return finishWolfDenFight(s.context);
   if(s.definition.id==='roadside_fight')return prepareJourneyFightLoot(s.context);
   const reward=24+loop*4;
@@ -10930,6 +10935,10 @@ async function prepareCutscene(sceneId,active=false,owner=sceneId){
   if(sceneId.startsWith('wolf-den-')&&(!await loadEventVisualModule('assets/encounters/wolf-den-poses.js','KRWolfDenPoses')||epoch!==eventVisualEpoch))return false;
   if(!await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals')||epoch!==eventVisualEpoch)return false;
   if(!await loadEventVisualModule('assets/encounters/cutscene-handler.js','KRCutscenes')||epoch!==eventVisualEpoch)return false;
+  if(sceneId==='sword-clearing'){
+    if(!await loadEventVisualModule('assets/encounters/sword-event.js','KRSwordEvent')||epoch!==eventVisualEpoch)return false;
+    await KRSwordEvent.prepareActor();if(epoch!==eventVisualEpoch)return false;
+  }
   return active?window.KRCutscenes.open(sceneId,owner):window.KRCutscenes.prepare(sceneId);
 }
 // Compatibility entry for the existing lab/test callers. Game bindings below
@@ -10947,6 +10956,7 @@ function clearEventVisuals(){
 // allocate images. Add future scene adapters here and plates to the manager catalog.
 const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest',taxman:'royal-tax-collector',camp:'rest-camp'});
 function journeyEventVisualKey(slot){
+  if(slot.definition==='sword_clearing')return 'sword-clearing';
   if(slot.definition==='roadside_fight')return 'fight-loot';
   if(slot.definition==='inn_stop')return 'mossy-inn';
   if(slot.definition==='merchant_stop')return 'autumn-caravan';
@@ -11127,7 +11137,7 @@ function journeyObstacleThemeAt(at){
   // No hazards in decorative spill / lead-in / exit areas. Bind the skin at
   // spawn time so an approaching turn cannot repaint an existing obstacle.
   const theme=edge?.pieces.find(piece=>at>=piece.start&&at<piece.end)?.theme;
-  return theme==='disco'||theme==='bloodwood'||theme==='forge'||theme==='chest'||theme==='caravan'||theme==='inn'?theme:null;
+  return theme==='disco'||theme==='bloodwood'||theme==='forge'||theme==='chest'||theme==='caravan'||theme==='inn'||theme==='oath'?theme:null;
 }
 function journeyDiscoRoadViews(theme='disco'){
   if(journeyRenderFrame?.views.has(theme))return journeyRenderFrame.views.get(theme);
@@ -11366,6 +11376,7 @@ function journeyDecorProjection(item){
 }
 const JOURNEY_DECOR_LAYOUTS=new WeakMap();
 function journeyRoadDecorLayout(edge){
+  if(edge.preview.theme==='oath'&&window.KROathRoad)return KROathRoad.layout(edge);
   if(edge.preview.theme==='forge'&&window.KRBasaltForge)return KRBasaltForge.layout(edge);
   let layout=JOURNEY_DECOR_LAYOUTS.get(edge);if(layout)return layout;
   layout=[];
@@ -12215,6 +12226,9 @@ OBSTACLE_TYPES.register(new ObstacleDefinition('pond',{
 OBSTACLE_TYPES.register(new ObstacleDefinition('boulder',{
   cullZ:-8,solid:true,draw:(o,xl,xr,y,S,lanes)=>drawBoulder(o,xl,xr,y,S,lanes)
 }));
+OBSTACLE_TYPES.register(new ObstacleDefinition('statue',{
+  cullZ:-8,solid:true,draw:(o,xl,xr,y,S,lanes)=>drawBoulder(o,xl,xr,y,S,lanes)
+}));
 
 /* Spawn patterns describe lane coverage only. Obstacle definitions still own art,
    collision, culling, and special behavior, so future stages can mix old patterns
@@ -12310,7 +12324,7 @@ function spawnRoadsideSceneryRow(tz,worldPos,emit=spawnRoadsideScenery){
     let side=randomScenerySide(), off=rnd(...profile.primaryOffset);
     /* a root's mother tree claims its own ground — plant BESIDE it (flip sides, or
        step deeper into the treeline), but never leave a gap in the woods */
-    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&o.roadTheme!=='disco'&&o.roadTheme!=='inn'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
+    const rootAt=s=>obstacles.some(o=>o.type.motherTree&&o.roadTheme!=='disco'&&o.roadTheme!=='inn'&&o.roadTheme!=='oath'&&Math.abs(o.z-tz)<2.6&&(o.side==='L'?-1:1)===s);
     if(rootAt(side)){ if(!rootAt(-side)) side=-side; else off=rnd(...profile.fallbackOffset); }
     emit(tz,side*off);
     /* a SECOND, sparser line of trees far out on each flank — background texture
@@ -12334,6 +12348,7 @@ function journeySpawnRoadAt(at){
 }
 function journeySpawnClearance(road,at){
   if(Math.abs(at-road.from.at)<36||Math.abs(at-road.to.at)<36)return true;
+  if(road.edge.preview.theme==='oath'&&road.edge.events.some(s=>s.definition==='sword_clearing'&&at>s.at-48&&at<s.at+30))return true;
   return road.edge.events.some(slot=>JOURNEY_ROAD_EVENTS[slot.definition].blocking?
     Math.abs(at-slot.at)<24:journeyNormalSlotEnabled(slot)&&journeyNormalOfferClearance(slot,at));
 }
@@ -12360,7 +12375,7 @@ function spawnLoopEntities(){
   }
 }
 /* obstacle model: every obstacle carries per-lane requirements —
-     req[lane] = 'jump' | 'duck' | null(safe)
+     req[lane] = 'jump' | 'duck' | 'avoid' (change lane) | null(safe)
    ROOT    — a rogue tree root bursting from the L or R treeline:
              1 lane: head-height over the outer lane (DUCK)
              2 lanes: outer DUCK + it slumps to the ground on middle (JUMP)
@@ -12390,19 +12405,23 @@ function spawnObstacle(z){
   const side=Math.random()<.5?'L':'R', out=side==='L'?0:2, inn=side==='L'?2:0;
   let sizeRoll=Math.random(); if(lastObsFull) sizeRoll*=0.85;   // full-cover can't repeat
   const pattern=pickObstacleSpawnPattern();
-  const kind=pattern.typeId;
+  const theme=journeyObstacleThemeAt(dist+z),kind=theme==='oath'&&pattern.typeId==='pond'?'statue':pattern.typeId;
   const spawned=pattern.create({side,out,inn,sizeRoll,lastFull:lastObsFull});
   const req=spawned.req, variant=spawned.variant;
+  if(theme==='oath'){
+    if(kind==='statue'&&req.every(Boolean))req[inn]=null; // A lane-change obstacle always leaves an exit.
+    for(let l=0;l<3;l++)if(req[l])req[l]=kind==='statue'?'avoid':kind==='root'?'duck':'jump';
+  }
   /* keep pickups reachable: uncover any lane holding a pickup (never strand one inside) */
   for(let l=0;l<3;l++) if(req[l]&&pickupNear(l)) req[l]=null;
   if(!req[0]&&!req[1]&&!req[2]) return [];    // everything conflicted — skip this one
   const ob=new ObstacleEntity(kind,z,req,variant);
-  ob.roadTheme=journeyObstacleThemeAt(dist+z);
+  ob.roadTheme=theme;
   if(window.KRSunlitForest&&!KRSunlitForest.reserveObstacle(ob,dist+z))return [];
   lastObsFull=!!(req[0]&&req[1]&&req[2]);
   // Inn linen is exclusively a slide-under obstacle, including branch previews.
   if(kind==='root'&&ob.roadTheme==='inn')for(const lane of ob.lanes)ob.req[lane]='duck';
-  if(ob.type.motherTree&&ob.roadTheme!=='disco'){
+  if(ob.type.motherTree&&ob.roadTheme!=='disco'&&ob.roadTheme!=='oath'){
     ob.treeV=Math.random();                   // the mother tree: a random sprite of this biome
     if(ob.roadTheme==='bloodwood')ob.bloodAmount=journeyForestBloodAt(dist+z);
     const ss=side==='L'?-1:1;                 // clear its standing room — never two trees in one
@@ -13105,9 +13124,9 @@ function updateRunCollisions(){
     if(o.resolved) continue;
     const crossedHit=crossed(o,.45);
     if((o.z<1.1&&o.z>-1.2)||crossedHit){
-      const need=o.req[Math.round(player.x)];      // this lane's demand: 'jump' | 'duck' | null
+      const need=o.req[Math.round(player.x)];      // jump, duck, avoid (lane change), or safe
       if(need){
-        const hit = need==='jump' ? !isAirborne()
+        const hit = need==='avoid' ? true : need==='jump' ? !isAirborne()
                                   : !(isDucking()||(hasRelic('greaves')&&isAirborne()));
         if(hit&&(o.z<0.45||crossedHit)){ o.resolved=true;
           if(o.type.forgiveArtifact&&hasRelic(o.type.forgiveArtifact)){ // registered obstacle immunity
@@ -13116,7 +13135,7 @@ function updateRunCollisions(){
           else if(hasRelic('oak')&&!oakUsed){                      // OAKEN CHARM: one crash forgiven per loop
             oakUsed=true; floater(laneX(player.x,1),PLAYER_Y-70,'OAKEN CHARM SHATTERS THE BLOW!','#ffe37a',16);
             burst(laneX(player.x,1),PLAYER_Y-30,14,['#c9a86a','#ffe37a'],180,100,3,.6); SFX.thud(); shake(3,.15); }
-          else damagePlayer(o.roadTheme==='disco'?DISCO_OBSTACLE_REASONS[o.kind]:o.roadTheme==='bloodwood'?BLOOD_OBSTACLE_REASONS[o.kind]:REASON[o.kind],false,1,'obstacle'); }
+          else damagePlayer(o.roadTheme==='oath'?({boulder:'A fallen column.',root:'A fallen banner.',statue:'A ruined knight statue.'})[o.kind]:o.roadTheme==='disco'?DISCO_OBSTACLE_REASONS[o.kind]:o.roadTheme==='bloodwood'?BLOOD_OBSTACLE_REASONS[o.kind]:REASON[o.kind],false,1,'obstacle'); }
         else if(!hit){ o.resolved=true; }
       } else if(o.z<0.2||crossed(o,.2)) o.resolved=true;
     }
@@ -13162,9 +13181,10 @@ function dmgOf(kind){
   return stableDamage(designDamage);
 }
 function counterDmg(){
-  return stableDamage(CFG.COUNTER_DMG+upg.counter*CFG.UPG_COUNTER_INC+
-    (hasRelic('drum')?Math.round(3*relicPower()):0));
+  return stableDamage((CFG.COUNTER_DMG+upg.counter*CFG.UPG_COUNTER_INC+
+    (hasRelic('drum')?Math.round(3*relicPower()):0))*oathSwordMultiplier());
 }
+function oathSwordMultiplier(){return hasRelic('oath_rusted')?1.05:hasRelic('oath_broken')?1.03:1;}
 
 /* ============================== damage / death / shield ============================== */
 let debugRun=false, godMode=false, debugBossStart=false,
@@ -13204,6 +13224,12 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1,source='attack'
      Squire intercepts one complete boss hit; runner obstacles and finishers never
      consume him. Base Squire simply takes the wound. Parry is an upgrade hook. */
   if(!unstoppable&&resolveSquireIntercept(reason))return;
+  // Battle-local: blocked hits and road collisions never spend Stoneheart.
+  if(!unstoppable&&!roadObstacle&&boss&&['boss','bossintro'].includes(mode)&&
+     damageUnits>0&&hasRelic('stoneheart')&&!boss.stoneheartSpent){
+    damageUnits=Math.max(1,Math.round(damageUnits*.5));boss.stoneheartSpent=true;
+    floater(laneX(player.x,1),PLAYER_Y-122,'STONEHEART','#68d6b0',14);
+  }
   chainStacks=0;                             // only an actual wound breaks the chain
   if(boss&&boss.phase==='dodge')boss.defenseTookDamage=true;
   if(labFight&&skillLabSession.defenseStats)skillLabSession.defenseStats.hits++;
@@ -52190,6 +52216,9 @@ function drawWolfBack(x,y,scale,t,spd,duck=0){
      QUIVER CHARM   (arrow build)    +3 guaranteed arrows every loop
      SMITH'S SEAL   (economy build)  smith prices −30%                                     */
 const ARTIFACT_DATA={
+  oath_broken:{name:'ALMOST EXCALIBUR',desc:'+3% sword counter damage',col:'#e78944',uniqueDrop:true},
+  oath_rusted:{name:'THE UNCLAIMED BLADE',desc:'+5% sword counter damage; still dormant',col:'#55bfc4',uniqueDrop:true},
+  stoneheart:{name:'STONEHEART CHIP',desc:'first wound each battle deals 50% damage',col:'#68d6b0',uniqueDrop:true},
   meat:   {name:'SMOKED MEAT',desc:'a hungry companion might trust you for this',col:'#d18c67',eventOnly:true},
   shield: {name:'WARDEN SHIELD',  desc:'absorbs one killing blow',              col:'#ffe37a'},
   quiver: {name:'QUIVER CHARM',   desc:'+3 guaranteed arrows each loop',        col:'#c0f79a'},
@@ -53409,6 +53438,7 @@ function queueJourneyExpeditionWorld(){
     if(theme==='chest'&&window.KRTreasureRoad){KRTreasureRoad.queueView(view);continue;}
     if(theme==='caravan'&&window.KRAutumnCaravan){KRAutumnCaravan.queueView(view);continue;}
     if(theme==='inn'&&window.KRMossyInn){KRMossyInn.queueView(view);continue;}
+    if(theme==='oath'&&window.KROathRoad){KROathRoad.queueView(view);continue;}
     if(view.spill){enqueue(view,view.begin+42.5,view.onlySide*7,{theme,kind:'sign'});continue;}
     const edge=view.edge,slot=edge.events.find(e=>e.definition===JOURNEY_ROAD_THEMES[theme].finale);
     const start=edge.pieces[0].start,end=edge.pieces.at(-1).end;
@@ -53850,7 +53880,7 @@ function drawWolfPupFollower(foreground=true){
   else drawDenWolf(x,y,.56,'back',perfNow,true,mode==='run'||leap>0);
 }
 const ROAD_LAB_CASES=Object.freeze([
-  ...['forge','caravan','inn','bloodwood','disco'].map(theme=>({id:theme,label:JOURNEY_ROAD_THEMES[theme].label,theme})),
+  ...['forge','caravan','inn','bloodwood','disco','oath'].map(theme=>({id:theme,label:JOURNEY_ROAD_THEMES[theme].label,theme})),
   {id:'camp',label:'CAMP / FREE REST',definition:'roadside_camp'},
   {id:'mushrooms',label:'? MUSHROOM GATHERER',definition:'roadside_quest',content:'mushrooms'},
   {id:'chest',label:'TREASURE CACHE',theme:'chest'},
@@ -53883,7 +53913,7 @@ function startRoadLabCase(index){
   // only the theme/encounter, never stretches the route or its descendant nodes.
   const lead=(theme==='disco'||theme==='inn')?8:JOURNEY_ROAD_RULES.leadIn,exit=theme==='disco'?24:JOURNEY_ROAD_RULES.normalExit,
     piece={id:edge.id+':lab',theme,kind:spec.theme?'special':'normal',start:node.at+(spec.theme?lead:0),end:end-(spec.theme?exit:0),role:'finale'},
-    at=spec.theme?(theme==='bloodwood'?Math.max(piece.start+8,piece.end-70):Math.max(node.at+80,node.at+edge.length*.52)):node.at+edge.length*.55;
+    at=spec.theme?(['bloodwood','oath'].includes(theme)?Math.max(piece.start+8,piece.end-70):Math.max(node.at+80,node.at+edge.length*.52)):node.at+edge.length*.55;
   edge.pieces=spec.theme?[{id:edge.id+':lab-entry',theme:'forest',kind:'normal',start:node.at,end:piece.start,role:'entry'},piece,
     {id:edge.id+':lab-exit',theme:'forest',kind:'normal',start:piece.end,end,role:'exit'}]:[piece];edge.preview={theme,special:!!spec.theme};
   const slot={id:edge.id+':lab-event',definition:spec.definition||JOURNEY_ROAD_THEMES[theme].finale,
@@ -53906,8 +53936,8 @@ const ROAD_LAB_UI=Object.freeze({
   direction:i=>({x:32+i*140,y:116,w:136,h:40}),
   entry:{x:32,y:168,w:416,h:44},
   category:i=>({x:32+i*140,y:252,w:136,h:40}),
-  test:i=>({x:32+(i%2)*214,y:312+Math.floor(i/2)*72,w:202,h:60}),
-  creator:{x:32,y:602,w:416,h:44},
+  test:i=>({x:32+(i%2)*214,y:312+Math.floor(i/2)*(roadLabState.category===0?60:72),w:202,h:roadLabState.category===0?52:60}),
+  creator:{x:32,y:610,w:416,h:40},
   seed:{x:32,y:706,w:202,h:40},
   back:{x:246,y:706,w:202,h:40}
 });
@@ -53929,8 +53959,8 @@ function drawRoadLab(){
     KRUI.button(g,ui.category(i),label,'treasure',{selected,variant:selected?undefined:'secondary',size:12});
   });
   roadLabVisibleCases().forEach(({entry},i)=>KRUI.button(g,ui.test(i),entry.label,'treasure',{size:13}));
-  text(['Full production road lengths.', 'Ride into the ? in its LEFT or RIGHT lane.', 'Normal HP / skills / dodge / parry.'][roadLabState.category],548);
-  text('180 coins / 12 scrap / God mode / full health',574,11);
+  text(['Oath: candidate road + sword encounter.', 'Ride into the ? in its LEFT or RIGHT lane.', 'Normal HP / skills / dodge / parry.'][roadLabState.category],570);
+  text('180 coins / 12 scrap / God mode / full health',596,11);
   KRUI.button(g,ui.creator,'APPROVED ROAD CREATOR LAB','treasure',{variant:'secondary'});
   text('SEED '+roadLabState.seed,674);
   text('F10: RETURN TO LAB',694,11);
@@ -55139,7 +55169,9 @@ function drawRelicSlot(x,y,s,r,bare=false){
   if(!r) return;
   g.save(); g.translate(x+s/2,y+s/2);
   const P=(a,b,w,h,c)=>{ g.fillStyle=c; g.fillRect(a,b,w,h); };
-  if(r.type==='meat'){
+  if(['oath_broken','oath_rusted','stoneheart'].includes(r.type)&&window.KRSwordEvent){
+    KRSwordEvent.icon(r.type,0,0,.25);
+  } else if(r.type==='meat'){
     drawWolfMeat(0,0,.7);
   } else if(r.type==='shield'){
     g.globalAlpha=r.charged?1:0.28;
@@ -64894,7 +64926,7 @@ function openMerchantShop(visitId='stage:'+loop,environment=biome){
   let visit=merchantVisits.get(visitId);
   if(!visit){
     const random=journeyRandom(journeyKeySeed(journeyRunSeed??stageRouteSeed,'merchant:'+visitId)),
-      pool=ARTIFACT_IDS.filter(id=>!hasRelic(id));
+      pool=ARTIFACT_IDS.filter(id=>!hasRelic(id)&&!ARTIFACT_DEFS[id].uniqueDrop);
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
     visit={seed:journeyKeySeed(journeyRunSeed??stageRouteSeed,'merchant:'+visitId),rerolls:0,
       stock:[{kind:'artifact',id:pool[0],price:30},{kind:'artifact',id:pool[1],price:42},
@@ -64926,7 +64958,7 @@ function rerollMerchantStock(){
   if(gold<price){s.message='Not enough gold to reroll.';SFX.duck();return false;}
   const reserved=new Set(s.stock.filter(item=>!targets.includes(item)).map(item=>item.id)),
     previous=new Set(targets.map(item=>item.id)),
-    pool=ARTIFACT_IDS.filter(id=>!hasRelic(id)&&!reserved.has(id)),
+    pool=ARTIFACT_IDS.filter(id=>!hasRelic(id)&&!reserved.has(id)&&!ARTIFACT_DEFS[id].uniqueDrop),
     fresh=pool.filter(id=>!previous.has(id)),
     candidates=fresh.length>=targets.length?fresh:pool,
     random=journeyRandom(journeyKeySeed(visit.seed,'reroll:'+visit.rerolls));
@@ -67986,7 +68018,7 @@ function renderFrame(){
     worldFxShakeY=lerp(-shakeMag,shakeMag,sRnd(shakeFrame+1702));
     g.translate(worldFxShakeX,worldFxShakeY);
   }
-  const cutsceneId=journeyRoadEventSession?.context.loot?.fight?'fight-loot':
+  const cutsceneId=journeyRoadEventSession?.definition.id==='sword_clearing'?'sword-clearing':journeyRoadEventSession?.context.loot?.fight?'fight-loot':
     journeyRoadEventSession?.context.den?wolfDenScene(journeyRoadEventSession.context):
     journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
   const opaqueCutscene=mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn||journeyRoadEventSession?.context.loot?.fight)&&
@@ -68406,7 +68438,7 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
   forestRenderer.onload=()=>{
     const loadJourney=()=>{
       const journeyForestRenderer=document.createElement('script');journeyForestRenderer.src='assets/forest/journey-forest.js';
-      journeyForestRenderer.onload=()=>{
+      journeyForestRenderer.onload=async()=>{
         if(BOOT_QUERY.get('roadcreatorlab')==='1'){
           const lab=document.createElement('script');lab.src='tools/road-creator-lab.js';document.body.appendChild(lab);
         }else{
@@ -68429,6 +68461,43 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
               updateJourneyRoadEvents(0);
             }
           }
+          if(BOOT_QUERY.get('swordlab')==='1'){
+            if(BOOT_QUERY.get('animation')==='model-walk'){
+              for(const name of ['walk-poses.js','walk-equipment.js','shield-geometry.js','walk-native.js']){
+                await new Promise(resolve=>{const s=document.createElement('script');
+                  s.src='art-source/blender/jonathan-approved-v1/'+name;
+                  s.onload=resolve;s.onerror=()=>{console.error('Model walk trial could not load: '+name);resolve();};
+                  document.body.appendChild(s);});
+              }
+              await window.KRJonathanWalk?.prepare?.();
+            }
+            // Independent gear inspection owns its clock and draws on demand.
+            // No scene/event entry, rewards or game animation loop in its iframe.
+            if(BOOT_QUERY.get('gearreview')==='1'&&window.parent!==window){
+              for(const name of ['gear-preview-pose.js','gear-review-renderer.js']){
+                await new Promise((resolve,reject)=>{const s=document.createElement('script');
+                  s.src='art-source/blender/jonathan-approved-v1/'+name;
+                  s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+              }
+              return;
+            }
+            roadLabState.entry=false;roadLabState.direction=0;
+            startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='oath'));
+            dist=roadLabState.slot.at;roadScroll=dist;runDistance=dist;
+            roadLabState.slot.swordOutcome=BOOT_QUERY.get('outcome');updateJourneyRoadEvents(0);
+            // Direct lab entry has no approach/prefetch time. Do not paint an
+            // empty fallback scene for one frame before the decoded plate arrives.
+            // Same owner deduplicates the open already requested by event start.
+            await prepareCutscene('sword-clearing',true,journeyRoadEventSession.token).catch(()=>false);
+            // Standalone review file owns playback; this hidden engine only
+            // draws requested timestamps. Never start the game update loop here.
+            if(BOOT_QUERY.get('swordreview')==='1'&&window.parent!==window){
+              await new Promise((resolve,reject)=>{const s=document.createElement('script');
+                s.src='art-source/blender/jonathan-approved-v1/sword-review-renderer.js';
+                s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+              return;
+            }
+          }
           if(BOOT_QUERY.get('camplab')==='1'){
             roadLabState.entry=false;roadLabState.direction=0;
             startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='camp'));
@@ -68445,7 +68514,9 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
     const loadBasalt=()=>{
       const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
       const loadCaravan=()=>{const script=document.createElement('script');script.src='assets/forest/autumn-caravan.js';
-        const loadInn=()=>{const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=loadJourney;inn.onerror=loadJourney;document.body.appendChild(inn);};
+        const loadSword=()=>{const script=document.createElement('script');script.src='assets/encounters/sword-event.js';script.onload=loadJourney;script.onerror=()=>{console.error('Sword event could not load');loadJourney();};document.body.appendChild(script);};
+        const loadOath=()=>{const script=document.createElement('script');script.src='assets/forest/oath-road.js';script.onload=loadSword;script.onerror=()=>{console.error('Oath road could not load');loadSword();};document.body.appendChild(script);};
+        const loadInn=()=>{const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=loadOath;inn.onerror=loadOath;document.body.appendChild(inn);};
         script.onload=loadInn;script.onerror=()=>{console.error('Autumn caravan could not load');loadInn();};document.body.appendChild(script);};
       const loadTreasure=()=>{const script=document.createElement('script');script.src='assets/forest/treasure-road.js';
         script.onload=loadCaravan;script.onerror=()=>{console.error('Treasure road could not load');loadCaravan();};document.body.appendChild(script);};

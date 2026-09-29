@@ -74,6 +74,8 @@
     const clearing=new URLSearchParams(root.location.search).get('clearing');
     root.KRCutscenes=createHandler({visuals:root.KREventVisuals,loadModule:root.loadEventVisualModule,
       getAdapter:symbol=>root[symbol],catalog:Object.freeze({
+        'sword-clearing':Object.freeze({module:'assets/encounters/sword-event.js',symbol:'KRSwordEvent',
+          assetId:'sword-clearing',drawMethod:'drawCutscene',opaque:true}),
         'rest-camp':Object.freeze({module:'assets/encounters/rest-camp.js',symbol:'KRRestCamp',
           assetId:'rest-camp',drawMethod:'drawCutscene',opaque:true}),
         'fight-loot':Object.freeze({module:'assets/encounters/fight-loot.js',symbol:'KRFightLoot',
