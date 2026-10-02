@@ -850,14 +850,16 @@
   if(!quiverArrowTree){
    const arrowFaces=[],bundle=[[-.54,.17,1.28],[-.38,.39,1.39],[-.20,.57,1.31],
     [0,.27,1.45],[.20,.57,1.34],[.38,.39,1.41],[.54,.17,1.30]];
-   for(const [v,z,end]of bundle){
+   for(const [arrowId,[v,z,end]]of bundle.entries()){
     const arrowVertex=(t,dv=0,dz=0)=>{
      const spread=Math.max(0,t-1)/.4;
      return vertex(t,v*(1+spread*.24)+dv,z+spread*.22+dz).xyz;
     },addArrow=(vs,col,center)=>{
      let f=surfaceFace(vs,col);if(!f)return;
      if(surfaceDot(f.normal,f.v[0].map((n,i)=>n-center[i]))<0)f=surfaceFace([...vs].reverse(),col);
-     arrowFaces.push(f);
+     // Read-only identity survives BSP splits so an action can take this
+     // actual arrow out of the rack without leaving a duplicate behind.
+     arrowFaces.push({...f,arrowId});
     },rod=(t0,t1,width,col,highlight=false)=>{
      const r=width/3,h=width/3.75,center=arrowVertex((t0+t1)/2),
       cuts=[t0,...(t0<1&&t1>1?[1]:[]),t1],cross=[-r,-r*.53,r*.53,r];

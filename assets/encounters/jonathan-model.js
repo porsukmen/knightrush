@@ -211,7 +211,7 @@
   const deg=o.degrees,m=materials(o.lighting),dir=o.direction||1,
    [,half,waist,keyHelmHalf,ridge,sideWidth,capWidth,eye]=turnShape(deg,o.solidTurn),
    helmHalf=o.solidTurn?3.5*(Math.abs(Math.cos(deg*Math.PI/180))+Math.sin(deg*Math.PI/180))-.85*Math.min(Math.abs(Math.cos(deg*Math.PI/180)),Math.sin(deg*Math.PI/180)):keyHelmHalf,
-   hip=-12+(o.body?.y||0),sy=hip-8.9,rear=deg>90,armList=o.arms,
+   hip=-12+(o.body?.y||0),sy=o.body?.shoulderY??hip-8.9,rear=deg>90,armList=o.arms,
    near=dir>0?0:1,far=1-near;
   // Native 2D contour morph: frontal trapezoid -> compact straight side planes.
   // Align the tapered profile with shoulder/hip roots; frontal endpoints stay put.
@@ -231,7 +231,7 @@
     backMid=backTop+(backBottom-backTop)*.32;
    return [[-backTop,top],[frontTop,top],[frontMid,midY],
     [frontBottom,bottom],[-backBottom,bottom],[-backMid,midY]]
-    .map(([x,y])=>[dir*x+torsoShift,y]);
+    .map(([x,y])=>[dir*x+torsoShift+(o.body?.shoulderX||0)*(hip-y)/(hip-sy),y]);
   };
   const torsoOuter=torsoContour(false),torsoFace=torsoContour(true);
   g.save();g.translate(x,y);g.scale(scale,scale);
@@ -246,8 +246,7 @@
   // Clip the real chest silhouette by a limb's depth plane. Scaling a chest
   // mask made a moving vertical cut through the arm and shaved the rear caps.
   const heading=deg*Math.PI/180*dir,viewC=Math.cos(heading),viewS=Math.sin(heading);
-  const chestMask=(depth,fn)=>{
-   const clip=(poly,value)=>{
+  const clipDepth=(poly,value)=>{
     const out=[];if(!poly.length)return out;
     let a=poly[poly.length-1],va=value(a);
     for(const b of poly){const vb=value(b);
@@ -255,15 +254,35 @@
      if(vb>0)out.push(b);a=b;va=vb;
     }return out;
    };
+  const chestMask=(depth,fn)=>{
    const top=sy-.8,height=hip-top;
    let mask=torsoOuter;
    // The nearer surface is the minimum of the two ray/box exit planes.
    // Both tests must agree before the actual torso silhouette hides a limb.
-   if(Math.abs(viewS)>.00001)mask=clip(mask,([x,y])=>
+   if(o.body?.duckDepth!==undefined)mask=clipDepth(mask,([x,y])=>o.body.duckDepth-depth(x,y));
+   else if(Math.abs(viewS)>.00001)mask=clipDepth(mask,([x,y])=>
     (4.35-1.65*(y-top)/height+Math.sign(viewS)*viewC*(x-torsoShift))/Math.abs(viewS)-depth(x,y));
-   if(Math.abs(viewC)>.00001)mask=clip(mask,([x,y])=>
+   if(o.body?.duckDepth===undefined&&Math.abs(viewC)>.00001)mask=clipDepth(mask,([x,y])=>
     (2.2-.25*(y-top)/height-Math.sign(viewC)*viewS*(x-torsoShift))/Math.abs(viewC)-depth(x,y));
    g.save();if(mask.length>2)exclude(mask);fn();g.restore();
+  };
+  const capDepth=(a,i)=>(o.depthShoulders||o.body?.duckDepth!==undefined?a.walkDepth.shoulder:-(i?1:-1)*3.7*viewS)+2.65*Math.abs(viewC)+capWidth/2*Math.abs(viewS);
+  // Mounted upright neck only; do not carve its hidden base through the cap.
+  const exposedNeck=o.neckOverShoulders&&o.body?.duckDepth===undefined?
+   clipDepth([[-1.4,hip-14],[1.4,hip-14],[1.4,sy],[-1.4,sy]],([,y])=>sy-.8-y):[];
+  const behindNeck=fn=>{if(exposedNeck.length<3)return fn();g.save();exclude(exposedNeck);fn();g.restore();};
+  const shoulderMask=(depth,fn)=>{
+   // Sword poses opt in: hide only the limb fragments behind a posed cap.
+   // Near forearms still pass in front; unrelated shared-model poses retain
+   // their existing painter order.
+   if(!o.depthShoulders)return fn();
+   g.save();
+   for(const [i,a]of armList.entries()){
+    const x=a.sx,y=a.sy,w=capWidth/2,h=1.525,surface=capDepth(a,i),
+     mask=clipDepth([[x-w,y-h],[x+w,y-h],[x+w,y+h],[x-w,y+h]],([x,y])=>surface-depth(x,y));
+    if(mask.length>2)exclude(mask);
+   }
+   fn();g.restore();
   };
   const armDepthMask=(a,part,fn)=>{
    if(!a.walkDepth)return fn();
@@ -279,7 +298,7 @@
    // this priority smoothly towards profiles; retain real side-view depth.
    // Caps and non-walking reaches/pulls deliberately do not use this rule.
    const torsoPriority=8*viewC**4*a.walkDepth.weight;
-   chestMask((x,y)=>depth(x,y)-torsoPriority,fn);
+   chestMask((x,y)=>depth(x,y)-torsoPriority,()=>shoulderMask(depth,fn));
   };
   const upper=(a)=>{
    rigSegment(a.sx,a.sy,a.ex,a.ey,2.05,m.armor);
@@ -327,9 +346,9 @@
    px(-.9,-1.05,1.8,2.2,m.dark);px(-1.08,.2,2.15,.7,m.steel);g.restore();
   }
   upperSpace(()=>{
-  // Neck is underneath the armour. Painting it last cut a dark notch down
-  // through the side shoulder cap, which incorrectly split that single plate.
-  rigSegment(0,sy,0,hip-14,2.8,m.dark);
+  // Neck is underneath the cuirass. Mounted caps can expose the neck above
+  // the chest edge without cutting a dark notch through the whole plate.
+  rigSegment(o.body?.shoulderX||0,sy,o.body?.neckX||0,o.body?.neckY??hip-14,2.8,m.dark);
   rigPolygon(torsoOuter,m.dark);
   rigPolygon(torsoFace,m.armor);
   const yaw=deg*Math.PI/180,cosYaw=Math.cos(yaw),sinYaw=Math.sin(yaw),
@@ -342,18 +361,19 @@
   // Match the armour face endpoints/taper. A narrow profile dead zone avoids
   // a subpixel white remnant when the authored side pose is almost 90 degrees.
   if(stripeWidth>.00001){
+   const stripe=(x,y,xx,yy,w,col)=>rigSegment(x+(o.body?.shoulderX||0)*(hip-y)/(hip-sy),y,xx+(o.body?.shoulderX||0)*(hip-yy)/(hip-sy),yy,w,col);
    // Keep the accepted stripe position, but never let paint escape the armour.
    g.save();g.beginPath();g.moveTo(torsoFace[0][0]*U,torsoFace[0][1]*U);
    for(const p of torsoFace.slice(1))g.lineTo(p[0]*U,p[1]*U);
    g.closePath();g.clip();
-   if(rear)rigSegment(seam+torsoShift,sy-.35,seam*(waist-.5)/(half-.6)+torsoShift,hip-.3,stripeWidth,m.light);
+   if(rear)stripe(seam+torsoShift,sy-.35,seam*(waist-.5)/(half-.6)+torsoShift,hip-.3,stripeWidth,m.light);
    else{
     // A fixed chest ridge follows the same upper bulge/waist profile as the
     // armour; using screen half-width made it slide inward during rotation.
     const top=sy-.35,bottom=hip-.3,mid=top+(bottom-top)*.32,
      chest=dir*(capWidth/2+.65)*sinYaw+torsoShift,waistLine=dir*(capWidth/2-.4)*sinYaw+torsoShift;
-    rigSegment(seam+torsoShift,top,chest,mid,stripeWidth,m.light);
-    rigSegment(chest,mid,waistLine,bottom,stripeWidth,m.light);
+    stripe(seam+torsoShift,top,chest,mid,stripeWidth,m.light);
+    stripe(chest,mid,waistLine,bottom,stripeWidth,m.light);
    }
    g.restore();
   }
@@ -367,20 +387,28 @@
   // Caps wrap beyond both faces of the cuirass. Resolve their full depth,
   // not a rear-view cutout: the rear cap must remain a solid shoulder plate.
   const shoulderCap=(a,i)=>{
+   // Rear duck: the caps wrap over the cuirass edge. The duck chest's
+   // single average depth is not their surface plane and cuts a triangular
+   // bite through each plate as the chest folds. Keep the authored whole
+   // cap at its live shoulder root; arm segments still use chest occlusion.
+   if(rear&&o.body?.duckDepth!==undefined){shoulder(a);return;}
    if(!o.solidTurn){
     const back=Math.max(0,-viewC);
     g.save();if(back>.00001)exclude(torsoOuter.map(([x,y])=>[x*back,y]));shoulder(a);g.restore();return;
    }
-   const root=-(i?1:-1)*3.7*viewS,
-    surface=root+2.65*Math.abs(viewC)+capWidth/2*Math.abs(viewS);
+   const surface=capDepth(a,i);
    chestMask(()=>surface,()=>shoulder(a));
   };
-  farVisible(()=>shoulderCap(armList[far],far),!!o.solidTurn);shoulderCap(armList[near],near);
+  behindNeck(()=>{farVisible(()=>shoulderCap(armList[far],far),!!o.solidTurn);shoulderCap(armList[near],near);});
   // Broad authored side plane, shallow top strip and connected front visor.
   // Side/quarter silhouettes are measured against the Blender angle references.
   const helmet=()=>{
-  const h=serJonathanHelmetProjection(hip-15.1+(o.gaze?.y||0),o.gaze?.pitch||0),
-   top=h.planeY,bottom=h.bottomY,hx=o.gaze?.x||0,
+  const rigid=o.gaze?.rigid,headFaces=[];
+  const emit=(v,col,order)=>{const q=v.map(rigid.project),d=v.map(rigid.depth);headFaces.push({q,d,col,group:order,order:order??d.reduce((a,b)=>a+b,0)/d.length});};
+  g.save();
+  if(!rigid&&o.gaze?.roll){const hx=o.gaze.x||0,hy=hip-15.1+(o.gaze.y||0);g.translate(hx*U,hy*U);g.rotate(o.gaze.roll);g.translate(-hx*U,-hy*U);}
+  const h=serJonathanHelmetProjection(hip-15.1+(rigid?0:o.gaze?.y||0),rigid?0:o.gaze?.pitch||0),
+   top=h.planeY,bottom=h.bottomY,hx=rigid?0:o.gaze?.x||0,
    // The crest is attached behind the front lip, not pinned to its silhouette.
    // Upward pitch sends it rearward; the rising front plate occludes its base.
    crownRecess=Math.max(0,-h.topDepth),crownY=h.crownY,
@@ -389,23 +417,24 @@
    // A single chamfered helmet turns rigidly. Facial marks live on its planes,
    // not independent screen-width keys; no eye/bridge threshold or fading.
    const ring=[[-2.65,-3.5],[2.65,-3.5],[3.5,-2.65],[3.5,2.65],[2.65,3.5],[-2.65,3.5],[-3.5,2.65],[-3.5,-2.65]],
-    project=([x,z],y)=>[hx+x*cosYaw-z*sinYaw*dir,y],
-    face=(a,b,y,height,col)=>rigPolygon([project(a,y),project(b,y),project(b,y+height),project(a,y+height)],col),
+    project=([x,z],y)=>rigid?rigid.project([x,y,z]):[hx+x*cosYaw-z*sinYaw*dir,y],
+    order=i=>{const a=ring[i],b=ring[(i+1)%8];return rigid.depth([(a[0]+b[0])/2,(top+bottom)/2,(a[1]+b[1])/2]);},
+    face=(a,b,y,height,col,i)=>rigid?emit([[a[0],y,a[1]],[b[0],y,b[1]],[b[0],y+height,b[1]],[a[0],y+height,a[1]]],col,order(i)):rigPolygon([project(a,y),project(b,y),project(b,y+height),project(a,y+height)],col),
     nearFaces=[],visorSpans=[];
    for(let i=0;i<ring.length;i++){
-    const a=ring[i],b=ring[(i+1)%ring.length],nx=b[1]-a[1],nz=a[0]-b[0],facing=-nx*sinYaw*dir-nz*cosYaw;
+    const a=ring[i],b=ring[(i+1)%ring.length],nx=b[1]-a[1],nz=a[0]-b[0],facing=rigid?rigid.facing([nx,0,nz]):-nx*sinYaw*dir-nz*cosYaw;
     if(facing>1e-8)nearFaces.push({a,b,i});
    }
    for(const {a,b,i}of nearFaces){
-    face(a,b,top,h.faceHeight,i===0||i===4?m.armor:(i%2?shade(m.armor,-5):shade(m.armor,-10)));
-    face(a,b,top,.25,m.light);face(a,b,bottom-.82,.82,m.dark);
+    face(a,b,top,h.faceHeight,i===0||i===4?m.armor:(i%2?shade(m.armor,-5):shade(m.armor,-10)),i);
+    face(a,b,top,.25,m.light,i);face(a,b,bottom-.82,.82,m.dark,i);
    }
    const surfaceMark=(edge,start,end,y,height,col)=>{
     const a=ring[edge],b=ring[(edge+1)%ring.length];
     if(!nearFaces.some(f=>f.i===edge))return;
     const p=[a[0]+(b[0]-a[0])*start,a[1]+(b[1]-a[1])*start],q=[a[0]+(b[0]-a[0])*end,a[1]+(b[1]-a[1])*end];
-    if(col==='#233747'){const x=project(p,y)[0],z=project(q,y)[0];visorSpans.push([Math.min(x,z),Math.max(x,z)]);}
-    else face(p,q,y,height,col);
+    if(col==='#233747'&&!rigid){const x=project(p,y)[0],z=project(q,y)[0];visorSpans.push([Math.min(x,z),Math.max(x,z)]);}
+    else face(p,q,y,height,col,edge);
    };
    surfaceMark(0,.425,.575,top+.12,h.faceHeight-.94,m.light);
    for(const side of [-1,1]){
@@ -423,7 +452,8 @@
    for(const [left,right]of slits)px(left,top+1.5,right-left,.8,'#233747');
    for(const edge of [2,6])for(const x of [.46,.60])surfaceMark(edge,x-.025,x+.025,bottom-1.65,.65,m.dark);
    surfaceMark(4,.425,.575,top+.12,h.faceHeight-.94,m.light);
-   if(h.topDepth>.001)rigPolygon([[hx-helmHalf+.32,h.topY],[hx+helmHalf-.32,h.topY],[hx+helmHalf,top],[hx-helmHalf,top]],m.shine);
+   if(rigid){if(rigid.facing([0,-1,0])>1e-8)emit(ring.map(([x,z])=>[x,top,z]),m.shine);if(rigid.facing([0,1,0])>1e-8)emit(ring.map(([x,z])=>[x,bottom,z]),m.dark);}
+   else if(h.topDepth>.001)rigPolygon([[hx-helmHalf+.32,h.topY],[hx+helmHalf-.32,h.topY],[hx+helmHalf,top],[hx-helmHalf,top]],m.shine);
   }else{
   if(h.topDepth>.001)rigPolygon([[hx-helmHalf+.32,h.topY],[hx+helmHalf-.32,h.topY],
    [hx+helmHalf,top],[hx-helmHalf,top]],m.shine);
@@ -467,6 +497,11 @@
   }
   const sway=Math.sin((o.clock||0)*1.8)*.12,
    plumeDir=1+(-dir-1)*Math.sin(deg*Math.PI/180)**2;
+  // Reuse the authored stepped plume, rotating its whole plane with the
+  // helmet. It must foreshorten from behind instead of staying vertical.
+  const plumePoly=(points,col)=>emit(points.map(([x,y])=>[x*cosYaw,y,-x*sinYaw*dir]),col),
+   plumeRect=(x,y,w,h,col)=>rigid?plumePoly([[x,y],[x+w,y],[x+w,y+h],[x,y+h]],col):px(x,y,w,h,col),
+   plumeSegment=(ax,ay,bx,by,w,col)=>{if(!rigid)return rigSegment(ax,ay,bx,by,w,col);const dx=bx-ax,dy=by-ay,length=Math.hypot(dx,dy)||1,nx=-dy/length*w/2,ny=dx/length*w/2;plumePoly([[ax+nx,ay+ny],[bx+nx,by+ny],[bx-nx,by-ny],[ax-nx,ay-ny]],col);};
   g.save();
   if(crownRecess>0){
    // Retain the neutral mount's .37-unit lip overlap, then reveal the front
@@ -475,10 +510,24 @@
    const edge=top+.37*Math.max(0,1-crownRecess/.6),roof=crownY-10;
    g.beginPath();g.rect((crownX-10)*U,roof*U,20*U,Math.max(0,edge-roof)*U);g.clip();
   }
-  px(crownX-2,crownY,4,.72,m.shine);
-  rigSegment(crownX,crownY,crownX+.2,crownY-4.1,1.55,m.plume);
-  rigSegment(crownX+.2,crownY-4.1,crownX+(2.8+sway)*plumeDir,crownY-6.5,1.9,shade(m.plume,12));
-  rigSegment(crownX+(2.8+sway)*plumeDir,crownY-6.5,crownX+(4.7+sway)*plumeDir,crownY-5.4,1.35,m.plume);
+  plumeRect(crownX-2,crownY,4,.72,m.shine);
+  plumeSegment(crownX,crownY,crownX+.2,crownY-4.1,1.55,m.plume);
+  plumeSegment(crownX+.2,crownY-4.1,crownX+(2.8+sway)*plumeDir,crownY-6.5,1.9,shade(m.plume,12));
+  plumeSegment(crownX+(2.8+sway)*plumeDir,crownY-6.5,crownX+(4.7+sway)*plumeDir,crownY-5.4,1.35,m.plume);
+  g.restore();
+  if(rigid){const sorted=headFaces.sort((a,b)=>a.order-b.order);let surface;
+  for(let i=0;i<sorted.length;i++){const f=sorted[i];
+   if(f.group===undefined||i===0||f.group!==sorted[i-1].group)surface=f;
+   rigPolygon(f.q,f.col);
+   // Coplanar visor/rim marks share their wall's one equipment depth pass.
+   if(f.group!==undefined&&f.group===sorted[i+1]?.group)continue;
+   // Resolve each actual helmet/plume face against equipment using its
+   // affine depth plane. A single fixed near-depth cut tore through props.
+   const [a,b,c]=surface.q,ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-a[0],vy=c[1]-a[1],det=ux*vy-uy*vx;
+   if(o.equipment&&Math.abs(det)>1e-8){const du=surface.d[1]-surface.d[0],dv=surface.d[2]-surface.d[0],px=(du*vy-dv*uy)/det,py=(ux*dv-vx*du)/det;
+    g.save();g.beginPath();g.moveTo(a[0]*U,a[1]*U);for(const q of surface.q.slice(1))g.lineTo(q[0]*U,q[1]*U);g.closePath();g.clip();gear({plane:[px,py,surface.d[0]-px*a[0]-py*a[1]]});g.restore();
+   }
+  }}
   g.restore();
   };
   // Paint the head, then resolve only overlapping equipment against its
@@ -495,9 +544,13 @@
   farVisible(()=>forearm(armList[far]),!!armList[far].walkDepth);
   forearm(armList[near]);
   if(rear){quiver();gear();helmet();}
-  if(o.equipment){
+  if(o.equipment&&!o.gaze?.rigid){
    const h=serJonathanHelmetProjection(hip-15.1+(o.gaze?.y||0),o.gaze?.pitch||0),hx=o.gaze?.x||0;
-   g.save();g.beginPath();g.rect((hx-helmHalf)*U,h.topY*U,helmHalf*2*U,(h.bottomY-h.topY)*U);g.clip();
+   g.save();g.beginPath();
+   const roll=o.gaze?.roll||0,hy=hip-15.1+(o.gaze?.y||0);
+   if(roll){const points=[[hx-helmHalf,h.topY],[hx+helmHalf,h.topY],[hx+helmHalf,h.bottomY],[hx-helmHalf,h.bottomY]].map(([x,y])=>[hx+(x-hx)*Math.cos(roll)-(y-hy)*Math.sin(roll),hy+(x-hx)*Math.sin(roll)+(y-hy)*Math.cos(roll)]);g.moveTo(points[0][0]*U,points[0][1]*U);for(const p of points.slice(1))g.lineTo(p[0]*U,p[1]*U);g.closePath();}
+   else g.rect((hx-helmHalf)*U,h.topY*U,helmHalf*2*U,(h.bottomY-h.topY)*U);
+   g.clip();
    gear({x:hx,half:helmHalf,top:h.topY-(o.body?.y||0),bottom:h.bottomY-(o.body?.y||0),chamfer:o.solidTurn?.85:0});
    g.restore();
   }

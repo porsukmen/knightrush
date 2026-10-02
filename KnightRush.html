@@ -68504,6 +68504,13 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             dist=roadLabState.slot.at;roadScroll=dist;runDistance=dist;
             player.x=player.lane=journeyNormalSide(roadLabState.slot)+1;updateJourneyRoadEvents(0);
           }
+          try{
+            await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='assets/mounted-runner.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+            if(BOOT_QUERY.get('mountedplaytest')==='1'){
+              await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='labs/mounted-knight-playtest.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+              await KRMountedPlaytest.prepare();
+            }else KRMountedRunner.prepare();
+          }catch(error){console.error('Mounted runner could not load',error);}
           requestAnimationFrame(frame);
         }
       };

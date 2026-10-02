@@ -1,0 +1,13 @@
+const {chromium}=require('playwright'),fs=require('node:fs'),assert=require('node:assert/strict'),{createCanvas,loadImage}=require('@napi-rs/canvas');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true});try{const p=await b.newPage({viewport:{width:1100,height:920}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:8765/KnightRush.html');await p.waitForFunction(()=>KRMountedRunner?.ready,null,{timeout:90000});
+ await p.evaluate(()=>{SFX.setTestMuted(true);uiConfirm();startBoss();mode='boss';paused=true;pausePhotoMode=true;boss.entering=false;boss.rise=1;boss.state='idle';boss.phase='player';boss.x=boss.xTarget=1;squire.present=false;player.jumpT=player.duckT=player.swordPreviewT=-1;player.attackAnim=player.counterAnim=0;KRMountedRunMotion.resetLane(KRMountedRunner.laneMotion);});
+ const rows=[];for(const [device,width,height]of [['desktop',1100,920],['phone',390,844]]){await p.setViewportSize({width,height});for(const [kind,lane,time]of [['parry',0,.18],['parry',1,.50],['bash',2,.70],['bash',1,1.08],['lane',0,.15],['lane',2,.31]]){
+  rows.push(await p.evaluate(({kind,lane,time})=>{player.x=player.lane=lane;boss.turnAction=null;player.parryShield=null;KRMountedRunner.laneMotion.heading=kind==='lane'?(lane===0?-1:1):0;KRMountedRunner.laneMotion.stepClock=time;
+   if(kind==='parry')player.parryShield={phase:'release',releaseFrom:1,t:time,prepare:1};
+   if(kind==='bash'){const command=compileClassSkillRoute('shield_bash_reinforced');paused=false;boss.phase='player';boss.ap=9;boss.resolve=99;boss.playerPhaseSerial++;boss.classSkillUseSerial=Object.create(null);boss.skillUseSerial=Object.create(null);performPlayerAction(command);paused=true;boss.turnAction.t=time;}
+   flashA=0;shakeMag=0;render();const f=KRMountedCombat.frame();return {kind,lane,time,action:f.state.action,angle:f.state.angle,reach:f.pose.shield?.reachError||0};
+  },{kind,lane,time}));await p.screenshot({path:`output/mounted-v100-${device}-${kind}-${lane}.png`});
+ }}
+ const names=['parry-0','parry-1','bash-2','bash-1','lane-0','lane-2'],board=createCanvas(1170,1688),ctx=board.getContext('2d');for(const [i,name]of names.entries())ctx.drawImage(await loadImage(`output/mounted-v100-phone-${name}.png`),i%3*390,Math.floor(i/3)*844);fs.writeFileSync('output/mounted-v100-game-review.png',board.toBuffer('image/png'));
+ fs.writeFileSync('output/mounted-v100-review.json',JSON.stringify({rows,errors},null,2));console.log({rows,errors});assert.deepEqual(errors,[]);assert(rows.every(r=>r.reach<1e-7&&r.action===(r.kind==='lane'?'none':r.kind)));
+}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

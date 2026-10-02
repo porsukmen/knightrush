@@ -7,7 +7,16 @@ const roots=new Set(['KnightRush.html','ArtTest.html','BackgroundTest.html','Mor
 // Production sword-event dependencies, not model labs or Blender sources.
 const actorRuntimeFiles=new Set(['walk-poses.js','walk-equipment.js','shield-geometry.js','walk-native.js']
  .map(file=>'art-source/blender/jonathan-approved-v1/'+file));
+// Mounted production poses live beside their authoring lab, but are runtime
+// dependencies. Publish these explicitly, never lab audits or generated data.
+const mountedRuntimeFiles=new Set(['mounted-knight-rig.js','mounted-horse-gpu.js',
+ 'mounted-horse-saddle.js','mounted-knight-sword.js','mounted-knight-shield.js',
+ 'mounted-knight-bow.js','mounted-knight-duck.js','mounted-knight-jump.js',
+ 'mounted-knight-jump-entry.js','mounted-knight-steering.js','mounted-knight-action-gpu.js',
+ 'mounted-knight-renderer.js','mounted-knight-run-motion.js','mounted-knight-playtest.js']
+ .map(file=>'labs/'+file));
 const selected=files.filter(file=>roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
+ mountedRuntimeFiles.has(file)||
  file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||file.startsWith('art-source/knight-rush-special-roads/')||file.startsWith('art-source/knight-rush-ui/')||
  file.startsWith('tools/')&&(file.endsWith('.js')||file.startsWith('tools/skills/')));
 fs.mkdirSync(dest,{recursive:true});
@@ -17,7 +26,8 @@ for(const file of ['assets/forest/sunlit-forest.js','assets/forest/journey-fores
  'assets/encounters/cutscene-handler.js','assets/encounters/event-visuals.js',
  'assets/encounters/jonathan-gpu.js','assets/encounters/jonathan-model.js','assets/encounters/sword-event.js',
  'assets/encounters/oath-sword-art.js','assets/encounters/sword-clearing-v4.png',
- 'assets/encounters/sword-clearing-v4-mobile.png','assets/forest/oath-road.js',...actorRuntimeFiles]){
+ 'assets/encounters/sword-clearing-v4-mobile.png','assets/forest/oath-road.js',
+ 'assets/mounted-runner.js','assets/mounted-combat.js',...actorRuntimeFiles,...mountedRuntimeFiles]){
  if(!fs.existsSync(path.join(dest,file)))throw Error('Missing published dependency: '+file);
 }
 console.log(`PAGES_BUILD_OK ${selected.length+1} files: ${dest}`);

@@ -4,13 +4,14 @@
 (()=>{'use strict';
  const vertexSource=`
  attribute vec3 a_position;
- attribute vec2 a_normal;
+ attribute vec3 a_normal;
  attribute vec3 a_colour;
  attribute float a_layer;
  uniform vec2 u_yaw;
  uniform mat3 u_transform;
  uniform vec2 u_size;
  uniform float u_layerBias;
+ uniform float u_depthShear;
  varying vec3 v_colour;
  varying vec2 v_view;
  varying float v_depth;
@@ -19,11 +20,14 @@
   float c=u_yaw.x,s=u_yaw.y;
   vec2 p=vec2(-c*a_position.x-s*a_position.z,a_position.y);
   float depth=s*a_position.x-c*a_position.z;
+  p.y+=depth*u_depthShear;
   vec3 screen=u_transform*vec3(p,1.0);
   gl_Position=vec4(screen.x/u_size.x*2.0-1.0,1.0-screen.y/u_size.y*2.0,
    -depth/64.0-a_layer*u_layerBias,1.0);
   v_colour=a_colour;v_view=p;v_depth=depth;
-  v_facing=s*a_normal.x-c*a_normal.y;
+  // X/Z occupy xy as before; the optional z component carries source Y.
+  // Oblique views expose top planes which a yaw-only facing test discarded.
+  v_facing=s*a_normal.x-c*a_normal.y-u_depthShear*a_normal.z;
  }`;
  const fragmentSource=`
  precision highp float;
@@ -64,6 +68,13 @@
   }
   gl_FragColor=vec4(v_colour,1.0);
  }`;
+ // Compile the opt-in articulated variant separately, preserving the exact
+ // default shader and its raster output for every established caller.
+ const duckVertexSource=vertexSource.replace('uniform vec2 u_yaw;','uniform vec2 u_yaw; uniform float u_pitch; uniform vec3 u_gearOffset;')
+  .replace('vec2 p=vec2(-c*a_position.x-s*a_position.z,a_position.y);','float cp=cos(u_pitch),sp=sin(u_pitch);vec3 v=a_position+u_gearOffset;vec3 pos=vec3(v.x,(12.0+v.y)*cp-v.z*sp-12.0,(12.0+v.y)*sp+v.z*cp);vec2 p=vec2(-c*pos.x-s*pos.z,pos.y);')
+  .replace('float depth=s*a_position.x-c*a_position.z;','float depth=s*pos.x-c*pos.z;')
+  .replace('v_facing=s*a_normal.x-c*a_normal.y-u_depthShear*a_normal.z;','v_facing=s*a_normal.x-c*(a_normal.z*sp+a_normal.y*cp)-u_depthShear*(a_normal.z*cp-a_normal.y*sp);');
+ const duckFragmentSource=`precision highp float;uniform float u_headPass;uniform float u_headDepth;uniform vec3 u_headPlane;uniform float u_headPlanePass;varying vec3 v_colour;varying vec2 v_view;varying float v_depth;varying float v_facing;void main(){if(v_facing<=0.0000001)discard;if(u_headPass>0.5){float d=u_headPlanePass>.5?dot(u_headPlane,vec3(v_view,1.)):u_headDepth;if(v_depth<=d+.015)discard;}gl_FragColor=vec4(v_colour,1.0);}`;
  // A deliberately small native-vector adapter, not a Canvas implementation.
  // Every polygon is tessellated once per pose; clip coverage stays in stencil.
  function makeVectorContext(canvas,submit,clipPaths,setMask){
@@ -114,12 +125,16 @@
    fillRect(x,y,w,h){if(w&&h)append([point(x,y),point(x+w,y),point(x+w,y+h),point(x,y+h)]);},
    fill(){for(const poly of paths)append(poly);},
    clip(){api.flush();state.mask=clipPaths(state.mask,paths,triangles);},
+   clipUnion(){api.flush();state.mask=clipPaths(state.mask,paths,triangles,true);},
    ellipse(x,y,rx,ry,rotation,start,end){const poly=[];for(let i=0;i<=40;i++){const a=start+(end-start)*i/40,xx=Math.cos(a)*rx,yy=Math.sin(a)*ry;poly.push(point(x+xx*Math.cos(rotation)-yy*Math.sin(rotation),y+xx*Math.sin(rotation)+yy*Math.cos(rotation)));}paths.push(poly);path=poly;},
    get fillStyle(){return state.fill;},set fillStyle(v){state.fill=v;},
    get globalAlpha(){return state.alpha;},set globalAlpha(v){state.alpha=v;}
   };return api;
  }
- function create(meshes,onLoss=()=>{}){
+ function create(meshes,onLoss=()=>{},options={}){
+  // Opt-in matching to a scene's oblique camera. Existing events keep their
+  // approved flat projection; mounted actors use the horse's depth shear.
+  const depthShear=Number(options.depthShear)||0;
   const canvas=document.createElement('canvas'),gl=canvas.getContext('webgl',{
    alpha:true,antialias:true,depth:true,stencil:true,premultipliedAlpha:true,preserveDrawingBuffer:false
   });
@@ -138,28 +153,33 @@
    if(!gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT)?.precision)throw Error('GPU yüksek hassasiyetli derinlik desteklemiyor');
    const shader=(type,source)=>{const s=gl.createShader(type);shaders.push(s);gl.shaderSource(s,source);gl.compileShader(s);
     if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
-   program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);
+   program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,options.duckPose?duckVertexSource:vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,options.duckPose?duckFragmentSource:fragmentSource));gl.linkProgram(program);
    if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
-   for(const name of ['yaw','transform','size','head','headPass','layerBias','chamfer'])uniforms[name]=gl.getUniformLocation(program,'u_'+name);
-   const attributes=[['position',3,0],['normal',2,3],['colour',3,5],['layer',1,8]].map(([name,size,offset])=>({location:gl.getAttribLocation(program,'a_'+name),size,offset}));
+   for(const name of ['yaw','transform','size','head','headPass','layerBias','chamfer','depthShear','pitch','posedHead','headDepth','gearOffset','headPlane','headPlanePass'])uniforms[name]=gl.getUniformLocation(program,'u_'+name);
+   // Flat/default callers retain the exact original nine-float buffers. Only
+   // oblique scenes need the third normal component for their pitched camera.
+   const normalSize=depthShear?3:2,stride=7+normalSize;
+   const attributes=[['position',3,0],['normal',normalSize,3],['colour',3,3+normalSize],['layer',1,6+normalSize]].map(([name,size,offset])=>({location:gl.getAttribLocation(program,'a_'+name),size,offset}));
    for(const [name,faces]of Object.entries(meshes).filter(([name])=>name!=='decorations')){
     const values=[];
     for(const face of faces){
      const colour=face.col.match(/^#([0-9a-f]{6})$/i),decimal=face.col.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
      if(!colour&&!decimal)throw Error('Unsupported mesh material: '+face.col);
-     const rgb=colour?[0,2,4].map(i=>parseInt(colour[1].slice(i,i+2),16)/255):decimal.slice(1).map(v=>Number(v)/255),n=face.normal,length=Math.hypot(n[0],n[2])||1;
+     const rgb=colour?[0,2,4].map(i=>parseInt(colour[1].slice(i,i+2),16)/255):decimal.slice(1).map(v=>Number(v)/255),n=face.normal,length=Math.hypot(n[0],n[2])||1,
+      normal=[n[0]/length,n[2]/length];
+     if(depthShear)normal.push(n[1]/length);
      // All exported native faces are convex; retain original vertices/winding.
-     for(let i=1;i<face.v.length-1;i++)for(const p of [face.v[0],face.v[i],face.v[i+1]])values.push(...p,n[0]/length,n[2]/length,...rgb,face.layer||0);
+     for(let i=1;i<face.v.length-1;i++)for(const p of [face.v[0],face.v[i],face.v[i+1]])values.push(...p,...normal,...rgb,face.layer||0);
     }
     const data=new Float32Array(values),buffer=gl.createBuffer();buffers.push(buffer);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
-    parts[name]={buffer,count:data.length/9,bytes:data.byteLength};
+    parts[name]={buffer,count:data.length/stride,bytes:data.byteLength};
    }
    gl.disable(gl.DITHER);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.clearColor(0,0,0,0);
    const extension=gl.getExtension('WEBGL_debug_renderer_info'),device=extension?gl.getParameter(extension.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),
     depthBits=gl.getParameter(gl.DEPTH_BITS),layerBias=Math.max(.00001,4/2**depthBits);
    const drawPart=name=>{const part=parts[name];if(!part?.count)return;gl.bindBuffer(gl.ARRAY_BUFFER,part.buffer);
     for(let i=0;i<8;i++)gl.disableVertexAttribArray(i);
-    for(const a of attributes){gl.enableVertexAttribArray(a.location);gl.vertexAttribPointer(a.location,a.size,gl.FLOAT,false,36,a.offset*4);}
+    for(const a of attributes){gl.enableVertexAttribArray(a.location);gl.vertexAttribPointer(a.location,a.size,gl.FLOAT,false,stride*4,a.offset*4);}
     gl.drawArrays(gl.TRIANGLES,0,part.count);drawCalls++;
    };
    const start=ctx=>{
@@ -170,7 +190,7 @@
      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT|gl.STENCIL_BUFFER_BIT);gl.disable(gl.STENCIL_TEST);
    };
    const composite=ctx=>{ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(canvas,0,0);ctx.restore();frames++;};
-   const drawGear=(ctx,deg,dir,visible,unit,head)=>{
+   const drawGear=(ctx,deg,dir,visible,unit,head,pose)=>{
      vector?.flush();
      gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.clear(gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
      const width=canvas.width,height=canvas.height;
@@ -179,10 +199,13 @@
      // At least two depth-buffer steps for coplanar sword paint, including
      // implementations with a 16-bit default depth attachment.
      gl.uniform1f(uniforms.layerBias,layerBias);
+     gl.uniform1f(uniforms.depthShear,depthShear);
+     gl.uniform1f(uniforms.pitch,pose?.pitch||0);gl.uniform1f(uniforms.posedHead,pose?1:0);gl.uniform1f(uniforms.headDepth,pose?.headDepth||0);
      gl.uniformMatrix3fv(uniforms.transform,false,new Float32Array([m.a*unit,m.b*unit,0,m.c*unit,m.d*unit,0,m.e,m.f,1]));
      gl.uniform1f(uniforms.headPass,head?1:0);gl.uniform4f(uniforms.head,head?.x||0,head?.half||0,head?.top||0,head?.bottom||0);
      gl.uniform1f(uniforms.chamfer,head?.chamfer||0);
-     for(const name of ['quiver','sword','bow','shield'])if(visible[name]!==false)drawPart(name);
+     gl.uniform1f(uniforms.headPlanePass,head?.plane?1:0);gl.uniform3f(uniforms.headPlane,head?.plane?.[0]||0,head?.plane?.[1]||0,head?.plane?.[2]||0);
+     for(const name of ['quiver','sword','bow','shield'])if(visible[name]!==false){const offset=pose?.gearOffset??(name==='shield'?pose?.shieldOffset:null);gl.uniform3f(uniforms.gearOffset,offset?.[0]||0,offset?.[1]||0,offset?.[2]||0);drawPart(name);}
    };
    vectorProgram=gl.createProgram();
    gl.attachShader(vectorProgram,shader(gl.VERTEX_SHADER,`attribute vec2 a_xy;attribute vec4 a_rgba;uniform vec2 u_size;varying vec4 v_rgba;void main(){gl_Position=vec4(a_xy.x/u_size.x*2.0-1.0,1.0-a_xy.y/u_size.y*2.0,0.0,1.0);v_rgba=a_rgba;}`));
@@ -206,22 +229,22 @@
     if(mask){gl.enable(gl.STENCIL_TEST);gl.stencilFunc(gl.EQUAL,mask,mask);gl.stencilOp(gl.KEEP,gl.KEEP,gl.KEEP);gl.stencilMask(0);}
     else gl.disable(gl.STENCIL_TEST);
    };
-   vector=makeVectorContext(canvas,submit,(mask,paths,triangles)=>{
+   vector=makeVectorContext(canvas,submit,(mask,paths,triangles,union=false)=>{
     const bit=mask+1;if(bit>128)throw Error('Actor clip nesting exceeds stencil budget');
     gl.enable(gl.STENCIL_TEST);gl.stencilMask(bit);gl.clear(gl.STENCIL_BUFFER_BIT);
-    gl.stencilFunc(gl.EQUAL,mask,mask);gl.stencilOp(gl.KEEP,gl.KEEP,gl.INVERT);gl.colorMask(false,false,false,false);
+    gl.stencilFunc(gl.EQUAL,union?mask|bit:mask,mask);gl.stencilOp(gl.KEEP,gl.KEEP,union?gl.REPLACE:gl.INVERT);gl.colorMask(false,false,false,false);
     for(const path of paths)submit(triangles(path,[1,1,1,1]));
     gl.colorMask(true,true,true,true);stencil(mask|bit);return mask|bit;
    },stencil);
    return Object.freeze({
     canvas,dispose,
-    draw(ctx,deg,dir,visible,unit,head){if(ctx===vector){drawGear(ctx,deg,dir,visible,unit,head);return;}start(ctx);drawGear(ctx,deg,dir,visible,unit,head);composite(ctx);},
+    draw(ctx,deg,dir,visible,unit,head,pose){if(ctx===vector){drawGear(ctx,deg,dir,visible,unit,head,pose);return;}start(ctx);drawGear(ctx,deg,dir,visible,unit,head,pose);composite(ctx);},
     paint(ctx,fn){start(ctx);vector.reset(ctx.getTransform());const previous=g;
      try{g=vector;fn(vector);vector.flush();}finally{g=previous;}
      composite(ctx);
     },
     finish:()=>gl.finish(),
-    stats:()=>({kind:'webgl-actor',lost,device,depthBits,layerBias,antialias:gl.getContextAttributes()?.antialias,dynamicBytes:dynamicCapacity,
+    stats:()=>({kind:'webgl-actor',lost,device,depthBits,layerBias,depthShear,antialias:gl.getContextAttributes()?.antialias,dynamicBytes:dynamicCapacity,
      frames,drawCalls,meshBytes:Object.values(parts).reduce((n,p)=>n+p.bytes,0),
      triangles:Object.fromEntries(Object.entries(parts).map(([n,p])=>[n,p.count/3])),width:canvas.width,height:canvas.height})
    });
