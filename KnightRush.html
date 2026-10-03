@@ -926,6 +926,7 @@ function handleAction(a,pt,parryIntent=null,input=null){
   if(mode==='town'&&a==='tap'&&pt){townTap(pt);return;}
   if(a==='tap' && pt && GAMEPLAY_MODES.includes(mode)
      && pt.x>PAUSE_BTN.x&&pt.x<PAUSE_BTN.x+PAUSE_BTN.w&&pt.y>PAUSE_BTN.y+uiTop&&pt.y<PAUSE_BTN.y+PAUSE_BTN.h+uiTop){
+    activeBossSequenceDriver()?.cancelInput();
     paused=true; pausePhotoMode=false;cancelMinigameGestures(); return;
   }
   if(handleJourneyRoadEventAction(a,pt,input))return;
@@ -959,6 +960,9 @@ addEventListener('keydown',e=>{
   if(e.code==='F10'&&!e.repeat&&(roadLabState.active||mode==='roadlab')){openRoadLab();e.preventDefault();return;}
   if(e.code==='F8'&&!e.repeat){e.preventDefault();return;} // Retired renderer toggle; legacy code stays archived.
   if(e.code==='F9'&&!e.repeat){journeyPerf.enabled=!journeyPerf.enabled;e.preventDefault();return;}
+  if(BOOT_QUERY.get('oathkeeperlab')==='1'&&window.KROathkeeperEncounter?.handleLabKey(e)){
+    e.preventDefault();return;
+  }
   if(paused&&journeyMapOpen&&(e.key==='Escape'||e.key==='p'||e.key==='P')){
     journeyMapOpen=false;e.preventDefault();return;
   }
@@ -1002,12 +1006,14 @@ addEventListener('keydown',e=>{
   if(e.key==='Escape'&&mode==='charsel'){ leaveCharSel(); return; }
   if(handleMinigameKeyDown(e))return;
   if(e.key==='p'||e.key==='P'||e.key==='Escape'){       // pause toggle on keyboard
+    activeBossSequenceDriver()?.cancelInput();
     if(settingsOpen){settingsOpen=false;}
     else if(paused){paused=false; pausePhotoMode=false;}
     else if(GAMEPLAY_MODES.includes(mode)){paused=true; pausePhotoMode=false;cancelMinigameGestures();}
     return;
   }
   const a=map[e.key]; if(!a) return; e.preventDefault();
+  if((a==='left'||a==='right')&&activeBossSequenceDriver()?.key(boss,a,true,e.repeat))return;
   /* Parry is a true press/hold/release gesture.  Starting the guard on keydown
      removes the former tap delay; combat timing is sampled only on keyup. */
   if(a==='parry'){
@@ -1020,6 +1026,8 @@ addEventListener('keydown',e=>{
 });
 let keyboardParryHeld=false;
 addEventListener('keyup',e=>{
+  const direction={ArrowLeft:'left',ArrowRight:'right',a:'left',d:'right'}[e.key];
+  if(direction&&activeBossSequenceDriver()?.key(boss,direction,false)){e.preventDefault();return;}
   if(e.key!==' '||!keyboardParryHeld)return;
   e.preventDefault();keyboardParryHeld=false;
   releasePlayerParryHold({x:VW/2,y:VH/2});
@@ -1311,6 +1319,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   tStart={x:t.clientX,y:t.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
   if(beginRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
+  activeBossSequenceDriver()?.pointerStart(boss,tStart,t.clientX,t.clientY);
   armTapIntent(tStart,t.clientX,t.clientY);
   armSquireAnimationTreeHold(tStart,t.clientX,t.clientY);
   armSkillTooltipHold(tStart,t.clientX,t.clientY);
@@ -1321,6 +1330,7 @@ addEventListener('touchmove',e=>{ e.preventDefault();
   if(moveMinigamePointer(t.clientX,t.clientY))return;
   if(updateRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(updateSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
+  if(activeBossSequenceDriver()?.pointerMove(boss,tStart,t.clientX,t.clientY))return;
   noteTapIntentMovement(tStart,t.clientX,t.clientY);trySwipe(t.clientX,t.clientY);
 },{passive:false});
 addEventListener('gesturestart',e=>e.preventDefault());
@@ -1329,6 +1339,9 @@ addEventListener('touchend',e=>{e.preventDefault();
   clearDebugStageHold();
   if(!tStart) return; const t=e.changedTouches[0];
   if(endMinigamePointer(t.clientX,t.clientY))return;
+  if(activeBossSequenceDriver()?.pointerEnd(boss,tStart,t.clientX,t.clientY)){
+    clearTapIntent(tStart);tStart=null;return;
+  }
   clearTapIntent(tStart);
   if(!tStart.done && !trySwipe(t.clientX,t.clientY) && !tStart.intentMoved){
     const pt=toGame(t.clientX,t.clientY);
@@ -1337,6 +1350,7 @@ addEventListener('touchend',e=>{e.preventDefault();
   tStart=null;
 },{passive:false});
 addEventListener('touchcancel',()=>{
+  activeBossSequenceDriver()?.cancelInput();
   cancelMinigameGestures();
   cancelPlayerParryHold(tStart);
   clearDebugStageHold();clearProvisionalDebugParryMark(tStart);clearTapIntent(tStart);tStart=null;
@@ -1360,6 +1374,7 @@ addEventListener('mousedown',e=>{
   tStart={x:e.clientX,y:e.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
   if(beginRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
+  activeBossSequenceDriver()?.pointerStart(boss,tStart,e.clientX,e.clientY);
   armTapIntent(tStart,e.clientX,e.clientY);
   armSquireAnimationTreeHold(tStart,e.clientX,e.clientY);
   armSkillTooltipHold(tStart,e.clientX,e.clientY);
@@ -1369,12 +1384,16 @@ addEventListener('mousemove',e=>{ if(mDown){
   if(moveMinigamePointer(e.clientX,e.clientY))return;
   if(updateRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(updateSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
+  if(activeBossSequenceDriver()?.pointerMove(boss,tStart,e.clientX,e.clientY))return;
   noteTapIntentMovement(tStart,e.clientX,e.clientY);trySwipe(e.clientX,e.clientY);
 } });
 addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(endMinigamePointer(e.clientX,e.clientY))return;
   if(!tStart) return;
+  if(activeBossSequenceDriver()?.pointerEnd(boss,tStart,e.clientX,e.clientY)){
+    clearTapIntent(tStart);tStart=null;return;
+  }
   clearTapIntent(tStart);
   if(!tStart.done && !trySwipe(e.clientX,e.clientY) && !tStart.intentMoved){
     const pt=toGame(e.clientX,e.clientY);
@@ -1387,6 +1406,7 @@ addEventListener('mouseup',e=>{
    lifecycle event is hooked, and the main loop carries a watchdog that pauses the
    run whenever the frame clock reveals we were suspended. */
 function autoPause(){
+  activeBossSequenceDriver()?.cancelInput();
   cancelMinigameGestures();
   keyboardParryHeld=false;cancelPlayerParryHold();
   clearDebugStageHold();
@@ -10929,6 +10949,27 @@ function loadEventVisualModule(src,symbol){
   });
   eventVisualModuleLoads.set(src,pending);return pending;
 }
+let oathkeeperNativePreparation=null;
+function prepareOathkeeperEncounter(){
+  if(oathkeeperNativePreparation)return oathkeeperNativePreparation;
+  oathkeeperNativePreparation=(async()=>{
+    if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))return false;
+    await KRMountedRunner.prepare();if(!KRMountedRunner.ready)return false;
+    for(const [src,symbol] of [
+      ['labs/oathkeeper-moves.js','KROathkeeperMoves'],
+      ['labs/oathkeeper-model.js','KROathkeeperModel'],
+      ['labs/boss-sequence-runtime.js','KRBossSequenceRuntime'],
+      ['labs/oathkeeper-sequences.js','KROathkeeperSequences'],
+      ['labs/oathkeeper-physical.js','KROathkeeperPhysical'],
+      ['labs/oathkeeper-moveset.js','KROathkeeperMoveset'],
+      ['labs/oathkeeper-arena.js','KROathkeeperArena'],
+      ['labs/oathkeeper-encounter.js','KROathkeeperEncounter'],
+      ['assets/encounters/event-visuals.js','KREventVisuals']
+    ])if(!await loadEventVisualModule(src,symbol))return false;
+    return true;
+  })().catch(error=>{console.warn('Oathkeeper encounter could not load',error);return false;});
+  return oathkeeperNativePreparation;
+}
 async function prepareCutscene(sceneId,active=false,owner=sceneId){
   if(typeof Image==='undefined')return Promise.resolve(false);
   const epoch=eventVisualEpoch;
@@ -10948,6 +10989,7 @@ function prepareGathererEncounter(active=false){
 }
 function clearEventVisuals(){
   eventVisualEpoch++;
+  window.KROathkeeperArena?.reset();
   if(window.KRCutscenes)window.KRCutscenes.reset();else window.KREventVisuals?.clear();
   journeyVisualTarget=null;
   journeyVisualScanEdge=null;journeyVisualScanAt=-Infinity;
@@ -10956,7 +10998,7 @@ function clearEventVisuals(){
 // allocate images. Add future scene adapters here and plates to the manager catalog.
 const JOURNEY_CUTSCENE_BINDINGS=Object.freeze({mushrooms:'gatherer',wolfden:'wolf-den-forest',taxman:'royal-tax-collector',camp:'rest-camp'});
 function journeyEventVisualKey(slot){
-  if(slot.definition==='sword_clearing')return 'sword-clearing';
+  if(slot.definition==='sword_clearing')return window.KRSwordEvent?.encounterOnly?null:'sword-clearing';
   if(slot.definition==='roadside_fight')return 'fight-loot';
   if(slot.definition==='inn_stop')return 'mossy-inn';
   if(slot.definition==='merchant_stop')return 'autumn-caravan';
@@ -10965,6 +11007,17 @@ function journeyEventVisualKey(slot){
   return JOURNEY_ROAD_EVENTS[slot.definition]?.kind==='normal'?(JOURNEY_CUTSCENE_BINDINGS[journeyNormalContent(slot)]||null):null;
 }
 function requestJourneyEventVisual(slot,active=false){
+  if(slot.definition==='sword_clearing'&&window.KRSwordEvent?.encounterOnly){
+    if(journeyVisualTarget?.route!==journeyRoute||journeyVisualTarget?.id!==slot.id){
+      clearEventVisuals();journeyVisualTarget={route:journeyRoute,id:slot.id,key:null,requested:true};
+      const target=journeyVisualTarget,epoch=eventVisualEpoch;
+      prepareOathkeeperEncounter().then(ready=>{
+        if(ready&&journeyVisualTarget===target&&target.route===journeyRoute&&epoch===eventVisualEpoch)
+          KREventVisuals.prefetch('oathkeeper-arena');
+      });
+    }
+    return;
+  }
   const key=journeyEventVisualKey(slot);if(!key)return;
   if(journeyVisualTarget?.route!==journeyRoute||journeyVisualTarget?.id!==slot.id){
     clearEventVisuals();journeyVisualTarget={route:journeyRoute,id:slot.id,key};
@@ -10983,7 +11036,8 @@ function updateJourneyEventVisuals(){
   if(edge?.id===journeyVisualScanEdge&&dist<journeyVisualScanAt)return;
   let next=null;
   for(const slot of edge?.events||[]){
-    if(journeyRoute.eventRecords[slot.id]||slot.at<dist-16||slot.at>dist+180||!journeyEventVisualKey(slot)||!journeyNormalSlotEnabled(slot))continue;
+    if(journeyRoute.eventRecords[slot.id]||slot.at<dist-16||slot.at>dist+180||
+      (!journeyEventVisualKey(slot)&&!(slot.definition==='sword_clearing'&&window.KRSwordEvent?.encounterOnly))||!journeyNormalSlotEnabled(slot))continue;
     if(!next||slot.at<next.at)next=slot;
   }
   if(next)requestJourneyEventVisual(next);
@@ -12814,9 +12868,18 @@ function markDebugParryInput(inputAt=perfNow,allowFreeze=true,intent=null){
   };
   if(holdGeometry) debugParryInputFrozen=true;
 }
+/* Optional authored enemy-turn sequences share the native player and clocks.
+   No driver is loaded for ordinary runner/boss play. */
+function activeBossSequenceDriver(){
+  return mode==='boss'&&boss?activeBossDefinition().sequenceDriver||null:null;
+}
+function clearBossSequenceState(actor=boss){
+  if(actor)ENCOUNTERS.get(actor.definitionId)?.sequenceDriver?.cancel(actor);
+}
 function playerAction(a,parryIntent=null){
   if(!player.alive||knightRushSequence) return;
   if(runJourneyPrototype&&journey&&journey.phase==='turning')return;
+  if(activeBossSequenceDriver()?.action(boss,a))return;
   if(a==='left'&&player.lane>0){ player.laneFrom=player.lane; player.lane--; player.lastLaneChange=perfNow; SFX.swipe(); }
   else if(a==='right'&&player.lane<2){ player.laneFrom=player.lane; player.lane++; player.lastLaneChange=perfNow; SFX.swipe(); }
   else if(a==='up'&&player.jumpT<0){ player.jumpT=0; player.duckT=-1; player.lastJump=perfNow; SFX.jump();
@@ -12835,6 +12898,7 @@ function playerAction(a,parryIntent=null){
     /* Jonathan's parry is now shield-authored. Keep the legacy sword clock only
        for riders that have not yet received the articulated shield rig. */
     player.parryAnim=playerChar.rigId==='ser_jonathan'?0:1; SFX.swipe();
+    if(activeBossSequenceDriver()?.parry(boss,parryIntent))return;
     registerModelParryInput(parryIntent);
     registerLegacyParryInput(parryIntent);
     captureMoveLabParryInputSnapshot(parryIntent);
@@ -12844,7 +12908,19 @@ function firstHalfPostureTime(amount,duration){
   const phase=Math.asin(clamp(amount,0,.999))/Math.PI;
   return phase*duration;
 }
-function jumpHeight(){ return player.jumpT<0?0:Math.sin(Math.PI*clamp(player.jumpT/jumpDur(),0,1))*CFG.JUMP_H; }
+function playerSequenceJumpLift(){
+  // Encounter-local lift: preserve the accepted mounted clip and its planted
+  // takeoff/landing frames. Visual placement and native hurt volumes share it.
+  const lift=mode==='boss'&&boss?Number(activeBossDefinition().sequenceJumpLift)||0:0;
+  const timing=globalThis.KRMountedRunMotion?.timing;
+  if(!lift||player.jumpT<0||!timing)return 0;
+  const t=player.jumpT/jumpDur()*timing.duration;
+  if(t<=timing.takeoff||t>=timing.contact)return 0;
+  const phase=t<timing.apex?(t-timing.takeoff)/(timing.apex-timing.takeoff):
+    (timing.contact-t)/(timing.contact-timing.apex);
+  return lift*Math.sin(Math.PI*.5*phase)**2;
+}
+function jumpHeight(){ return player.jumpT<0?0:Math.sin(Math.PI*clamp(player.jumpT/jumpDur(),0,1))*CFG.JUMP_H+playerSequenceJumpLift(); }
 /* Duck owns three readable beats instead of a fast sine pulse. Both edges have
    zero velocity, and the short full-pose hold keeps the rider from snapping
    through the silhouette before the eye can read the forward hinge. */
@@ -12953,7 +13029,8 @@ function updatePlayerSwordCombo(dt){
 }
 function updatePlayer(dt){
   const previousX=player.x;
-  if(!(runJourneyPrototype&&journey&&journey.phase==='turning'))
+  const sequenceMoved=activeBossSequenceDriver()?.updatePlayer(boss,dt)===true;
+  if(!sequenceMoved&&!(runJourneyPrototype&&journey&&journey.phase==='turning'))
     player.x+=(player.lane-player.x)*Math.min(1,CFG.LANE_EASE*dt);
   const resting=mode==='evolution'||mode==='shop';
   const travelling=!resting&&(mode==='run'||Math.abs(player.x-previousX)>.001);
@@ -13246,6 +13323,7 @@ function damagePlayer(reason,unstoppable=false,baseHeartDamage=1,source='attack'
     return;
   }
   player.alive=false; deathReason=reason;
+  clearBossSequenceState(boss);
   keyboardParryHeld=false;player.parryShield=null;
   /* The final heart triggers the existing mounted death presentation. */
   beginPlayerMountedDeath();
@@ -45734,6 +45812,7 @@ function updateSquirePlayerPhase(){
 }
 function beginPlayerTurn(fromBreak=false){
   if(!isTurnCombat()||boss.state==='dying'||boss.state==='finisher') return false;
+  clearBossSequenceState(boss);
   boss.preparedPostureLate=0;boss.preparedPostureMoveEnded=false;
   /* Normal exhaustion and a defense Break both close exactly one boss phase. Bleed
      resolves before the new player activation, so a lethal tick cannot leave a
@@ -48012,13 +48091,31 @@ function doParry(src,x=laneX(player.x,1),y=PLAYER_Y-55,moveOverride=null,strikeT
   }
   if(!defeated)addChainStack();
 }
+/* A thrown object can be parried without making its distant owner abandon an
+   entire authored defense turn. Rewards still enter the native combat hooks;
+   an actual Posture Break intentionally cancels the sequence via player turn. */
+function doSequenceObjectParry(x,y){
+  if(!boss||boss.phase!=='dodge')return;
+  addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
+  if(activeSkillLabCombat()&&skillLabSession.defenseStats)skillLabSession.defenseStats.parries++;
+  recordDefenseChargeSuccess(DEFENSE_CHARGE.parryGain,'PARRY');
+  addKnightRush(CFG.RUSH_PER_PARRY);
+  const crit=rollGlobalCritical();
+  applyBossPosture(applyCriticalPostureDamage(CFG.POSTURE_PER_PARRY,crit),'parry');
+  emitParryReactionFx(x,y,{style:'parry_counter'});
+  floater(laneX(player.x,1),PLAYER_Y-jumpHeight()-104,'PARRY!','#b56cff',22);
+  const defeated=hurtBoss(applyCriticalHealthDamage(
+    counterDmg()*CFG.PARRY_DMG_MULT*(1+chainBonus()*chainStacks),crit),true,'counter',crit.critical);
+  if(!defeated)addChainStack();
+}
 function squireScreenPoint(){
   return {x:squire.visualX||squire.lastX||clamp(laneX(player.x,1)-62,42,VW-42),
     y:PLAYER_Y-58};
 }
 function doSquireParry(x,y){
   if(!boss||boss.phase!=='dodge')return false;
-  const move=boss.currentMove&&boss.currentMove(),reaction=beginParryReaction(boss,move,x,y);
+  const sequenceObject=!!boss._sequence,
+    move=boss.currentMove&&boss.currentMove(),reaction=sequenceObject?null:beginParryReaction(boss,move,x,y);
   addTurnResolve(CFG.TURN_RESOLVE_PER_DEFENSE);
   if(activeSkillLabCombat()&&skillLabSession.defenseStats)skillLabSession.defenseStats.parries++;
   recordDefenseChargeSuccess(DEFENSE_CHARGE.parryGain,'PARRY');
@@ -48030,7 +48127,7 @@ function doSquireParry(x,y){
   squire.parryT=0;
   emitParryReactionFx(x,y,reaction);
   floater(x,y-62,'SQUIRE PARRY!','#d7b878',19);
-  interruptParriedAttack(BOSS_SOURCE);
+  if(!sequenceObject)interruptParriedAttack(BOSS_SOURCE);
   const defeated=hurtBoss(applyCriticalHealthDamage(
     counterDmg()*CFG.PARRY_DMG_MULT*(1+chainBonus()*chainStacks),crit),true,
     'squire_counter',crit.critical);
@@ -48055,11 +48152,11 @@ function resolveSquireCoveringShot(){
   squire.hunterFollow={t:.18,flightTime:.18,cancel:false,from:{...geometry.from},to:{...geometry.to}};
   const x=laneX(player.x,1),y=PLAYER_Y-55,
     move=boss.currentMove&&boss.currentMove(),
-    reaction=beginParryReaction(boss,move,x,y);
+    sequenceObject=!!boss._sequence,reaction=sequenceObject?null:beginParryReaction(boss,move,x,y);
   // Borrow only the boss's parry recoil and interruption. Rewards, charge,
   // counter damage and defense statistics remain one Perfect Dodge event.
   if(reaction)emitParryReactionFx(x,y,reaction);
-  interruptParriedAttack(BOSS_SOURCE);
+  if(!sequenceObject)interruptParriedAttack(BOSS_SOURCE);
   SFX.arrow();doPerfectDodge(BOSS_SOURCE);
   burst(laneX(player.x,1),PLAYER_Y-70,18,['#a6c881','#e2d6ac','#ffffff'],130,60,3,.4);
   floater(laneX(player.x,1),PLAYER_Y-108,'COVERING SHOT · PERFECT DODGE','#a6c881',15);
@@ -49537,6 +49634,7 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
    multi-hit action may survive the transition into the authored death state. */
 function defeatBoss(){
   if(!boss||boss.hp>0||boss.state==='dying')return false;
+  clearBossSequenceState(boss);
   clearBattleShields();
   /* Skill Lab uses the real lethal path and death presentation, but deliberately
      bypasses run score, relics and reward routing when that presentation ends. */
@@ -49639,6 +49737,7 @@ function updateBoss(dt){
       } }
   }
   if(boss.hp<=0&&boss.state!=='dying'){defeatBoss();return;}
+  if(activeBossDefinition().sequenceDriver?.update(boss,dt))return;
   boss.x+=(boss.xTarget-boss.x)*Math.min(1,5*dt);
   const st=boss.state, T=boss.stateT;
   if(st==='dying'){                          /* --- staged KILL ANIMATION --- */
@@ -54030,6 +54129,7 @@ function setMode(m){
   if(m!=='boss'&&m!=='miniboss'){keyboardParryHeld=false;player.parryShield=null;}
   if(!['boss','bossintro','miniboss','bosslabmoves'].includes(m))clearBattleShields();
   mode=m;modeT=0;
+  window.KROathkeeperArena?.sync();
   if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':m==='diceguess'?'duke-bluff':m==='armwrestling'?'tavern-arm':m==='drinkingcontest'?'tavern-chug':m==='findqueen'?'royal-shuffle':'tavern-games',true,'tavern-games');
 }
 function speed(){
@@ -54701,7 +54801,9 @@ function drawHUD(){
     else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
     else if(boss.state==='breakRecover') st='RECOVERING';
     else if(boss.state==='finisher') st='NO ESCAPE.';
-    else if(boss.phase==='dodge') st='survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
+    else if(boss.phase==='dodge') st=boss._sequence
+      ?boss._sequence.recipe.name+' · '+Math.max(0,boss._sequence.recipe.duration-boss._sequence.time).toFixed(1)+'s'
+      :'survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
     drawHPBar(boss.wolfDen?'':activeBossDefinition().name,boss.hp,boss.maxhp,boss.wolfDen?'':st);
     drawBossPostureBar(boss);
     drawBossMarkTokens(boss);
@@ -54754,6 +54856,7 @@ function drawHUD(){
     g.fillText('PRACTICE COUNTERS: '+minibossFight.counters,VW/2,126);
   }
   /* mute hint */
+  if(BOOT_QUERY.get('oathkeeperlab')==='1')window.KROathkeeperEncounter?.drawLabHint(g);
   g.font='10px monospace'; g.textAlign='right'; g.fillStyle='#aeb2c266';
   g.fillText(SFX.muted?'muted (M)':'',VW-10,VH-8-uiTop);
   g.restore();
@@ -65530,6 +65633,7 @@ function drawScore(){
 /* ============================== update per mode ============================== */
 function update(dt){
   perfNow+=dt; modeT+=dt;
+  window.KROathkeeperArena?.sync();
   if(mode==='roadlab')return;
   updateWolfPup(dt);
   updateJuice(dt);
@@ -68025,8 +68129,16 @@ function renderFrame(){
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
   if(!FULLSCREEN_RENDERERS.has(mode)&&!opaqueCutscene){
   FRONT_WORLD_ITEMS.length=0;
-  const battleWorldCached=!boss?.wolfDen&&window.KRSunlitForest?.drawBattleWorld(stage,newForest);
+  const oathArena=window.KROathkeeperArena?.coversWorld(),
+    battleWorldCached=!oathArena&&!boss?.wolfDen&&window.KRSunlitForest?.drawBattleWorld(stage,newForest);
   if(!battleWorldCached){
+  if(oathArena){
+    KROathkeeperArena.draw(g);
+    drawParticles(true);updateEffHorizon();
+    // Keep native actors/attacks; no hidden castle/road scenery behind this plate.
+    DRAW_QUEUE.length=0;FRONT_OBSTACLES.length=0;JOURNEY_FRONT_OBSTACLES.length=0;
+    if(boss)drawActiveBossWorld();
+  }else{
   if(newForest)drawForestWorld();
   else if(env==='cave'){if(boss?.wolfDen)drawWolfDenInterior(true);else stage.arena();}
   else{stage.bg();}
@@ -68036,11 +68148,13 @@ function renderFrame(){
   const dr=DRAW_QUEUE;
   for(const d of dr)drawWorldItemOrDefer(d,stage);
   }
+  }
 
   drawTelegraphs();
   /* Shield Bash contact fire belongs behind Jonathan and the physical shield,
      while remaining in front of the boss/world it struck. */
   drawParticles(false,true);
+  activeBossSequenceDriver()?.drawLayer('back',boss);
   if(!FULLSCREEN_RENDERERS.has(mode)){
     drawWolfPupFollower(false);
     drawSquire();
@@ -68048,13 +68162,13 @@ function renderFrame(){
     drawWolfPupFollower(true);
     drawProjectiles();
   }
+  activeBossSequenceDriver()?.drawLayer('front',boss);
   drawCombatDebugGeometry();
   /* NOW the near arches: the knight visibly ducks UNDER them */
-  drawForegroundWorld(stage);
-  if(newForest)forestFlush(true);
+  if(!oathArena)drawForegroundWorld(stage);
+  if(newForest&&!oathArena)forestFlush(true);
   drawParticles();
-  drawAmbient();
-  drawVignette();
+  if(!oathArena){drawAmbient();drawVignette();}
   } // Opaque interiors/encounters do not render the hidden road behind them.
 
   drawModeScreen();
@@ -68488,7 +68602,8 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             // Direct lab entry has no approach/prefetch time. Do not paint an
             // empty fallback scene for one frame before the decoded plate arrives.
             // Same owner deduplicates the open already requested by event start.
-            await prepareCutscene('sword-clearing',true,journeyRoadEventSession.token).catch(()=>false);
+            if(KRSwordEvent.encounterOnly)await journeyRoadEventSession?.context.preparation;
+            else await prepareCutscene('sword-clearing',true,journeyRoadEventSession.token).catch(()=>false);
             // Standalone review file owns playback; this hidden engine only
             // draws requested timestamps. Never start the game update loop here.
             if(BOOT_QUERY.get('swordreview')==='1'&&window.parent!==window){
@@ -68505,10 +68620,14 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             player.x=player.lane=journeyNormalSide(roadLabState.slot)+1;updateJourneyRoadEvents(0);
           }
           try{
-            await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='assets/mounted-runner.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+            if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))throw Error('Mounted runner module unavailable');
             if(BOOT_QUERY.get('mountedplaytest')==='1'){
               await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='labs/mounted-knight-playtest.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
               await KRMountedPlaytest.prepare();
+            }else if(BOOT_QUERY.get('oathkeeperlab')==='1'){
+              if(!await prepareOathkeeperEncounter())throw Error('Oathkeeper encounter unavailable');
+              KROathkeeperEncounter.start();
+              await KROathkeeperArena.ready();
             }else KRMountedRunner.prepare();
           }catch(error){console.error('Mounted runner could not load',error);}
           requestAnimationFrame(frame);

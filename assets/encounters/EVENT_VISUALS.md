@@ -225,3 +225,28 @@ V2 removes the distant tent and places the native camp deeper in the clearing.
 The 2026-09-28 composition puts the front-facing seated knight behind a centered
 foreground fire. Bark and a cut end distinguish the native log from a box;
 the shield rests beside it. The generated daytime plate and budgets are unchanged.
+
+## Oathkeeper open shrine arena (candidate)
+
+`?oathkeeperlab=1` selects `oathkeeper-arena`, a generated open forest sanctuary
+in the sword clearing's setting. Native golem, mounted Jonathan, all attack
+meshes/particles, inputs and HUD remain separate. Standard 1086x1448 / mobile
+576x768: 6,290,112 / 1,769,472 decoded RGBA bytes. These are retained image-payload
+estimates, not process RAM or physical-phone FPS. One selected tier through the
+shared manager, activated on encounter transition; owner changes, reset, death
+and leaving release/cancel it. No speculative extra arena, runtime filter,
+pixel readback or second full-screen plate cache.
+
+`labs/oathkeeper-arena.js` draws the plate once and supplies scene-local named
+stone/moss/earth material planes, the existing sword's shrine palette and a
+warm-key/cool-shadow steel palette for the native Jonathan. Neutral/default
+actors outside this encounter retain their original materials. A ready opaque
+arena skips hidden road/castle scenery and its ambient/vignette effects, while
+the ordinary world actor/attack/HUD passes remain native. Loading/error recovery
+keeps the original playable stage; it is not the finished candidate artwork.
+
+Source, exact ImageGen prompt and reference roles:
+`art-source/knight-rush-backgrounds/oathkeeper-arena-v1/BRIEF.md`.
+The approved Gatherer environment/composite are clarity and lighting anchors;
+the user-requested sword clearing is a setting/edit target, not an approved
+baseline. No new approval is inferred from integration or audits.

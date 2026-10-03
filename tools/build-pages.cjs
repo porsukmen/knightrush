@@ -15,8 +15,14 @@ const mountedRuntimeFiles=new Set(['mounted-knight-rig.js','mounted-horse-gpu.js
  'mounted-knight-jump-entry.js','mounted-knight-steering.js','mounted-knight-action-gpu.js',
  'mounted-knight-renderer.js','mounted-knight-run-motion.js','mounted-knight-playtest.js']
  .map(file=>'labs/'+file));
+// The sword road event uses these native boss modules in production. Keep the
+// authoring previews and audits out of the deployed runtime allowlist.
+const oathkeeperRuntimeFiles=new Set(['oathkeeper-moves.js','oathkeeper-model.js',
+ 'boss-sequence-runtime.js','oathkeeper-sequences.js','oathkeeper-physical.js',
+ 'oathkeeper-moveset.js','oathkeeper-arena.js','oathkeeper-encounter.js']
+ .map(file=>'labs/'+file));
 const selected=files.filter(file=>roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
- mountedRuntimeFiles.has(file)||
+ mountedRuntimeFiles.has(file)||oathkeeperRuntimeFiles.has(file)||
  file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||file.startsWith('art-source/knight-rush-special-roads/')||file.startsWith('art-source/knight-rush-ui/')||
  file.startsWith('tools/')&&(file.endsWith('.js')||file.startsWith('tools/skills/')));
 fs.mkdirSync(dest,{recursive:true});
@@ -27,7 +33,8 @@ for(const file of ['assets/forest/sunlit-forest.js','assets/forest/journey-fores
  'assets/encounters/jonathan-gpu.js','assets/encounters/jonathan-model.js','assets/encounters/sword-event.js',
  'assets/encounters/oath-sword-art.js','assets/encounters/sword-clearing-v4.png',
  'assets/encounters/sword-clearing-v4-mobile.png','assets/forest/oath-road.js',
- 'assets/mounted-runner.js','assets/mounted-combat.js',...actorRuntimeFiles,...mountedRuntimeFiles]){
+ 'assets/encounters/oathkeeper-arena-v1.png','assets/encounters/oathkeeper-arena-v1-mobile.png',
+ 'assets/mounted-runner.js','assets/mounted-combat.js',...actorRuntimeFiles,...mountedRuntimeFiles,...oathkeeperRuntimeFiles]){
  if(!fs.existsSync(path.join(dest,file)))throw Error('Missing published dependency: '+file);
 }
 console.log(`PAGES_BUILD_OK ${selected.length+1} files: ${dest}`);

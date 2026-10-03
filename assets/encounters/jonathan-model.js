@@ -4,7 +4,7 @@
  const neutral=Object.freeze({armor:'#919da7',dark:'#4b5966',light:'#c4ced5',steel:'#aebbc5',shine:'#edf4f7',plume:'#268ee8',blue:'#285dba'});
  const daylight=Object.freeze({...neutral,armor:'#95a7b5',dark:'#485e73',light:'#cbd9e3',steel:'#b6c9d7',shine:'#eef5fa'});
  const palettes=Object.freeze({neutral,daylight});
- function materials(lighting='neutral'){return palettes[lighting]||neutral;}
+ function materials(lighting='neutral'){return lighting&&typeof lighting==='object'?lighting:palettes[lighting]||neutral;}
  function arm(a,m){
   drawSerJonathanArm(a.sx,a.sy,a.ex,a.ey,a.hx,a.hy,m.armor,m.steel,m.dark,true,.95);
  }

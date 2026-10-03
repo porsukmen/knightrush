@@ -828,7 +828,7 @@
    if(visible.knight){
     const parts={...visible,shield:visible.shield&&!p.shield?.renderShield,bow:visible.bow&&!p.bow?.renderBow};
     const harness=upperPose?(deg,dir)=>{const b=p.native.body,k=-(b.shoulderX||0)/8.9,h=(-12-b.shoulderY)/8.9;g.save();g.translate(0,-12*U);g.transform(1,0,k,h,0,0);g.translate(0,12*U);KRJonathanWalk.harness(deg,dir,{sy:-20.9,hip:-12});g.restore();}:KRJonathanWalk.harness;
-    const native={...p.native,equipment:(deg,dir,head)=>actorGpu.draw(g,deg,dir,parts,U,head,upperPose),harness,armOccluders:()=>upperPose?[]:mountedShieldMask(p.angle,parts)};
+    const native={...p.native,lighting:state.lighting??p.native.lighting,equipment:(deg,dir,head)=>actorGpu.draw(g,deg,dir,parts,U,head,upperPose),harness,armOccluders:()=>upperPose?[]:mountedShieldMask(p.angle,parts)};
     KRJonathanWalk.withEquipmentParts(parts,()=>{
      const drawNative=()=>KRJonathan.turnDrawing(p.origin[0],p.origin[1],1/U,native);
      if(p.sword)KRMountedSword.withJointFlex(p,drawNative);else drawNative();

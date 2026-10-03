@@ -5,7 +5,8 @@
   clamp=t=>Math.max(0,Math.min(1,t)),smooth=t=>{t=clamp(t);return t*t*(3-2*t);},
   mix=(a,b,t)=>a+(b-a)*t,
   map=(t,knots)=>{for(let i=1;i<knots.length;i++)if(t<=knots[i][0])return mix(knots[i-1][1],knots[i][1],clamp((t-knots[i-1][0])/Math.max(.00001,knots[i][0]-knots[i-1][0])));return knots.at(-1)[1];},
-  base=()=>({angle:KRMountedRunner.laneAngle(player.x,KRMountedRunner.laneMotion?.heading||0),time:0,motion:'idle',action:'none',zoom:1,visible,externalProjectiles:true,worldViewport:true}),
+  base=()=>({angle:KRMountedRunner.laneAngle(player.x,KRMountedRunner.laneMotion?.heading||0),time:0,motion:'idle',action:'none',zoom:1,visible,externalProjectiles:true,worldViewport:true,
+   lighting:window.KROathkeeperArena?.knightLighting()||undefined}),
   active=()=>['boss','bossintro','miniboss'].includes(mode)&&player.alive&&!player.mountedDeath&&playerChar.rigId==='ser_jonathan',
   target=height=>{const p=proj(boss.z);return {x:laneX(boss.x,p.t),y:p.y-height*p.s};};
  let aimKey='',aimCache=null,shieldContact=null,shieldAngle=NaN;
@@ -92,7 +93,11 @@
   if(player.jumpT>=0){state.laneStep=0;state.motion='gallop';state.time=KRMountedRunMotion.timeAt(player.jumpT/jumpDur()*.78);state.action='jump';state.actionTime=undefined;}
   else if(player.duckT>=0){state.action='duck';state.duckAmount=duckPostureAmountAt(player.duckT);}
   const rush=state.action==='bash'?0:characterSpecialLungeAmount();
-  const f=KRMountedRunMotion.frame(state,x,y-rush*68,U*(1+rush*.08/1.02));api.lastFrame=f;return f;
+  const f=KRMountedRunMotion.frame(state,x,y-rush*68,U*(1+rush*.08/1.02)),lift=playerSequenceJumpLift();
+  // Raise the complete existing rig; retain its ground-anchored shadow and
+  // articulated takeoff/landing, with the same added lift as native collision.
+  if(lift){f.placement.y-=lift;f.height+=lift;f.minSole+=lift/f.placement.unit;}
+  api.lastFrame=f;return f;
  }
  function afterDraw(f){
   const s=f.pose.sword;if(!s||player.swordPreviewT<0)return;

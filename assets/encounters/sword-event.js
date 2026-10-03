@@ -1,6 +1,9 @@
 /* Forgotten Oath: seeded, session-owned rewards and code-native movable art.
    Candidate, not an approved Art Lab reference. The owner/awakening chain is deferred. */
 (()=>{'use strict';
+ // Temporary road integration: only the new golem encounter is active. Keep
+ // the complete sword-pull/reward implementation below for its later return.
+ const encounterOnly=true;
  let actorPreparation=null,actorReady=false,actorGpu=null,actorError='';
  function prepareActor(){
   if(actorPreparation)return actorPreparation;
@@ -366,7 +369,8 @@
  }
  function fight(c){
   c.roadState={env,obstacles,pickups,roadsideScenery};setPhase(c,'battle');
-  c.openMode(()=>startBoss('oath_guardian',c));c.game=boss;player.x=player.lane=1;
+  c.openMode(()=>encounterOnly?KROathkeeperEncounter.startRoad(c):startBoss('oath_guardian',c));
+  c.game=boss;player.x=player.lane=1;
  }
  function victory(c){
   if(journeyRoadEventSession?.context!==c||c.phase!=='battle'||c.game!==boss||boss?.state!=='dying')return false;
@@ -403,8 +407,13 @@
  }
  function draw(c){
   if(mode!=='journeyevent')return;
+  // While the native assets prepare, retain the road behind us. Never show
+  // the deferred blade-pull scene or its old guardian as a loading substitute.
+  if(encounterOnly&&['loading','battle'].includes(c.phase)){drawPauseButton();return;}
+  const pulling=c.phase==='pull';
+  if(!encounterOnly){
   if(!window.KRCutscenes?.draw(assetId,c.time)){g.fillStyle=KRUI.theme('treasure').dark;g.fillRect(0,-PAD_TOP,480,800+PAD_TOT);}
-  const pulling=c.phase==='pull',p=clamp(c.phaseTime/2.1,0,1),lift=pulling?smoothStep(clamp((p-.50)/.5,0,1))*117:0;
+  const p=clamp(c.phaseTime/2.1,0,1),lift=pulling?smoothStep(clamp((p-.50)/.5,0,1))*117:0;
   if(c.outcome==='broken'&&c.phase!=='intro')drawBrokenScene(c);
   else if(c.phase==='guardian'){
     const rise=smoothStep(clamp(c.phaseTime/.7,0,1));
@@ -425,6 +434,7 @@
     }
   }else if(c.reward){icon(c.reward,240,381,c.reward==='stoneheart'?1.75:1.38);}
   else{stone(240,471,1.05,1);}
+  }else if(c.reward){icon(c.reward,240,381,1.75);}
   if(paused&&pausePhotoMode)return;
   const ui=KRUI.theme('treasure'),paper={x:26,y:548,w:428,h:240};
   // Treasure's sheet() contract: the lower UI ground starts 12 units inside
@@ -454,7 +464,21 @@
   attacks:BEAR_DUEL_ATTACKS.slice(0,3),draw:guardian
  }));
  registerJourneyRoadEvent('sword_clearing',{
-  start(c){c.time=0;c.dialogue=true;c.outcome=roll(c.seed);
+  start(c){c.time=0;c.dialogue=true;
+    if(encounterOnly){
+      c.outcome='guardian';setPhase(c,'loading');requestJourneyEventVisual(c.slot,true);
+      c.preparation=prepareOathkeeperEncounter().then(async ready=>{
+        if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
+        if(!ready){c.finish({status:'error',reason:'oathkeeper-unavailable'});return false;}
+        await KREventVisuals.prefetch('oathkeeper-arena');
+        if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
+        fight(c);return KROathkeeperArena.ready();
+      }).catch(error=>{
+        if(journeyRoadEventSession?.context===c)c.finish({status:'error',reason:'oathkeeper-unavailable'});
+        console.warn('Sword encounter could not start',error);return false;
+      });return;
+    }
+    c.outcome=roll(c.seed);
     setPhase(c,'intro');prepareActor();requestJourneyEventVisual(c.slot,true);},
   update(c,dt){if(paused||mode!=='journeyevent')return;c.time+=dt;c.phaseTime+=dt;
     if(c.phase==='pull'&&c.phaseTime>=(c.outcome==='broken'?brokenDuration+(window.KRJonathanWalk?.extraDuration||0):2.1)){
@@ -462,7 +486,7 @@
       else{c.reward=c.outcome==='broken'?'oath_broken':'oath_rusted';setPhase(c,'result');SFX.relic();}
     }},action,draw,dispose:c=>journeyRoadEventHandlers.get('elite_finale').dispose(c)
  });
- window.KRSwordEvent=Object.freeze({assetId,roll,sword,stone,guardian,icon,drawCutscene,drawBrokenScene,draw,victory,action,brokenPose,prepareActor,
+ window.KRSwordEvent=Object.freeze({assetId,encounterOnly,roll,sword,stone,guardian,icon,drawCutscene,drawBrokenScene,draw,victory,action,brokenPose,prepareActor,
   actorStatus:()=>({ready:actorReady,error:actorError,renderer:window.KRJonathanWalk?.gpuStats()?.kind||'canvas',gpu:window.KRJonathanWalk?.gpuStats()||null}),
   get brokenDuration(){return brokenDuration+(window.KRJonathanWalk?.extraDuration||0);},
   get releaseTime(){return releaseTime+(window.KRJonathanWalk?.extraDuration||0);}});
