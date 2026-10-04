@@ -323,3 +323,43 @@ retaining the current Treasure parchment material and plain ivory wordmark.
 Layer order is cave -> title -> live bear -> rider -> menu. Photo mode omits
 the title. Small/large phone and desktop menu audit passes, including real
 input and an explicit title-before-bear assertion. Other UI/model fixes remain.
+
+Guardian Attack Studio (2026-10-05): new standalone authoring shell with native
+game scene embedded only as a frozen rendering instrument. Treasure system and
+states inspected live before design. Shared KRUI.sheet/KRUI.button render the
+DOM controls' materials; no production theme/specimen changes. Primary actions
+are play and add key; utilities are secondary; selections carry explicit state.
+Desktop 1536/1280 and 390px layouts inspected, including the timeline and lower
+pose/archive controls. Scene art is untouched. Feature audit covers native
+player poses, lanes, joint drag, key saves, interpolation, retiming, delete/restore,
+draft retention, JSON round trip and no old-pose-store overwrite. Material audit
+passes; broad system/action audits still stop at the pre-existing Road Lab null
+journey.nodes fixture. Candidate UI pending user review, not new approval.
+
+Guardian Attack Studio camera controls (2026-10-05): auxiliary fullscreen with
+in-page fallback, secondary front/side/back/game-camera selection group, yaw and
+zoom controls. Existing KRUI materials and action roles retained; system/states
+reference inspected. Native models reused with an opt-in orthographic camera;
+authored joints, saved projects and game collision evaluation do not rotate.
+Feature and camera audits pass, including mobile and full-screen layout. No
+character baseline or production encounter changed. Visual approval remains pending.
+
+Attack Studio fullscreen editor refinement (2026-10-05): the actual joint panel
+now docks beside the fullscreen scene; the selected foot's ground-lock checkbox
+is near the top, retaining its handlers and state on entry/exit. Added secondary
+camera recenter utility and explicit left-edit/right-pan/middle-orbit hints.
+Knight orbit yaw sign corrected to preserve its world heading (no model edit).
+System/states references rechecked; material, studio and camera audits pass.
+Broad UI audits retain the previously recorded Road Lab fixture failure.
+
+Attack Studio joint mouse mapping (2026-10-05): joint hits take precedence over
+camera orbit for middle-button rotation; left-button hits select Move regardless
+of the prior tool. Existing selected-tool materials reflect the active gesture.
+No panel/art changes; pointer audit covers rotate-then-move and camera invariance.
+
+Attack Studio wrist gesture (2026-10-05): hand/sword middle drag now provides
+camera-relative horizontal tilt and depth pitch simultaneously. Added helper
+copy and a wrist mode label; separate sword roll retained. No authored pose,
+schema, gameplay or model change. Gesture, camera and studio audits pass;
+Treasure references and desktop/mobile controls checked. Broad Road Lab audit
+fixture issue remains as recorded above.

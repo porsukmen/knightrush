@@ -5,6 +5,8 @@
   'use strict';
   const MiB=1024*1024;
   const assets=Object.freeze({
+    'ancient-guardian-courtyard':Object.freeze({standard:{src:'assets/encounters/ancient-guardian-courtyard-v1.png',width:1086,height:1448},
+      mobile:{src:'assets/encounters/ancient-guardian-courtyard-v1-mobile.png',width:576,height:768}}),
     'oathkeeper-arena':Object.freeze({standard:{src:'assets/encounters/oathkeeper-arena-v1.png',width:1086,height:1448},
       mobile:{src:'assets/encounters/oathkeeper-arena-v1-mobile.png',width:576,height:768}}),
     'sword-clearing':Object.freeze({standard:{src:'assets/encounters/sword-clearing-v4.png',width:1086,height:1448},

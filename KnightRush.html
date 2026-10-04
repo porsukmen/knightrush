@@ -957,6 +957,7 @@ function handleAction(a,pt,parryIntent=null,input=null){
   if(mode==='run'||mode==='boss'||mode==='miniboss') playerAction(a,parryIntent);
 }
 addEventListener('keydown',e=>{
+  if(BOOT_QUERY.get('guardianlab')==='1'&&window.KRAncientGuardianEncounter?.handleLabKey(e)){e.preventDefault();return;}
   if(e.code==='F10'&&!e.repeat&&(roadLabState.active||mode==='roadlab')){openRoadLab();e.preventDefault();return;}
   if(e.code==='F8'&&!e.repeat){e.preventDefault();return;} // Retired renderer toggle; legacy code stays archived.
   if(e.code==='F9'&&!e.repeat){journeyPerf.enabled=!journeyPerf.enabled;e.preventDefault();return;}
@@ -10948,6 +10949,24 @@ function loadEventVisualModule(src,symbol){
     timer=setTimeout(()=>done(false),12000);document.body.appendChild(script);
   });
   eventVisualModuleLoads.set(src,pending);return pending;
+}
+let ancientGuardianPreparation=null;
+function prepareAncientGuardianEncounter(){
+  return ancientGuardianPreparation ||= (async()=>{
+    if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))return false;
+    await KRMountedRunner.prepare();if(!KRMountedRunner.ready)return false;
+    for(const [src,symbol] of [
+      ['assets/encounters/oath-sword-art.js','KROathSwordArt'],
+      ['labs/ancient-guardian-model.js','KRAncientGuardian'],
+      ['labs/ancient-guardian-stance.js','KRAncientGuardianStance'],
+      ['labs/ancient-guardian-authored-turn.js','KRGuardianAuthoredTurn'],
+      ['labs/ancient-guardian-combat-pose.js','KRAncientGuardianCombatPose'],
+      ['labs/boss-sequence-runtime.js','KRBossSequenceRuntime'],
+      ['labs/oathkeeper-arena.js','KROathkeeperArena'],
+      ['labs/ancient-guardian-encounter.js','KRAncientGuardianEncounter']
+    ])if(!await loadEventVisualModule(src,symbol))return false;
+    return true;
+  })().catch(error=>{console.error('Ancient guardian could not load',error);return false;});
 }
 let oathkeeperNativePreparation=null;
 function prepareOathkeeperEncounter(){
@@ -54856,6 +54875,7 @@ function drawHUD(){
     g.fillText('PRACTICE COUNTERS: '+minibossFight.counters,VW/2,126);
   }
   /* mute hint */
+  if(BOOT_QUERY.get('guardianlab')==='1')window.KRAncientGuardianEncounter?.drawLabHint(g);
   if(BOOT_QUERY.get('oathkeeperlab')==='1')window.KROathkeeperEncounter?.drawLabHint(g);
   g.font='10px monospace'; g.textAlign='right'; g.fillStyle='#aeb2c266';
   g.fillText(SFX.muted?'muted (M)':'',VW-10,VH-8-uiTop);
@@ -68624,13 +68644,23 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             if(BOOT_QUERY.get('mountedplaytest')==='1'){
               await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='labs/mounted-knight-playtest.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
               await KRMountedPlaytest.prepare();
+            }else if(BOOT_QUERY.get('guardianlab')==='1'){
+              if(!await prepareAncientGuardianEncounter())throw Error('Ancient guardian unavailable');
+              KRAncientGuardianEncounter.start();
+              await KROathkeeperArena.ready();
+              if(BOOT_QUERY.get('attackeditor')==='1'){
+                if(!await loadEventVisualModule('labs/guardian-attack-orbit.js','KRGuardianAttackOrbit'))throw Error('Attack editor camera unavailable');
+                if(!await loadEventVisualModule('labs/guardian-attack-bridge.js','KRGuardianAttackBridge'))throw Error('Attack editor bridge unavailable');
+                KRGuardianAttackBridge.start();
+              }
+              lastTime=performance.now();
             }else if(BOOT_QUERY.get('oathkeeperlab')==='1'){
               if(!await prepareOathkeeperEncounter())throw Error('Oathkeeper encounter unavailable');
               KROathkeeperEncounter.start();
               await KROathkeeperArena.ready();
             }else KRMountedRunner.prepare();
           }catch(error){console.error('Mounted runner could not load',error);}
-          requestAnimationFrame(frame);
+          if(BOOT_QUERY.get('attackeditor')!=='1')requestAnimationFrame(frame);
         }
       };
       journeyForestRenderer.onerror=()=>{console.error('Journey forest adapter could not load');requestAnimationFrame(frame);};

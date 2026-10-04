@@ -21,7 +21,8 @@ const oathkeeperRuntimeFiles=new Set(['oathkeeper-moves.js','oathkeeper-model.js
  'boss-sequence-runtime.js','oathkeeper-sequences.js','oathkeeper-physical.js',
  'oathkeeper-moveset.js','oathkeeper-arena.js','oathkeeper-encounter.js']
  .map(file=>'labs/'+file));
-const selected=files.filter(file=>roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
+const guardianLabFile=file=>['labs/GuardianAttackLab.html','labs/AncientGuardianModelLab.html'].includes(file)||/^labs\/(ancient-guardian-|guardian-attack-).*\.(js|css|png|json)$/.test(file);
+const selected=files.filter(file=>guardianLabFile(file)||roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
  mountedRuntimeFiles.has(file)||oathkeeperRuntimeFiles.has(file)||
  file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||file.startsWith('art-source/knight-rush-special-roads/')||file.startsWith('art-source/knight-rush-ui/')||
  file.startsWith('tools/')&&(file.endsWith('.js')||file.startsWith('tools/skills/')));

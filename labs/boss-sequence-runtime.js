@@ -9,6 +9,13 @@
   * crosses a moving endpoint, then minimize a quadratic on each interval. This
   * catches two objects crossing between frames, not only the final silhouette. */
  function movingCircleTouchesCapsule(a,b,v0,v1,pad=0){
+  // Optional depth slab; ordinary 2D hazards retain the original path.
+  let zFrom=0,zTo=1;
+  if(finite(a.z)&&finite(b.z)){
+   const radius=Math.max(a.depthRadius||0,b.depthRadius||0),dz=b.z-a.z;
+   if(Math.abs(dz)<1e-9){if(Math.abs(a.z)>radius)return false;}
+   else{const u=(-radius-a.z)/dz,v=(radius-a.z)/dz;zFrom=Math.max(0,Math.min(u,v));zTo=Math.min(1,Math.max(u,v));if(zFrom>zTo)return false;}
+  }
   const x0=a.x-v0.x1,dx=(b.x-v1.x1)-x0;
   const lo0=Math.min(v0.y1,v0.y2),hi0=Math.max(v0.y1,v0.y2);
   const lo1=Math.min(v1.y1,v1.y2),hi1=Math.max(v1.y1,v1.y2);
@@ -27,7 +34,8 @@
    let y0=0,dy=0;
    if(lower0+lowerD*mid<0){y0=lower0;dy=lowerD;}
    else if(upper0+upperD*mid>0){y0=upper0;dy=upperD;}
-   const den=dx*dx+dy*dy,t=den?Math.max(from,Math.min(to,-(x0*dx+y0*dy)/den)):from;
+   const low=Math.max(from,zFrom),high=Math.min(to,zTo);if(low>high){from=to;continue;}
+   const den=dx*dx+dy*dy,t=den?Math.max(low,Math.min(high,-(x0*dx+y0*dy)/den)):low;
    if((x0+dx*t)**2+(y0+dy*t)**2<=rr)return true;
    from=to;
   }
@@ -245,9 +253,9 @@
     }
     return true;
    },
-   resolve(actor){
+   resolve(actor,override=null){
     const state=actor._sequence;if(!state)return;
-    const volumes=samplePlayerHurtVolumes(state.currentPlayer),tick=++state.tick;
+    const volumes=override||samplePlayerHurtVolumes(state.currentPlayer),tick=++state.tick;
     for(const h of state.frame.hazards){
      if(!h.id)throw Error('Every sequence hazard needs a stable ID');
      let record=state.records.get(h.id);
@@ -279,7 +287,7 @@
      record.active=!!h.active;record.previous.length=primitives.length;
      for(let i=0;i<primitives.length;i++){
       const p=primitives[i];if(!validCircle(p))continue;
-      const copy=record.previous[i]||(record.previous[i]={});copy.x=p.x;copy.y=p.y;copy.r=p.r;
+      const copy=record.previous[i]||(record.previous[i]={});copy.x=p.x;copy.y=p.y;copy.r=p.r;copy.z=p.z;copy.depthRadius=p.depthRadius;
      }
     }
     for(const [id,record] of state.records)if(actor._sequence===state&&actor.state==='sequence'&&
@@ -309,8 +317,18 @@
     }
     if(actor.state!=='sequence')return false;
     const state=actor._sequence;if(!state)return false;
-    driver.sample(actor,actor.stateT);
-    driver.resolve(actor);
+    if(options.maxContactStep&&actor.stateT>state.time){
+     const from=state.time,to=Math.min(actor.stateT,state.recipe.duration),count=Math.max(1,Math.ceil((to-from)/options.maxContactStep));
+     state.sweepFrom ||= createPlayerHurtVolumes();state.sweepTo ||= createPlayerHurtVolumes();state.sweepAt ||= createPlayerHurtVolumes();
+     copyVolumes(state.previousPlayer,state.sweepFrom);samplePlayerHurtVolumes(state.sweepTo);
+     for(let i=1;i<=count;i++){
+      const q=i/count;copyVolumes(state.sweepTo,state.sweepAt);
+      for(let j=0;j<state.sweepAt.count;j++)for(const k of ['x1','x2','y1','y2','r'])
+       state.sweepAt.capsules[j][k]=state.sweepFrom.capsules[j][k]+(state.sweepTo.capsules[j][k]-state.sweepFrom.capsules[j][k])*q;
+      driver.sample(actor,from+(to-from)*q);driver.resolve(actor,state.sweepAt);
+      if(actor._sequence!==state||!player.alive||actor.phase!=='dodge'||actor.state!=='sequence')return true;
+     }
+    }else{driver.sample(actor,actor.stateT);driver.resolve(actor);}
     if(actor._sequence!==state||!player.alive||actor.phase!=='dodge'||actor.state!=='sequence')return true;
     if(state.time>=state.recipe.duration){
      for(const [id,record] of state.records)driver.closeHazard(actor,id,record);

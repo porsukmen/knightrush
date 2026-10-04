@@ -1,0 +1,15 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1536,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.stack));
+ await page.goto(process.env.GUARDIAN_LAB_URL||'http://127.0.0.1:8765/labs/GuardianAttackLab.html');await page.waitForFunction(()=>window.KRGuardianAttackStudio?.state().ready,null,{timeout:90000});
+ const simple=await page.evaluate(()=>{const R=KRGuardianAttackRotation,a={right:[-1,0,0],front:[0,0,-1]};return{horizontal:R.wrist([0,0,0],[0,0,0],a,50,0),vertical:R.wrist([0,0,0],[0,0,0],a,0,50),diagonal:R.wrist([0,0,0],[0,0,0],a,50,50)};});
+ assert.ok(Math.abs(simple.horizontal[2]+20)<1e-8);assert.ok(Math.abs(simple.vertical[0]+20)<1e-8);assert.ok(simple.diagonal.every(Number.isFinite));
+ await page.locator('#base').selectOption('combo');await page.evaluate(()=>KRGuardianAttackStudio.seek(4.45));await page.locator('[data-camera="0"]').click();await page.locator('#cameraZoom').evaluate(e=>{e.value='.55';e.dispatchEvent(new Event('input',{bubbles:true}));});await page.locator('#joint').selectOption('hand');await page.waitForTimeout(200);
+ const camera=await page.evaluate(()=>KRGuardianAttackStudio.state().camera);
+ const drag=async(dx,dy)=>{const r=await page.locator('#overlay').boundingBox(),p=await page.evaluate(()=>KRGuardianAttackStudio.inspect().handles.hand);await page.mouse.move(r.x+p[0]*r.width,r.y+p[1]*r.height);await page.mouse.down({button:'middle'});await page.mouse.move(r.x+p[0]*r.width+dx,r.y+p[1]*r.height+dy,{steps:8});await page.mouse.up({button:'middle'});await page.waitForTimeout(100);return page.evaluate(()=>KRGuardianAttackStudio.state().draft.hand);};
+ const horizontal=await drag(45,0);assert.ok(horizontal.r.some(v=>Math.abs(v)>1));assert.equal(horizontal.p,undefined);assert.equal(horizontal.roll,undefined);await page.screenshot({path:'output/guardian-native/wrist-horizontal.png'});
+ await page.locator('#undo').click();await page.waitForTimeout(100);const vertical=await drag(0,45);assert.ok(vertical.r.some(v=>Math.abs(v)>1));assert.ok(Math.hypot(...vertical.r.map((v,i)=>v-horizontal.r[i]))>10);await page.screenshot({path:'output/guardian-native/wrist-depth.png'});
+ await page.locator('#undo').click();await page.waitForTimeout(100);const diagonal=await drag(45,45);assert.ok(diagonal.r.every(Number.isFinite));assert.ok(Math.hypot(...diagonal.r)>10,'Diagonal motion must not cancel out');assert.deepEqual(await page.evaluate(()=>KRGuardianAttackStudio.state().camera),camera);
+ await page.locator('#undo').click();await page.locator('[data-camera="90"]').click();await page.waitForTimeout(150);const side=await drag(45,0);assert.ok(side.r.some(v=>Math.abs(v)>1));assert.ok(Math.hypot(...side.r.map((v,i)=>v-horizontal.r[i]))>10,'Gesture axes must follow camera');
+ assert.deepEqual(errors,[]);console.log('WRIST_OK: independent horizontal/depth tilt, simultaneous diagonal, camera-relative axes, unchanged camera/translation/roll');
+ }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
