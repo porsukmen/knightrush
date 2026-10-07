@@ -1318,6 +1318,7 @@ addEventListener('touchstart',e=>{e.preventDefault();
   if(beginMinigamePointer(t.clientX,t.clientY))return;
   const levelHold=beginDebugStageHold(t.clientX,t.clientY);
   tStart={x:t.clientX,y:t.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
+  if(mode==='roadlab')tStart.roadLabTarget=roadLabTargetAt(toGame(t.clientX,t.clientY));
   if(beginRiderLabDrag(tStart,t.clientX,t.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,t.clientX,t.clientY))return;
   activeBossSequenceDriver()?.pointerStart(boss,tStart,t.clientX,t.clientY);
@@ -1340,6 +1341,7 @@ addEventListener('touchend',e=>{e.preventDefault();
   clearDebugStageHold();
   if(!tStart) return; const t=e.changedTouches[0];
   if(endMinigamePointer(t.clientX,t.clientY))return;
+  if(finishRoadLabPointer(tStart,t.clientX,t.clientY)){clearTapIntent(tStart);tStart=null;return;}
   if(activeBossSequenceDriver()?.pointerEnd(boss,tStart,t.clientX,t.clientY)){
     clearTapIntent(tStart);tStart=null;return;
   }
@@ -1373,6 +1375,7 @@ addEventListener('mousedown',e=>{
   if(beginMinigamePointer(e.clientX,e.clientY)){mDown=true;return;}
   mDown=true; const levelHold=beginDebugStageHold(e.clientX,e.clientY);
   tStart={x:e.clientX,y:e.clientY,done:levelHold,roadToken:journeyRoadEventSession?.token,roadStop:journeyRoadsideOffer()?.id,roadMode:mode};
+  if(mode==='roadlab')tStart.roadLabTarget=roadLabTargetAt(toGame(e.clientX,e.clientY));
   if(beginRiderLabDrag(tStart,e.clientX,e.clientY))return;
   if(beginSkillLabSpeedDrag(tStart,e.clientX,e.clientY))return;
   activeBossSequenceDriver()?.pointerStart(boss,tStart,e.clientX,e.clientY);
@@ -1392,6 +1395,7 @@ addEventListener('mouseup',e=>{
   mDown=false; clearDebugStageHold();
   if(endMinigamePointer(e.clientX,e.clientY))return;
   if(!tStart) return;
+  if(finishRoadLabPointer(tStart,e.clientX,e.clientY)){clearTapIntent(tStart);tStart=null;return;}
   if(activeBossSequenceDriver()?.pointerEnd(boss,tStart,e.clientX,e.clientY)){
     clearTapIntent(tStart);tStart=null;return;
   }
@@ -54095,6 +54099,27 @@ function drawRoadLab(){
   text('F10: RETURN TO LAB',694,11);
   KRUI.button(g,ui.seed,'NEW SEED','treasure',{variant:'secondary'});
   KRUI.button(g,ui.back,'MAIN MENU','treasure',{variant:'secondary'});
+}
+function roadLabTargetAt(pt){
+  const ui=ROAD_LAB_UI;
+  for(const key of ['creator','entry','seed','back'])if(pointInRect(pt,ui[key]))return key;
+  for(let i=0;i<3;i++){
+    if(pointInRect(pt,ui.direction(i)))return 'direction:'+i;
+    if(pointInRect(pt,ui.category(i)))return 'category:'+i;
+  }
+  const visible=roadLabVisibleCases();
+  for(let i=0;i<visible.length;i++)if(pointInRect(pt,ui.test(i)))return 'case:'+visible[i].index;
+  return null;
+}
+function finishRoadLabPointer(start,cx,cy){
+  if(start?.roadMode!=='roadlab')return false;
+  // Menu taps tolerate small hand drift, but never activate another button at
+  // release. Combat retains its separate strict tap/swipe/parry rules.
+  const pt=toGame(cx,cy);
+  if(mode==='roadlab'&&!start.done&&start.roadLabTarget&&
+     Math.abs(cx-start.x)<SWIPE_TH&&Math.abs(cy-start.y)<SWIPE_TH&&
+     start.roadLabTarget===roadLabTargetAt(pt))roadLabTap(pt);
+  return true;
 }
 function roadLabTap(pt){
   const ui=ROAD_LAB_UI;

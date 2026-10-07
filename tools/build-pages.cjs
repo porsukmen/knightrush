@@ -2,6 +2,7 @@
 // generated output, browser profiles, experimental Godot projects or backups.
 const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),dest=path.resolve(root,process.argv[2]||'_site');
+execFileSync(process.execPath,[path.join(__dirname,'guardian-motion-file.cjs'),'--check'],{stdio:'inherit'});
 const files=execFileSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
 const roots=new Set(['KnightRush.html','ArtTest.html','BackgroundTest.html','MorningForestTest.html','RoadTest.html','RoadCreatorLab.html','UILab.html','ART_STYLE_KESKIN_DUZLEM.md']);
 // Production sword-event dependencies, not model labs or Blender sources.
@@ -28,7 +29,8 @@ const guardianRuntimeFiles=new Set([
  'labs/ancient-guardian-authored-turn.js','labs/ancient-guardian-combat-pose.js',
  'labs/ancient-guardian-encounter.js','labs/guardian-blender-v9.js',
  'labs/mounted-knight-collision.js',
- 'art-source/blender/guardian-command-timing-v9/game-motion.bin']);
+ 'art-source/blender/guardian-command-timing-v9/game-motion.bin',
+ 'art-source/blender/guardian-command-timing-v9/game-motion-file.js']);
 // Explicit boss runtime files must also be test-buildable before their first
 // commit. This does not include authoring labs or arbitrary untracked output.
 const guardianLabFile=file=>['labs/GuardianAttackLab.html','labs/AncientGuardianModelLab.html'].includes(file)||/^labs\/(ancient-guardian-|guardian-attack-).*\.(js|css|png|json)$/.test(file);

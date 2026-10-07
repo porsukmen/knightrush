@@ -193,6 +193,23 @@
   }
   p.authoredTime=t;p.time=sequenceTime;return metadata(p);
  }
- const ready=fetch(new URL('game-motion.bin',base)).then(r=>{if(!r.ok)throw Error('Guardian v9 motion: '+r.status);return r.arrayBuffer();}).then(buffer=>{if(buffer.byteLength!==1456*stride*4)throw Error('Invalid v9 motion length');data=new Float32Array(buffer);prepareCorrections();return true;});
+ function loadMotion(){
+  if(base.protocol!=='file:')return fetch(new URL('game-motion.bin',base)).then(r=>{if(!r.ok)throw Error('Guardian v9 motion: '+r.status);return r.arrayBuffer();});
+  // Local HTML cannot fetch sibling binary files. A classic script can load
+  // the exact same bytes without requiring a server or relaxed browser security.
+  return new Promise((resolve,reject)=>{
+   const script=document.createElement('script');script.src=new URL('game-motion-file.js',base).href;
+   script.onload=()=>{try{
+    const encoded=window.KRGuardianBlenderV9Motion;delete window.KRGuardianBlenderV9Motion;
+    if(typeof encoded!=='string')throw Error('Guardian file motion unavailable');
+    const raw=atob(encoded),bytes=new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+    resolve(bytes.buffer);
+   }catch(error){reject(error);}finally{script.remove();}};
+   script.onerror=()=>{script.remove();reject(Error('Guardian file motion could not load'));};
+   document.head.appendChild(script);
+  });
+ }
+ const ready=loadMotion().then(buffer=>{if(buffer.byteLength!==1456*stride*4)throw Error('Invalid v9 motion length');data=new Float32Array(buffer);prepareCorrections();return true;});
  window.KRGuardianBlenderV9=Object.freeze({ready,sample,raw:t=>metadata(raw(t)),aim,duration,windows,sourceWindows,authoredTime,gameTime,needsContact:(a,b)=>windows.some(([start,end])=>a<=end&&b>=start),stats:()=>({bytes:data?.byteLength||0,frames:1456,bones:keys.length,fps,revision:16})});
 })();
