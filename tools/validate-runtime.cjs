@@ -60,7 +60,9 @@ sandbox.visualViewport=null;sandbox.AudioContext=function(){};sandbox.webkitAudi
 sandbox.Path2D=class {constructor(){return new Proxy(this,{get:(target,key)=>target[key]||noop});}};
 document.body={appendChild(node){
   if(node.src){
-    const path=require('node:path'),root=path.dirname(path.resolve(file)),modulePath=path.resolve(root,node.src);
+    // Browser cache keys are not part of the local filename.
+    const path=require('node:path'),root=path.dirname(path.resolve(file)),
+      modulePath=path.resolve(root,String(node.src).split(/[?#]/,1)[0]);
     if(!modulePath.startsWith(root+path.sep))throw Error('Module outside game root: '+node.src);
     vm.runInContext(fs.readFileSync(modulePath,'utf8'),sandbox,{filename:node.src});
     if(node.onload)node.onload();
