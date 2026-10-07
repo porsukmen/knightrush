@@ -122,7 +122,7 @@
     }finally{g.restore();}
     test.draws++;test.lastDuck=f.state.duckAmount;test.lastState=f.state;test.lastPlacement=f.placement;
    };
-   await load('assets/mounted-combat.js');
+   await load('assets/mounted-combat.js?guardian=16');
    test.ready=true;
   }
  };

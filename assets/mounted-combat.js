@@ -108,11 +108,18 @@
    if(Math.abs(player.swordFxPose.t-pending.t)<.2)scatterSwordPoseParticles(player.swordFxPose,...pending.args);
   }
  }
+ // The opt-in 3D guardian adds the drawn mounted world pose to the existing
+ // native volume sample. Other bosses keep their 2D capsules; the sequence
+ // driver still owns swept contacts, damage and turn resolution.
+ function sampleHurtVolumes(out){
+  samplePlayerHurtVolumes(out);
+  out.spatial=KRMountedCollision.sample(frame());return out;
+ }
  const originalGeometry=bowTurnActionGeometry,originalScale=bowFlightArrowScale;
  bowTurnActionGeometry=function(actorId='knight'){
   if(active()&&boss&&actorId==='knight'){const distance=originalGeometry(actorId).distance,a=aim();return {from:{...a.from},to:{...a.to},distance};}
   return originalGeometry(actorId);
  };
  bowFlightArrowScale=function(actorId='knight'){return active()&&boss&&actorId==='knight'?aim().scale:originalScale(actorId);};
- const api=window.KRMountedCombat={active,frame,afterDraw,aim,bowTime,parryTime};
+ const api=window.KRMountedCombat={active,frame,afterDraw,aim,bowTime,parryTime,sampleHurtVolumes};
 })();

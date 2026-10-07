@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Guardian — native motion review</title>
+<style>body{margin:0;background:#181817;color:#eee;font:14px system-ui}header{padding:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}iframe{border:0;width:100%;height:calc(100vh - 95px)}input{width:300px}button,select{font:inherit;padding:5px}output{font-variant-numeric:tabular-nums}</style>
+<header><label>Slice <select id="slice"><option value="swipe">Swipe → stab</option><option value="low">Low sword approach</option><option value="five">Five overhead strikes</option><option value="all">Whole sequence</option></select></label><button id="play">Pause</button><label>Speed <select id="speed"><option>1</option><option selected>0.25</option><option>0.5</option></select></label><label>Authored time <input id="time" type="range" min="6.6" max="8.6" step="0.005" value="6.6"></label><output id="status">Loading native game…</output></header>
+<iframe id="game" src="../KnightRush.html?guardianlab=1&guardiancombo=blender-v9&v=16-review"></iframe>
+<script>
+const game=document.querySelector('#game'),slider=document.querySelector('#time'),play=document.querySelector('#play'),speed=document.querySelector('#speed'),slice=document.querySelector('#slice'),status=document.querySelector('#status');
+let w,ready=false,running=true,last=0,time=6.6;
+const ranges={swipe:[4.48,8.6],low:[12.75,15],five:[16.25,24.25],all:[0,24.25]};
+function render(){if(!ready)return;w.KRAncientGuardianEncounter.sequenceDriver.seek(w.eval('boss'),w.KRGuardianBlenderV9.gameTime(time));w.eval('flashA=shakeMag=0;floaters.length=0;render()');slider.value=time;status.textContent=`${time.toFixed(3)} source s · ${w.KRGuardianBlenderV9.gameTime(time).toFixed(3)} game s`;}
+function loop(now){const dt=Math.min(.05,(now-last)/1000||0);last=now;if(!ready){w=game.contentWindow;if(w.KRGuardianBlenderV9&&w.KRAncientGuardianEncounter&&w.eval('typeof boss!=="undefined"&&boss?.definitionId==="ancientguardian"')){w.KRAncientGuardianEncounter.restart();w.eval('paused=true;pausePhotoMode=true');ready=true;render();}}else if(running){const V=w.KRGuardianBlenderV9;time=V.authoredTime(V.gameTime(time)+dt*Number(speed.value));if(time>=+slider.max)time=+slider.min;render();}requestAnimationFrame(loop);}
+play.onclick=()=>{running=!running;play.textContent=running?'Pause':'Play';};slider.oninput=()=>{running=false;play.textContent='Play';time=+slider.value;render();};slice.onchange=()=>{const [a,b]=ranges[slice.value];slider.min=a;slider.max=b;time=a;render();};requestAnimationFrame(loop);
+</script>

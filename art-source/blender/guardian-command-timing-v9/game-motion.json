@@ -1,0 +1,30 @@
+{
+  "version": 9,
+  "fps": 60,
+  "duration": 24.25,
+  "frames": 1456,
+  "bones": [
+    "body",
+    "torso",
+    "leftShoulder",
+    "rightShoulder",
+    "head",
+    "cape",
+    "weapon",
+    "hand",
+    "upper",
+    "forearm",
+    "fingers",
+    "leg0_thigh",
+    "leg0_shin",
+    "leg0_foot",
+    "leg1_thigh",
+    "leg1_shin",
+    "leg1_foot"
+  ],
+  "bytes": 693056,
+  "max_scale_error": 0.00012356042861938477,
+  "source": "sequence-build.blend",
+  "scene": "KR - COMMAND JUST BEFORE SWORD v9",
+  "format": "translation-xyz quaternion-xyzw float32-le"
+}

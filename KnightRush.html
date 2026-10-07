@@ -10953,18 +10953,28 @@ function loadEventVisualModule(src,symbol){
 let ancientGuardianPreparation=null;
 function prepareAncientGuardianEncounter(){
   return ancientGuardianPreparation ||= (async()=>{
-    if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))return false;
+    if(!await loadEventVisualModule('assets/mounted-runner.js?guardian=16','KRMountedRunner'))return false;
     await KRMountedRunner.prepare();if(!KRMountedRunner.ready)return false;
     for(const [src,symbol] of [
       ['assets/encounters/oath-sword-art.js','KROathSwordArt'],
       ['labs/ancient-guardian-model.js','KRAncientGuardian'],
-      ['labs/ancient-guardian-stance.js','KRAncientGuardianStance'],
+      ['labs/ancient-guardian-stance.js?guardian=16','KRAncientGuardianStance'],
       ['labs/ancient-guardian-authored-turn.js','KRGuardianAuthoredTurn'],
       ['labs/ancient-guardian-combat-pose.js','KRAncientGuardianCombatPose'],
-      ['labs/boss-sequence-runtime.js','KRBossSequenceRuntime'],
+      ['labs/boss-sequence-runtime.js?guardian=16','KRBossSequenceRuntime'],
       ['labs/oathkeeper-arena.js','KROathkeeperArena'],
+      ['labs/mounted-knight-collision.js','KRMountedCollision'],
       ['labs/ancient-guardian-encounter.js','KRAncientGuardianEncounter']
-    ])if(!await loadEventVisualModule(src,symbol))return false;
+    ]){
+      if(symbol==='KRAncientGuardianEncounter'&&BOOT_QUERY.get('attackeditor')!=='1'){
+        if(BOOT_QUERY.get('guardianlab')!=='1'||BOOT_QUERY.get('guardiancombo')==='blender-v9'){
+          if(!await loadEventVisualModule('labs/guardian-blender-v9.js?v=16','KRGuardianBlenderV9'))return false;
+          await KRGuardianBlenderV9.ready;
+        }
+      }
+      const guardianSrc=symbol==='KRAncientGuardianEncounter'&&window.KRGuardianBlenderV9?src+'?blender-v9=16-road':src;
+      if(!await loadEventVisualModule(guardianSrc,symbol))return false;
+    }
     return true;
   })().catch(error=>{console.error('Ancient guardian could not load',error);return false;});
 }
@@ -10972,7 +10982,7 @@ let oathkeeperNativePreparation=null;
 function prepareOathkeeperEncounter(){
   if(oathkeeperNativePreparation)return oathkeeperNativePreparation;
   oathkeeperNativePreparation=(async()=>{
-    if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))return false;
+    if(!await loadEventVisualModule('assets/mounted-runner.js?guardian=16','KRMountedRunner'))return false;
     await KRMountedRunner.prepare();if(!KRMountedRunner.ready)return false;
     for(const [src,symbol] of [
       ['labs/oathkeeper-moves.js','KROathkeeperMoves'],
@@ -10996,7 +11006,7 @@ async function prepareCutscene(sceneId,active=false,owner=sceneId){
   if(!await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals')||epoch!==eventVisualEpoch)return false;
   if(!await loadEventVisualModule('assets/encounters/cutscene-handler.js','KRCutscenes')||epoch!==eventVisualEpoch)return false;
   if(sceneId==='sword-clearing'){
-    if(!await loadEventVisualModule('assets/encounters/sword-event.js','KRSwordEvent')||epoch!==eventVisualEpoch)return false;
+    if(!await loadEventVisualModule('assets/encounters/sword-event.js?guardian=16','KRSwordEvent')||epoch!==eventVisualEpoch)return false;
     await KRSwordEvent.prepareActor();if(epoch!==eventVisualEpoch)return false;
   }
   return active?window.KRCutscenes.open(sceneId,owner):window.KRCutscenes.prepare(sceneId);
@@ -11030,9 +11040,10 @@ function requestJourneyEventVisual(slot,active=false){
     if(journeyVisualTarget?.route!==journeyRoute||journeyVisualTarget?.id!==slot.id){
       clearEventVisuals();journeyVisualTarget={route:journeyRoute,id:slot.id,key:null,requested:true};
       const target=journeyVisualTarget,epoch=eventVisualEpoch;
-      prepareOathkeeperEncounter().then(ready=>{
+      prepareAncientGuardianEncounter().then(async ready=>{
+        if(ready&&!window.KREventVisuals)ready=await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals');
         if(ready&&journeyVisualTarget===target&&target.route===journeyRoute&&epoch===eventVisualEpoch)
-          KREventVisuals.prefetch('oathkeeper-arena');
+          KREventVisuals.prefetch('ancient-guardian-courtyard');
       });
     }
     return;
@@ -68617,6 +68628,7 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             }
             roadLabState.entry=false;roadLabState.direction=0;
             startRoadLabCase(ROAD_LAB_CASES.findIndex(c=>c.id==='oath'));
+            if(BOOT_QUERY.get('mortal')==='1')godMode=false;
             dist=roadLabState.slot.at;roadScroll=dist;runDistance=dist;
             roadLabState.slot.swordOutcome=BOOT_QUERY.get('outcome');updateJourneyRoadEvents(0);
             // Direct lab entry has no approach/prefetch time. Do not paint an
@@ -68640,7 +68652,7 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
             player.x=player.lane=journeyNormalSide(roadLabState.slot)+1;updateJourneyRoadEvents(0);
           }
           try{
-            if(!await loadEventVisualModule('assets/mounted-runner.js','KRMountedRunner'))throw Error('Mounted runner module unavailable');
+            if(!await loadEventVisualModule('assets/mounted-runner.js?guardian=16','KRMountedRunner'))throw Error('Mounted runner module unavailable');
             if(BOOT_QUERY.get('mountedplaytest')==='1'){
               await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='labs/mounted-knight-playtest.js';s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
               await KRMountedPlaytest.prepare();
@@ -68670,7 +68682,7 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
     const loadBasalt=()=>{
       const basalt=document.createElement('script');basalt.src='assets/forest/basalt-forge.js';
       const loadCaravan=()=>{const script=document.createElement('script');script.src='assets/forest/autumn-caravan.js';
-        const loadSword=()=>{const script=document.createElement('script');script.src='assets/encounters/sword-event.js';script.onload=loadJourney;script.onerror=()=>{console.error('Sword event could not load');loadJourney();};document.body.appendChild(script);};
+        const loadSword=()=>{const script=document.createElement('script');script.src='assets/encounters/sword-event.js?guardian=16';script.onload=loadJourney;script.onerror=()=>{console.error('Sword event could not load');loadJourney();};document.body.appendChild(script);};
         const loadOath=()=>{const script=document.createElement('script');script.src='assets/forest/oath-road.js';script.onload=loadSword;script.onerror=()=>{console.error('Oath road could not load');loadSword();};document.body.appendChild(script);};
         const loadInn=()=>{const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';inn.onload=loadOath;inn.onerror=loadOath;document.body.appendChild(inn);};
         script.onload=loadInn;script.onerror=()=>{console.error('Autumn caravan could not load');loadInn();};document.body.appendChild(script);};

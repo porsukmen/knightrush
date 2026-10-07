@@ -49,10 +49,18 @@
  function copyVolumes(from,to){
   to.count=from.count;
   for(let i=0;i<from.count;i++)Object.assign(to.capsules[i],from.capsules[i]);
+  if(from.spatial){
+   to.spatial ||= [];to.spatial.length=from.spatial.length;
+   for(let i=0;i<from.spatial.length;i++){
+    const v=from.spatial[i],p=to.spatial[i]||(to.spatial[i]={a:[],b:[]});p.id=v.id;p.r=v.r;
+    for(let k=0;k<3;k++){p.a[k]=v.a[k];p.b[k]=v.b[k];}
+   }
+  }else to.spatial=undefined;
  }
  function validCircle(p){return p&&finite(p.x)&&finite(p.y)&&finite(p.r)&&p.r>=0;}
  function createDriver(options){
   const sequences=options.sequences;
+  const sampleVolumes=options.samplePlayerVolumes||samplePlayerHurtVolumes;
   if(!Array.isArray(sequences)||!sequences.length)throw Error('Boss sequences need at least one recipe');
   for(const recipe of sequences)if(!recipe.id||!(recipe.duration>0)||typeof recipe.sample!=='function')
    throw Error('Invalid whole-turn recipe');
@@ -117,7 +125,7 @@
      context,records:new Map(),resolved:Object.create(null),tick:0,
      previousPlayer:createPlayerHurtVolumes(),currentPlayer:createPlayerHurtVolumes(),
      stats:{hits:0,parries:0,perfects:0,safe:0}};
-    samplePlayerHurtVolumes(state.previousPlayer);
+    sampleVolumes(state.previousPlayer);
     actor.phase='dodge';actor.state='sequence';actor.stateT=Math.max(0,Math.min(recipe.duration,time));
     actor.x=actor.xTarget=1;actor.hazardLanes=[];actor.attacksLeft=0;
     // Compatibility metadata is inert: sequence objects, never fists, own damage.
@@ -232,7 +240,7 @@
    parry(actor){
     if(!driver.controlActive(actor))return false;
     const state=actor._sequence;if(!state)return true;
-    const volumes=samplePlayerHurtVolumes(state.currentPlayer);
+    const volumes=sampleVolumes(state.currentPlayer);
     let candidate=null,best=Infinity;
     for(const h of state.frame.hazards){
      if(!h.active||h.parryable!==true||state.resolved[h.id])continue;
@@ -255,7 +263,7 @@
    },
    resolve(actor,override=null){
     const state=actor._sequence;if(!state)return;
-    const volumes=override||samplePlayerHurtVolumes(state.currentPlayer),tick=++state.tick;
+    const volumes=override||sampleVolumes(state.currentPlayer),tick=++state.tick;
     for(const h of state.frame.hazards){
      if(!h.id)throw Error('Every sequence hazard needs a stable ID');
      let record=state.records.get(h.id);
@@ -265,7 +273,10 @@
      const primitives=h.primitives||[];
      if(h.active&&!record.done){
       let hit=false,near=false;
-      for(let i=0;i<primitives.length;i++){
+      if(options.contactTest){
+       const result=options.contactTest(h,record.active?state.previousPlayer:volumes,volumes,record);
+       hit=result.hit;near=result.near;
+      }else for(let i=0;i<primitives.length;i++){
        const p=primitives[i];if(!validCircle(p))throw Error('Invalid sequence hazard circle: '+h.id);
        const old=record.active&&record.previous[i]||p;
        const before=record.active?state.previousPlayer:volumes;
@@ -285,6 +296,8 @@
      if(!h.active&&record.active&&!record.done)driver.closeHazard(actor,h.id,record);
      if(actor._sequence!==state||actor.phase!=='dodge'||actor.state!=='sequence')break;
      record.active=!!h.active;record.previous.length=primitives.length;
+     // Opt-in world shapes are immutable snapshots made by the sampler.
+     record.spatial=h.spatial;
      for(let i=0;i<primitives.length;i++){
       const p=primitives[i];if(!validCircle(p))continue;
       const copy=record.previous[i]||(record.previous[i]={});copy.x=p.x;copy.y=p.y;copy.r=p.r;copy.z=p.z;copy.depthRadius=p.depthRadius;
@@ -318,13 +331,19 @@
     if(actor.state!=='sequence')return false;
     const state=actor._sequence;if(!state)return false;
     if(options.maxContactStep&&actor.stateT>state.time){
-     const from=state.time,to=Math.min(actor.stateT,state.recipe.duration),count=Math.max(1,Math.ceil((to-from)/options.maxContactStep));
+     const from=state.time,to=Math.min(actor.stateT,state.recipe.duration),substep=options.needsContactSubsteps?.(from,to)??true,
+      count=substep?Math.max(1,Math.ceil((to-from)/options.maxContactStep)):1;
      state.sweepFrom ||= createPlayerHurtVolumes();state.sweepTo ||= createPlayerHurtVolumes();state.sweepAt ||= createPlayerHurtVolumes();
-     copyVolumes(state.previousPlayer,state.sweepFrom);samplePlayerHurtVolumes(state.sweepTo);
+     copyVolumes(state.previousPlayer,state.sweepFrom);sampleVolumes(state.sweepTo);
      for(let i=1;i<=count;i++){
       const q=i/count;copyVolumes(state.sweepTo,state.sweepAt);
       for(let j=0;j<state.sweepAt.count;j++)for(const k of ['x1','x2','y1','y2','r'])
        state.sweepAt.capsules[j][k]=state.sweepFrom.capsules[j][k]+(state.sweepTo.capsules[j][k]-state.sweepFrom.capsules[j][k])*q;
+      if(state.sweepAt.spatial)for(let j=0;j<state.sweepAt.spatial.length;j++){
+       const a=state.sweepFrom.spatial[j],b=state.sweepTo.spatial[j],v=state.sweepAt.spatial[j];
+       for(const end of ['a','b'])for(let k=0;k<3;k++)v[end][k]=a[end][k]+(b[end][k]-a[end][k])*q;
+       v.r=a.r+(b.r-a.r)*q;
+      }
       driver.sample(actor,from+(to-from)*q);driver.resolve(actor,state.sweepAt);
       if(actor._sequence!==state||!player.alive||actor.phase!=='dodge'||actor.state!=='sequence')return true;
      }

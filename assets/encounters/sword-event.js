@@ -369,7 +369,7 @@
  }
  function fight(c){
   c.roadState={env,obstacles,pickups,roadsideScenery};setPhase(c,'battle');
-  c.openMode(()=>encounterOnly?KROathkeeperEncounter.startRoad(c):startBoss('oath_guardian',c));
+  c.openMode(()=>encounterOnly?KRAncientGuardianEncounter.startRoad(c):startBoss('oath_guardian',c));
   c.game=boss;player.x=player.lane=1;
  }
  function victory(c){
@@ -467,14 +467,15 @@
   start(c){c.time=0;c.dialogue=true;
     if(encounterOnly){
       c.outcome='guardian';setPhase(c,'loading');requestJourneyEventVisual(c.slot,true);
-      c.preparation=prepareOathkeeperEncounter().then(async ready=>{
+      c.preparation=prepareAncientGuardianEncounter().then(async ready=>{
         if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
-        if(!ready){c.finish({status:'error',reason:'oathkeeper-unavailable'});return false;}
-        await KREventVisuals.prefetch('oathkeeper-arena');
+        if(!ready){c.finish({status:'error',reason:'guardian-unavailable'});return false;}
+        if(!window.KREventVisuals&&!await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals'))throw Error('Guardian scene manager unavailable');
+        await KREventVisuals.prefetch('ancient-guardian-courtyard');
         if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
         fight(c);return KROathkeeperArena.ready();
       }).catch(error=>{
-        if(journeyRoadEventSession?.context===c)c.finish({status:'error',reason:'oathkeeper-unavailable'});
+        if(journeyRoadEventSession?.context===c)c.finish({status:'error',reason:'guardian-unavailable'});
         console.warn('Sword encounter could not start',error);return false;
       });return;
     }
@@ -484,7 +485,10 @@
     if(c.phase==='pull'&&c.phaseTime>=(c.outcome==='broken'?brokenDuration+(window.KRJonathanWalk?.extraDuration||0):2.1)){
       if(c.outcome==='guardian'){setPhase(c,'guardian');SFX.roar();}
       else{c.reward=c.outcome==='broken'?'oath_broken':'oath_rusted';setPhase(c,'result');SFX.relic();}
-    }},action,draw,dispose:c=>journeyRoadEventHandlers.get('elite_finale').dispose(c)
+    }},action,draw,dispose(c){
+      if(boss===c.game&&c.game?.definitionId==='ancientguardian')clearBossSequenceState(c.game);
+      journeyRoadEventHandlers.get('elite_finale').dispose(c);
+    }
  });
  window.KRSwordEvent=Object.freeze({assetId,encounterOnly,roll,sword,stone,guardian,icon,drawCutscene,drawBrokenScene,draw,victory,action,brokenPose,prepareActor,
   actorStatus:()=>({ready:actorReady,error:actorError,renderer:window.KRJonathanWalk?.gpuStats()?.kind||'canvas',gpu:window.KRJonathanWalk?.gpuStats()||null}),
