@@ -161,8 +161,9 @@
    const normalSize=depthShear?3:2,stride=7+normalSize;
    const attributes=[['position',3,0],['normal',normalSize,3],['colour',3,3+normalSize],['layer',1,6+normalSize]].map(([name,size,offset])=>({location:gl.getAttribLocation(program,'a_'+name),size,offset}));
    for(const [name,faces]of Object.entries(meshes).filter(([name])=>name!=='decorations')){
-    const values=[];
+    const values=[],materials=[];
     for(const face of faces){
+     const start=values.length;
      const colour=face.col.match(/^#([0-9a-f]{6})$/i),decimal=face.col.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
      if(!colour&&!decimal)throw Error('Unsupported mesh material: '+face.col);
      const rgb=colour?[0,2,4].map(i=>parseInt(colour[1].slice(i,i+2),16)/255):decimal.slice(1).map(v=>Number(v)/255),n=face.normal,length=Math.hypot(n[0],n[2])||1,
@@ -170,10 +171,32 @@
      if(depthShear)normal.push(n[1]/length);
      // All exported native faces are convex; retain original vertices/winding.
      for(let i=1;i<face.v.length-1;i++)for(const p of [face.v[0],face.v[i],face.v[i+1]])values.push(...p,...normal,...rgb,face.layer||0);
+     materials.push({start,end:values.length,colour:face.col,rgb});
     }
     const data=new Float32Array(values),buffer=gl.createBuffer();buffers.push(buffer);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
-    parts[name]={buffer,count:data.length/stride,bytes:data.byteLength};
+    parts[name]={buffer,count:data.length/stride,bytes:data.byteLength,values:data,materials};
    }
+   // Scene material maps update existing colour slots only. One bounded CPU
+   // upload buffer per part is reused; no new mesh, image or GL context.
+   let sceneMaterials=null;
+   const useMaterials=materials=>{
+    if(materials===sceneMaterials)return;
+    for(const part of Object.values(parts)){
+     const data=part.values;
+     for(const range of part.materials){
+       const value=(materials instanceof Map?materials.get(range.colour):materials?.[range.colour])||range.colour;
+       let rgb=range.rgb;
+       if(value!==range.colour){
+       const hex=value.match(/^#([0-9a-f]{6})$/i),decimal=value.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+       if(!hex&&!decimal)throw Error('Unsupported scene mesh material: '+value);
+       rgb=hex?[0,2,4].map(i=>parseInt(hex[1].slice(i,i+2),16)/255):decimal.slice(1).map(v=>Number(v)/255);
+       }
+       for(let k=range.start+3+normalSize;k<range.end;k+=stride)data.set(rgb,k);
+     }
+     gl.bindBuffer(gl.ARRAY_BUFFER,part.buffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+    }
+    sceneMaterials=materials;
+   };
    gl.disable(gl.DITHER);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.clearColor(0,0,0,0);
    const extension=gl.getExtension('WEBGL_debug_renderer_info'),device=extension?gl.getParameter(extension.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),
     depthBits=gl.getParameter(gl.DEPTH_BITS),layerBias=Math.max(.00001,4/2**depthBits);
@@ -190,8 +213,9 @@
      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT|gl.STENCIL_BUFFER_BIT);gl.disable(gl.STENCIL_TEST);
    };
    const composite=ctx=>{ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(canvas,0,0);ctx.restore();frames++;};
-   const drawGear=(ctx,deg,dir,visible,unit,head,pose)=>{
+   const drawGear=(ctx,deg,dir,visible,unit,head,pose,materials=null)=>{
      vector?.flush();
+     useMaterials(materials);
      gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.clear(gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
      const width=canvas.width,height=canvas.height;
      const angle=deg*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle)*dir,m=ctx.getTransform();
@@ -238,7 +262,7 @@
    },stencil);
    return Object.freeze({
     canvas,dispose,
-    draw(ctx,deg,dir,visible,unit,head,pose){if(ctx===vector){drawGear(ctx,deg,dir,visible,unit,head,pose);return;}start(ctx);drawGear(ctx,deg,dir,visible,unit,head,pose);composite(ctx);},
+    draw(ctx,deg,dir,visible,unit,head,pose,materials=null){if(ctx===vector){drawGear(ctx,deg,dir,visible,unit,head,pose,materials);return;}start(ctx);drawGear(ctx,deg,dir,visible,unit,head,pose,materials);composite(ctx);},
     paint(ctx,fn){start(ctx);vector.reset(ctx.getTransform());const previous=g;
      try{g=vector;fn(vector);vector.flush();}finally{g=previous;}
      composite(ctx);

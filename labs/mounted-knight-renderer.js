@@ -819,16 +819,17 @@
   if((p.sword?.renderWeapon||p.shield?.renderShield||p.bow?.renderBow)&&!actionGpu)actionGpu=KRMountedActionGPU.create();
   const upperPose=p.steering?.upperPose||p.duck||p.shield?.upperPose;
   if(upperPose&&!duckGpu)duckGpu=KRGearGPU.create(gearMeshes,undefined,{depthShear:gearDepthShear,duckPose:true});
+  const environment=state.environmentMaterials,gearMaterials=environment?.equipment;
   const actorGpu=upperPose?duckGpu:p.sword?.renderWeapon?actionGearGpu:p.shield?.renderShield?shieldGearGpu:p.bow?.renderBow?bowGearGpu:gpu;
   if(!placement){ctx.setTransform(ctx.canvas.width/480,0,0,ctx.canvas.height/560,0,0);ctx.fillStyle='#1c232c';ctx.fillRect(0,0,480,560);
    ctx.save();ctx.translate(cx,cy);ctx.scale(unit,unit);ctx.fillStyle='#111820';ctx.globalAlpha=p.jump?1-.035*p.jump.height:1;const shadow=p.jump?1-.012*p.jump.height:1;ctx.beginPath();ctx.ellipse(0,0,(10+9*Math.abs(Math.sin(p.angle*Math.PI/180)))*p.horseScale*shadow,3.2*shadow,0,0,Math.PI*2);ctx.fill();ctx.restore();}
   const faces=steeringFaces(p,visible.knight);
-  if(visible.horse)horseGpu.draw(ctx,faces,p.angle,unit,cx,cy,false,visible,false,!!state.worldViewport);
+  if(visible.horse)horseGpu.draw(ctx,faces,p.angle,unit,cx,cy,false,visible,false,!!state.worldViewport,environment?.horse);
   actorGpu.paint(ctx,()=>{g.save();g.translate(cx,cy);g.scale(unit,unit);
    if(visible.knight){
     const parts={...visible,shield:visible.shield&&!p.shield?.renderShield,bow:visible.bow&&!p.bow?.renderBow};
     const harness=upperPose?(deg,dir)=>{const b=p.native.body,k=-(b.shoulderX||0)/8.9,h=(-12-b.shoulderY)/8.9;g.save();g.translate(0,-12*U);g.transform(1,0,k,h,0,0);g.translate(0,12*U);KRJonathanWalk.harness(deg,dir,{sy:-20.9,hip:-12});g.restore();}:KRJonathanWalk.harness;
-    const native={...p.native,lighting:state.lighting??p.native.lighting,equipment:(deg,dir,head)=>actorGpu.draw(g,deg,dir,parts,U,head,upperPose),harness,armOccluders:()=>upperPose?[]:mountedShieldMask(p.angle,parts)};
+    const native={...p.native,lighting:state.lighting??p.native.lighting,equipment:(deg,dir,head)=>actorGpu.draw(g,deg,dir,parts,U,head,upperPose,gearMaterials),harness,armOccluders:()=>upperPose?[]:mountedShieldMask(p.angle,parts)};
     KRJonathanWalk.withEquipmentParts(parts,()=>{
      const drawNative=()=>KRJonathan.turnDrawing(p.origin[0],p.origin[1],1/U,native);
      if(p.sword)KRMountedSword.withJointFlex(p,drawNative);else drawNative();
@@ -844,10 +845,10 @@
     });
    }
    g.restore();});
-  if(visible.horse&&visible.knight)horseGpu.draw(ctx,faces,p.angle,unit,cx,cy,p,visible,true,!!state.worldViewport);
-  if(p.sword?.renderWeapon)actionGpu.draw(ctx,p,KRMountedSword.faces(p),faces,gearMeshes,visible,unit,cx,cy,KRMountedSword.trails(p,state));
-  if(p.shield?.renderShield)actionGpu.draw(ctx,p,KRMountedShield.faces(p),faces,gearMeshes,visible,unit,cx,cy);
-  if(p.bow?.renderBow)actionGpu.draw(ctx,p,KRMountedBow.faces(p),faces,gearMeshes,visible,unit,cx,cy);
+  if(visible.horse&&visible.knight)horseGpu.draw(ctx,faces,p.angle,unit,cx,cy,p,visible,true,!!state.worldViewport,environment?.horse);
+  if(p.sword?.renderWeapon)actionGpu.draw(ctx,p,KRMountedSword.faces(p),faces,gearMeshes,visible,unit,cx,cy,KRMountedSword.trails(p,state),gearMaterials);
+  if(p.shield?.renderShield)actionGpu.draw(ctx,p,KRMountedShield.faces(p),faces,gearMeshes,visible,unit,cx,cy,[],gearMaterials);
+  if(p.bow?.renderBow)actionGpu.draw(ctx,p,KRMountedBow.faces(p),faces,gearMeshes,visible,unit,cx,cy,[],gearMaterials);
  }
  async function prepare(initialState={angle:180,motion:'idle'}){if(gpu)return;if(!window.KRGearGPU)await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='assets/encounters/jonathan-gpu.js';s.onload=resolve;s.onerror=reject;document.body.append(s);});
   const meshes=KRJonathanWalk.labMeshes();gearMeshes=meshes;

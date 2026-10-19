@@ -72,8 +72,12 @@
   }
   const bind=b=>{gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,3,gl.FLOAT,false,28,0);gl.enableVertexAttribArray(col);gl.vertexAttribPointer(col,3,gl.FLOAT,false,28,12);gl.enableVertexAttribArray(overlay);gl.vertexAttribPointer(overlay,1,gl.FLOAT,false,28,24);};
   const starts=new Float32Array(24),ends=new Float32Array(24);
-  let packedFaces=null,packedAngle=NaN,packedUsed=0,packedBounds=null,packedRevision=null,packedRear=false,worldBounds=null;
-  return {draw(ctx,faces,angle,scale,cx,cy,foreground=false,visible={},reuseFrame=false,rearOnly=false){if(lost)throw Error('At GPU bağlantısı kesildi; labı yenile.');
+  let packedFaces=null,packedAngle=NaN,packedUsed=0,packedBounds=null,packedRevision=null,packedRear=false,packedMaterials=null,worldBounds=null;
+  return {draw(ctx,faces,angle,scale,cx,cy,foreground=false,visible={},reuseFrame=false,rearOnly=false,materials=null){if(lost)throw Error('At GPU bağlantısı kesildi; labı yenile.');
+   // A scene owns a fixed colour lookup, never a changed horse mesh. Dropping
+   // its lookup invalidates uploads too, so neutral gameplay cannot inherit it.
+   if(materials!==packedMaterials){packedFaces=null;}
+   const material=colour=>(materials instanceof Map?materials.get(colour):materials?.[colour])||colour;
    const w=ctx.canvas.width,h=ctx.canvas.height;if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
    const a=angle*Math.PI/180,c=Math.cos(a),s=Math.sin(a),rear=rearOnly&&Math.abs(((angle%360)+360)%360-180)<=10,
     reuse=faces===packedFaces&&rear===packedRear&&(rear||angle===packedAngle)&&(!!foreground&&reuseFrame||Number.isFinite(faces.renderRevision)&&faces.renderRevision===packedRevision);
@@ -84,7 +88,7 @@
    if(!reuse)for(const f of faces){if(!rear&&f.v.length===3&&-f.n[0]*s+f.n[1]*.16+f.n[2]*c<=1e-8)continue;
     for(const v of f.v){if(rear){for(let j=0;j<3;j++){worldBounds[j]=Math.min(worldBounds[j],v[j]);worldBounds[j+3]=Math.max(worldBounds[j+3],v[j]);}}else{const d=v[2]*c-v[0]*s,x=v[0]*c+v[2]*s,y=-v[1]+d*.16;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}}
     const front=['neck','head','mane'].includes(f.tag)?1:0;
-    let rgb=colours.get(f.col);if(!rgb){rgb=[1,3,5].map(i=>parseInt(f.col.slice(i,i+2),16)/255);colours.set(f.col,rgb);}
+    const colour=material(f.col);let rgb=colours.get(colour);if(!rgb){rgb=[1,3,5].map(i=>parseInt(colour.slice(i,i+2),16)/255);colours.set(colour,rgb);}
     const need=used+(f.v.length-2)*21;if(need>data.length){const n=new Float32Array(Math.max(need,data.length*2));n.set(data);data=n;}
     for(let i=1;i<f.v.length-1;i++){
      // A bent quad/cap is no longer planar. Its first triangle cannot decide
@@ -117,7 +121,7 @@
    }
    gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
    if(!reuse){if(used*4>capacity){capacity=Math.max(65536,2**Math.ceil(Math.log2(used*4)));gl.bufferData(gl.ARRAY_BUFFER,capacity,gl.DYNAMIC_DRAW);}gl.bufferSubData(gl.ARRAY_BUFFER,0,data.subarray(0,used));}
-   packedFaces=faces;packedAngle=angle;packedUsed=used;packedBounds=[minX,minY,maxX,maxY];packedRevision=faces.renderRevision;packedRear=rear;
+   packedFaces=faces;packedAngle=angle;packedUsed=used;packedBounds=[minX,minY,maxX,maxY];packedRevision=faces.renderRevision;packedRear=rear;packedMaterials=materials;
    bind(buffer);
    // Rear gameplay has only a small lane yaw. Let the GPU cull triangles,
    // retaining the same uploaded mesh across those camera-angle changes.

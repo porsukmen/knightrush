@@ -369,7 +369,7 @@
  }
  function fight(c){
   c.roadState={env,obstacles,pickups,roadsideScenery};setPhase(c,'battle');
-  c.openMode(()=>encounterOnly?KRAncientGuardianEncounter.startRoad(c):startBoss('oath_guardian',c));
+  c.openMode(()=>encounterOnly?KRStoneKingLab.startRoad(c):startBoss('oath_guardian',c));
   c.game=boss;player.x=player.lane=1;
  }
  function victory(c){
@@ -467,13 +467,13 @@
   start(c){c.time=0;c.dialogue=true;
     if(encounterOnly){
       c.outcome='guardian';setPhase(c,'loading');requestJourneyEventVisual(c.slot,true);
-      c.preparation=prepareAncientGuardianEncounter().then(async ready=>{
+      c.preparation=prepareStoneKingEncounter().then(async ready=>{
         if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
         if(!ready){c.finish({status:'error',reason:'guardian-unavailable'});return false;}
         if(!window.KREventVisuals&&!await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals'))throw Error('Guardian scene manager unavailable');
-        await KREventVisuals.prefetch('ancient-guardian-courtyard');
+        await KREventVisuals.prefetch('stone-king-arena');
         if(journeyRoadEventSession?.context!==c||c.phase!=='loading'||mode!=='journeyevent')return false;
-        fight(c);return KROathkeeperArena.ready();
+        fight(c);return KRStoneKingArena.ready();
       }).catch(error=>{
         if(journeyRoadEventSession?.context===c)c.finish({status:'error',reason:'guardian-unavailable'});
         console.warn('Sword encounter could not start',error);return false;
@@ -486,7 +486,7 @@
       if(c.outcome==='guardian'){setPhase(c,'guardian');SFX.roar();}
       else{c.reward=c.outcome==='broken'?'oath_broken':'oath_rusted';setPhase(c,'result');SFX.relic();}
     }},action,draw,dispose(c){
-      if(boss===c.game&&c.game?.definitionId==='ancientguardian')clearBossSequenceState(c.game);
+      if(boss===c.game&&['ancientguardian','stone_king_pixel'].includes(c.game?.definitionId))clearBossSequenceState(c.game);
       journeyRoadEventHandlers.get('elite_finale').dispose(c);
     }
  });

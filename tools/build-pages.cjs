@@ -31,10 +31,17 @@ const guardianRuntimeFiles=new Set([
  'labs/mounted-knight-collision.js',
  'art-source/blender/guardian-command-timing-v9/game-motion.bin',
  'art-source/blender/guardian-command-timing-v9/game-motion-file.js']);
+// The normal Guardian road battle shares the accepted Stone King runtime.
+const stoneKingRuntimeFiles=new Set([
+ 'assets/encounters/stone-king-pixel.js','assets/encounters/stone-king-arena-v1.png',
+ 'assets/encounters/stone-king-arena-v1-mobile.png',
+ ...['stone-king-stage.js','stone-king-lane-aim.js','stone-king-arena.js',
+  'stone-king-mounted-player.js','stone-king-royal-flight.js',
+  'stone-king-combo-contact.js','stone-king-pixel-lab.js'].map(file=>'labs/'+file)]);
 // Explicit boss runtime files must also be test-buildable before their first
 // commit. This does not include authoring labs or arbitrary untracked output.
 const guardianLabFile=file=>['labs/GuardianAttackLab.html','labs/AncientGuardianModelLab.html'].includes(file)||/^labs\/(ancient-guardian-|guardian-attack-).*\.(js|css|png|json)$/.test(file);
-const selected=[...new Set([...files,...oathkeeperRuntimeFiles,...guardianRuntimeFiles])].filter(file=>guardianRuntimeFiles.has(file)||guardianLabFile(file)||roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
+const selected=[...new Set([...files,...oathkeeperRuntimeFiles,...guardianRuntimeFiles,...stoneKingRuntimeFiles])].filter(file=>stoneKingRuntimeFiles.has(file)||guardianRuntimeFiles.has(file)||guardianLabFile(file)||roots.has(file)||file.startsWith('assets/')||actorRuntimeFiles.has(file)||
  mountedRuntimeFiles.has(file)||oathkeeperRuntimeFiles.has(file)||
  file.startsWith('art-source/knight-rush-sharp-plane/')||file.startsWith('art-source/knight-rush-backgrounds/')||file.startsWith('art-source/knight-rush-special-roads/')||file.startsWith('art-source/knight-rush-ui/')||
  file.startsWith('tools/')&&(file.endsWith('.js')||file.startsWith('tools/skills/')));
@@ -48,7 +55,7 @@ for(const file of ['assets/forest/sunlit-forest.js','assets/forest/journey-fores
  'assets/encounters/sword-clearing-v4-mobile.png','assets/forest/oath-road.js',
  'assets/encounters/oathkeeper-arena-v1.png','assets/encounters/oathkeeper-arena-v1-mobile.png',
  'assets/encounters/ancient-guardian-courtyard-v1.png','assets/encounters/ancient-guardian-courtyard-v1-mobile.png',
- 'assets/mounted-runner.js','assets/mounted-combat.js',...actorRuntimeFiles,...mountedRuntimeFiles,...oathkeeperRuntimeFiles,...guardianRuntimeFiles]){
+ 'assets/mounted-runner.js','assets/mounted-combat.js',...actorRuntimeFiles,...mountedRuntimeFiles,...oathkeeperRuntimeFiles,...guardianRuntimeFiles,...stoneKingRuntimeFiles]){
  if(!fs.existsSync(path.join(dest,file)))throw Error('Missing published dependency: '+file);
 }
 console.log(`PAGES_BUILD_OK ${selected.length+1} files: ${dest}`);

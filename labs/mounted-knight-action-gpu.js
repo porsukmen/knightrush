@@ -33,11 +33,12 @@
    c=colour.startsWith('#')?[1,3,5].map(i=>parseInt(colour.slice(i,i+2),16)/255):(colour.match(/[\d.]+/g)||[]).slice(0,3).map(v=>Number(v)/255);
    if(c.length!==3||c.some(v=>!Number.isFinite(v)))throw Error('Invalid action material '+colour);colours.set(colour,c);return c;
   }
-  function draw(ctx,p,weapon,horse,meshes,visible,unit,cx,cy,trails=[]){
+  function draw(ctx,p,weapon,horse,meshes,visible,unit,cx,cy,trails=[],materials=null){
    if(lost)throw Error('Aksiyon GPU bağlantısı kesildi; labı yenile.');
    if(!weapon.length)return;
    const w=ctx.canvas.width,h=ctx.canvas.height;if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
    const depth=depthValues,colour=colourValues;depth.used=colour.used=0;
+   const material=colour=>(materials instanceof Map?materials.get(colour):materials?.[colour])||colour;
    const project=v=>[...p.project(v),p.depth(v)],
     upperProject=(v,screen=p.project(v))=>{const b=p.actionBody;if(!b)return [...screen,p.depth(v)];if(b.rigidProjection)return project(b.upper(v));
      const x=screen[0]-b.hip[0],y=screen[1]-b.hip[1],c=Math.cos(b.lean),s=Math.sin(b.lean);
@@ -96,7 +97,7 @@
    // existing scabbard envelope (its tapered shell is narrower near the tip).
    const model=p.sword?.model,mouth=model&&p.actionBody.upper([model.mouth[0],p.seat+model.mouth[1],model.mouth[2]]),axes=model&&[model.u,model.v,model.n].map(p.actionBody.rotate),
     local=v=>model?axes.map(a=>a.reduce((n,x,i)=>n+x*(v[i]-mouth[i]),0)):[0,0,0];
-   for(const f of weapon)polygon(colour,f.v.map(v=>{const q=project(v);q[2]+=(f.layer||0)*.00128;return q;}),rgb(f.col),f.v.map(local),f.blade?1:0);
+   for(const f of weapon)polygon(colour,f.v.map(v=>{const q=project(v);q[2]+=(f.layer||0)*.00128;return q;}),rgb(material(f.col)),f.v.map(local),f.blade?1:0);
    gl.viewport(0,0,w,h);gl.enable(gl.SCISSOR_TEST);gl.scissor(left,h-bottom,right-left,bottom-top);gl.colorMask(true,true,true,true);gl.depthMask(true);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.disable(gl.BLEND);gl.disable(gl.DITHER);gl.useProgram(program);
    gl.uniform2f(size,w,h);const m=ctx.getTransform();gl.uniform4f(view,unit*m.a,unit*m.b,unit*m.c,unit*m.d);gl.uniform2f(viewOrigin,cx*m.a+cy*m.c+m.e,cx*m.b+cy*m.d+m.f);
@@ -110,7 +111,7 @@
    const submit=values=>{const data=values.data.subarray(0,values.used);if(data.byteLength>capacity){capacity=2**Math.ceil(Math.log2(data.byteLength));gl.bufferData(gl.ARRAY_BUFFER,capacity,gl.DYNAMIC_DRAW);}gl.bufferSubData(gl.ARRAY_BUFFER,0,data);gl.drawArrays(gl.TRIANGLES,0,data.length/10);};
    gl.uniform1f(opacity,1);gl.colorMask(false,false,false,false);submit(depth);gl.colorMask(true,true,true,true);
    if(trails.length){gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
-    for(const f of trails){trailValues.used=0;polygon(trailValues,f.v.map(project),rgb(f.col));gl.uniform1f(opacity,f.alpha);submit(trailValues);}
+    for(const f of trails){trailValues.used=0;polygon(trailValues,f.v.map(project),rgb(material(f.col)));gl.uniform1f(opacity,f.alpha);submit(trailValues);}
     gl.depthMask(true);gl.disable(gl.BLEND);gl.uniform1f(opacity,1);
    }
    submit(colour);

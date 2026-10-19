@@ -10954,6 +10954,25 @@ function loadEventVisualModule(src,symbol){
   });
   eventVisualModuleLoads.set(src,pending);return pending;
 }
+let stoneKingPreparation=null;
+function prepareStoneKingEncounter(){
+  return stoneKingPreparation ||= (async()=>{
+    if(!await loadEventVisualModule('assets/mounted-runner.js?guardian=16','KRMountedRunner'))return false;
+    await KRMountedRunner.prepare();if(!KRMountedRunner.ready)return false;
+    for(const [src,symbol] of [
+      ['assets/encounters/stone-king-pixel.js','KRStoneKingPixel'],
+      ['labs/stone-king-stage.js','KRStoneKingStage'],
+      ['labs/stone-king-lane-aim.js','KRStoneKingLaneAim'],
+      ['labs/stone-king-arena.js','KRStoneKingArena'],
+      ['labs/stone-king-mounted-player.js','KRStoneKingMountedPlayer'],
+      ['labs/stone-king-royal-flight.js','KRStoneKingRoyalFlight'],
+      ['labs/stone-king-combo-contact.js','KRStoneKingComboContact']
+    ])if(!await loadEventVisualModule(src,symbol))return false;
+    window.KRStoneKingPlayer ||= KRStoneKingMountedPlayer.create({stage:KRStoneKingStage});
+    await KRStoneKingPlayer.prepare();
+    return loadEventVisualModule('labs/stone-king-pixel-lab.js','KRStoneKingLab');
+  })().catch(error=>{stoneKingPreparation=null;console.error('Stone guardian could not load',error);return false;});
+}
 let ancientGuardianPreparation=null;
 function prepareAncientGuardianEncounter(){
   return ancientGuardianPreparation ||= (async()=>{
@@ -11023,6 +11042,7 @@ function prepareGathererEncounter(active=false){
 function clearEventVisuals(){
   eventVisualEpoch++;
   window.KROathkeeperArena?.reset();
+  window.KRStoneKingArena?.reset();
   if(window.KRCutscenes)window.KRCutscenes.reset();else window.KREventVisuals?.clear();
   journeyVisualTarget=null;
   journeyVisualScanEdge=null;journeyVisualScanAt=-Infinity;
@@ -11044,10 +11064,10 @@ function requestJourneyEventVisual(slot,active=false){
     if(journeyVisualTarget?.route!==journeyRoute||journeyVisualTarget?.id!==slot.id){
       clearEventVisuals();journeyVisualTarget={route:journeyRoute,id:slot.id,key:null,requested:true};
       const target=journeyVisualTarget,epoch=eventVisualEpoch;
-      prepareAncientGuardianEncounter().then(async ready=>{
+      prepareStoneKingEncounter().then(async ready=>{
         if(ready&&!window.KREventVisuals)ready=await loadEventVisualModule('assets/encounters/event-visuals.js','KREventVisuals');
         if(ready&&journeyVisualTarget===target&&target.route===journeyRoute&&epoch===eventVisualEpoch)
-          KREventVisuals.prefetch('ancient-guardian-courtyard');
+          KREventVisuals.prefetch('stone-king-arena');
       });
     }
     return;
@@ -13696,7 +13716,7 @@ function configureModelParryViability(h){
   h.parryViability={success,target,ratio,referenceDuration:reference,tempoRatio};
 }
 function encounterImpactHold(move){
-  const frameHit=move&&!move.contactId&&!move.sweep&&!move.sweeps;
+  const frameHit=move&&!move.contactId&&!move.pixelContact&&!move.sweep&&!move.sweeps;
   return Math.max(CFG.IMPACT_HOLD,frameHit?parryWindow(move):0);
 }
 /* Visual-bound rigs report their current screen-space model radius on each joint.
@@ -14355,6 +14375,7 @@ function registerLegacyParryInput(intent=null){
   const inputAt=intent?intent.at:player.lastParry;
   for(let i=hazards.length-1;i>=0;i--){
     const h=hazards[i];
+    if(h.kind==='pixel'){if(!h.done&&(!intent||tapParryIntentHasHazard(intent,h)))h.parryInputAt=inputAt;continue;}
     if(h.kind==='model'||h.done||(intent&&!tapParryIntentHasHazard(intent,h))) continue;
     if(h.kind==='sweep'){
       if(h.parryInputEligible===true) continue;
@@ -14562,6 +14583,8 @@ function resolveSweepHazard(h){
 }
 function updateHazards(){
   for(const h of hazards){
+    // Opt-in silhouette collision must never fall through to a scheduled frame hit.
+    if(h.kind==='pixel'){if(!h.done)h.resolver.update(h);continue;}
     if(h.kind==='model'){
       if(!h.done) resolveModelHazard(h);
       else if(debugMoveLabActive()&&h.lastProgress<1) advanceResolvedModelHazardPreview(h);
@@ -46125,12 +46148,20 @@ function installBossPosturePrimer(amount,amplification=0,breakPower=0){
 }
 
 const BOW_ACTION_GEOMETRY_SCRATCH={from:{x:0,y:0},to:{x:0,y:0},distance:1};
+function bossEffectProjection(){
+  const stone=window.KRStoneKingLab?.combatTarget(0);
+  if(stone)return {x:laneX(player.x,1)+stone.x-stone.footX,y:PLAYER_Y+stone.y-stone.footY,s:stone.s};
+  const p=proj(boss.z);return {...p,x:laneX(boss.x,p.t)};
+}
+function bossEffectTarget(height){
+  const p=bossEffectProjection();return {x:p.x,y:p.y-height*p.s};
+}
 function bowTurnActionGeometry(actorId='knight'){
-  const geometry=BOW_ACTION_GEOMETRY_SCRATCH,projection=boss?proj(boss.z):null;
+  const geometry=BOW_ACTION_GEOMETRY_SCRATCH,target=boss?bossEffectTarget(66):null;
   geometry.from.x=actorId==='ally'?squire.visualX:laneX(player.x,1);
   geometry.from.y=actorId==='ally'?PLAYER_Y+9-88*.72:PLAYER_Y-88;
-  geometry.to.x=boss?laneX(boss.x,projection.t):VW/2;
-  geometry.to.y=projection?projection.y-66*projection.s:170;
+  geometry.to.x=target?.x??VW/2;
+  geometry.to.y=target?.y??170;
   geometry.distance=Math.max(1,Math.hypot(geometry.to.x-geometry.from.x,
     geometry.to.y-geometry.from.y));
   return geometry;
@@ -46909,8 +46940,7 @@ function resolveTurnActionHit(action){
   }
   const shieldImpact=isShieldTurnAction(action)||isSquireShieldTurnAction(action),
     squireSwordImpact=action.actorId==='ally'&&!!action.swordTimeline,
-    p=proj(boss.z),x=laneX(boss.x,p.t),
-    y=p.y-(shieldImpact?22:70)*p.s,
+    point=bossEffectTarget(shieldImpact?22:70),x=point.x,y=point.y,
     angle=(command.slash||0)+(index-(action.hits-1)/2)*.30;
   if(action.actorId==='ally'&&!command.squireHunterBow)boss.allyAttackAnim=1;
   else if(isBowTurnAction(action)){
@@ -48809,6 +48839,7 @@ const MINIBOSS_HIT_CLASSES=FRAME_HIT_CLASSES;
    pinches are always physical traveling attacks: an articulated contact rig or
    the visible swept shape owns contact, never a hidden impact frame. */
 const BOSS_HIT_CLASSES=Object.freeze(Object.assign({},FRAME_HIT_CLASSES,{
+  pixelOneLane:Object.freeze({resolver:'pixel',lanes:1,height:'mid'}),
   modelOneLane:Object.freeze({resolver:'rig',lanes:1,height:'mid'}),
   modelTwoLane:Object.freeze({resolver:'rig',lanes:2,height:'mid'}),
   lowSwipe:Object.freeze({resolver:'physical',lanes:3,height:'low'}),
@@ -48817,6 +48848,7 @@ const BOSS_HIT_CLASSES=Object.freeze(Object.assign({},FRAME_HIT_CLASSES,{
 }));
 function hitClassesForRole(role){ return role==='miniboss'?MINIBOSS_HIT_CLASSES:BOSS_HIT_CLASSES; }
 function inferEncounterHitClass(step){
+  if(step.pixelContact) return 'pixelOneLane';
   const model=!!step.contactId;
   if(step.sweeps||(step.strike||'').includes('pincer')) return 'pinch';
   if(step.sweep) return step.height==='high'?'highSwipe':'lowSwipe';
@@ -49646,18 +49678,19 @@ function hurtBoss(dmg,fromCounter,damageSource=fromCounter?'counter':'weapon',cr
   dmg=stableDamage(dmg);boss.hp=stableCombatNumber(boss.hp-dmg);
   if(boss.phase!=='dodge'||bleed)boss.dealt=stableDamage((boss.dealt||0)+dmg);
   if(damageSource==='counter'&&hasRelic('venom')){ boss.poisonT=8; // VENOM VIAL: the counter envenoms
-    floater(laneX(boss.x,proj(boss.z).t),proj(boss.z).y-160*proj(boss.z).s,'POISONED!','#7ade6a',15); }
+    const point=bossEffectTarget(160);floater(point.x,point.y,'POISONED!','#7ade6a',15); }
   if(damageSource==='weapon'&&hasRelic('brand')){ boss.burnT=4;    // BRAND OF EMBERS: steel ignites
-    if(Math.random()<0.4) floater(laneX(boss.x,proj(boss.z).t)+20,proj(boss.z).y-160*proj(boss.z).s,'BURNING!','#ff9a3a',15); }
+    if(Math.random()<0.4){const point=bossEffectTarget(160);floater(point.x+20,point.y,'BURNING!','#ff9a3a',15);} }
   boss.hurtT=0.14; SFX.thud(); shake(3,.12);
   const p=proj(boss.z);
   const rush=damageSource==='rush'||damageSource==='rush_hit',
     rushFinal=damageSource==='rush';
-  burst(laneX(boss.x,p.t),p.y-60*p.s,critical?18:rush?(rushFinal?20:8):12,
+  const impact=bossEffectTarget(60),label=bossEffectTarget(120);
+  burst(impact.x,impact.y,critical?18:rush?(rushFinal?20:8):12,
     critical?['#ffcc4d','#ffffff','#ff7a3d']:
       rush?['#8d46d8','#c995ff','#ffffff']:bleed?['#68152a','#d9788b','#ffb0ba']:['#ff4d3a','#ffe37a'],
     rush?(rushFinal?220:145):180,120,rush?(rushFinal?5:3.5):4,.6);
-  floater(laneX(boss.x,p.t),p.y-120*p.s,(woundDetonation?'WOUND DETONATION -':
+  floater(label.x,label.y,(woundDetonation?'WOUND DETONATION -':
     bleed?(bleedBreak?'BLEED BREAK -':'BLEED -'):'-')+
     healthDamageText(dmg),
     critical?'#ffcc4d':rush?'#c995ff':bleed?'#d9788b':fromCounter?'#ffe37a':'#fff',
@@ -49707,7 +49740,7 @@ function resolveVolley(){
 }
 function updateBossVisualFx(dt){
   if(!boss) return;
-  const p=proj(boss.z), x=laneX(boss.x,p.t);
+  const p=bossEffectProjection(), x=p.x;
   if(boss.rise<1&&chancePerSecond(48,dt)){
     const waterline=p.y+4*p.s, lava=activeBossDefinition().element==='lava';
     particles.push({x:x+rnd(-70,70)*p.s,y:waterline,vx:rnd(-40,40),vy:rnd(-190,-90),
@@ -49765,8 +49798,8 @@ function updateBoss(dt){
         boss.dotAcc=stableDamage(boss.dotAcc-n);
         boss.hp=stableCombatNumber(boss.hp-n);
         if(boss.phase!=='dodge')boss.dealt=stableDamage((boss.dealt||0)+n);
-        const pD=proj(boss.z);
-        floater(laneX(boss.x,pD.t)+rnd(-30,30),pD.y-130*pD.s,'-'+healthDamageText(n),
+        const pD=bossEffectProjection();
+        floater(pD.x+rnd(-30,30),pD.y-130*pD.s,'-'+healthDamageText(n),
           boss.poisonT>0?'#7ade6a':'#ff9a3a',13);
       } }
   }
@@ -49776,7 +49809,7 @@ function updateBoss(dt){
   const st=boss.state, T=boss.stateT;
   if(st==='dying'){                          /* --- staged KILL ANIMATION --- */
     /* stage hits: three shuddering impacts, then collapse, then a burst of soul-light */
-    const p=proj(boss.z), bx=laneX(boss.x,p.t);
+    const p=bossEffectProjection(), bx=p.x;
     const marks=[0.25,0.55,0.85];
     for(let i=0;i<marks.length;i++){
       if(boss._stg===i&&T>=marks[i]){ boss._stg++;
@@ -49925,7 +49958,11 @@ function updateBoss(dt){
     if(a&&T>=boss.teleTime){
       boss.state='strike'; boss.stateT=0; SFX.slash();
       const def=activeBossDefinition();
-      if(usesContactRig(a)&&def.contactRig) spawnModelHazard(boss,a,def,BOSS_SOURCE);
+      if(a.pixelContact){
+        if(!def.pixelContact)throw Error(def.id+' has no pixel-contact resolver');
+        def.pixelContact.spawn(boss,a,def,BOSS_SOURCE);
+      }
+      else if(usesContactRig(a)&&def.contactRig) spawnModelHazard(boss,a,def,BOSS_SOURCE);
       else if(a.sweeps) spawnSweepHazards(a.sweeps,a.height,a.travel,BOSS_SOURCE,a);
       else if(a.sweep) spawnSweepHazard(a.sweep,a.height,a.travel,BOSS_SOURCE,null,a);
       else spawnHazard(boss.hazardLanes,a.height,a.travel,BOSS_SOURCE,a);
@@ -50417,8 +50454,8 @@ function drawProjectiles(){
     drawArrowSprite(x,y,bowFlightArrowScale('ally'),Math.atan2(to.y-from.y,to.x-from.x)+Math.PI/2,
       squire.appearance?.bow?.arrowFeather,squire.appearance?.bow);
   }
-  const p1={x:laneX(player.x,1),y:PLAYER_Y-70}, p2=proj(boss.z);
-  const bx=laneX(boss.x,p2.t), by=p2.y-60*p2.s;
+  const p1={x:laneX(player.x,1),y:PLAYER_Y-70}, target=bossEffectTarget(60);
+  const bx=target.x, by=target.y;
   for(const pr of projectiles){
     const t=easeOut(pr.t), x=lerp(p1.x,bx,t), y=lerp(p1.y,by,t)-Math.sin(t*Math.PI)*60;
     g.save(); g.translate(x,y); g.rotate(Math.atan2(by-p1.y,bx-p1.x));
@@ -50755,6 +50792,8 @@ function validateEncounterHierarchy(){
       throw new Error(def.id+'/'+attack.id+' has no registered '+def.role+' mechanic');
     const hitClass=hitClassesForRole(def.role)[step.hitClass];
     if(!hitClass) throw new Error(def.id+'/'+attack.id+' has unknown hitClass: '+step.hitClass);
+    if(hitClass.resolver==='pixel'&&(!step.pixelContact||!def.pixelContact))
+      throw new Error(def.id+'/'+attack.id+' pixel hit needs a silhouette resolver');
     const isPhysical=hitClass.resolver==='physical',hasTravelShape=!!(step.sweep||step.sweeps);
     const laneCount=typeof step.lanes==='function'?1:(step.lanes||[]).length;
     if(hitClass.lanes!==laneCount||(hitClass.height&&hitClass.height!==step.height))
@@ -54185,6 +54224,7 @@ function setMode(m){
   if(!['boss','bossintro','miniboss','bosslabmoves'].includes(m))clearBattleShields();
   mode=m;modeT=0;
   window.KROathkeeperArena?.sync();
+  window.KRStoneKingArena?.sync();
   if(nextTavern)prepareCutscene(m==='tavernslide'?'tavern-slide':m==='diceguess'?'duke-bluff':m==='armwrestling'?'tavern-arm':m==='drinkingcontest'?'tavern-chug':m==='findqueen'?'royal-shuffle':'tavern-games',true,'tavern-games');
 }
 function speed(){
@@ -54856,10 +54896,10 @@ function drawHUD(){
     else if(boss.state==='break') st='BROKEN — '+Math.max(0,CFG.BREAK_DURATION-boss.stateT).toFixed(1)+'s';
     else if(boss.state==='breakRecover') st='RECOVERING';
     else if(boss.state==='finisher') st='NO ESCAPE.';
-    else if(boss.phase==='dodge') st=boss._sequence
+    else if(boss.phase==='dodge') st=activeBossDefinition().defenseStatus?.(boss)??(boss._sequence
       ?boss._sequence.recipe.name+' · '+Math.max(0,boss._sequence.recipe.duration-boss._sequence.time).toFixed(1)+'s'
-      :'survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s');
-    drawHPBar(boss.wolfDen?'':activeBossDefinition().name,boss.hp,boss.maxhp,boss.wolfDen?'':st);
+      :'survive '+boss.attacksLeft+' more attack'+(boss.attacksLeft===1?'':'s'));
+    drawHPBar(boss.wolfDen?'':activeBossDefinition().name,boss.hp,boss.maxhp,boss.wolfDen||boss._artPreview?'':st);
     drawBossPostureBar(boss);
     drawBossMarkTokens(boss);
     drawBossBleedStatus(boss);
@@ -54895,7 +54935,7 @@ function drawHUD(){
     }
     if(isPlayerTurn()) drawPlayerTurnUI();
   }
-  if(debugRun){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
+  if(debugRun&&!boss?._artPreview){ g.textAlign='left'; g.font='bold 10px monospace'; g.fillStyle='#5c8fa0';
     g.fillText('⚙ DEBUG'+(godMode?' · GOD':''),16,170);
     if(boss&&mode==='boss'&&!boss._moveLab&&!activeSkillLabCombat()&&boss.state!=='dying'){
       g.fillStyle='#3a101088'; g.fillRect(VW-128,150,112,36);
@@ -65690,6 +65730,7 @@ function drawScore(){
 function update(dt){
   perfNow+=dt; modeT+=dt;
   window.KROathkeeperArena?.sync();
+  window.KRStoneKingArena?.sync();
   if(mode==='roadlab')return;
   updateWolfPup(dt);
   updateJuice(dt);
@@ -68075,6 +68116,7 @@ function buildWorldDrawQueue(stage,newForest){
   dr.sort(compareWorldDepthDescending);
 }
 function drawModeScreen(){
+  if(window.KRStoneKingLab?.usesLabHUD()){KRStoneKingLab.drawHUD(g);return;}
   // Photo mode keeps the CURRENT screen. Never substitute the world underneath.
   const drawScreen=FULLSCREEN_RENDERERS.get(mode);
   if(drawScreen){drawScreen();if(!pausePhotoMode)drawJourneyEventControls();drawJourneyRoadEvent();drawEventVitalsHUD();return;}
@@ -68183,7 +68225,9 @@ function renderFrame(){
     journeyRoadEventSession?.definition.id==='inn_stop'?'mossy-inn':JOURNEY_CUTSCENE_BINDINGS[journeyRoadEventSession?.context.content];
   const opaqueCutscene=mode==='journeyevent'&&(journeyRoadEventSession?.context.dialogue||journeyRoadEventSession?.context.inn||journeyRoadEventSession?.context.loot?.fight)&&
     cutsceneId&&window.KRCutscenes?.coversWorld(cutsceneId);
-  if(!FULLSCREEN_RENDERERS.has(mode)&&!opaqueCutscene){
+  const stoneKingWorld=window.KRStoneKingLab?.coversWorld();
+  if(stoneKingWorld){KRStoneKingLab.drawScene(g);}
+  else if(!FULLSCREEN_RENDERERS.has(mode)&&!opaqueCutscene){
   FRONT_WORLD_ITEMS.length=0;
   const oathArena=window.KROathkeeperArena?.coversWorld(),
     battleWorldCached=!oathArena&&!boss?.wolfDen&&window.KRSunlitForest?.drawBattleWorld(stage,newForest);
@@ -68233,7 +68277,7 @@ function renderFrame(){
   if(moveTreeOpen&&!pausePhotoMode)drawMoveTree();
   if(skillTooltipIndex>=0&&!pausePhotoMode)drawSkillTooltip();
   if(skillLabTooltipMutationId&&!pausePhotoMode)drawSkillLabMutationTooltip();
-  if(paused&&!pausePhotoMode){
+  if(paused&&!pausePhotoMode&&!window.KRStoneKingLab?.ownsPause()){
     const id=currentUITheme(),p=KRUI.theme(id);g.fillStyle=p.dark+'dd';g.fillRect(0,-PAD_TOP,VW,VH+PAD_TOT);
     KRUI.sheet(g,{x:14,y:VH/2-88,w:452,h:journeyRoute?362:311});
     KRUI.text(g,'PAUSED',VW/2,VH/2-49,23,p.ink);
@@ -68695,8 +68739,12 @@ const inn=document.createElement('script');inn.src='assets/forest/mossy-inn.js';
               if(!await prepareOathkeeperEncounter())throw Error('Oathkeeper encounter unavailable');
               KROathkeeperEncounter.start();
               await KROathkeeperArena.ready();
-            }else KRMountedRunner.prepare();
+            }else if(BOOT_QUERY.get('stoneking')!=='1') KRMountedRunner.prepare();
           }catch(error){console.error('Mounted runner could not load',error);}
+          if(BOOT_QUERY.get('stoneking')==='1'){
+            if(!await prepareStoneKingEncounter())throw Error('Stone King encounter unavailable');
+            KRStoneKingLab.start();
+          }
           if(BOOT_QUERY.get('attackeditor')!=='1')requestAnimationFrame(frame);
         }
       };

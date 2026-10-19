@@ -8,7 +8,15 @@
   base=()=>({angle:KRMountedRunner.laneAngle(player.x,KRMountedRunner.laneMotion?.heading||0),time:0,motion:'idle',action:'none',zoom:1,visible,externalProjectiles:true,worldViewport:true,
    lighting:window.KROathkeeperArena?.knightLighting()||undefined}),
   active=()=>['boss','bossintro','miniboss'].includes(mode)&&player.alive&&!player.mountedDeath&&playerChar.rigId==='ser_jonathan',
-  target=height=>{const p=proj(boss.z);return {x:laneX(boss.x,p.t),y:p.y-height*p.s};};
+  stoneTarget=height=>{
+   const point=window.KRStoneKingLab?.combatTarget?.(height);
+   if(!point||!['x','y','footX','footY'].every(key=>Number.isFinite(point[key])))return null;
+   // Shared mounted clips still work in the native rider's placement space.
+   // The Stone stage applies this same foot offset exactly once when drawing.
+   return {x:laneX(player.x,1)+point.x-point.footX,y:PLAYER_Y+point.y-point.footY};
+  },
+  target=height=>{const stone=stoneTarget(height);if(stone)return stone;
+   const p=proj(boss.z);return {x:laneX(boss.x,p.t),y:p.y-height*p.s};};
  let aimKey='',aimCache=null,shieldContact=null,shieldAngle=NaN;
  function shieldContactOffset(){
   const state=base();if(shieldContact&&shieldAngle===state.angle)return shieldContact;
@@ -115,7 +123,15 @@
   samplePlayerHurtVolumes(out);
   out.spatial=KRMountedCollision.sample(frame());return out;
  }
- const originalGeometry=bowTurnActionGeometry,originalScale=bowFlightArrowScale;
+ const originalGeometry=bowTurnActionGeometry,originalScale=bowFlightArrowScale,
+  originalShieldApproach=buildShieldApproach;
+ buildShieldApproach=function(actorId){
+  const geometry=originalShieldApproach(actorId),point=geometry&&stoneTarget(22);
+  if(!point)return geometry;
+  const p=proj(boss.z);
+  return {...geometry,toX:geometry.toX+point.x-laneX(boss.x,p.t),
+   toY:geometry.toY+point.y-(p.y-22*p.s)};
+ };
  bowTurnActionGeometry=function(actorId='knight'){
   if(active()&&boss&&actorId==='knight'){const distance=originalGeometry(actorId).distance,a=aim();return {from:{...a.from},to:{...a.to},distance};}
   return originalGeometry(actorId);
